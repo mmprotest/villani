@@ -1,0 +1,8 @@
+{"timestamp":"2026-07-01T01:00:00Z","type":"session_meta","session_id":"sess_123","cwd":"/repo","model":"gpt-5-codex"}
+{"timestamp":"2026-07-01T01:00:01Z","type":"user_message","message":"Fix the bug"}
+{"timestamp":"2026-07-01T01:00:02Z","type":"assistant_message","message":"I will inspect the failing tests."}
+{"timestamp":"2026-07-01T01:00:03Z","type":"tool_call","name":"shell","arguments":{"cmd":"npm test"}}
+{"timestamp":"2026-07-01T01:00:04Z","type":"tool_result","name":"shell","exit_code":1,"stdout":"failed","stderr":""}
+{"timestamp":"2026-07-01T01:00:05Z","type":"apply_patch","patch":"*** Begin Patch\n*** Update File: src/index.ts\n@@\n-old\n+new\n*** End Patch"}
+{"timestamp":"2026-07-01T01:00:06Z","type":"approval_request","message":"Need permission to run npm install"}
+{"timestamp":"2026-07-01T01:00:07Z","type":"response_item_done","item":"unknown"}

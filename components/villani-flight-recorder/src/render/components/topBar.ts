@@ -1,0 +1,6 @@
+import { ReplayDashboardViewModel } from "../viewModel.js";
+import { escapeHtml } from "../safeHtml.js";
+export const topBar = (
+  vm: ReplayDashboardViewModel & { returnHref?: string; returnLabel?: string },
+) =>
+  `<header class="topbar"><div class="brand"><div class="brand-mark"><span>V</span></div><h1>${vm.brand.title}</h1><span class="replay-chip">${vm.brand.mode}</span></div><div class="transport understated">${vm.returnHref ? `<a class="back-link" href="${escapeHtml(vm.returnHref)}">← ${escapeHtml(vm.returnLabel ?? "Back to sessions")}</a>` : `<span>Manual investigation replay</span>`}</div></header>`;

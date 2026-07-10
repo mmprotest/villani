@@ -1,0 +1,1 @@
+Fix request forwarding so authorization headers are preserved, without mutating unrelated headers.

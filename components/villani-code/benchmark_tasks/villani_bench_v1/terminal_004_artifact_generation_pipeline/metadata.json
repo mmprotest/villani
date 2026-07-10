@@ -1,0 +1,43 @@
+{
+  "source_type": "mutated",
+  "tags": [
+    "terminal_workflow",
+    "easy"
+  ],
+  "task_version": "1.0",
+  "expected_files": [
+    "app/__main__.py",
+    "Makefile",
+    "pyproject.toml",
+    "tests/test_basic.py"
+  ],
+  "primary_skill": "debug",
+  "name": "terminal_004_artifact_generation_pipeline",
+  "difficulty": "easy",
+  "reference_patch_size_lines": 0,
+  "runtime_stressors": [
+    "test_interpretation"
+  ],
+  "task_type": "single_file_bugfix",
+  "requires_repo_navigation": false,
+  "requires_multi_step_reasoning": false,
+  "has_false_fix_trap": false,
+  "requires_retry_recovery": false,
+  "likely_tool_sequence": [
+    "inspect_makefile",
+    "run_tests",
+    "edit_files",
+    "rerun_tests"
+  ],
+  "evaluation_focus": [
+    "workflow_correctness",
+    "verification_discipline"
+  ],
+  "benchmark_bucket": "baseline",
+  "allowed_support_files": [
+    "Makefile",
+    "pyproject.toml",
+    "app/__main__.py",
+    "tests/test_basic.py"
+  ]
+}

@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+import json
+from typing import Any, Iterable
+
+
+def parse_sse_events(response_stream: Iterable[str | bytes]):
+    for raw_line in response_stream:
+        if raw_line is None:
+            continue
+        if isinstance(raw_line, bytes):
+            line = raw_line.decode("utf-8", errors="ignore")
+        else:
+            line = raw_line
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("data:"):
+            line = line[len("data:") :].strip()
+        if not line or line == "[DONE]":
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            yield data
+
+
+def assemble_anthropic_stream(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    response: dict[str, Any] = {"content": []}
+    partial_json: dict[int, str] = {}
+
+    for event in events:
+        if "usage" in event:
+            response["usage"] = event["usage"]
+        if "stop_reason" in event:
+            response["stop_reason"] = event["stop_reason"]
+        if "stop_sequence" in event:
+            response["stop_sequence"] = event["stop_sequence"]
+
+        etype = event.get("type")
+        if etype == "message_start":
+            msg = event.get("message")
+            if isinstance(msg, dict):
+                prior_meta = {
+                    key: value
+                    for key, value in response.items()
+                    if key in {"usage", "stop_reason", "stop_sequence"}
+                }
+                response = dict(msg)
+                response.update(prior_meta)
+            response["content"] = []
+        elif etype == "content_block_start":
+            index = event.get("index", 0)
+            block = dict(event.get("content_block", {}))
+            while len(response["content"]) <= index:
+                response["content"].append({})
+            response["content"][index] = block
+        elif etype == "content_block_delta":
+            index = event.get("index", 0)
+            delta = event.get("delta", {})
+            while len(response["content"]) <= index:
+                response["content"].append({})
+            block = response["content"][index]
+            dtype = delta.get("type")
+            if dtype == "thinking_delta":
+                block["thinking"] = block.get("thinking", "") + delta.get("thinking", "")
+            elif dtype == "text_delta":
+                block["text"] = block.get("text", "") + delta.get("text", "")
+            elif dtype in {"input_json_delta", "partial_json_delta"}:
+                partial_json[index] = partial_json.get(index, "") + delta.get("partial_json", "")
+        elif etype == "content_block_stop":
+            index = event.get("index", 0)
+            if index in partial_json:
+                raw = partial_json.pop(index)
+                try:
+                    parsed = json.loads(raw)
+                    response["content"][index]["input"] = parsed
+                except json.JSONDecodeError:
+                    response["content"][index]["input"] = raw
+        elif etype == "message_delta":
+            delta = event.get("delta", {})
+            if isinstance(delta, dict):
+                response.update(delta)
+        elif etype == "message_stop":
+            if "usage" in event:
+                response["usage"] = event["usage"]
+            if "stop_reason" in event:
+                response["stop_reason"] = event["stop_reason"]
+            if "stop_sequence" in event:
+                response["stop_sequence"] = event["stop_sequence"]
+            break
+
+    return response
+
+
+class StreamCoalescer:
+    def __init__(self) -> None:
+        self._pending_ws = ""
+
+    def consume(self, text: str) -> str:
+        if not text:
+            return ""
+        if text.isspace():
+            self._pending_ws += text
+            return ""
+        out = self._pending_ws + text
+        self._pending_ws = ""
+        return out
+
+    def flush(self) -> str:
+        out = self._pending_ws
+        self._pending_ws = ""
+        return out

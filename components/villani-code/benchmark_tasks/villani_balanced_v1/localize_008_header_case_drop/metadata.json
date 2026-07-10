@@ -1,0 +1,34 @@
+{
+  "seed_type": "bug-seeded",
+  "expected_files": [
+    "src/app/http/headers.py"
+  ],
+  "reference_patch_size_lines": 8,
+  "primary_skill": "fault-localization",
+  "secondary_skills": [
+    "pytest"
+  ],
+  "name": "localize_008_header_case_drop",
+  "difficulty": "hard",
+  "runtime_stressors": [
+    "fault_localization",
+    "decoy_helpers"
+  ],
+  "task_type": "noisy_localization",
+  "requires_repo_navigation": true,
+  "requires_multi_step_reasoning": false,
+  "has_false_fix_trap": true,
+  "requires_retry_recovery": false,
+  "likely_tool_sequence": [
+    "search_files",
+    "read_files",
+    "edit_files",
+    "run_tests"
+  ],
+  "evaluation_focus": [
+    "localization",
+    "correctness"
+  ],
+  "benchmark_bucket": "runtime_stressing",
+  "benchmark_track": "core"
+}

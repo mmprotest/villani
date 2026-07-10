@@ -1,0 +1,36 @@
+{
+  "name": "villani-flight-recorder",
+  "version": "0.1.0",
+  "description": "Local-first static replay generator for AI coding agent sessions and git history.",
+  "type": "module",
+  "bin": {
+    "villani-flight-recorder": "dist/cli.js",
+    "vfr": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "fast-glob": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^20.14.10",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.3",
+    "vitest": "^4.1.9"
+  }
+}

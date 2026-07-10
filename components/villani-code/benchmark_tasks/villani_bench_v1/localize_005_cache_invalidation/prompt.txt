@@ -1,0 +1,1 @@
+Find and fix the cache invalidation bug so a refreshed value is returned after update, without breaking unrelated formatting helpers.

@@ -1,0 +1,1 @@
+Updating a user role should invalidate the cached permissions snapshot. Fix the stale-state bug and verify it.

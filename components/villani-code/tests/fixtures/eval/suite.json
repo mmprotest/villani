@@ -1,0 +1,50 @@
+{
+  "suite_name": "constrained-fixture-suite",
+  "tasks": [
+    {
+      "name": "fix-one-failing-test",
+      "mode": "fix_failing_test",
+      "expected_touch_set": ["src/app.py", "tests/test_app.py"],
+      "simulated_touched_files": ["src/app.py", "tests/test_app.py"],
+      "simulated_success": true,
+      "simulated_validation_success": true,
+      "simulated_context_size_estimate": 1200,
+      "simulated_pruning_events": 1,
+      "simulated_repair_attempts_used": 0,
+      "simulated_catastrophic_failure": false,
+      "simulated_risk_classification": "low",
+      "simulated_validation_breadth": "targeted",
+      "simulated_outcome_status": "success"
+    },
+    {
+      "name": "docs-plan-only",
+      "mode": "inspect_and_plan",
+      "expected_touch_set": [],
+      "simulated_touched_files": [],
+      "simulated_success": true,
+      "simulated_validation_success": true,
+      "simulated_context_size_estimate": 600,
+      "simulated_pruning_events": 0,
+      "simulated_repair_attempts_used": 0,
+      "simulated_catastrophic_failure": false,
+      "simulated_risk_classification": "low",
+      "simulated_validation_breadth": "none",
+      "simulated_outcome_status": "planned"
+    },
+    {
+      "name": "lint-failure-high-risk-abort",
+      "mode": "fix_lint_or_type",
+      "expected_touch_set": ["src/util.py"],
+      "simulated_touched_files": ["src/util.py", "README.md"],
+      "simulated_success": false,
+      "simulated_validation_success": false,
+      "simulated_context_size_estimate": 9000,
+      "simulated_pruning_events": 4,
+      "simulated_repair_attempts_used": 2,
+      "simulated_catastrophic_failure": true,
+      "simulated_risk_classification": "high",
+      "simulated_validation_breadth": "broad",
+      "simulated_outcome_status": "aborted_high_risk"
+    }
+  ]
+}

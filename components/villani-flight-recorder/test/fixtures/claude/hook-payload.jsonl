@@ -1,0 +1,1 @@
+{"session_id":"claude-realistic-1","transcript_path":"/tmp/transcript.jsonl","cwd":"/repo","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"npm test"},"tool_response":{"stdout":"failed","stderr":"","exit_code":1}}

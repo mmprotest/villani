@@ -1,0 +1,9 @@
+{"type":"session_start","session_id":"pi_123","cwd":"/repo","model":"qwen3.6-27b","timestamp":"2026-07-01T01:00:00Z"}
+{"type":"message","role":"user","content":"Fix the repo","timestamp":"2026-07-01T01:00:01Z"}
+{"type":"message","role":"assistant","content":"I will inspect the project.","timestamp":"2026-07-01T01:00:02Z"}
+{"type":"tool_execution_start","tool_name":"bash","args":{"command":"npm test"},"timestamp":"2026-07-01T01:00:03Z"}
+{"type":"tool_execution_update","tool_name":"bash","update":"still running","timestamp":"2026-07-01T01:00:04Z"}
+{"type":"tool_execution_end","tool_name":"bash","result":{"exit_code":1,"stdout":"failed","stderr":""},"timestamp":"2026-07-01T01:00:05Z"}
+{"type":"branch_summary","summary":"Tried one approach, tests failed, patched index.ts.","timestamp":"2026-07-01T01:00:06Z"}
+{"type":"model_change","from":"qwen3.5-9b","to":"qwen3.6-27b","timestamp":"2026-07-01T01:00:07Z"}
+{"type":"compaction","summary":"older messages summarized","timestamp":"2026-07-01T01:00:08Z"}

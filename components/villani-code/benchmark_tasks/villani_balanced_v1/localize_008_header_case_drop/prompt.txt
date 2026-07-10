@@ -1,0 +1,1 @@
+Requests are losing headers during normalization. Find the real source of the bug and make the minimal correct fix.

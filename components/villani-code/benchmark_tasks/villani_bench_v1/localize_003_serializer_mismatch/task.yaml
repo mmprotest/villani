@@ -1,0 +1,25 @@
+id: localize_003_serializer_mismatch
+family: localize_patch
+difficulty: hard
+language: python
+max_minutes: 3
+max_files_touched: 4
+expected_artifacts:
+- patch
+visible_verification:
+- python -c "import pathlib, sys; sys.path.insert(0, str(pathlib.Path('src').resolve()));
+  from app.c import entry; assert entry(1.0) == '1.0'"
+hidden_verification:
+- python -c "import pathlib, sys; sys.path.insert(0, str(pathlib.Path('src').resolve()));
+  from app.c import entry; assert entry(3.5) == '3.5'"
+success_policy:
+  require_visible_pass: true
+  require_hidden_pass: true
+  fail_on_timeout: true
+  fail_on_repo_dirty_outside_allowlist: true
+allowlist_paths:
+- src/app/
+forbidden_paths:
+- tests/
+- pyproject.toml
+benchmark_track: core

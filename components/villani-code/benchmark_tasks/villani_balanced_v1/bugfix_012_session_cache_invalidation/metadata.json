@@ -1,0 +1,33 @@
+{
+  "seed_type": "bug-seeded",
+  "expected_files": [
+    "src/app/store.py"
+  ],
+  "reference_patch_size_lines": 8,
+  "primary_skill": "state-debugging",
+  "secondary_skills": [
+    "pytest"
+  ],
+  "name": "bugfix_012_session_cache_invalidation",
+  "difficulty": "hard",
+  "runtime_stressors": [
+    "stateful_sequence",
+    "cache_invalidation"
+  ],
+  "task_type": "state_sequence_bugfix",
+  "requires_repo_navigation": false,
+  "requires_multi_step_reasoning": true,
+  "has_false_fix_trap": false,
+  "requires_retry_recovery": false,
+  "likely_tool_sequence": [
+    "read_files",
+    "edit_files",
+    "run_tests"
+  ],
+  "evaluation_focus": [
+    "correctness",
+    "state_management"
+  ],
+  "benchmark_bucket": "baseline",
+  "benchmark_track": "core"
+}

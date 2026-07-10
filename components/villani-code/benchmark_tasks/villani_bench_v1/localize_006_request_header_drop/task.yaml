@@ -1,0 +1,25 @@
+id: localize_006_request_header_drop
+family: localize_patch
+difficulty: hard
+language: python
+max_minutes: 4
+max_files_touched: 4
+expected_artifacts:
+- patch
+visible_verification:
+- pytest -q tests/test_request_header_drop.py::test_preserves_authorization_header
+hidden_verification:
+- pytest -q tests/test_request_header_drop.py::test_unrelated_url_helper_still_works
+success_policy:
+  require_visible_pass: true
+  require_hidden_pass: true
+  fail_on_timeout: true
+  fail_on_repo_dirty_outside_allowlist: true
+allowlist_paths:
+- src/app/
+forbidden_paths:
+- tests/
+- pyproject.toml
+- src/app/url.py
+benchmark_track: core
+task_type: localize_patch

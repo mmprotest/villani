@@ -1,0 +1,1 @@
+Fix markdown rendering so underscores inside normal text are escaped, without mangling code spans.

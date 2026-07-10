@@ -1,0 +1,1 @@
+{"session_id":"sess_123","transcript_path":"/tmp/rollout.jsonl","cwd":"/repo","model":"gpt-5-codex","hook_event_name":"PreToolUse","tool_name":"bash","tool_input":{"command":"npm test"}}

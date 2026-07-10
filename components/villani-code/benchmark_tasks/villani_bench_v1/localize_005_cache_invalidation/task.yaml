@@ -1,0 +1,25 @@
+id: localize_005_cache_invalidation
+family: localize_patch
+difficulty: hard
+language: python
+max_minutes: 4
+max_files_touched: 4
+expected_artifacts:
+- patch
+visible_verification:
+- pytest -q tests/test_cache_invalidation.py::test_refresh_after_update
+hidden_verification:
+- python -c "import pathlib, sys; sys.path.insert(0, str(pathlib.Path('src').resolve())); from app.cache import get_value, update_value, format_value; store={'token':'old','other':'keep'}; assert get_value(store, 'token') == 'old'; assert get_value(store, 'other') == 'keep'; update_value(store, 'token', 'new'); assert get_value(store, 'token') == 'new'; assert get_value(store, 'other') == 'keep'; assert format_value(' a ') == 'A'"
+success_policy:
+  require_visible_pass: true
+  require_hidden_pass: true
+  fail_on_timeout: true
+  fail_on_repo_dirty_outside_allowlist: true
+allowlist_paths:
+- src/app/
+forbidden_paths:
+- tests/
+- pyproject.toml
+- src/app/helpers.py
+benchmark_track: core
+task_type: localize_patch

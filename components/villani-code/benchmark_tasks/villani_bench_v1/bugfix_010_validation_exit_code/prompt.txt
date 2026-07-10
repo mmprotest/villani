@@ -1,0 +1,1 @@
+Fix the validation command so invalid data exits non-zero while valid data still exits cleanly.

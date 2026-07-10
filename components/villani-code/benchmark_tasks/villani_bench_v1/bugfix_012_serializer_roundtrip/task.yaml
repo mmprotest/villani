@@ -1,0 +1,26 @@
+id: bugfix_012_serializer_roundtrip
+family: bugfix
+difficulty: hard
+language: python
+max_minutes: 4
+max_files_touched: 4
+expected_artifacts:
+- patch
+visible_verification:
+- pytest -q tests/test_serializer_roundtrip.py::test_roundtrip_preserves_alias_and_extra_fields
+hidden_verification:
+- pytest -q tests/test_serializer_roundtrip.py::test_unaliased_fields_are_not_dropped_on_dump
+success_policy:
+  require_visible_pass: true
+  require_hidden_pass: true
+  fail_on_timeout: true
+  fail_on_repo_dirty_outside_allowlist: true
+allowlist_paths:
+- src/
+- tests/
+allowed_paths:
+- src/
+- tests/
+expected_touched_max: 4
+benchmark_track: core
+task_type: single_file_bugfix

@@ -1,0 +1,33 @@
+{
+  "seed_type": "bug-seeded",
+  "expected_files": [
+    "src/app/settings.py"
+  ],
+  "reference_patch_size_lines": 10,
+  "primary_skill": "python-debugging",
+  "secondary_skills": [
+    "pytest"
+  ],
+  "name": "bugfix_011_cli_env_file_precedence",
+  "difficulty": "hard",
+  "runtime_stressors": [
+    "multi_file_reasoning",
+    "config_precedence"
+  ],
+  "task_type": "multi_file_bugfix",
+  "requires_repo_navigation": false,
+  "requires_multi_step_reasoning": true,
+  "has_false_fix_trap": true,
+  "requires_retry_recovery": false,
+  "likely_tool_sequence": [
+    "read_files",
+    "edit_files",
+    "run_tests"
+  ],
+  "evaluation_focus": [
+    "correctness",
+    "precedence_rules"
+  ],
+  "benchmark_bucket": "baseline",
+  "benchmark_track": "core"
+}
