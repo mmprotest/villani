@@ -135,7 +135,8 @@ class ClaudeCodeAgentRunner(AgentRunner):
             snapshot_ignored.add(str(hook_breadcrumbs_path.relative_to(repo_path)).replace("\\", "/"))
         baseline = snapshot_workspace(repo_path, extra_ignored=snapshot_ignored)
 
-        proc = subprocess.Popen(command, cwd=repo_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        execution_command = self._resolve_subprocess_command(command)
+        proc = subprocess.Popen(execution_command, cwd=repo_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
             timeout_hit = False
@@ -336,7 +337,7 @@ class ClaudeCodeAgentRunner(AgentRunner):
             return dict(cls._capability_cache)
         try:
             completed = subprocess.run(
-                [cls.CLI_EXECUTABLE, "--help"],
+                cls._resolve_subprocess_command([cls.CLI_EXECUTABLE, "--help"]),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -448,7 +449,8 @@ class ClaudeCodeAgentRunner(AgentRunner):
         command = self._apply_capabilities_to_command(command, capabilities, deep_debug=True)
         env = self.build_env(base_url=base_url, api_key=api_key, provider=provider)
         events = [AdapterEvent(type="command_started", timestamp=time.monotonic(), payload={"command": " ".join(command)})]
-        proc = subprocess.Popen(command, cwd=repo_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        execution_command = self._resolve_subprocess_command(command)
+        proc = subprocess.Popen(execution_command, cwd=repo_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
             timeout_hit = False

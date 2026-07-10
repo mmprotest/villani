@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import os
 import shutil
+import stat
 import subprocess
 
 from villani_ops.agentic.git_artifacts import (
@@ -19,6 +21,17 @@ class CopiedGitCandidate:
     candidate_dir: Path
     worktree_path: Path
     patch_path: Path
+
+
+def remove_tree(path: Path) -> None:
+    def make_writable_and_retry(function, name, _exc_info):
+        os.chmod(name, stat.S_IWRITE | stat.S_IREAD)
+        function(name)
+
+    try:
+        shutil.rmtree(Path(path), onerror=make_writable_and_retry)
+    except FileNotFoundError:
+        pass
 
 
 def source_is_git_repo(path: Path) -> bool:
@@ -58,7 +71,7 @@ def create_git_baselined_copy(
     patch_path = candidate_dir / "diff.patch"
     candidate_dir.mkdir(parents=True, exist_ok=True)
     if worktree_path.exists():
-        shutil.rmtree(worktree_path)
+        remove_tree(worktree_path)
     copy_worktree(source_repo, worktree_path, excludes=excludes)
     ensure_git_baseline(worktree_path)
     return CopiedGitCandidate(

@@ -198,7 +198,8 @@ def _sanitize_tool_input_file_path(tool_input: dict[str, Any], repo: Path) -> No
                 fp = str(rel).replace("\\", "/")
             except Exception:
                 pass
-        fp = fp.lstrip("./")
+        while fp.startswith("./"):
+            fp = fp[2:]
         if fp.startswith("/"):
             fp = fp.lstrip("/")
         tool_input["file_path"] = fp
@@ -404,7 +405,9 @@ def _prepare_global_mutation_policy(
     runner: Any, tool_name: str, tool_input: dict[str, Any]
 ) -> tuple[str, dict[str, Any], dict[str, Any] | None]:
     if tool_name == "Write":
-        file_path = str(tool_input.get("file_path", "")).replace("\\", "/").lstrip("./")
+        file_path = str(tool_input.get("file_path", "")).replace("\\", "/")
+        while file_path.startswith("./"):
+            file_path = file_path[2:]
         if not file_path:
             return tool_name, tool_input, None
         path = (runner.repo / file_path).resolve()
@@ -559,7 +562,7 @@ def execute_tool_with_policy(
             )
             if not approved:
                 return {"content": "User denied tool execution", "is_error": True}
-    elif runner.plan_mode != "off" and tool_name in {"Write", "Patch"}:
+    elif runner.plan_mode != "off" and not runner.villani_mode and tool_name in {"Write", "Patch"}:
         return {"content": "Plan mode: edit not executed", "is_error": False}
 
     tool_name, tool_input, forced_result = _prepare_global_mutation_policy(runner, tool_name, tool_input)

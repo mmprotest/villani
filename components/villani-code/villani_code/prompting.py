@@ -109,7 +109,7 @@ def build_planning_instruction(
     }
     return "\n".join(
         [
-            "Create a read-only implementation plan.",
+            "Create an implementation plan in read-only inspection mode.",
             "You may inspect files, search, and reason, but do not edit files, do not run mutating commands, and do not perform git mutations.",
             "Return the final answer as plain text in exactly this structure:",
             "Objective:",

@@ -140,6 +140,10 @@ def test_tui_skips_approval_ui_when_auto_approve_enabled() -> None:
             _ = (instruction, answers)
             raise RuntimeError("unused")
 
+        def run_with_plan(self, plan):
+            _ = plan
+            return {"response": {"content": []}}
+
         def run_villani_mode(self):
             return {"response": {"content": []}}
 

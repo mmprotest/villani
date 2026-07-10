@@ -34,6 +34,8 @@ class ControllerRunner(Protocol):
 
     def run_villani_mode(self) -> dict[str, Any]: ...
 
+    def run_with_plan(self, plan: PlanSessionResult) -> dict[str, Any]: ...
+
 
 class ControllerAppHost(Protocol):
     def post_message(self, message: object) -> object: ...
@@ -76,7 +78,7 @@ class RunnerController:
         self.runner.event_callback = self.on_runner_event
 
     def _validate_runner_contract(self, runner: object) -> None:
-        required_callables = ("run", "plan", "run_villani_mode")
+        required_callables = ("run", "plan", "run_with_plan", "run_villani_mode")
         missing = [name for name in required_callables if not callable(getattr(runner, name, None))]
         if missing:
             raise TypeError(f"RunnerController runner is missing required method(s): {', '.join(missing)}")
@@ -122,6 +124,9 @@ class RunnerController:
 
     def _runner_run_villani_mode(self) -> dict[str, Any]:
         return self.runner.run_villani_mode()
+
+    def _runner_run_with_plan(self, plan: PlanSessionResult) -> dict[str, Any]:
+        return self.runner.run_with_plan(plan)
 
     def reset_session_context(self) -> None:
         self._session_messages = None
@@ -241,7 +246,7 @@ class RunnerController:
         self.app.post_message(StatusUpdate("Executing plan"))
         self._assistant_stream_saw_text = False
         try:
-            result = self._runner_run(plan.instruction, approved_plan=plan)
+            result = self._runner_run_with_plan(plan)
             content = result.get("response", {}).get("content", [])
             response_text = "\n".join(block.get("text", "") for block in content if block.get("type") == "text").strip()
             if response_text and not self._assistant_stream_saw_text:

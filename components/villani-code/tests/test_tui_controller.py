@@ -226,5 +226,5 @@ def test_execute_uses_standard_run_path_with_approved_plan() -> None:
     controller = RunnerController(runner, ExecuteApp(plan))
     controller._run_execute_plan_worker()
 
-    assert runner.run_with_plan_calls == 0
-    assert runner.run_calls == [("implement fix", plan)]
+    assert runner.run_with_plan_calls == 1
+    assert runner.run_calls == []

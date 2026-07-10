@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
-import secrets, shutil
+import secrets
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,7 +12,9 @@ from .verifier_parallel import (
     now,
     write_json,
     append_jsonl,
+    wire_path,
 )
+from villani_ops.isolation.copy_git import remove_tree
 from .selection import select_winner
 
 POLICY = 'binary_verifier_first_success'
@@ -33,19 +35,20 @@ class VerifierSequentialOrchestrator(VerifierParallelOrchestrator):
         super().__init__(config, runner=runner, verifier=verifier, integrator=integrator)
 
     def _candidate_run_row(self, cr: CandidateResult) -> dict[str, Any]:
-        return {'candidateId':cr.candidate_id,'status':cr.run_status,'exitCode':cr.exit_code,'durationSeconds':cr.duration_seconds,'stdoutPath':str(cr.stdout_path) if cr.stdout_path else None,'stderrPath':str(cr.stderr_path) if cr.stderr_path else None,'debugRoot':str(cr.debug_root) if cr.debug_root else None,'debugDir':str(cr.debug_dir) if cr.debug_dir else None,'candidateDebugDir':str(cr.debug_dir) if cr.debug_dir else None,'resolvedTraceDir':str(cr.resolved_trace_dir) if cr.resolved_trace_dir else None}
+        return {'candidateId':cr.candidate_id,'status':cr.run_status,'exitCode':cr.exit_code,'durationSeconds':cr.duration_seconds,'stdoutPath':str(cr.stdout_path) if cr.stdout_path else None,'stderrPath':str(cr.stderr_path) if cr.stderr_path else None,'debugRoot':str(cr.debug_root) if cr.debug_root else None,'debugDir':str(cr.debug_dir) if cr.debug_dir else None,'candidateDebugDir':wire_path(cr.debug_dir),'resolvedTraceDir':str(cr.resolved_trace_dir) if cr.resolved_trace_dir else None}
 
     def _verifier_row(self, cr: CandidateResult, odir: Path) -> dict[str, Any]:
         v=cr.verifier_result or {}
-        return {'candidateId':cr.candidate_id,'result':v.get('result'),'verdict':v.get('verdict'),'confidence':v.get('confidence'),'recommendedAction':v.get('recommendedAction'),'debugDir':str(cr.debug_dir) if cr.debug_dir else None,'candidateDebugDir':str(cr.debug_dir) if cr.debug_dir else None,'verifierTraceDir':v.get('traceDir'),'traceDir':v.get('traceDir'),'verifierResultPath':str(odir/'candidates'/cr.candidate_id/'verifier'/'verifier-result.json')}
+        verifier_trace=wire_path(v.get('traceDir'))
+        return {'candidateId':cr.candidate_id,'result':v.get('result'),'verdict':v.get('verdict'),'confidence':v.get('confidence'),'recommendedAction':v.get('recommendedAction'),'debugDir':str(cr.debug_dir) if cr.debug_dir else None,'candidateDebugDir':wire_path(cr.debug_dir),'verifierTraceDir':verifier_trace,'traceDir':verifier_trace,'verifierResultPath':str(odir/'candidates'/cr.candidate_id/'verifier'/'verifier-result.json')}
 
     def _skipped_record(self, cid: str, winner_id: str | None) -> dict[str, Any]:
         return {'candidateId':cid,'status':'skipped','skipReason':f'Earlier candidate {winner_id} verified as correct.' if winner_id else 'Not attempted.','result':None,'verdict':None}
 
     def _summary(self, cr: CandidateResult, status: str | None = None) -> dict[str, Any]:
         v=cr.verifier_result or {}
-        verifier_trace=v.get('traceDir')
-        return {'candidateId':cr.candidate_id,'status':status or ('selected' if v.get('result') == 1 else 'verified'),'result':v.get('result'),'verdict':v.get('verdict'),'confidence':v.get('confidence'),'candidateDebugDir':str(cr.debug_dir) if cr.debug_dir else None,'verifierTraceDir':verifier_trace,'traceDir':verifier_trace,'patchPath':str(cr.patch_path) if cr.patch_path else None}
+        verifier_trace=wire_path(v.get('traceDir'))
+        return {'candidateId':cr.candidate_id,'status':status or ('selected' if v.get('result') == 1 else 'verified'),'result':v.get('result'),'verdict':v.get('verdict'),'confidence':v.get('confidence'),'candidateDebugDir':wire_path(cr.debug_dir),'verifierTraceDir':verifier_trace,'traceDir':verifier_trace,'patchPath':str(cr.patch_path) if cr.patch_path else None}
 
     def _first_success_selection(self, candidates: list[CandidateResult], skipped: list[str], seed: int, on_all_fail: str, winner: CandidateResult | None) -> dict[str, Any]:
         attempted=[c.candidate_id for c in candidates]
@@ -97,7 +100,7 @@ class VerifierSequentialOrchestrator(VerifierParallelOrchestrator):
         write_json(odir/'orchestration.json', orch); self._transcript(odir, candidates, skipped, selection, integ)
         if not cfg.keep_worktrees and integ.get('status')=='integrated':
             for cr in candidates:
-                if cr.worktree_path and cr.worktree_path.exists(): shutil.rmtree(cr.worktree_path, ignore_errors=True)
+                if cr.worktree_path and cr.worktree_path.exists(): remove_tree(cr.worktree_path)
         out={'schemaVersion':'villani-ops-verifier-sequential-output-v1','orchestrationId':oid,'status':status,'winnerCandidateId':selection.get('winnerCandidateId'),'winnerResult':selection.get('winnerResult'),'stoppedEarly':selection.get('stoppedEarly',False),'attemptedCandidates':len(candidates),'skippedCandidates':len(skipped),'selectionPath':str(odir/'selection.json'),'integrationPath':str(odir/'integration.json'),'materializationPath':str(odir/'materialization.json'),'winnerPatchPath':mat.get('patchPath'),'candidateDebugDir':mat.get('candidateDebugDir'),'verifierTraceDir':mat.get('verifierTraceDir'),'orchestrationDir':str(odir),'candidates':selection.get('allCandidates',[])}
         if cfg.out: write_json(cfg.out, out)
         return out

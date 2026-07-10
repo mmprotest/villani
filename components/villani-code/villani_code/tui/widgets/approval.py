@@ -29,9 +29,11 @@ class ApprovalBar(Vertical):
         yield ListView(id="approval-options")
 
     def on_mount(self) -> None:
+        self.can_focus = False
         self.display = False
 
     def show_request(self, prompt: str, request_id: str, choices: list[str]) -> None:
+        self.can_focus = True
         self.request_id = request_id
         self._choices = choices
         self._prompt_text = prompt
@@ -47,6 +49,9 @@ class ApprovalBar(Vertical):
         self.focus_options()
 
     def hide_request(self) -> None:
+        options = self._options()
+        self.can_focus = False
+        options.can_focus = False
         self.request_id = None
         self._prompt_text = ""
         self.display = False

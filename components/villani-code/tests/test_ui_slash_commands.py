@@ -14,6 +14,21 @@ from villani_code.tui.widgets.slash_popup import SlashCommandPopup
 class DummyRunner:
     model = "demo"
     permissions = None
+    print_stream = False
+    approval_callback = None
+    event_callback = None
+
+    def run(self, instruction, messages=None, execution_budget=None):
+        return {"response": {"content": [{"type": "text", "text": instruction}]}}
+
+    def plan(self, instruction, answers=None):
+        raise RuntimeError("unused")
+
+    def run_with_plan(self, plan):
+        return {"response": {"content": []}}
+
+    def run_villani_mode(self):
+        return {"response": {"content": []}}
 
 
 class FakeController:
@@ -79,6 +94,7 @@ def test_slash_popup_visibility_and_filtering(tmp_path: Path) -> None:
             popup = app.query_one(SlashCommandPopup)
 
             input_widget.focus()
+            await pilot.pause()
             await pilot.press("slash")
             await pilot.pause()
             assert popup.visible
@@ -110,6 +126,7 @@ def test_slash_popup_keyboard_controls(tmp_path: Path) -> None:
             popup = app.query_one(SlashCommandPopup)
 
             input_widget.focus()
+            await pilot.pause()
             await pilot.press("slash")
             await pilot.pause()
             first = popup.selected_item()
@@ -127,7 +144,7 @@ def test_slash_popup_keyboard_controls(tmp_path: Path) -> None:
             assert popup.selected_item().trigger == first.trigger
 
             await pilot.press("tab")
-            await pilot.pause()
+            await pilot.pause(0.02)
             assert input_widget.value == first.trigger
             assert popup.visible
 

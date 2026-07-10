@@ -162,7 +162,7 @@ def test_approval_keys_are_contained_and_resolve_selection(tmp_path: Path) -> No
             assert bar.query_one("#approval-options", ListView).index == 1
 
             await pilot.press("enter")
-            await pilot.pause()
+            await pilot.pause(0.02)
 
             assert app.controller.approvals == [("r1", "always")]
             assert input_widget.disabled is False
@@ -181,7 +181,7 @@ def test_one_enter_resolves_selected_approval_choice_immediately(tmp_path: Path)
             await pilot.pause()
 
             await pilot.press("enter")
-            await pilot.pause()
+            await pilot.pause(0.02)
 
             assert app.controller.approvals == [("r-enter", "yes")]
             assert app.query_one(ApprovalBar).display is False
@@ -217,7 +217,7 @@ def test_enter_submits_normally_after_approval_resolution(tmp_path: Path) -> Non
             await pilot.pause()
 
             await pilot.press("enter")
-            await pilot.pause()
+            await pilot.pause(0.02)
             assert app.controller.approvals == [("r-submit", "yes")]
 
             input_widget.value = "submit-now"
@@ -239,7 +239,7 @@ def test_escape_denies_and_restores_focus(tmp_path: Path) -> None:
             await pilot.pause()
 
             await pilot.press("escape")
-            await pilot.pause()
+            await pilot.pause(0.02)
 
             assert app.controller.approvals == [("r2", "no")]
             assert input_widget.disabled is False

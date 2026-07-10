@@ -31,9 +31,9 @@ for group in settings.get('hooks', {}).values():
     for entry in group:
         command = entry.get('hooks', [{}])[0].get('command')
         if isinstance(command, str) and command:
-            parsed = shlex.split(command)
+            parsed = shlex.split(command, posix=sys.platform != 'win32')
             if parsed:
-                hook_target = parsed[2]
+                hook_target = parsed[2].strip('"')
 
 if prompt == 'edit-file':
     Path('edited.txt').write_text('edited\\n', encoding='utf-8')

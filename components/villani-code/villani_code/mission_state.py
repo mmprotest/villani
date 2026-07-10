@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -114,7 +115,8 @@ def get_current_mission_metadata_path(repo: Path) -> Path:
 def new_mission_id() -> str:
     # Keep a sortable UTC timestamp prefix while adding sub-second precision
     # so multiple IDs created in the same second do not collide.
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%f")
+    return f"{timestamp}_{uuid.uuid4().hex[:8]}Z"
 
 
 def create_mission_state(repo: Path, objective: str, mode: str, mission_id: str | None = None) -> MissionState:

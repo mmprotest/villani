@@ -60,8 +60,13 @@ class MemoryDeadEndInput(BaseModel):
 
 
 MEMORY_TOOL_MODELS: dict[str, type[BaseModel]] = {
+    "memory_get_repo_summary": MemoryNoInput,
     "memory_get_current_state": MemoryNoInput,
     "memory_search": MemorySearchInput,
+    "memory_recent_commands": MemoryLimitInput,
+    "memory_recent_failures": MemoryLimitInput,
+    "memory_changed_files": MemoryLimitInput,
+    "memory_inspected_files": MemoryLimitInput,
     "memory_record_hypothesis": MemoryHypothesisInput,
     "memory_record_dead_end": MemoryDeadEndInput,
 }
@@ -69,6 +74,7 @@ MEMORY_TOOL_MODELS: dict[str, type[BaseModel]] = {
 
 def memory_tool_specs() -> list[dict[str, Any]]:
     descriptions = {
+        "memory_get_repo_summary": "Get the compact repository summary captured for this task.",
         "memory_get_current_state": (
             "Get the compact task-scoped state for this run: repo summary, inspected files, commands run, "
             "changes made, current failures, active hypotheses, dead ends, and next best action. Use only "
@@ -79,6 +85,10 @@ def memory_tool_specs() -> list[dict[str, Any]]:
             "hypotheses, dead ends, paths, errors, or decisions. Use only when looking up prior state would "
             "avoid repeated work."
         ),
+        "memory_recent_commands": "Get the most recent task-scoped command records.",
+        "memory_recent_failures": "Get the most recent task-scoped failed commands and validation signals.",
+        "memory_changed_files": "Get the most recent task-scoped file change records.",
+        "memory_inspected_files": "Get the most recent task-scoped file inspection records.",
         "memory_record_hypothesis": (
             "Record a useful debugging hypothesis and evidence. Status must be active, confirmed, rejected, "
             "or superseded. Use confirmed for verified/proven hypotheses."

@@ -243,7 +243,7 @@ def test_autonomous_summary_mirrors_to_mission_state(tmp_path: Path, monkeypatch
         def format_summary(summary):
             return "ok"
 
-    monkeypatch.setattr("villani_code.state.VillaniModeController", FakeController)
+    monkeypatch.setitem(Runner.run_villani_mode.__globals__, "VillaniModeController", FakeController)
     runner = Runner(client=DummyClient(), repo=tmp_path, model="x", stream=False, print_stream=False, villani_mode=True)
     runner.run_villani_mode()
     state = load_mission_state(tmp_path, runner._mission_id)

@@ -263,10 +263,18 @@ def _normalize_open_questions(raw_questions: Any) -> list[PlanQuestion]:
 
 
 def _normalize_validation_items(artifact: dict[str, Any]) -> list[str]:
-    return _normalize_plan_text_list(
+    validation_items = _normalize_plan_text_list(
         artifact.get("validation_approach", artifact.get("validation", [])),
         limit=16,
     )
+    if validation_items:
+        return validation_items
+    validation_markers = ("test", "pytest", "check", "lint", "build", "compile", "validate", "verification")
+    return [
+        step
+        for step in _normalize_plan_text_list(artifact.get("recommended_steps", []), limit=24)
+        if any(marker in step.casefold() for marker in validation_markers)
+    ][:16]
 
 
 def _is_coherent_plan_artifact(artifact: dict[str, Any], instruction: str) -> bool:
@@ -274,7 +282,42 @@ def _is_coherent_plan_artifact(artifact: dict[str, Any], instruction: str) -> bo
     steps = _normalize_plan_text_list(artifact.get("recommended_steps", []), limit=24)
     open_questions = _normalize_open_questions(artifact.get("open_questions", []))
     validation_items = _normalize_validation_items(artifact)
-    return bool(task_summary and (steps or open_questions or validation_items))
+    candidate_files = _normalize_plan_text_list(artifact.get("candidate_files", []), limit=16)
+    concrete_steps = [
+        step
+        for step in steps
+        if any(path in step or Path(path).name in step for path in candidate_files)
+    ]
+    return bool(task_summary and (open_questions or validation_items or concrete_steps))
+
+
+def _fallback_plan_result(
+    instruction: str,
+    artifact: dict[str, Any] | None,
+    resolved_answers: list[PlanAnswer],
+    evidence_paths: list[str],
+) -> PlanSessionResult:
+    payload = artifact or {}
+    task_summary = str(payload.get("task_summary", "")).strip() or instruction.strip()
+    candidate_files = _normalize_plan_text_list(payload.get("candidate_files", []), limit=16)
+    if not candidate_files:
+        candidate_files = evidence_paths[:8]
+    assumptions = _normalize_plan_text_list(payload.get("assumptions", []), limit=24)
+    assumptions.extend(f"Evidence inspected: {path}" for path in evidence_paths[:8])
+    assumptions.extend(_format_answer(answer) for answer in resolved_answers)
+    recommended_steps = _normalize_plan_text_list(payload.get("recommended_steps", []), limit=24)
+    return PlanSessionResult(
+        instruction=instruction,
+        task_summary=task_summary,
+        candidate_files=candidate_files,
+        assumptions=_dedupe_preserve(assumptions),
+        recommended_steps=recommended_steps,
+        resolved_answers=resolved_answers,
+        ready_to_execute=False,
+        execution_brief="\n".join([task_summary, *recommended_steps]),
+        risk_level=str(payload.get("risk_level", "medium")),
+        confidence_score=0.35,
+    )
 
 
 def _parse_strict_json_object(raw_text: str) -> dict[str, Any] | None:
@@ -331,6 +374,14 @@ def _extract_assistant_plan_text(run_result: dict[str, Any]) -> str:
         if text:
             blocks.append(text)
     return "\n".join(blocks).strip()
+
+
+def _extract_embedded_json_plan_artifact(plan_text: str) -> dict[str, Any] | None:
+    for match in reversed(list(re.finditer(r"```(?:json)?\s*(\{.*?\})\s*```", plan_text, flags=re.DOTALL))):
+        parsed = _parse_strict_json_object(match.group(1))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def format_plan_text_to_artifact(instruction: str, plan_text: str) -> dict[str, Any]:
@@ -425,6 +476,8 @@ def _build_plan_result_from_artifact(
     evidence_paths: list[str],
 ) -> PlanSessionResult | None:
     task_summary = str(artifact.get("task_summary", "")).strip() or instruction.strip()
+    if task_summary.casefold() in {"repo improvement plan", "implementation plan", "plan"}:
+        task_summary = instruction.strip()
     candidate_files = _normalize_plan_text_list(artifact.get("candidate_files", []), limit=16)
     assumptions = _normalize_plan_text_list(artifact.get("assumptions", []), limit=24)
     recommended_steps = _normalize_plan_text_list(artifact.get("recommended_steps", []), limit=24)
@@ -438,7 +491,7 @@ def _build_plan_result_from_artifact(
     assumptions.extend(_format_answer(answer) for answer in resolved_answers)
     assumptions = _dedupe_preserve(assumptions)
 
-    has_required_execution_detail = bool(recommended_steps and validation_items)
+    has_required_execution_detail = bool(candidate_files and recommended_steps and validation_items)
     ready = has_required_execution_detail and not open_questions
     brief = "\n".join([task_summary, *recommended_steps])
     return PlanSessionResult(
@@ -727,7 +780,12 @@ class Runner:
                 artifact = _extract_strict_json_plan_artifact(run_result)
             if not isinstance(artifact, dict):
                 assistant_text = _extract_assistant_plan_text(run_result)
-                artifact = format_plan_text_to_artifact(instruction, assistant_text) if assistant_text else None
+                artifact = (
+                    _extract_embedded_json_plan_artifact(assistant_text)
+                    or format_plan_text_to_artifact(instruction, assistant_text)
+                    if assistant_text
+                    else None
+                )
             if isinstance(artifact, dict):
                 plan_result = _build_plan_result_from_artifact(instruction, artifact, resolved_answers, evidence_paths)
                 if plan_result is not None:
@@ -735,7 +793,13 @@ class Runner:
                         (self._mission_dir / "plan_artifact.json").write_text(json.dumps(plan_result.to_dict(), indent=2), encoding="utf-8")
                     self.event_callback({"type": "plan_finalized", "source": "runtime", "ready_to_execute": plan_result.ready_to_execute})
                     return plan_result
-            message = "Planning failed: could not recover a structured plan from model output."
+            fallback = _fallback_plan_result(
+                instruction,
+                artifact if isinstance(artifact, dict) else None,
+                resolved_answers,
+                evidence_paths,
+            )
+            message = "Planning incomplete: could not recover an execution-ready structured plan from model output."
             self.event_callback(
                 {
                     "type": "plan_failed",
@@ -744,7 +808,7 @@ class Runner:
                     "ready_to_execute": False,
                 }
             )
-            raise RuntimeError(message)
+            return fallback
         finally:
             self._planning_read_only = False
             self._runtime_mode = "execution"
@@ -1203,7 +1267,7 @@ class Runner:
 
             try:
                 raw = self.client.create_message(payload, stream=self.stream)
-                if self.stream:
+                if self.stream and not isinstance(raw, dict):
                     events = []
                     for event in raw:
                         events.append(event)
@@ -1672,17 +1736,6 @@ class Runner:
             reason = _budget_reason()
             if reason:
                 return _finish_bounded(response, reason, reason == "completed")
-            next_user_content = copy.deepcopy(tool_results)
-
-            if self._pending_verification and next_user_content:
-                existing = str(next_user_content[-1].get("content", ""))
-                next_user_content[-1]["content"] = (
-                    f"{existing}\n\n{self._pending_verification}"
-                    if existing
-                    else self._pending_verification
-                )
-                self._pending_verification = ""
-
             next_user_content = copy.deepcopy(tool_results)
 
             if self._pending_verification and next_user_content:

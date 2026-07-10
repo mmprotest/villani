@@ -3,6 +3,7 @@ import os, subprocess, shutil, json, signal, time
 from pathlib import Path
 from .base import RunnerContext, RunnerResult
 from .villani_code_debug import write_runner_telemetry
+from villani_ops.subprocess_utils import resolve_command_prefix
 
 def provider_for_villani_code_cli(provider: str) -> str:
     normalized = (provider or "").strip().lower()
@@ -21,7 +22,8 @@ class VillaniCodeRunner:
         return f"""Objective:\n{c.task_instruction}\n\nSuccess criteria:\n{c.success_criteria or 'Not provided'}\n\nAttempt: {c.attempt_id}\nWork only in repo: {c.repo_path}\n"""
     def run(self, context: RunnerContext) -> RunnerResult:
         command_name=context.backend.command_name or 'villani-code'
-        if shutil.which(command_name) is None:
+        command_prefix=resolve_command_prefix(command_name)
+        if command_prefix is None:
             return RunnerResult(exit_code=127, stderr=f"Villani Code command '{command_name}' was not found.")
         api_key=context.backend.resolved_api_key()
         if not api_key:
@@ -79,8 +81,11 @@ class VillaniCodeRunner:
                         time.sleep(0.05)
                     if p.poll() is not None: break
             else:
-                try: p.terminate()
-                except Exception: pass
+                try:
+                    subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F'], text=True, capture_output=True, timeout=5)
+                except Exception:
+                    try: p.terminate()
+                    except Exception: pass
                 try: p.wait(timeout=1)
                 except Exception:
                     try: p.kill()
@@ -94,7 +99,8 @@ class VillaniCodeRunner:
         try:
             popen_kwargs={'cwd':context.repo_path,'text':True,'stdout':subprocess.PIPE,'stderr':subprocess.PIPE,'env':{**os.environ, **context.env}}
             if os.name == 'posix': popen_kwargs['start_new_session']=True
-            proc=subprocess.Popen(cmd, **popen_kwargs)
+            elif hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'): popen_kwargs['creationflags']=subprocess.CREATE_NEW_PROCESS_GROUP
+            proc=subprocess.Popen([*command_prefix, *cmd[1:]], **popen_kwargs)
             stdout, stderr = proc.communicate(timeout=context.timeout_seconds)
             return _result(proc.returncode, stdout, stderr)
         except subprocess.TimeoutExpired as e:

@@ -205,6 +205,19 @@ def test_villani_mode_startup_without_prompt(tmp_path: Path) -> None:
 
     class MinimalRunner:
         model = "m"
+        permissions = None
+        print_stream = False
+        approval_callback = None
+        event_callback = None
+
+        def run(self, instruction, messages=None, execution_budget=None):
+            return {"response": {"content": [{"type": "text", "text": instruction}]}}
+
+        def plan(self, instruction, answers=None):
+            raise RuntimeError("unused")
+
+        def run_with_plan(self, plan):
+            return {"response": {"content": []}}
 
         def run_villani_mode(self):
             return {"response": {"content": [{"type": "text", "text": "done"}]}}

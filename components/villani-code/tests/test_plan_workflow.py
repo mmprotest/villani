@@ -44,9 +44,31 @@ class DummyClient:
         }
 
 
+def _seed_planning_repo(repo: Path) -> None:
+    (repo / "villani_code").mkdir()
+    (repo / "villani_code" / "state.py").write_text("def plan():\n    pass\n", encoding="utf-8")
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_plan_workflow.py").write_text("def test_plan():\n    assert True\n", encoding="utf-8")
+
+
 class DummyRunnerForApp:
     model = "demo"
     permissions = None
+    print_stream = False
+    approval_callback = None
+    event_callback = None
+
+    def run(self, instruction, messages=None, execution_budget=None):
+        return {"response": {"content": [{"type": "text", "text": instruction}]}}
+
+    def plan(self, instruction, answers=None):
+        raise RuntimeError("unused")
+
+    def run_with_plan(self, plan):
+        return {"response": {"content": []}}
+
+    def run_villani_mode(self):
+        return {"response": {"content": []}}
 
 
 class ControllerSpy:
@@ -194,6 +216,7 @@ def test_plan_question_enforces_four_options_and_single_other() -> None:
 
 
 def test_runner_plan_summary_does_not_include_planning_boilerplate(tmp_path: Path) -> None:
+    _seed_planning_repo(tmp_path)
     runner = Runner(DummyClient(), tmp_path, model="demo")
     instruction = "Look through the repo and find improvements I can make"
     result = runner.plan(instruction)
@@ -203,6 +226,7 @@ def test_runner_plan_summary_does_not_include_planning_boilerplate(tmp_path: Pat
 
 
 def test_runner_plan_for_repo_review_has_concrete_steps_without_generic_questions(tmp_path: Path) -> None:
+    _seed_planning_repo(tmp_path)
     runner = Runner(DummyClient(), tmp_path, model="demo")
     result = runner.plan("Find improvements for this repo")
     assert result.ready_to_execute is True
@@ -223,6 +247,7 @@ def test_runner_plan_for_repo_review_has_concrete_steps_without_generic_question
 
 
 def test_runner_plan_records_real_file_evidence(tmp_path: Path) -> None:
+    _seed_planning_repo(tmp_path)
     runner = Runner(DummyClient(), tmp_path, model="demo")
     result = runner.plan("Find improvements for this repo")
     assert any(item.startswith("Evidence inspected: ") for item in result.assumptions)
@@ -257,8 +282,9 @@ def test_plan_uses_runtime_loop_for_recovered_artifact(tmp_path: Path, monkeypat
 
 def test_plan_runtime_prompt_contains_multi_file_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runner = Runner(DummyClient(), tmp_path, model="demo")
-    monkeypatch.setattr(
-        "villani_code.state._collect_planning_evidence",
+    monkeypatch.setitem(
+        Runner.plan.__globals__,
+        "_collect_planning_evidence",
         lambda *_a, **_k: [
             {"path": "villani_code/state.py", "excerpt": "def plan"},
             {"path": "villani_code/state_tooling.py", "excerpt": "def execute_tool_with_policy"},
@@ -550,7 +576,7 @@ def test_plan_payload_dicts_are_normalized_for_clean_rendering(tmp_path: Path, m
         "confidence_score": 0.7,
     }
 
-    monkeypatch.setattr("villani_code.state._collect_planning_evidence", lambda *_a, **_k: [{"path": "villani_code/state.py", "excerpt": "def plan"}])
+    monkeypatch.setitem(Runner.plan.__globals__, "_collect_planning_evidence", lambda *_a, **_k: [{"path": "villani_code/state.py", "excerpt": "def plan"}])
     monkeypatch.setattr(
         runner,
         "run",
@@ -580,7 +606,7 @@ def test_runner_plan_inspects_real_repo_files_not_only_repo_map(tmp_path: Path, 
         touched.append(str(repo / "villani_code/state.py"))
         return [{"path": "villani_code/state.py", "excerpt": "def plan"}]
 
-    monkeypatch.setattr("villani_code.state._collect_planning_evidence", fake_collect)
+    monkeypatch.setitem(Runner.plan.__globals__, "_collect_planning_evidence", fake_collect)
     runner.plan("Find ways to improve this repo")
     assert touched
 

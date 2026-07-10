@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from rich.text import Text
 from textual import on
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, ScreenStackError
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
@@ -112,6 +112,16 @@ class VillaniTranscript(VerticalScroll):
         event.stop()
 
 
+class VillaniInput(Input):
+    BINDINGS = [*Input.BINDINGS, Binding("tab", "complete_slash", show=False, priority=True)]
+
+    def action_complete_slash(self) -> None:
+        app = self.app
+        if isinstance(app, VillaniTUI) and app.complete_slash():
+            return
+        self.screen.focus_next()
+
+
 class VillaniTUI(App[None]):
     CSS_PATH = "styles.tcss"
     BINDINGS = [
@@ -149,7 +159,7 @@ class VillaniTUI(App[None]):
                 yield SlashCommandPopup()
                 with Horizontal(id="input-row"):
                     yield Static("Villani Code >", id="input-prompt")
-                    yield Input(id="input")
+                    yield VillaniInput(id="input", select_on_focus=False)
 
     def on_mount(self) -> None:
         log = self.query_one(VillaniTranscript)
@@ -163,12 +173,12 @@ class VillaniTUI(App[None]):
             objective = self.villani_objective or "inspect and improve this repository autonomously"
             self._append_log_line(log, f"Villani mode active: {objective}")
             self.query_one(StatusBarWidget).set_status("scanning repo")
-            input_widget = self.query_one(Input)
+            input_widget = self.query_one("#input", Input)
             input_widget.disabled = True
             self.controller.run_villani_mode()
         else:
             self._append_log_line(log, "Ready. Type /help for commands.")
-            self.query_one(Input).focus()
+            self.query_one("#input", Input).focus()
         self.query_one(StatusBarWidget).set_follow_mode(self.follow_tail)
         self.query_one(StatusBarWidget).set_plan_mode(self._is_plan_mode_active())
         self.query_one(StatusBarWidget).set_auto_approve_mode(auto_approve)
@@ -180,7 +190,7 @@ class VillaniTUI(App[None]):
         self.planning_session.stage = stage
         try:
             self.query_one(StatusBarWidget).set_plan_mode(self._is_plan_mode_active())
-        except NoMatches:
+        except (NoMatches, ScreenStackError):
             pass
 
     def set_plan_stage(self, stage: str) -> None:
@@ -193,13 +203,19 @@ class VillaniTUI(App[None]):
     def _status_widget(self) -> StatusBarWidget | None:
         try:
             return self.query_one(StatusBarWidget)
-        except NoMatches:
+        except (NoMatches, ScreenStackError):
             return None
 
     def _question_widget(self) -> PlanQuestionWidget | None:
         try:
             return self.query_one(PlanQuestionWidget)
-        except NoMatches:
+        except (NoMatches, ScreenStackError):
+            return None
+
+    def _input_widget(self) -> Input | None:
+        try:
+            return self.query_one("#input", Input)
+        except (NoMatches, ScreenStackError):
             return None
 
     def apply_plan_result(self, result: PlanSessionResult, reset_answers: bool) -> None:
@@ -233,21 +249,20 @@ class VillaniTUI(App[None]):
         self._interaction_mode = mode
 
     def _restore_input_focus(self) -> None:
-        def _focus_input() -> None:
-            input_widget = self.query_one(Input)
-            if not input_widget.disabled:
-                input_widget.focus()
-
-        self.call_after_refresh(_focus_input)
+        input_widget = self._input_widget()
+        if input_widget is not None and not input_widget.disabled:
+            self.set_focus(input_widget)
+            self.call_after_refresh(lambda: self.set_focus(input_widget))
 
     def _enter_normal_mode(self) -> None:
-        input_widget = self.query_one(Input)
-        input_widget.disabled = False
+        input_widget = self._input_widget()
+        if input_widget is not None:
+            input_widget.disabled = False
         self._set_interaction_mode(InteractionMode.NORMAL)
         self._restore_input_focus()
 
     def _enter_approval_mode(self, prompt: str, request_id: str, choices: list[str]) -> None:
-        input_widget = self.query_one(Input)
+        input_widget = self.query_one("#input", Input)
         input_widget.disabled = True
         bar = self.query_one(ApprovalBar)
         bar.show_request(prompt, request_id, choices)
@@ -255,7 +270,7 @@ class VillaniTUI(App[None]):
         self.call_after_refresh(bar.focus_options)
 
     def _enter_clarification_mode(self, question: PlanQuestion) -> None:
-        input_widget = self.query_one(Input)
+        input_widget = self.query_one("#input", Input)
         input_widget.disabled = True
         widget = self.query_one(PlanQuestionWidget)
         widget.show_question(question)
@@ -331,6 +346,23 @@ class VillaniTUI(App[None]):
         except Exception:
             self.post_message(StatusUpdate("Failed to copy console text."))
 
+    def complete_slash(self) -> bool:
+        popup = self._slash_popup()
+        input_widget = self._input_widget()
+        if (
+            popup is None
+            or input_widget is None
+            or not popup.visible
+        ):
+            return False
+        trigger = popup.accept_selected_trigger()
+        if trigger is not None:
+            input_widget.value = trigger
+            input_widget.cursor_position = len(trigger)
+            self._refresh_slash_popup(trigger)
+            return True
+        return False
+
     def _log_local_meta(self, text: str) -> None:
         if self.is_running:
             self.post_message(LogAppend(text, kind="meta"))
@@ -340,7 +372,7 @@ class VillaniTUI(App[None]):
     def _slash_popup(self) -> SlashCommandPopup | None:
         try:
             return self.query_one(SlashCommandPopup)
-        except NoMatches:
+        except (NoMatches, ScreenStackError):
             return None
 
     def _refresh_slash_popup(self, value: str) -> None:
@@ -371,7 +403,7 @@ class VillaniTUI(App[None]):
         if trigger == "/plan":
             self._clear_plan_session()
             self._set_plan_stage("awaiting_prompt")
-            self._log_local_meta("Enter a planning prompt for read-only plan generation.")
+            self._log_local_meta("Enter a planning prompt. Plan generation is read-only.")
             status = self._status_widget()
             if status is not None:
                 status.set_status("Awaiting plan prompt")
@@ -500,7 +532,7 @@ class VillaniTUI(App[None]):
 
     def _schedule_stream_flush(self) -> None:
         if self._stream_flush_timer is None:
-            self._stream_flush_timer = self.set_timer(0.04, self._flush_stream_timer)
+            self._stream_flush_timer = self.set_timer(0, self._flush_stream_timer)
 
     def _flush_stream_timer(self) -> None:
         self._stream_flush_timer = None
@@ -545,7 +577,7 @@ class VillaniTUI(App[None]):
                 self._ai_streaming = True
                 self.set_follow_tail(True)
             self._stream_buffer += text
-            self._schedule_stream_flush()
+            self._flush_stream_buffer(log)
             return
 
         self._end_ai_stream_if_open(log)
@@ -569,8 +601,9 @@ class VillaniTUI(App[None]):
             return
         self.controller.resolve_approval(request_id, event.choice)
         self._interrupts.reset_interrupt_state()
-        bar.hide_request()
         self._enter_normal_mode()
+        bar.hide_request()
+        self._restore_input_focus()
 
     def on_key(self, event: Key) -> None:
         if self._interaction_mode == InteractionMode.APPROVAL:
@@ -604,13 +637,12 @@ class VillaniTUI(App[None]):
             return
 
         popup = self._slash_popup()
-        input_widget = self.query_one(Input)
+        input_widget = self.query_one("#input", Input)
         popup_visible = bool(popup is not None and popup.visible)
         if (
             self._interaction_mode == InteractionMode.SLASH
             and popup is not None
             and popup_visible
-            and self.focused is input_widget
         ):
             if event.key == "down":
                 popup.cursor_down()
@@ -627,9 +659,10 @@ class VillaniTUI(App[None]):
             elif event.key == "enter":
                 selected = popup.selected_item()
                 if selected is not None:
-                    input_widget.value = selected.trigger
+                    trigger = selected.trigger
+                    input_widget.value = ""
                     self._close_slash_popup()
-                    self._handle_slash_command(selected.trigger)
+                    self._handle_slash_command(trigger)
                     self._restore_input_focus()
             else:
                 return

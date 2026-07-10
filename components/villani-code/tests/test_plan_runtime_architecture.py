@@ -239,15 +239,17 @@ def test_planning_recovers_plain_text_plan_without_submit_plan(tmp_path: Path, m
     assert "pytest tests/test_plan_runtime_architecture.py" in result.assumptions
 
 
-def test_planning_fails_for_unrecoverable_plain_text_without_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_planning_returns_conservative_fallback_for_unrecoverable_plain_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runner = Runner(SequencedClient([]), tmp_path, model="demo", stream=False)
     monkeypatch.setattr(
         runner,
         "run",
         lambda *_a, **_k: {"response": {"content": [{"type": "text", "text": "I will inspect files and provide a plan soon."}]}}
     )
-    with pytest.raises(RuntimeError, match="could not recover a structured plan"):
-        runner.plan("Fix a defect in this repo")
+    result = runner.plan("Fix a defect in this repo")
+    assert result.ready_to_execute is False
+    assert result.confidence_score == 0.35
+    assert result.task_summary
 
 
 def test_planning_recovers_bulleted_plain_text_without_headings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

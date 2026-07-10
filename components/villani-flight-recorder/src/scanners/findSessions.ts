@@ -65,11 +65,12 @@ export async function findSessions(
     });
     for (const f of files) {
       try {
-        const st = await fs.stat(f);
-        const parsed = await parsers[provider](f);
+        const sessionPath = path.resolve(f);
+        const st = await fs.stat(sessionPath);
+        const parsed = await parsers[provider](sessionPath);
         out.push({
           provider,
-          path: f,
+          path: sessionPath,
           mtimeMs: st.mtimeMs,
           size: st.size,
           cwd: parsed.cwd,

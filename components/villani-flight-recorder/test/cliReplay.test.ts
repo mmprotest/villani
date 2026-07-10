@@ -7,10 +7,15 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const fx = (p: string) => path.resolve("test/fixtures", p);
+const build = async () => {
+  const npmCli = process.env.npm_execpath;
+  if (!npmCli) throw new Error("npm_execpath is required for CLI build tests");
+  await exec(process.execPath, [npmCli, "run", "build"]);
+};
 
 describe("CLI replay output workflow", () => {
   it("replay --session --out <dir> writes index.html to the requested directory", async () => {
-    await exec("npm", ["run", "build"]);
+    await build();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-out-"));
     const out = path.join(dir, "artifact");
     const { stdout } = await exec("node", [
@@ -31,7 +36,7 @@ describe("CLI replay output workflow", () => {
   }, 20000);
 
   it("replay --latest --root searches the custom root", async () => {
-    await exec("npm", ["run", "build"]);
+    await build();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-latest-"));
     const { stdout } = await exec("node", [
       "dist/cli.js",
@@ -54,7 +59,7 @@ describe("CLI replay output workflow", () => {
   }, 20000);
 
   it("replay --latest --root strictly filters provider sessions", async () => {
-    await exec("npm", ["run", "build"]);
+    await build();
     for (const provider of ["codex", "claude", "pi"] as const) {
       const dir = await fs.mkdtemp(
         path.join(os.tmpdir(), `vfr-latest-${provider}-`),

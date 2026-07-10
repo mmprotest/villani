@@ -93,3 +93,22 @@ At the end of every milestone, report:
 - assumptions
 - known risks
 - confirmation that the next milestone was not started
+
+## Durable repository rules
+
+1. Read root `PLANS.md` before editing.
+2. Implement only the milestone named by the current user prompt.
+3. Do not begin a later milestone.
+4. Preserve unrelated user changes.
+5. `components/villani-code` owns coding execution.
+6. `components/villani-ops` owns the deterministic closed-loop controller and public CLI.
+7. `components/villani-flight-recorder` is a read-only observability consumer.
+8. Root `schemas` is the normative cross-component wire contract.
+9. Classification must happen before coding backend selection.
+10. Verifier errors, unclear verdicts, missing evidence, and malformed output are never acceptance eligible.
+11. Selection receives only acceptance-eligible candidates.
+12. Unknown cost is `null` plus an accounting status, never numeric zero.
+13. Only the selected recorded patch may be materialized.
+14. Never write API keys or secrets to logs, fixtures, run bundles, or reports.
+15. Run the component-specific verification commands for every edited component.
+16. Update only the progress section of `PLANS.md` at the end of a pass.

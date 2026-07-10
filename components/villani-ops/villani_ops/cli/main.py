@@ -11,6 +11,7 @@ from villani_ops.policy_engine.defaults import DEFAULT_PROFILES
 from villani_ops.controller.progress import RunProgressReporter
 from villani_ops.agentic.progress import AgenticProgressReporter
 from villani_ops.core.policy import DEFAULT_TIMEOUT_SECONDS
+from villani_ops.subprocess_utils import resolve_command_prefix
 
 app=typer.Typer(help='Villani Ops: CLI-only multi-agent performance orchestrator for coding tasks.')
 backend_app=typer.Typer(); task_app=typer.Typer(); policy_app=typer.Typer(); runner_app=typer.Typer(); viewer_app=typer.Typer(help='Local run viewer commands'); orchestrate_app=typer.Typer(help='Orchestration modes')
@@ -560,6 +561,7 @@ def pr(run_id: str, title: str=typer.Option(...), body: str=typer.Option(''), br
     manual=manual_pr_commands(branch_name,title,body)
     recovery=['Run git status before continuing.', f'Use manual commands for branch {branch_name} if needed.']
     gh=shutil.which('gh')
+    gh_command=resolve_command_prefix(gh or 'gh') if gh else None
     if not gh and not no_push and not prepare_branch:
         art={'attempted':False,'gh_available':False,'branch':branch_name,'title':title,'body':body,'push_skipped':False,'exit_code':127,'stdout':'','stderr':'gh CLI is unavailable; no mutation performed without --prepare-branch','url':None,'manual_commands':manual,'recovery_instructions':recovery,'created_at':datetime.now(timezone.utc).isoformat()}
         (run_dir/'pr.json').write_text(json.dumps(art, indent=2)); console.print('gh not available; no mutation performed. Re-run with --prepare-branch or run manually:\n'+'\n'.join(manual)); raise typer.Exit(1)
@@ -575,7 +577,7 @@ def pr(run_id: str, title: str=typer.Option(...), body: str=typer.Option(''), br
     if push.returncode!=0:
         art={'attempted':True,'gh_available':True,'branch':branch_name,'title':title,'body':body,'push_skipped':False,'commit_sha':subprocess.run(['git','rev-parse','HEAD'],cwd=repo,text=True,capture_output=True).stdout.strip(),'exit_code':push.returncode,'stdout':push.stdout,'stderr':push.stderr,'url':None,'manual_commands':manual,'recovery_instructions':recovery,'created_at':datetime.now(timezone.utc).isoformat()}
         (run_dir/'pr.json').write_text(json.dumps(art, indent=2)); raise typer.Exit(push.returncode)
-    proc=subprocess.run([gh,'pr','create','--title',title,'--body',body],cwd=repo,text=True,capture_output=True)
+    proc=subprocess.run([*gh_command,'pr','create','--title',title,'--body',body],cwd=repo,text=True,capture_output=True)
     out=_redact(proc.stdout); err=_redact(proc.stderr); url=next((l for l in out.splitlines() if l.startswith('http')), None)
     art={'attempted':True,'gh_available':True,'branch':branch_name,'title':title,'body':body,'push_skipped':False,'commit_sha':subprocess.run(['git','rev-parse','HEAD'],cwd=repo,text=True,capture_output=True).stdout.strip(),'exit_code':proc.returncode,'stdout':out,'stderr':err,'url':url,'manual_commands':manual,'recovery_instructions':recovery,'created_at':datetime.now(timezone.utc).isoformat()}
     (run_dir/'pr.json').write_text(json.dumps(art, indent=2))

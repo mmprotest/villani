@@ -54,7 +54,14 @@ class AgentCommandEnvironment:
 
 
 def _normalized(path: Path) -> Path:
-    return path.expanduser().resolve(strict=False)
+    expanded = path.expanduser()
+    if os.name == "nt" and expanded.root and not expanded.drive:
+        return expanded
+    return expanded.resolve(strict=False)
+
+
+def _is_absolute_like(path: Path) -> bool:
+    return path.is_absolute() or bool(path.root)
 
 
 def _is_within(path: Path, roots: Sequence[Path]) -> bool:
@@ -116,7 +123,7 @@ def _absolute_path_tokens(value: str) -> tuple[Path, ...]:
     for match in _ABSOLUTE_PATH_TOKEN.finditer(value):
         raw = match.group(0).strip("\"'()[]{}")
         candidate = Path(raw)
-        if candidate.is_absolute():
+        if _is_absolute_like(candidate):
             tokens.append(candidate)
     return tuple(tokens)
 
@@ -124,7 +131,7 @@ def _absolute_path_tokens(value: str) -> tuple[Path, ...]:
 def _roots_from_runner_environment_value(name: str, value: str) -> tuple[Path, ...]:
     candidates: list[Path] = []
     direct = Path(value)
-    if direct.is_absolute() and os.pathsep not in value:
+    if _is_absolute_like(direct) and os.pathsep not in value:
         executable_variable = name.endswith(("_BINARY", "_CLI", "_COMMAND", "_EXECUTABLE", "_TOOL"))
         candidates.append(
             _root_for_executable(direct)
@@ -135,7 +142,7 @@ def _roots_from_runner_environment_value(name: str, value: str) -> tuple[Path, .
     if os.pathsep in value:
         for entry in value.split(os.pathsep):
             candidate = Path(entry.strip())
-            if candidate.is_absolute() and _looks_like_runtime_path(candidate):
+            if _is_absolute_like(candidate) and _looks_like_runtime_path(candidate):
                 candidates.append(_root_for_absolute_path(candidate))
 
     for token in _absolute_path_tokens(value):
@@ -234,8 +241,9 @@ def build_agent_command_environment(
     path_variables = set(path_list_variables)
     runner_variables = {
         name
-        for name in environment
+        for name, value in environment.items()
         if is_runner_owned_environment_variable(name, configured_names=runner_variable_names)
+        and _roots_from_runner_environment_value(name, value)
     }
 
     path_entries_removed = 0
@@ -249,7 +257,7 @@ def build_agent_command_environment(
             for entry in value.split(os.pathsep):
                 if not entry:
                     continue
-                if Path(entry).is_absolute() and _is_within(Path(entry), root_tuple):
+                if _is_absolute_like(Path(entry)) and _is_within(Path(entry), root_tuple):
                     path_entries_removed += 1
                     continue
                 kept.append(entry)
@@ -257,7 +265,7 @@ def build_agent_command_environment(
             continue
 
         value_path = Path(value)
-        if value_path.is_absolute() and _is_within(value_path, root_tuple):
+        if _is_absolute_like(value_path) and _is_within(value_path, root_tuple):
             environment.pop(name)
             direct_removed.append(name)
         elif _contains_private_absolute_path(value, root_tuple):

@@ -41,7 +41,7 @@ def test_snapshot_builder_missing_usage_and_graph(tmp_path):
 def test_offline_viewer_embeds_self_contained_snapshot(tmp_path):
     rd=fake_run(tmp_path)
     out=write_offline_viewer(rd)
-    text=out.read_text()
+    text=out.read_text(encoding='utf-8')
     assert out == rd/'viewer'/'index.html'
     assert 'villani-run-snapshot' in text
     assert 'https://' not in text and 'cdn' not in text.lower()
@@ -132,7 +132,7 @@ def test_viewer_graph_layout_humanized_grouped_and_non_overlapping(tmp_path):
 
 def test_offline_viewer_contains_required_ui_without_external_deps(tmp_path):
     rd=fake_run(tmp_path)
-    text=write_offline_viewer(rd).read_text()
+    text=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'timeline-rail' in text and 'timeline-dot' in text
     assert 'graphInner' in text and 'elbowPath' in text
     assert 'formatInteger' in text and 'formatCost' in text
@@ -151,7 +151,7 @@ def test_decision_summary_and_warnings_render_in_offline_html(tmp_path):
     rd=_decision_run(tmp_path, {'run_id':'decision','status':'completed','task':'A very long task objective that should remain fully present in the DOM','runner':'villani-code-long-runner-name','backend_model':'local/backend/model-name-long','selection':{'selected_attempt_id':'candidate_003'},'selection_basis':'best_effort_tournament_selection','candidates':[{'attempt_id':'candidate_003','status':'completed','patch_path':'x.patch','changed_files':['src/calculator.py'],'runner_status':'completed','review_status':'passed','validation_status':'not_run','acceptance_eligible':True}]})
     snap=build_viewer_snapshot(rd)
     assert snap['decision']['state'] == 'accepted_with_warnings'
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'Decision Summary' in html
     assert 'Raw final state' in html and 'Final result\\n' not in html
     assert 'Validation did not run. Treat this result as unverified.' in html
@@ -209,14 +209,14 @@ def test_provider_failure_graph_and_timeline_truthful(tmp_path):
     assert not any(x in labels for x in ['Candidates','Validation','Review','Selection'])
     tl=' '.join(e['title']+' '+e.get('subtitle','') for e in snap['timeline'])
     assert 'Model request started' in tl and 'Provider failure' in tl and 'Backend connection error' in tl and 'Could not connect' in tl and 'recoverable=true' in tl
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'Provider failure' in html and 'Backend connection error' in html and 'Candidates' not in json.dumps(snap['graph'])
 
 
 def test_header_uses_decision_and_cost_reasons_visible(tmp_path):
     rd=_decision_run(tmp_path, {'run_id':'20260702T004250Z-91ce53','status':'completed','task':'Fix the failing calculator function','runner':'villani-code','backend_model':'qwen3.6-27b','selection':{'selected_attempt_id':'candidate_003'},'candidates':[{'attempt_id':'candidate_003','validation_status':'not_run','review_status':'passed'}]})
     (rd/'usage.json').write_text(json.dumps({'total_tokens':10,'calls_count':1,'unavailable_calls_count':1}))
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'Accepted with warnings' in html and 'completed' in html
     assert 'Fix the failing calculator function' in html and 'qwen3.6-27b' in html and 'villani-code' in html and '20260702T004250Z-91ce53' in html
     assert 'Backend pricing data missing' in html and '1 unavailable call' in html
@@ -238,7 +238,7 @@ def test_candidate_evidence_patch_aliases_and_changed_file_aliases(tmp_path):
     for c, patch, files in cases:
         assert by_id[c['attempt_id']]['patch'] == patch
         assert by_id[c['attempt_id']]['changed_files'] == files
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'Patch</th>' in html and 'b.py' in html
 
 
@@ -253,7 +253,7 @@ def test_usage_normalizes_aliases_jsonl_state_runner_and_cost_reasons(tmp_path):
 
 
 def test_execution_graph_demoted_below_evidence_sections(tmp_path):
-    html=write_offline_viewer(fake_run(tmp_path)).read_text()
+    html=write_offline_viewer(fake_run(tmp_path)).read_text(encoding='utf-8')
     assert 'graphPanel--secondary' in html
     assert html.index('Live Event Timeline') < html.index('Candidate Evidence') < html.index('Execution Graph')
 
@@ -286,7 +286,7 @@ def test_decision_summary_labels_are_humanized_and_raw_state_preserved(tmp_path)
     snap=build_viewer_snapshot(rd)
     assert snap['decision']['selection_basis']=='Best effort selection'
     assert snap['decision']['failure_reason']=='Backend connection error'
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'Best effort selection' in html and 'Backend connection error' in html
     assert 'backend_connection_error' in html  # raw details remain available
 
@@ -315,7 +315,7 @@ def test_usage_duplicate_summaries_are_not_double_counted(tmp_path):
     assert snap['usage']['total_tokens'] == 2300
     assert snap['usage']['total_cost'] == 0.23
     assert any('duplicate summary ignored' in x.lower() for x in snap['usage']['diagnostics'])
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert '&quot;total_tokens&quot;:2300' in html or 'total_tokens' in html
 
 
@@ -349,7 +349,7 @@ def test_candidate_lane_graph_contains_statuses_and_hooks(tmp_path):
     assert 'Runner completed' in labels and 'Review failed' in labels and 'Validation not run' in labels
     assert 'Winner' in labels and 'Patch yes' in labels and '2 changed files' in labels
     assert 'not_run' not in labels and 'best_effort_tournament_selection' not in labels
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'data-node-id' in html and 'data-candidate-id' in html and 'data-node-kind' in html and 'data-detail-json' in html
     assert html.index('Live Event Timeline') < html.index('Candidate Evidence') < html.index('Execution Graph')
 
@@ -381,7 +381,7 @@ def test_timeline_includes_review_validation_selection_and_human_labels(tmp_path
 
 def test_graph_detail_card_readable_before_raw_json(tmp_path):
     rd=_decision_run(tmp_path, {'run_id':'detail-card','status':'completed','selection':{'selected_attempt_id':'candidate_003'},'candidates':[{'attempt_id':'candidate_003','status':'completed','patch_path':'x.patch','changed_files':['src/x.py'],'runner_status':'completed','review_status':'passed','validation_status':'not_run','acceptance_eligible':True}]})
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'graphDetailsCard' in html and 'Raw node data' in html and 'humanDetailLabel' in html
     assert html.index('graphDetailsCard') < html.index('Raw node data')
 
@@ -402,7 +402,7 @@ def test_decision_economics_and_why_winner_for_candidate_run(tmp_path):
     assert econ['savings']['cost_amount'] is not None
     assert 'candidate_003' in snap['decision']['why_this_winner']
     assert 'validation was not run' in snap['decision']['why_this_winner']
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert html.index('Decision Summary') < html.index('Decision Economics') < html.index('Live Event Timeline') < html.index('Candidate Evidence') < html.index('Execution Graph')
     assert 'Why this winner?' in html and 'Estimated savings' in html
     assert '2 changed files' in json.dumps(snap['graph'])
@@ -421,7 +421,7 @@ def test_decision_economics_unavailable_for_no_candidate_failure_and_duration_re
     assert snap['decision_economics']['status'] == 'unavailable'
     assert snap['usage']['cost']['reason'].startswith('Backend failed before usage was available')
     assert snap['run']['duration_seconds'] == 0.4
-    html=write_offline_viewer(rd).read_text()
+    html=write_offline_viewer(rd).read_text(encoding='utf-8')
     assert 'Decision Economics unavailable because no candidates ran.' in html
     assert '<1s' in html
 

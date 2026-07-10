@@ -728,11 +728,14 @@ class OrchestrationEngine:
             return [str(x) for x in cmd], False
         if shell:
             return str(cmd or ''), True
-        return shlex.split(str(cmd or ''), posix=(os.name != 'nt')), False
+        return shlex.split(str(cmd or ''), posix=True), False
 
     def _run_cmd(self, args, cwd, shell: bool=False):
         env=os.environ.copy(); env.update({'GIT_TERMINAL_PROMPT':'0','GIT_EDITOR':'true','PYTHONIOENCODING':'utf-8'})
-        start=time.time(); p=subprocess.run(args, cwd=cwd, text=True, capture_output=True, timeout=1200, env=env, shell=shell)
+        execution_args=args
+        if not shell and isinstance(args, list) and args and Path(args[0]).name.lower() in {'python','python.exe','python3','python3.exe','python3.11','python3.12'}:
+            execution_args=[sys.executable, *args[1:]]
+        start=time.time(); p=subprocess.run(execution_args, cwd=cwd, text=True, capture_output=True, timeout=1200, env=env, shell=shell)
         stderr=p.stderr
         failure_reason=None
         if p.returncode and 'No module named pytest' in (p.stdout + p.stderr):

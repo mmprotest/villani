@@ -17,7 +17,7 @@ def _repo_tree(repo: Path) -> list[str]:
     for p in repo.rglob('*'):
         if len(files)>=200: break
         if p.is_file():
-            rel=str(p.relative_to(repo))
+            rel=p.relative_to(repo).as_posix()
             if not is_skipped_repo_file(rel):
                 files.append(rel)
     return files

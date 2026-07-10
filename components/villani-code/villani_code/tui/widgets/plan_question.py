@@ -30,7 +30,11 @@ class PlanQuestionWidget(Vertical):
 
     def on_mount(self) -> None:
         self.display = False
-        self.query_one("#plan-other-input", Input).display = False
+        options = self.query_one("#plan-question-options", ListView)
+        options.can_focus = False
+        other_input = self.query_one("#plan-other-input", Input)
+        other_input.can_focus = False
+        other_input.display = False
 
     def show_question(self, question: PlanQuestion) -> None:
         self._question = question
@@ -48,6 +52,10 @@ class PlanQuestionWidget(Vertical):
         options.focus()
 
     def hide_question(self) -> None:
+        self.query_one("#plan-question-options", ListView).can_focus = False
+        other_input = self.query_one("#plan-other-input", Input)
+        other_input.can_focus = False
+        other_input.display = False
         self.display = False
         self._question = None
 
@@ -72,9 +80,11 @@ class PlanQuestionWidget(Vertical):
     def _sync_other_visibility(self) -> None:
         other_input = self.query_one("#plan-other-input", Input)
         if self._selected_option_is_other():
+            other_input.can_focus = True
             other_input.display = True
             other_input.focus()
         else:
+            other_input.can_focus = False
             other_input.display = False
             other_input.value = ""
             self.query_one("#plan-question-options", ListView).focus()

@@ -25,10 +25,11 @@ def _expand_env(value: Any) -> Any:
 
 
 def load_mcp_config(repo: Path, managed_path: Path | None = None) -> dict[str, Any]:
+    home = Path(os.environ["HOME"]).expanduser() if os.environ.get("HOME") else Path.home()
     managed = _load_json(managed_path) if managed_path else {}
-    user = _load_json(Path.home() / ".villani.json")
+    user = _load_json(home / ".villani.json")
     project = _load_json(repo / ".mcp.json")
-    local = _load_json(Path.home() / ".villani.local.json")
+    local = _load_json(home / ".villani.local.json")
     merged = {}
     for layer in (managed, user, project, local):
         merged = _deep_merge(merged, _expand_env(layer))

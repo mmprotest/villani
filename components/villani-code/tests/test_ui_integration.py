@@ -16,6 +16,21 @@ from villani_code.tui.messages import LogAppend
 class DummyRunner:
     model = "demo"
     permissions = None
+    print_stream = False
+    approval_callback = None
+    event_callback = None
+
+    def run(self, instruction, messages=None, execution_budget=None):
+        return {"response": {"content": [{"type": "text", "text": instruction}]}}
+
+    def plan(self, instruction, answers=None):
+        raise RuntimeError("unused")
+
+    def run_with_plan(self, plan):
+        return {"response": {"content": []}}
+
+    def run_villani_mode(self):
+        return {"response": {"content": []}}
 
 
 class FakeController:
@@ -84,7 +99,7 @@ def test_transcript_preserves_markup_like_stream_text_literal(tmp_path: Path) ->
             assert transcript.plain_text.endswith(expected)
             assert app._log_plain_text.endswith(expected)
 
-            rendered = app.query_one("#log-content", Static).renderable
+            rendered = app.query_one("#log-content", Static).content
             assert rendered.plain == transcript.plain_text
 
     asyncio.run(run())
@@ -110,6 +125,7 @@ def test_space_key_inserts_space_in_input(tmp_path: Path) -> None:
             input_widget.value = "hello"
             input_widget.cursor_position = len(input_widget.value)
             input_widget.focus()
+            await pilot.pause()
             await pilot.press("space")
             await pilot.pause()
             assert input_widget.value == "hello "

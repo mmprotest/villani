@@ -145,10 +145,10 @@ class AgentRunner(ABC):
         started = time.monotonic()
         launch_prompt = self.render_launch_prompt(prompt)
         command = self.build_command(repo_path, launch_prompt, model, base_url, api_key, provider, benchmark_config_json=benchmark_config_json)
-        command = self._resolve_subprocess_command(command)
+        execution_command = self._resolve_subprocess_command(command)
         env = self.build_env(base_url=base_url, api_key=api_key)
         events = [AdapterEvent(type="command_started", timestamp=time.monotonic(), payload={"command": " ".join(command)})]
-        proc = subprocess.Popen(command, cwd=repo_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        proc = subprocess.Popen(execution_command, cwd=repo_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
             timeout_hit = False
@@ -193,7 +193,16 @@ class AgentRunner(ABC):
             return command
 
         is_windows = sys.platform.startswith("win")
-        resolved = shutil.which(executable)
+        resolved = None
+        if is_windows:
+            for entry in os.environ.get("PATH", "").split(os.pathsep):
+                if not entry:
+                    continue
+                candidate = Path(entry.strip('"')) / executable
+                if candidate.is_file():
+                    resolved = str(candidate)
+                    break
+        resolved = resolved or shutil.which(executable)
         if resolved is None and is_windows:
             for suffix in (".cmd", ".bat", ".exe"):
                 resolved = shutil.which(f"{executable}{suffix}")
@@ -204,4 +213,11 @@ class AgentRunner(ABC):
 
         if is_windows and resolved.lower().endswith((".cmd", ".bat")):
             return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", resolved, *command[1:]]
+        if is_windows and not resolved.lower().endswith(".exe"):
+            try:
+                first_line = Path(resolved).open("r", encoding="utf-8", errors="ignore").readline()
+            except OSError:
+                first_line = ""
+            if first_line.startswith("#!") and "python" in first_line.casefold():
+                return [sys.executable, resolved, *command[1:]]
         return [resolved, *command[1:]]

@@ -136,6 +136,7 @@ def test_opencode_env_defaults_api_key_to_dummy_when_base_url_present() -> None:
 def test_resolve_subprocess_command_wraps_windows_cmd_shim(monkeypatch) -> None:
     monkeypatch.setattr("villani_code.benchmark.agents.base.sys.platform", "win32")
     monkeypatch.setenv("COMSPEC", "C:\\Windows\\System32\\cmd.exe")
+    monkeypatch.setenv("PATH", "C:\\isolated-test-path")
 
     def fake_which(executable: str) -> str | None:
         if executable == "opencode":
@@ -188,12 +189,16 @@ def test_opencode_run_agent_writes_project_config_for_base_url(tmp_path: Path, m
         timeout=10,
     )
     assert (tmp_path / "opencode.json").exists() is False
-    assert captured["command"][0:3] == [
+    executed_command = list(captured["command"])
+    if executed_command[1:3] == ["/d", "/c"]:
+        executed_command = executed_command[3:]
+    executed_command[0] = Path(executed_command[0]).stem
+    assert executed_command[0:3] == [
         "opencode",
         "run",
         "Complete the benchmark task described in the attached file. Modify the current repository. Do not ask for clarification. Stop when done.",
     ]
-    assert captured["command"][3:9] == [
+    assert executed_command[3:9] == [
         "--model",
         "villani-openai-compatible/benchmark-model",
         "--format",
@@ -201,7 +206,7 @@ def test_opencode_run_agent_writes_project_config_for_base_url(tmp_path: Path, m
         "--dangerously-skip-permissions",
         "--file",
     ]
-    prompt_path = Path(captured["command"][-1])
+    prompt_path = Path(executed_command[-1])
     assert captured["prompt_exists_during_run"] is True
     assert captured["prompt_contents"] == "fix bug"
     assert captured["command"][-1] == str(prompt_path)
