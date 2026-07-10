@@ -1,8 +1,9 @@
-import { FlightEvent, Provider } from "../providers/types.js";
+import { FlightEvent, Provider, TokenUsage } from "../providers/types.js";
+import type { VillaniRunData } from "../providers/villani.js";
 export type ProviderId = Provider | "generic";
 export type Confidence = "high" | "medium" | "low";
 export type SourceKind = "file" | "directory" | "git" | "unknown";
-export type SourceType = "transcript" | "git" | "hook" | "unknown";
+export type SourceType = "transcript" | "run" | "git" | "hook" | "unknown";
 export type Outcome = "success" | "failed" | "unknown";
 export type SessionRecord = {
   id: string;
@@ -33,6 +34,12 @@ export type SessionRecord = {
   cacheTokenCount?: number;
   reasoningTokenCount?: number;
   costUsd?: number;
+  costAccountingStatus?: string;
+  state?: string;
+  attemptCount?: number;
+  selectedModel?: string;
+  repositoryPath?: string;
+  corruptReason?: string;
   sourceHash?: string;
   sourceSize?: number;
   sourceMtimeMs?: number;
@@ -114,5 +121,8 @@ export type ProviderAdapter = {
     startedAt?: string;
     endedAt?: string;
     model?: string;
+    tokenUsage?: TokenUsage;
+    villani?: VillaniRunData;
+    path?: string;
   }>;
 };

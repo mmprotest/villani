@@ -83,10 +83,12 @@ class EventWriter:
         store: RunStore,
         trace_id: str,
         now: Callable[[], datetime],
+        on_event: Callable[[EventEnvelope], None] | None = None,
     ) -> None:
         self._store = store
         self._trace_id = trace_id
         self._now = now
+        self._on_event = on_event
 
     def emit(
         self,
@@ -96,7 +98,7 @@ class EventWriter:
         attempt_id: str | None = None,
         parent_event_id: str | None = None,
     ) -> EventEnvelope:
-        return self._store.append_event(
+        event = self._store.append_event(
             timestamp=self._now(),
             trace_id=self._trace_id,
             attempt_id=attempt_id,
@@ -105,3 +107,10 @@ class EventWriter:
             event_type=event_type,
             payload=payload or {},
         )
+        if self._on_event is not None:
+            try:
+                self._on_event(event)
+            except Exception:
+                # Console observers are advisory and run after durable persistence.
+                pass
+        return event

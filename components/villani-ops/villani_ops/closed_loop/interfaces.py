@@ -44,6 +44,8 @@ class BackendOption:
     estimated_cost_usd: float | None = None
     cost_accounting_status: AccountingStatus = "unknown"
     rejection_reasons: tuple[str, ...] = ()
+    cost_components: Mapping[str, Any] = field(default_factory=dict)
+    cost_source: str = "configured_estimate"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +56,13 @@ class PolicyDecision:
     chosen_backend: str | None = None
     chosen_model: str | None = None
     policy_version: str = "fake_v1"
+    classification_reference: str | None = None
+    required_capability_score: float | None = None
+    required_capability_rule: str = "unspecified"
+    repeats_prior_backend: bool = False
+    escalates_from_prior_backend: bool = False
+    budget_before: BudgetContext | None = None
+    budget_projection_after: BudgetContext | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -172,6 +181,10 @@ class BudgetContext:
     cost_accounting_status: AccountingStatus
     remaining_wall_time_ms: int | None
     duration_accounting_status: AccountingStatus
+    actual_attempts_used: int = 0
+    actual_cost_consumed_usd: float | None = None
+    actual_cost_accounting_status: AccountingStatus = "unknown"
+    actual_wall_time_ms: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +196,8 @@ class ClassificationContext:
     success_criteria: str
     requires_file_changes: bool
     policy_configuration: Mapping[str, Any]
+    classification_backend_name: str | None = None
+    classification_backend_model: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +208,8 @@ class AttemptSummary:
     status: str
     cost_usd: float | None
     cost_accounting_status: AccountingStatus
+    failure_category: str | None = None
+    material_progress: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +218,8 @@ class VerificationSummary:
     outcome: str
     acceptance_eligible: bool
     recommended_action: str
+    failure_category: str | None = None
+    verifier_retry_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -16,6 +16,7 @@ from villani_ops.runners.villani_code import VillaniCodeAdapter
 from villani_ops.verifier.service import resolve_verifier_debug_dir
 
 from ..durable_io import write_json_atomic
+from ..costs import actual_attempt_cost
 from ..event_writer import redact_data
 from ..interfaces import AttemptContext, AttemptResult, DependencyFailure
 from ..protocol import AttemptSnapshot, FailureDetail
@@ -164,11 +165,18 @@ class VillaniCodeAttemptAdapter:
         (attempt_dir / "stderr.log").write_text(stderr, encoding="utf-8")
 
         input_tokens, output_tokens, token_status = _token_accounting(runner_result)
-        cost = runner_result.total_cost
-        cost_status = "complete" if cost is not None else "unknown"
         duration_ms = runner_result.duration_ms
         if duration_ms is None:
             duration_ms = measured_duration
+        cost_breakdown = actual_attempt_cost(
+            backend,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            duration_seconds=duration_ms / 1000,
+            started=True,
+        )
+        cost = cost_breakdown.total
+        cost_status = cost_breakdown.accounting_status
         failure: DependencyFailure | None = None
         failure_classification: str | None = None
         if runner_exception is not None:
@@ -231,6 +239,8 @@ class VillaniCodeAttemptAdapter:
                 "first_command_seconds": runner_result.first_command_seconds,
                 "token_accounting_status": runner_result.token_accounting_status,
                 "token_accounting_warnings": runner_result.token_accounting_warnings,
+                "provider_reported_total_cost": runner_result.total_cost,
+                "cost_breakdown": cost_breakdown.as_dict(),
                 "translated_runtime_event_count": len(runtime_events),
             },
             secrets=secrets,
@@ -250,6 +260,7 @@ class VillaniCodeAttemptAdapter:
             "changed_files": capture.changed_files,
             "patch_capture": capture.model_dump(mode="json"),
             "failure_classification": failure_classification,
+            "cost_breakdown": cost_breakdown.as_dict(),
             "debug_trace_path": trace_relative,
             "runner_metrics": {
                 "model_requests": runner_result.model_requests,

@@ -7,10 +7,12 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const fx = (p: string) => path.resolve("test/fixtures", p);
+let buildPromise: ReturnType<typeof exec> | undefined;
 const build = async () => {
   const npmCli = process.env.npm_execpath;
   if (!npmCli) throw new Error("npm_execpath is required for CLI build tests");
-  await exec(process.execPath, [npmCli, "run", "build"]);
+  buildPromise ??= exec(process.execPath, [npmCli, "run", "build"]);
+  await buildPromise;
 };
 
 describe("CLI replay output workflow", () => {

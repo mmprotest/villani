@@ -9,6 +9,7 @@ import {
   ReplayStatusSummary,
 } from "./statusTypes.js";
 const task = (s: ParsedSession) =>
+  s.villani?.task?.instruction ??
   s.events.find((e) => e.type === "user_message")?.summary ??
   s.events.find((e) => e.type === "user_message")?.title ??
   (s.provider === "unknown" ? "Task unavailable" : "Task unavailable");
@@ -17,6 +18,7 @@ export const runnerLabel = (p: string) =>
     claude: "Claude Code",
     codex: "Codex",
     pi: "Pi",
+    villani: "Villani",
     git: "Git Replay",
     unknown: "Generic replay",
   })[p] ??
@@ -27,7 +29,7 @@ export function deriveMetrics(
   replayStatus: ReplayStatusSummary,
   capturedRunStatus: CapturedRunStatusSummary,
 ): MetricCardViewModel[] {
-  const tokenUsage = sumTokenUsage(session.events);
+  const tokenUsage = session.tokenUsage ?? sumTokenUsage(session.events);
   const cacheTokens =
     tokenUsage &&
     (tokenUsage.cacheCreationTokens !== undefined ||
@@ -53,13 +55,16 @@ export function deriveMetrics(
   ]
     .filter(Boolean)
     .join(" · ");
+  const canonicalDuration = session.villani?.aggregate?.durationMs;
   const dur =
-    session.startedAt && session.endedAt
-      ? fmtDuration(
-          new Date(session.endedAt).getTime() -
-            new Date(session.startedAt).getTime(),
-        )
-      : "Duration unavailable";
+    canonicalDuration !== undefined && canonicalDuration !== null
+      ? fmtDuration(canonicalDuration)
+      : session.startedAt && session.endedAt
+        ? fmtDuration(
+            new Date(session.endedAt).getTime() -
+              new Date(session.startedAt).getTime(),
+          )
+        : "Duration unavailable";
   return [
     {
       id: "task",
@@ -104,10 +109,19 @@ export function deriveMetrics(
     {
       id: "cost",
       label: "COST (USD)",
-      value: "Not captured",
-      subvalue: "No cost telemetry",
+      value:
+        session.villani?.aggregate?.costUsd !== undefined &&
+        session.villani.aggregate.costUsd !== null
+          ? `$${session.villani.aggregate.costUsd.toFixed(2)}`
+          : "Unknown",
+      subvalue: session.villani
+        ? `Accounting: ${session.villani.aggregate?.costAccountingStatus ?? "unknown"}`
+        : "No cost telemetry",
       icon: "cost",
-      empty: true,
+      empty:
+        !session.villani ||
+        session.villani.aggregate?.costUsd === undefined ||
+        session.villani.aggregate.costUsd === null,
     },
     {
       id: "status",

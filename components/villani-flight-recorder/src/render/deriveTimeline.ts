@@ -15,9 +15,13 @@ const rawIsError = (e: FlightEvent) =>
     (e.raw as { is_error?: unknown }).is_error === true,
   );
 export const eventStatus = (e: FlightEvent): Status =>
-  e.type === "error" || (e.exitCode ?? 0) !== 0 || rawIsError(e)
-    ? "failed"
-    : "completed";
+  e.provider === "villani" &&
+  (e.raw as { event_type?: unknown } | undefined)?.event_type ===
+    "run_exhausted"
+    ? "warning"
+    : e.type === "error" || (e.exitCode ?? 0) !== 0 || rawIsError(e)
+      ? "failed"
+      : "completed";
 export const eventSeverity = (e: FlightEvent): Severity =>
   e.type === "error" || (e.exitCode ?? 0) !== 0 || rawIsError(e)
     ? "failed"
@@ -58,6 +62,12 @@ function timelineCopy(e: FlightEvent): { title: string; subtitle: string } {
       subtitle: "Captured file edit",
     };
   }
+  if (e.provider === "villani") {
+    return {
+      title: e.title,
+      subtitle: e.summary || "Canonical controller event",
+    };
+  }
   if (["git_commit", "git_status", "diff"].includes(e.type)) {
     return { title: e.title, subtitle: "Repository reconstruction" };
   }
@@ -91,6 +101,11 @@ const rawObj = (e: FlightEvent): Record<string, unknown> =>
   e.raw && typeof e.raw === "object" && !Array.isArray(e.raw)
     ? (e.raw as Record<string, unknown>)
     : {};
+
+const villaniEventType = (e: FlightEvent): string | undefined => {
+  const raw = rawObj(e);
+  return typeof raw.event_type === "string" ? raw.event_type : undefined;
+};
 
 const commandLifecycleKey = (e: FlightEvent): string | undefined => {
   const raw = rawObj(e);
@@ -202,7 +217,13 @@ function groupCommandLifecycle(events: FlightEvent[]): FlightEvent[] {
 export function deriveTimeline(
   events: FlightEvent[],
 ): TimelineEventViewModel[] {
-  return groupCommandLifecycle(events).map((e): TimelineEventViewModel => ({
+  const canonical = events.some((event) => event.sequence !== undefined);
+  const ordered = canonical
+    ? events
+        .slice()
+        .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+    : groupCommandLifecycle(events);
+  return ordered.map((e): TimelineEventViewModel => ({
     id: e.id,
     timestamp: e.timestamp,
     title: timelineCopy(e).title,
@@ -210,13 +231,19 @@ export function deriveTimeline(
     durationLabel: fmtDuration(e.durationMs),
     status: eventStatus(e),
     severity: eventSeverity(e),
-    icon: (e.command
-      ? "terminal"
-      : e.type.includes("file")
-        ? "edit"
-        : e.type.includes("message")
-          ? "review"
-          : "parse") as IconName,
+    icon: (villaniEventType(e)?.includes("materialization") ||
+    villaniEventType(e) === "patch_captured"
+      ? "edit"
+      : villaniEventType(e)?.includes("policy") ||
+          villaniEventType(e)?.includes("selected")
+        ? "review"
+        : e.command
+          ? "terminal"
+          : e.type.includes("file")
+            ? "edit"
+            : e.type.includes("message")
+              ? "review"
+              : "parse") as IconName,
     eventType: e.type,
     detail: {
       title: timelineCopy(e).title,

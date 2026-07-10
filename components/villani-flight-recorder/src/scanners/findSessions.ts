@@ -6,6 +6,7 @@ import { expandHome } from "../utils/paths.js";
 import { parseClaudeSession } from "../providers/claude.js";
 import { parseCodexSession } from "../providers/codex.js";
 import { parsePiSession } from "../providers/pi.js";
+import { defaultVillaniRunsRoot, findVillaniRuns } from "./findVillaniRuns.js";
 
 const parsers = {
   claude: parseClaudeSession,
@@ -42,6 +43,18 @@ export function defaultRoots(
 export async function findSessions(
   opts: { provider?: Provider; roots?: string[]; cwd?: string } = {},
 ): Promise<SessionCandidate[]> {
+  if (opts.provider === "villani") {
+    return (
+      await findVillaniRuns(opts.roots ?? [defaultVillaniRunsRoot()])
+    ).map((run) => ({
+      provider: "villani",
+      path: run.runPath,
+      mtimeMs: run.mtimeMs,
+      size: 0,
+      sessionId: run.runId,
+      warnings: run.error ? [run.error] : [],
+    }));
+  }
   const roots = opts.roots?.length
     ? opts.roots.flatMap((root) =>
         (real(opts.provider ?? "unknown")

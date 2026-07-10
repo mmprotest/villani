@@ -16,6 +16,7 @@ import {
   diffFromEvents,
   diffFromGit,
 } from "./deriveDetails.js";
+import type { VillaniRunData } from "../providers/villani.js";
 
 export type Status =
   "completed" | "running" | "warning" | "failed" | "pending" | "skipped";
@@ -112,6 +113,7 @@ export interface ReplayDashboardViewModel {
   changedFiles: string[];
   diff: string;
   provider: string;
+  villani?: VillaniRunData;
 }
 
 export const fmtTime = (v?: string) => {
@@ -159,12 +161,54 @@ export function deriveReplayViewModel(
     outputWritten: true,
     htmlValidated: true,
   });
-  const capturedRunStatus = deriveCapturedRunStatus(events);
+  const capturedRunStatus = session.villani?.manifest
+    ? session.villani.manifest.final_state === "COMPLETED"
+      ? {
+          status: "succeeded" as const,
+          label: "Completed",
+          tone: "success" as const,
+          reason: "Canonical controller state COMPLETED",
+          failedCommands: 0,
+          failedTests: 0,
+          totalCommands: session.villani.aggregate?.commands ?? 0,
+          totalTests: 0,
+          fileEdits: session.villani.aggregate?.fileWrites ?? 0,
+          hasFinalAnswer: true,
+        }
+      : session.villani.manifest.final_state === "FAILED"
+        ? {
+            status: "failed" as const,
+            label: "Failed",
+            tone: "error" as const,
+            reason: "Canonical controller state FAILED",
+            failedCommands: 0,
+            failedTests: 0,
+            totalCommands: session.villani.aggregate?.commands ?? 0,
+            totalTests: 0,
+            fileEdits: session.villani.aggregate?.fileWrites ?? 0,
+            hasFinalAnswer: true,
+          }
+        : session.villani.manifest.final_state === "EXHAUSTED"
+          ? {
+              status: "partial" as const,
+              label: "Exhausted",
+              tone: "warning" as const,
+              reason: "Canonical controller state EXHAUSTED",
+              failedCommands: 0,
+              failedTests: 0,
+              totalCommands: session.villani.aggregate?.commands ?? 0,
+              totalTests: 0,
+              fileEdits: session.villani.aggregate?.fileWrites ?? 0,
+              hasFinalAnswer: true,
+            }
+          : deriveCapturedRunStatus(events)
+    : deriveCapturedRunStatus(events);
   const timeline = deriveTimeline(events);
   const eventFiles = changedFilesFromEvents(events);
   const liveFiles = changedFilesFromGit(git);
-  const changedFiles =
-    session.provider === "git" && eventFiles.length > 0
+  const changedFiles = session.villani?.materialization?.changed_files?.length
+    ? session.villani.materialization.changed_files
+    : session.provider === "git" && eventFiles.length > 0
       ? eventFiles
       : [...new Set([...eventFiles, ...liveFiles])];
   const eventDiff = diffFromEvents(events);
@@ -193,8 +237,17 @@ export function deriveReplayViewModel(
     warnings,
     rawEvents: events,
     changedFiles,
-    diff: eventDiff || liveDiff || "Not captured",
+    diff:
+      session.villani?.attempts.find(
+        (attempt) =>
+          attempt.snapshot.attempt_id ===
+          session.villani?.manifest?.selected_attempt_id,
+      )?.patch ||
+      eventDiff ||
+      liveDiff ||
+      "Not captured",
     provider: session.provider,
+    villani: session.villani,
     redactionReport: (session as ParsedSession & { redactionReport?: unknown })
       .redactionReport,
   };

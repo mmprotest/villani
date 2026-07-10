@@ -5,6 +5,7 @@ import { parseClaudeSession } from "./providers/claude.js";
 import { parseCodexSession } from "./providers/codex.js";
 import { parsePiSession } from "./providers/pi.js";
 import { parseGeneric } from "./providers/generic.js";
+import { parseVillaniRun } from "./providers/villani.js";
 import { renderReplay } from "./render/renderReplay.js";
 import { openBrowser } from "./utils/openBrowser.js";
 import { buildGitReplay } from "./git/gitReplay.js";
@@ -17,6 +18,11 @@ import { formatTokenCount } from "./providers/helpers/tokens.js";
 import { adaptersFor } from "./providers/providerAdapter.js";
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  assertOutsideVillaniRunsRoot,
+  launchVillaniRun,
+} from "./commands/launchVillani.js";
+import { defaultVillaniRunsRoot } from "./scanners/findVillaniRuns.js";
 
 const program = new Command();
 program
@@ -97,7 +103,7 @@ async function prepareReplayCache(
       const parsed = await ad.parse({
         provider: s.provider,
         sourcePath: s.sourcePath,
-        sourceKind: "file",
+        sourceKind: s.sourceKind,
         confidence: s.confidence,
         reason: "browser replay",
       });
@@ -132,7 +138,7 @@ async function openFile(file: string) {
 program
   .command("scan")
   .description(
-    "Scans known Claude, Codex, and Pi session directories by default. Use --root to scan a custom directory.",
+    "Scans canonical Villani runs and known Claude, Codex, and Pi session directories by default. Use --root to scan a custom directory.",
   )
   .option("--all")
   .option("--agent <agent>")
@@ -151,6 +157,10 @@ program
   .option("--quiet")
   .option("--rebuild")
   .action(async (o) => {
+    if ((o.agent ?? o.provider) === "villani") {
+      for (const root of o.root?.length ? o.root : [defaultVillaniRunsRoot()])
+        assertOutsideVillaniRunsRoot(root, o.indexDir);
+    }
     const progress = scanProgress(o.json, o.quiet);
     progress?.("Scanning local sessions...");
     const result = await scanToIndex({
@@ -200,6 +210,7 @@ program
     );
   });
 async function parse(provider: Provider, file: string) {
+  if (provider === "villani") return parseVillaniRun(file);
   if (provider === "claude") return parseClaudeSession(file);
   if (provider === "codex") return parseCodexSession(file);
   if (provider === "pi") return parsePiSession(file);
@@ -377,9 +388,34 @@ program
   )
   .option("--index-dir <path>")
   .option("--out <path>")
+  .option("--run-id <id>")
   .option("--no-open")
   .option("--rebuild")
   .action(async (o) => {
+    if (o.runId) {
+      if (o.provider !== "villani")
+        throw new Error("--run-id requires --provider villani");
+      if (o.root?.length && o.root.length > 1)
+        throw new Error("--run-id accepts exactly one --root");
+      const file = await launchVillaniRun({
+        root: o.root?.[0],
+        runId: o.runId,
+        out:
+          o.out ??
+          path.join(
+            o.indexDir ?? defaultIndexDir(),
+            "replays",
+            `${o.runId}.html`,
+          ),
+        open: o.open,
+      });
+      console.log(`Villani run replay written to ${file}`);
+      return;
+    }
+    if (o.provider === "villani") {
+      for (const root of o.root?.length ? o.root : [defaultVillaniRunsRoot()])
+        assertOutsideVillaniRunsRoot(root, o.indexDir, o.out);
+    }
     console.error("Villani Flight Recorder launch\n");
     console.error("Scanning local sessions...");
     const result = await scanToIndex({
@@ -466,7 +502,10 @@ program
     let session: ParsedSession;
     let selectedSessionId: string | undefined;
     let selectedSegmentId: string | undefined;
-    if (
+    if (o.provider === "villani" && o.id && o.root) {
+      session = await parseVillaniRun(path.join(path.resolve(o.root), o.id));
+      selectedSessionId = o.id;
+    } else if (
       o.id ||
       o.segment ||
       o.repo ||
@@ -559,6 +598,14 @@ program
           "Warning: repo matching was uncertain; selected most recently modified session.",
         );
       session = await parse(picked.candidate.provider, picked.candidate.path);
+    }
+    if (session.provider === "villani") {
+      const runsRoot =
+        o.root ??
+        (session.villani?.runDirectory
+          ? path.dirname(session.villani.runDirectory)
+          : defaultVillaniRunsRoot());
+      assertOutsideVillaniRunsRoot(runsRoot, o.indexDir, o.out);
     }
     const file = await renderReplay(session, {
       redact: o.redact !== false,

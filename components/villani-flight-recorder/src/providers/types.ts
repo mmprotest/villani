@@ -1,4 +1,7 @@
-export type Provider = "claude" | "codex" | "pi" | "git" | "unknown";
+import type { VillaniRunData } from "./villani.js";
+
+export type Provider =
+  "claude" | "codex" | "pi" | "villani" | "git" | "unknown";
 
 export type FlightEventType =
   | "session_start"
@@ -35,6 +38,12 @@ export interface FlightEvent {
   id: string;
   provider: Provider;
   sessionId?: string;
+  runId?: string;
+  traceId?: string;
+  attemptId?: string | null;
+  eventId?: string;
+  parentEventId?: string | null;
+  sequence?: number;
   timestamp?: string;
   cwd?: string;
   type: FlightEventType;
@@ -69,6 +78,7 @@ export interface ParseSessionResult {
   events: FlightEvent[];
   warnings: string[];
   tokenUsage?: TokenUsage;
+  villani?: VillaniRunData;
 }
 
 export type ParsedSession = ParseSessionResult & { path?: string };

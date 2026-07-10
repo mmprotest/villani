@@ -7,8 +7,11 @@ from .adapters import (
     VillaniVerifierAdapter,
 )
 from .controller import ClosedLoopController
+from .costs import CostBreakdown, actual_attempt_cost, estimate_attempt_cost
 from .durable_io import append_jsonl_durable, read_jsonl_tolerant, write_json_atomic
 from .interfaces import ClosedLoopRunRequest, ClosedLoopRunResult
+from .failure_classification import FailureCategory, classify_failure
+from .policy import BootstrapPolicyConfiguration, BootstrapPolicyEngine
 from .protocol import (
     AttemptSnapshot,
     ClassificationSnapshot,
@@ -38,8 +41,12 @@ __all__ = [
     "ClosedLoopController",
     "ClosedLoopRunRequest",
     "ClosedLoopRunResult",
+    "BootstrapPolicyConfiguration",
+    "BootstrapPolicyEngine",
+    "CostBreakdown",
     "EventEnvelope",
     "EvidenceSelectorAdapter",
+    "FailureCategory",
     "MaterializationSnapshot",
     "PatchMaterializerAdapter",
     "PolicyDecisionSnapshot",
@@ -54,7 +61,10 @@ __all__ = [
     "VillaniCodeAttemptAdapter",
     "VillaniVerifierAdapter",
     "append_jsonl_durable",
+    "actual_attempt_cost",
+    "classify_failure",
     "collect_protocol_validation_issues",
+    "estimate_attempt_cost",
     "parse_protocol_document",
     "read_jsonl_tolerant",
     "validate_event_stream",

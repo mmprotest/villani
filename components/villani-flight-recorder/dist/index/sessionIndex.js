@@ -9,6 +9,7 @@ import { readIndex } from "./sessionStore.js";
 import { sumTokenUsage } from "../providers/helpers/tokens.js";
 import { segmentSession } from "./segmenter.js";
 import { writeIndex } from "./sessionStore.js";
+import { fingerprintVillaniRun, villaniSessionFields, } from "./villaniRunIndex.js";
 const exec = promisify(execFile);
 const hash = (s) => createHash("sha1").update(s).digest("hex").slice(0, 12);
 const repoId = (r) => "vfr_repo_" + hash(path.resolve(r));
@@ -64,6 +65,8 @@ function changedEventFiles(events) {
 }
 async function fp(file) {
     const st = await fs.stat(file);
+    if (st.isDirectory())
+        return fingerprintVillaniRun(file);
     const buf = await fs.readFile(file);
     return {
         sizeBytes: st.size,
@@ -103,7 +106,7 @@ export async function scanToIndex(opts) {
     const adapters = adaptersFor(opts.agent, opts.all);
     opts.progress?.({
         stage: "discover",
-        message: `Scanning ${opts.agent ?? "Claude/Codex/Pi"} session roots...`,
+        message: `Scanning ${opts.agent ?? "Villani/Claude/Codex/Pi"} session roots...`,
     });
     for (const ad of adapters)
         counts[ad.label] = 0;
@@ -205,8 +208,10 @@ export async function scanToIndex(opts) {
                 const fingerprint = await fp(d.sourcePath);
                 const key = `${ad.id}:${path.resolve(d.sourcePath)}`;
                 const sid = previousByPath.get(key)?.id ??
-                    "vfr_sess_" +
-                        hash(`${ad.id}:${path.resolve(d.sourcePath)}:${fingerprint.hash ?? `${fingerprint.modifiedAt}:${fingerprint.sizeBytes}`}`);
+                    (ad.id === "villani" && parsed.sessionId
+                        ? parsed.sessionId
+                        : "vfr_sess_" +
+                            hash(`${ad.id}:${path.resolve(d.sourcePath)}:${fingerprint.hash ?? `${fingerprint.modifiedAt}:${fingerprint.sizeBytes}`}`));
                 const rs = roots(parsed.events, parsed.cwd);
                 const repoIdsByRoot = new Map();
                 for (const r0 of rs) {
@@ -258,9 +263,11 @@ export async function scanToIndex(opts) {
                     providerLabel: ad.label,
                     sourcePath: d.sourcePath,
                     sourceKind: d.sourceKind,
-                    sourceType: d.sourcePath.includes(`${path.sep}hooks${path.sep}`)
-                        ? "hook"
-                        : "transcript",
+                    sourceType: ad.id === "villani"
+                        ? "run"
+                        : d.sourcePath.includes(`${path.sep}hooks${path.sep}`)
+                            ? "hook"
+                            : "transcript",
                     createdAt: firstEventAt,
                     updatedAt: lastEventAt ?? fingerprint.modifiedAt,
                     indexedAt: new Date().toISOString(),
@@ -282,9 +289,9 @@ export async function scanToIndex(opts) {
                     model: parsed.model,
                     durationMs: durationMs(parsed.events, firstEventAt, lastEventAt),
                     failureSummary: failureSummary(parsed.events),
-                    tokenCount: tokenUsage?.totalTokens,
-                    inputTokenCount: tokenUsage?.inputTokens,
-                    outputTokenCount: tokenUsage?.outputTokens,
+                    tokenCount: parsed.tokenUsage?.totalTokens ?? tokenUsage?.totalTokens,
+                    inputTokenCount: parsed.tokenUsage?.inputTokens ?? tokenUsage?.inputTokens,
+                    outputTokenCount: parsed.tokenUsage?.outputTokens ?? tokenUsage?.outputTokens,
                     cacheTokenCount: tokenUsage &&
                         (tokenUsage.cacheCreationTokens !== undefined ||
                             tokenUsage.cacheReadTokens !== undefined ||
@@ -310,6 +317,7 @@ export async function scanToIndex(opts) {
                     fingerprint,
                     confidence: d.confidence,
                     warnings: parsed.warnings,
+                    ...villaniSessionFields(parsed),
                 });
                 counts[ad.label] = (counts[ad.label] ?? 0) + 1;
                 indexed = true;

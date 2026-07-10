@@ -3,6 +3,7 @@ import { parseClaudeSession } from "./claude.js";
 import { parseCodexSession } from "./codex.js";
 import { parsePiSession } from "./pi.js";
 import { parseGeneric } from "./generic.js";
+import { corruptVillaniRun, parseVillaniRun } from "./villani.js";
 import {
   DiscoveredSession,
   DiscoveryOptions,
@@ -11,6 +12,10 @@ import {
 } from "../index/sessionTypes.js";
 import { ParsedSession } from "./types.js";
 import { defaultRoots } from "../scanners/findSessions.js";
+import {
+  defaultVillaniRunsRoot,
+  findVillaniRuns,
+} from "../scanners/findVillaniRuns.js";
 async function discoverFiles(
   provider: ProviderId,
   roots: string[] | undefined,
@@ -74,8 +79,44 @@ export const genericAdapter = wrap(
   (p) => parseGeneric("unknown", p),
   ["**/*.jsonl", "**/*.json"],
 );
+export const villaniAdapter: ProviderAdapter = {
+  id: "villani",
+  label: "Villani",
+  discover: async (options) =>
+    (await findVillaniRuns(options.roots ?? [defaultVillaniRunsRoot()])).map(
+      (run) => ({
+        provider: "villani",
+        sourcePath: run.runPath,
+        sourceKind: "directory" as const,
+        confidence: "high" as const,
+        reason: run.error
+          ? `Villani canonical run directory: ${run.error}`
+          : "Villani canonical run directory",
+      }),
+    ),
+  parse: async (discovered) => {
+    if (discovered.sourceKind !== "directory")
+      throw new Error(
+        `Villani provider requires a canonical run directory: ${discovered.sourcePath}`,
+      );
+    try {
+      return {
+        ...(await parseVillaniRun(discovered.sourcePath)),
+        provider: "villani" as const,
+        sourcePath: discovered.sourcePath,
+      };
+    } catch (error) {
+      return {
+        ...corruptVillaniRun(discovered.sourcePath, error),
+        provider: "villani" as const,
+        sourcePath: discovered.sourcePath,
+      };
+    }
+  },
+};
 export function adaptersFor(agent?: string, all = false) {
   const map = {
+    villani: villaniAdapter,
     claude: claudeAdapter,
     codex: codexAdapter,
     pi: piAdapter,
@@ -83,6 +124,6 @@ export function adaptersFor(agent?: string, all = false) {
   };
   if (agent) return [map[agent as keyof typeof map]].filter(Boolean);
   return all
-    ? [claudeAdapter, codexAdapter, piAdapter, genericAdapter]
-    : [claudeAdapter, codexAdapter, piAdapter, genericAdapter];
+    ? [villaniAdapter, claudeAdapter, codexAdapter, piAdapter, genericAdapter]
+    : [villaniAdapter, claudeAdapter, codexAdapter, piAdapter, genericAdapter];
 }

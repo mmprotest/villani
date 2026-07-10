@@ -18,7 +18,55 @@ const value = (m?: MetricCardViewModel) =>
   escapeHtml(m?.value ?? "Not captured");
 const subvalue = (m?: MetricCardViewModel) => escapeHtml(m?.subvalue ?? "");
 
+const present = (value: number | null | undefined, unknown = "Unknown") =>
+  value === null || value === undefined ? unknown : String(value);
+
+const villaniCards = (vm: ReplayDashboardViewModel) => {
+  const run = vm.villani!;
+  if (run.corruptReason) {
+    return `<section class="run-summary error" aria-label="Villani run summary"><div class="outcome-card"><div class="outcome-kicker">Canonical run bundle</div><h2>Corrupt</h2><p>${escapeHtml(run.corruptReason)}</p></div><div class="summary-facts"><article><b>${escapeHtml(run.runDirectory)}</b><span>run directory</span></article></div></section>`;
+  }
+  const manifest = run.manifest;
+  const classification = run.classification;
+  const aggregate = run.aggregate;
+  const selected = run.attempts.find(
+    (attempt) => attempt.snapshot.attempt_id === manifest?.selected_attempt_id,
+  );
+  const totalTokens =
+    aggregate?.inputTokens !== null &&
+    aggregate?.inputTokens !== undefined &&
+    aggregate.outputTokens !== null &&
+    aggregate.outputTokens !== undefined
+      ? aggregate.inputTokens + aggregate.outputTokens
+      : null;
+  const cost =
+    aggregate?.costUsd === null || aggregate?.costUsd === undefined
+      ? "Unknown"
+      : `$${aggregate.costUsd.toFixed(2)}`;
+  const duration =
+    aggregate?.durationMs === null || aggregate?.durationMs === undefined
+      ? "Unknown"
+      : aggregate.durationMs < 1000
+        ? `${aggregate.durationMs}ms`
+        : `${aggregate.durationMs / 1000}s`;
+  const state = manifest?.final_state ?? run.state?.state ?? "Unknown";
+  const tone =
+    state === "COMPLETED"
+      ? "success"
+      : state === "FAILED"
+        ? "error"
+        : "warning";
+  const policy =
+    [
+      ...new Set(
+        run.policyDecisions.map((decision) => decision.policy_version),
+      ),
+    ].join(", ") || "Not captured";
+  return `<section class="run-summary ${tone}" aria-label="Villani run summary"><div class="outcome-card"><div class="outcome-kicker">Canonical controller result</div><h2>${escapeHtml(state)}</h2><p>${escapeHtml(run.task?.instruction ?? "Task not captured")}</p></div><div class="summary-facts"><article><b>${escapeHtml(classification ? `${classification.difficulty} / ${classification.risk}` : "Not captured")}</b><span>classification</span></article><article><b>${escapeHtml(policy)}</b><span>policy</span></article><article><b>${escapeHtml(manifest?.selected_attempt_id ?? "Not selected")}</b><span>selected attempt</span></article><article><b>${escapeHtml(selected?.snapshot.model ?? "Not captured")}</b><span>selected model</span></article><article><b>${escapeHtml(present(totalTokens))}</b><span>total tokens</span></article><article><b>${escapeHtml(duration)}</b><span>total duration</span></article><article><b>${escapeHtml(cost)}</b><span>known cost</span></article><article><b>${escapeHtml(aggregate?.costAccountingStatus ?? "unknown")}</b><span>cost accounting</span></article></div><dl class="metadata-row"><div><dt>Run ID</dt><dd class="mono">${escapeHtml(manifest?.run_id ?? "Not captured")}</dd></div><div><dt>Confidence</dt><dd>${escapeHtml(classification ? String(classification.confidence) : "Not captured")}</dd></div><div><dt>Attempts</dt><dd>${escapeHtml(String(run.attempts.length))}</dd></div><div><dt>Repository</dt><dd>${escapeHtml(run.task?.repository_path ?? "Not captured")}</dd></div></dl></section>`;
+};
+
 export const metricCards = (vm: ReplayDashboardViewModel) => {
+  if (vm.villani) return villaniCards(vm);
   const task = metric(vm.metrics, "task");
   const model = metric(vm.metrics, "model");
   const runner = metric(vm.metrics, "runner");

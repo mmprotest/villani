@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`M4: complete`
+`M7: complete`
 
 ### Milestone status
 
@@ -586,9 +586,9 @@ Codex must update this section at the end of each milestone. It must not mark a 
 - [x] M2: Canonical protocol
 - [x] M3: Deterministic controller with fakes
 - [x] M4: Real attempt, verifier, selector, and materializer adapters
-- [ ] M5: Cost accounting and bootstrap escalation policy
-- [ ] M6: Unified public CLI
-- [ ] M7: Native Flight Recorder observability
+- [x] M5: Cost accounting and bootstrap escalation policy
+- [x] M6: Unified public CLI
+- [x] M7: Native Flight Recorder observability
 - [ ] M8: Empirical capability registry and optimizer
 - [ ] M9: Recovery, packaging, CI, and release gate
 
@@ -873,3 +873,187 @@ Known remaining issues:
 
 Next permitted milestone:
 - M5, only after the user starts a new Codex task from this completed state.
+
+#### 2026-07-10: M5 Cost accounting and bootstrap escalation policy
+
+Status: complete
+
+Changed files:
+- `PLANS.md`
+- `components/villani-ops/villani_ops/core/backend.py`
+- `components/villani-ops/villani_ops/closed_loop/__init__.py`
+- `components/villani-ops/villani_ops/closed_loop/interfaces.py`
+- `components/villani-ops/villani_ops/closed_loop/controller.py`
+- `components/villani-ops/villani_ops/closed_loop/costs.py`
+- `components/villani-ops/villani_ops/closed_loop/policy.py`
+- `components/villani-ops/villani_ops/closed_loop/failure_classification.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/villani_code_attempt.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_m5_policy_costs.py`
+
+Architectural decisions:
+- The controller resolves only an enabled classification-role backend before classification; it writes `classification.json` and durably emits `classification_completed` before `bootstrap_v1` enumerates coding alternatives.
+- Cost accounting is component based. Token, compute-time, and fixed components remain nullable; hybrid totals include each configured applicable component once; unknown data never becomes numeric zero.
+- Bootstrap thresholds and retry limits are validated policy configuration with the documented defaults. Policy decisions persist the classification reference, threshold rule, all coding alternatives, estimated and actual budget evidence, repeat/escalation flags, and budget projection.
+- Failure classification is evidence based. A generic nonzero runner exit is not capability evidence, and verifier infrastructure failures retry verification without consuming or rerunning a coding attempt.
+- Existing adaptive, agentic, and legacy policy paths remain compatibility-only and were not reused as the closed-loop routing order.
+
+Verification:
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops\tests\closed_loop\test_m5_policy_costs.py`: exit code 0; 25 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 640 passed, 0 failed, 0 errors, 0 skipped, 114 deselected.
+- From `components/villani-code`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 670 passed, 0 failed, 0 errors, 1 skipped, 27 warnings.
+- From `components/villani-flight-recorder`, `npm.cmd test`: exit code 0; 73 passed, 0 failed, 0 errors, 0 skipped; 18 test files passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd run typecheck`: exit code 0; TypeScript typecheck passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run build`: exit code 0; TypeScript build passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run format:check`: exit code 0; Prettier reported all matched files use Prettier code style; test counts not applicable.
+- From the repository root, `.\.venv\Scripts\python.exe -m pytest tests\closed_loop -q`: exit code 0; 2 passed, 0 failed, 0 errors, 0 skipped.
+- From the repository root, `git diff --check`: exit code 0; no whitespace errors.
+
+Acceptance criteria:
+- PASS: `classification.json` and `classification_completed` are persisted before the first coding policy decision; the ordering regression test observes one coding run and a verifier-only retry with no second coding attempt.
+- PASS: All 20 requested routing, escalation, budget, and accounting cases are covered by the 25-test M5 file and pass.
+- PASS: The concrete closed-loop policy is `bootstrap_v1`; every recorded policy decision contains all coding alternatives, capability and cost evidence, rejection reasons, classification reference, and before/after budget data.
+- PASS: Legacy backend YAML without new fields still loads; a positive legacy token price infers token billing, while absent or zero-only legacy prices remain unknown.
+- PASS: Actual API token, local compute-time, fixed, and hybrid accounting use configured formulas only; missing configuration or telemetry returns partial or unknown rather than fabricated zero.
+- PASS: Infrastructure, implementation, capability, verification, no-change, and materialization outcomes have deterministic next actions; nonzero exit alone is never classified as capability failure.
+- PASS: Attempt, known-cost, and wall-time budgets block attempts deterministically, including unknown estimates under an active cost cap.
+- PASS: Villani Ops, Villani Code, Flight Recorder, and root closed-loop verification remain green.
+
+Assumptions:
+- Currency is USD because the existing token price and protocol budget fields are USD-denominated.
+- Easy/low-risk classifications with confidence at or above 0.65 but below 0.80 use the medium threshold; below 0.65 uses hard and at or above 0.80 uses easy.
+
+Known remaining issues:
+- No defect remains within M5. Bootstrap capability scores and estimates remain user-configured static inputs; empirical learning remains deferred to M8.
+
+Next permitted milestone:
+- M6, only after the user starts a new Codex task from this completed state.
+
+#### 2026-07-10: M6 Unified public CLI
+
+Status: complete
+
+Changed files:
+- `PLANS.md`
+- `components/villani-ops/pyproject.toml`
+- `components/villani-ops/villani_ops/cli/unified.py`
+- `components/villani-ops/villani_ops/closed_loop/controller.py`
+- `components/villani-ops/villani_ops/closed_loop/event_writer.py`
+- `components/villani-ops/villani_ops/tests/test_unified_cli.py`
+
+Architectural decisions:
+- The `villani` entry point owns a separate Typer application with only `init`, `backend add`, `backend list`, `run`, `runs`, `inspect`, and `open`; it does not import or delegate to the legacy Villani Ops CLI.
+- Public configuration is one commented `config.yaml` beneath `VILLANI_HOME` or `~/.villani`, with canonical runs beneath the same home and environment-variable names used for secret references.
+- Public run construction instantiates only `ClosedLoopController`, the classification adapter, `BootstrapPolicyEngine`, Villani Code attempt adapter, dedicated verifier, evidence selector, and safe materializer.
+- Concise CLI progress is emitted by an observer only after each canonical event has been durably appended; controller state remains authoritative.
+- Run listing and inspection validate and read canonical bundle documents only. Output is recursively redacted, and one corrupt bundle cannot stop other runs from being listed.
+- Flight Recorder launch is delegated in the required environment, PATH, then monorepo order; the old Villani Ops viewer is never used as a fallback.
+
+Verification:
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops\tests\test_unified_cli.py`: exit code 0; 15 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops\tests\test_unified_cli.py villani_ops\tests\closed_loop`: exit code 0; 84 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pip install --no-deps -e .`: exit code 0; editable wheel built and `villani-ops 0.2.0` installed successfully.
+- From `components/villani-ops`, `..\..\.venv\Scripts\villani.exe --help`: exit code 0; installed command tree contains exactly the six root commands/groups and no architecture selector.
+- From `components/villani-ops`, `..\..\.venv\Scripts\villani-ops.exe --help`: exit code 0; compatibility entry point remains installed.
+- From `components/villani-ops`, `..\..\.venv\Scripts\villani-code.exe --help`: exit code 0; compatibility entry point remains installed.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 655 passed, 0 failed, 0 errors, 0 skipped, 114 deselected.
+- From `components/villani-code`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 670 passed, 0 failed, 0 errors, 1 skipped, 27 warnings.
+- From `components/villani-flight-recorder`, `npm.cmd test`: exit code 0; 73 passed, 0 failed, 0 errors, 0 skipped; 18 test files passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd run typecheck`: exit code 0; TypeScript typecheck passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run build`: exit code 0; TypeScript build passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run format:check`: exit code 0; Prettier reported all matched files use Prettier code style; test counts not applicable.
+- From the repository root, `.\.venv\Scripts\python.exe -m pytest tests\closed_loop -q`: exit code 0; 2 passed, 0 failed, 0 errors, 0 skipped.
+- From the repository root, `git diff --check`: exit code 0; no whitespace errors.
+
+Acceptance criteria:
+- PASS: The exact `villani = "villani_ops.cli.unified:app"` script is installed and `villani --help` exits zero from the editable install; `villani-ops` and `villani-code` remain working.
+- PASS: The public command tree exposes only the required commands, the backend group exposes only `add` and `list`, and help contains no architecture, tournament, decomposition, or scheduling selector.
+- PASS: The public run path constructs only `ClosedLoopController` and M4/M5 dependencies; focused tests inject a fake controller and assert no legacy runner or CLI is imported.
+- PASS: Repository validation occurs before run creation, task and supplied success criteria remain verbatim, and durable event observation prints run identity and concise state updates.
+- PASS: Exit 0 for `COMPLETED`, exit 2 for configuration/usage failures, exit 3 for `EXHAUSTED`, and exit 4 for `FAILED` are all covered by focused tests.
+- PASS: Init, backend validation, repeatable roles, capability requirements, explicit billing fields, secret environment references, and non-overwrite behavior pass in isolated `VILLANI_HOME` tests.
+- PASS: Backend listing, canonical inspection JSON, controller artifacts, and error paths do not reveal configured or resolved secret values.
+- PASS: Canonical run listing tolerates corrupt bundles, and inspection exposes classification, policy decisions, attempts, verifications, selection, materialization, tokens, cost components, and artifact paths.
+- PASS: Flight Recorder command resolution and optional run ID forwarding pass for configured command, PATH command, monorepo fallback, and unavailable-command instructions.
+- PASS: Villani Ops, Villani Code, Flight Recorder, and root closed-loop verification remain green.
+
+Assumptions:
+- When `--success-criteria` is omitted, the verbatim task text is used as the non-empty canonical success criterion.
+- `villani open <run_id>` invokes Flight Recorder replay with provider `villani`, the canonical runs root, the run ID, and browser opening; `villani open` invokes its run browser launch.
+
+Known remaining issues:
+- No defect remains within M6. Native Flight Recorder parsing and presentation of Villani bundles remains intentionally deferred to M7; empirical scoring remains deferred to M8.
+
+Next permitted milestone:
+- M7, only after the user starts a new Codex task from this completed state.
+
+#### 2026-07-10: M7 Native Flight Recorder observability
+
+Status: complete
+
+Changed files:
+- `PLANS.md`
+- `components/villani-flight-recorder/src/cli.ts`
+- `components/villani-flight-recorder/src/commands/launchVillani.ts`
+- `components/villani-flight-recorder/src/index/sessionIndex.ts`
+- `components/villani-flight-recorder/src/index/sessionTypes.ts`
+- `components/villani-flight-recorder/src/index/villaniRunIndex.ts`
+- `components/villani-flight-recorder/src/providers/providerAdapter.ts`
+- `components/villani-flight-recorder/src/providers/types.ts`
+- `components/villani-flight-recorder/src/providers/villani.ts`
+- `components/villani-flight-recorder/src/render/components/appShell.ts`
+- `components/villani-flight-recorder/src/render/components/metricCards.ts`
+- `components/villani-flight-recorder/src/render/components/villaniRunDetails.ts`
+- `components/villani-flight-recorder/src/render/deriveMetrics.ts`
+- `components/villani-flight-recorder/src/render/deriveTimeline.ts`
+- `components/villani-flight-recorder/src/render/sessionBrowser.ts`
+- `components/villani-flight-recorder/src/render/theme.ts`
+- `components/villani-flight-recorder/src/render/viewModel.ts`
+- `components/villani-flight-recorder/src/scanners/findSessions.ts`
+- `components/villani-flight-recorder/src/scanners/findVillaniRuns.ts`
+- `components/villani-flight-recorder/test/cliReplay.test.ts`
+- `components/villani-flight-recorder/test/fixtures/villani/.gitignore`
+- `components/villani-flight-recorder/test/fixtures/villani/README.md`
+- `components/villani-flight-recorder/test/helpers/villaniFixture.ts`
+- `components/villani-flight-recorder/test/villaniProvider.test.ts`
+- Corresponding generated JavaScript under `components/villani-flight-recorder/dist/`.
+
+Architectural decisions:
+- The Villani provider scans canonical run directories, validates snapshots with the M2 validator, applies the protocol's tolerant-final-line JSONL rule, and reads all attempts, verification, evidence, selection, materialization, trace, log, patch, token, duration, and cost data directly from the bundle without a conversion layer.
+- Canonical run directories remain read-only. The rebuildable index and static HTML stay under Flight Recorder output locations, and Villani launch/replay rejects configured outputs inside the canonical runs root.
+- Canonical event identifiers and sequence values are first-class normalized fields. Villani timelines sort by canonical `sequence`; unknown future event types remain generic inspectable events.
+- Villani view data is an optional extension to the existing replay model. Claude, Codex, Pi, generic, and Git paths retain their existing adapters and rendering behavior.
+- Aggregate accounting uses manifest values exactly. Runtime counters use explicit attempt telemetry when present and otherwise only positive canonical event occurrences; absent signals remain null, while explicit numeric zero remains zero.
+- The test fixture is generated from the normative M2 bundle by `test/helpers/villaniFixture.ts`; no divergent checked-in schema copy is maintained.
+
+Verification:
+- From `components/villani-flight-recorder`, `npm.cmd test -- villaniProvider.test.ts`: exit code 0; 13 passed, 0 failed, 0 errors, 0 skipped; 1 test file passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd test`: exit code 0; 86 passed, 0 failed, 0 errors, 0 skipped; 19 test files passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd run typecheck`: exit code 0; TypeScript typecheck passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run build`: exit code 0; TypeScript build passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run format:check`: exit code 0; Prettier reported all matched files use Prettier code style; test counts not applicable.
+- From `components/villani-flight-recorder`, `node dist/cli.js launch --provider villani --root test/fixtures/villani --run-id run_protocol_fixture --no-open --out <temporary-path>`: exit code 0; the requested canonical run detail HTML was written outside the run root.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 655 passed, 0 failed, 0 errors, 0 skipped, 114 deselected.
+- From `components/villani-code`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 670 passed, 0 failed, 0 errors, 1 skipped, 27 warnings.
+- From the repository root, `.\.venv\Scripts\python.exe -m pytest tests\closed_loop -q`: exit code 0; 2 passed, 0 failed, 0 errors, 0 skipped.
+- From the repository root, `git diff --check`: exit code 0; no whitespace errors.
+
+Acceptance criteria:
+- PASS: Flight Recorder discovers `~/.villani/runs` through `VILLANI_HOME`, scans directories containing `manifest.json`, `state.json`, and `events.jsonl`, and opens the complete canonical fixture directly without conversion.
+- PASS: Normalized events preserve `run_id`, `trace_id`, `attempt_id`, `event_id`, `parent_event_id`, and `sequence`; the controller timeline renders in canonical sequence order and future event types remain inspectable.
+- PASS: Run browser rows and run detail render the fixture's exact 275 tokens, 9,000 ms, USD 0.05, two attempts, selected `fixture-large` model, policy decisions, candidate eligibility, deterministic ranking, verification evidence, and successful materialization.
+- PASS: Null cost renders `Unknown`, missing counters and artifacts render `Unknown` or `Not captured`, and no missing metric is converted to numeric zero.
+- PASS: One corrupt run produces a readable corrupt index record without preventing a valid run from being indexed.
+- PASS: Fake API keys are redacted from canonical events and attempt artifacts before HTML rendering, with no remote scripts, fonts, analytics, or assets introduced.
+- PASS: `vfr launch --provider villani --root <runs-root> --run-id <id>` opens the requested detail through an injected browser opener; no run ID generates the run browser, and the legacy replay form used by `villani open` remains compatible.
+- PASS: Hash-and-mtime snapshots prove parsing and launch do not write canonical run files, and output paths under the canonical runs root fail closed.
+- PASS: Existing Claude, Codex, Pi, generic, and Git tests pass within the unchanged-provider full suite.
+
+Assumptions:
+- The M2 fixture directory name is not its canonical `run_id`; internal snapshot identities remain authoritative, while the generated M7 scanner fixture is copied into a directory named `run_protocol_fixture`.
+- Root schema discovery remains monorepo-local in M7; release packaging of schemas is intentionally deferred to M9.
+
+Known remaining issues:
+- none within this milestone
+
+Next permitted milestone:
+- M8, only after the user starts a new Codex task from this completed state.

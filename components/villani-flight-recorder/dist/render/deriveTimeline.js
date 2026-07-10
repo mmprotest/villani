@@ -3,9 +3,13 @@ const rawIsError = (e) => Boolean(e.raw &&
     typeof e.raw === "object" &&
     "is_error" in e.raw &&
     e.raw.is_error === true);
-export const eventStatus = (e) => e.type === "error" || (e.exitCode ?? 0) !== 0 || rawIsError(e)
-    ? "failed"
-    : "completed";
+export const eventStatus = (e) => e.provider === "villani" &&
+    e.raw?.event_type ===
+        "run_exhausted"
+    ? "warning"
+    : e.type === "error" || (e.exitCode ?? 0) !== 0 || rawIsError(e)
+        ? "failed"
+        : "completed";
 export const eventSeverity = (e) => e.type === "error" || (e.exitCode ?? 0) !== 0 || rawIsError(e)
     ? "failed"
     : e.type === "unknown" || (e.warnings?.length ?? 0) > 0
@@ -45,6 +49,12 @@ function timelineCopy(e) {
             subtitle: "Captured file edit",
         };
     }
+    if (e.provider === "villani") {
+        return {
+            title: e.title,
+            subtitle: e.summary || "Canonical controller event",
+        };
+    }
     if (["git_commit", "git_status", "diff"].includes(e.type)) {
         return { title: e.title, subtitle: "Repository reconstruction" };
     }
@@ -72,6 +82,10 @@ const commandIsResult = (e) => Boolean(e.command) && commandHasResult(e);
 const rawObj = (e) => e.raw && typeof e.raw === "object" && !Array.isArray(e.raw)
     ? e.raw
     : {};
+const villaniEventType = (e) => {
+    const raw = rawObj(e);
+    return typeof raw.event_type === "string" ? raw.event_type : undefined;
+};
 const commandLifecycleKey = (e) => {
     const raw = rawObj(e);
     const candidates = [
@@ -165,7 +179,13 @@ function groupCommandLifecycle(events) {
     return grouped;
 }
 export function deriveTimeline(events) {
-    return groupCommandLifecycle(events).map((e) => ({
+    const canonical = events.some((event) => event.sequence !== undefined);
+    const ordered = canonical
+        ? events
+            .slice()
+            .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+        : groupCommandLifecycle(events);
+    return ordered.map((e) => ({
         id: e.id,
         timestamp: e.timestamp,
         title: timelineCopy(e).title,
@@ -173,13 +193,19 @@ export function deriveTimeline(events) {
         durationLabel: fmtDuration(e.durationMs),
         status: eventStatus(e),
         severity: eventSeverity(e),
-        icon: (e.command
-            ? "terminal"
-            : e.type.includes("file")
-                ? "edit"
-                : e.type.includes("message")
-                    ? "review"
-                    : "parse"),
+        icon: (villaniEventType(e)?.includes("materialization") ||
+            villaniEventType(e) === "patch_captured"
+            ? "edit"
+            : villaniEventType(e)?.includes("policy") ||
+                villaniEventType(e)?.includes("selected")
+                ? "review"
+                : e.command
+                    ? "terminal"
+                    : e.type.includes("file")
+                        ? "edit"
+                        : e.type.includes("message")
+                            ? "review"
+                            : "parse"),
         eventType: e.type,
         detail: {
             title: timelineCopy(e).title,

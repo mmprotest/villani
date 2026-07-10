@@ -1,10 +1,11 @@
 from __future__ import annotations
 import os
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 Provider = Literal["openai-compatible", "openai", "anthropic", "villani-code", "local", "custom"]
 Role = Literal["coding", "classification", "review", "policy", "investigation", "selection"]
+BillingMode = Literal["token", "compute_time", "fixed", "hybrid", "unknown"]
 
 class Backend(BaseModel):
     name: str
@@ -13,8 +14,15 @@ class Backend(BaseModel):
     model: str
     api_key: str | None = None
     api_key_env: str | None = None
-    input_cost_per_million: float = 0.0
-    output_cost_per_million: float = 0.0
+    input_cost_per_million: float = Field(default=0.0, ge=0)
+    output_cost_per_million: float = Field(default=0.0, ge=0)
+    billing_mode: BillingMode = "unknown"
+    compute_cost_per_hour: float | None = Field(default=None, ge=0)
+    fixed_cost_per_attempt: float | None = Field(default=None, ge=0)
+    estimated_input_tokens: int | None = Field(default=None, ge=0)
+    estimated_output_tokens: int | None = Field(default=None, ge=0)
+    estimated_duration_seconds: float | None = Field(default=None, ge=0)
+    capability_score_source: str = Field(default="user_configured", min_length=1)
     roles: list[Role] = Field(default_factory=lambda: ["coding"])
     capability_score: int = 0
     max_parallel: int = Field(default=1, ge=1, le=32)
@@ -24,6 +32,28 @@ class Backend(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)  # backward compatible
     command_name: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_token_billing(cls, value: Any) -> Any:
+        """Infer token billing only for old configs with a positive token price."""
+
+        if not isinstance(value, dict) or "billing_mode" in value:
+            return value
+        input_price = value.get("input_cost_per_million")
+        output_price = value.get("output_cost_per_million")
+        def is_positive(price: Any) -> bool:
+            if price is None or isinstance(price, bool):
+                return False
+            try:
+                return float(price) > 0
+            except (TypeError, ValueError):
+                return False
+
+        positive_price = any(
+            is_positive(price) for price in (input_price, output_price)
+        )
+        return {**value, "billing_mode": "token" if positive_price else "unknown"}
 
     def resolved_api_key(self) -> str | None:
         if self.api_key_env:
