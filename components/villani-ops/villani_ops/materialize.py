@@ -200,7 +200,6 @@ def _git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _changed_files_from_patch(patch: Path) -> list[str]:
-    proc = subprocess.run(['git', 'diff', '--name-only', '--no-index', '/dev/null', str(patch)], text=True, capture_output=True)
     # For patch files, parse headers instead of depending on diff semantics.
     files: list[str] = []
     for line in patch.read_text(encoding='utf-8', errors='replace').splitlines():
@@ -211,7 +210,7 @@ def _changed_files_from_patch(patch: Path) -> list[str]:
     return sorted(set(files))
 
 
-def _apply_patch(repo: Path, patch: Path) -> dict[str, Any]:
+def apply_patch_safely(repo: Path, patch: Path) -> dict[str, Any]:
     if not repo.exists():
         raise FileNotFoundError(f'target repo does not exist: {repo}')
     if not patch.exists():
@@ -226,6 +225,10 @@ def _apply_patch(repo: Path, patch: Path) -> dict[str, Any]:
     if ap.returncode != 0:
         raise RuntimeError('git apply failed: ' + (ap.stderr.strip() or ap.stdout.strip()))
     return {'attempted': True, 'exit_code': 0, 'empty_patch': False, 'stdout': ap.stdout, 'stderr': ap.stderr, 'changed_files': _changed_files_from_patch(patch)}
+
+
+# Backward-compatible private name for existing callers.
+_apply_patch = apply_patch_safely
 
 
 def materialize_latest(workspace: str | Path, repo: str | Path | None = None, *, policy: str = 'accepted') -> MaterializationResult:
@@ -246,7 +249,7 @@ def materialize_latest(workspace: str | Path, repo: str | Path | None = None, *,
     if selection.source.startswith('verifier'):
         logs += [f'[materialize] found verifier orchestration: {selection.workspace_path.name}', f'[materialize] source: {selection.source}', f'[materialize] winner candidate: {selection.winner_candidate_id}', f'[materialize] patch: {selection.patch_path}']
     try:
-        artifact = _apply_patch(Path(target_repo), selection.patch_path)
+        artifact = apply_patch_safely(Path(target_repo), selection.patch_path)
         changed = artifact.get('changed_files') or []
         msg = 'empty selected patch; materialized no-op' if artifact.get('empty_patch') else 'applied selected patch'
         if selection.source.startswith('verifier'):

@@ -4,66 +4,20 @@ from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import json, secrets, subprocess, sys, time
+import json, secrets, time
 from villani_ops.isolation.copy_git import create_git_baselined_copy, capture_candidate_patch, remove_tree
 from villani_ops.runners import runner_for_name
 from villani_ops.storage.files import FileStorage
 from villani_ops.core.task import Task
 from villani_ops.core.backend import Backend
 from villani_ops.git_ops import safe_apply
-from .selection import select_winner, POLICY, LLM_COMPARE_POLICY, select_success_with_llm_comparison, build_candidate_evidence_matrix, write_candidate_evidence_matrix, write_selection_report, _finalize_evidence_reasons, rank_candidates_by_evidence
-
-
-
-def _is_verifier_debug_dir(path: Path) -> bool:
-    return path.is_dir() and (path / "session_meta.json").exists()
-
-def _safe_mtime(path: Path) -> float:
-    try:
-        return path.stat().st_mtime
-    except OSError:
-        return 0.0
-
-def _debug_dir_score(path: Path) -> tuple[int, float, str]:
-    score = 0
-    if (path / "session_meta.json").exists():
-        score += 10
-    if (path / "final_summary.json").exists():
-        score += 5
-    if (path / "commands.jsonl").exists():
-        score += 2
-    if (path / "tool_calls.jsonl").exists():
-        score += 2
-    mtimes = [_safe_mtime(path / name) for name in ("final_summary.json", "session_meta.json", "summary.json") if (path / name).exists()]
-    if not mtimes:
-        mtimes.append(_safe_mtime(path))
-    return (score, max(mtimes), path.name)
-
-def resolve_verifier_debug_dir(debug_root: Path | None, resolved_trace_dir: Path | None = None) -> Path | None:
-    if resolved_trace_dir and _is_verifier_debug_dir(resolved_trace_dir):
-        return resolved_trace_dir
-    candidates: list[Path] = []
-    if debug_root and _is_verifier_debug_dir(debug_root):
-        candidates.append(debug_root)
-    if debug_root and debug_root.exists():
-        children = [child for child in debug_root.iterdir() if child.is_dir()]
-        candidates.extend(child for child in children if _is_verifier_debug_dir(child))
-        for child in children:
-            candidates.extend(grandchild for grandchild in child.iterdir() if grandchild.is_dir() and _is_verifier_debug_dir(grandchild))
-    if not candidates:
-        return None
-    return max(set(candidates), key=_debug_dir_score)
-
-def _debug_resolution(debug_root: Path | None, resolved_trace_dir: Path | None) -> tuple[Path | None, str, str]:
-    resolved = resolve_verifier_debug_dir(debug_root, resolved_trace_dir)
-    if resolved is None:
-        root = debug_root or resolved_trace_dir
-        return None, "missing", f"No verifier-compatible Villani Code debug trace found. Expected session_meta.json under {root} or one of its child trace directories."
-    if resolved_trace_dir and resolved == resolved_trace_dir:
-        return resolved, "resolved", "selected runner resolved_trace_dir containing session_meta.json"
-    if debug_root and resolved == debug_root:
-        return resolved, "resolved", "selected debug root containing session_meta.json"
-    return resolved, "resolved", "selected nested trace directory containing session_meta.json"
+from villani_ops.verifier.service import (
+    debug_resolution as _debug_resolution,
+    execute_verifier,
+    is_verifier_debug_dir as _is_verifier_debug_dir,
+    resolve_verifier_debug_dir,
+)
+from .selection import select_winner, POLICY, LLM_COMPARE_POLICY, select_success_with_llm_comparison, build_candidate_evidence_matrix, write_candidate_evidence_matrix, write_selection_report, finalize_evidence_reasons, rank_candidates_by_evidence
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def write_json(p:Path,o): p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(o,indent=2,default=str),encoding='utf-8')
@@ -131,27 +85,27 @@ class VerifierParallelOrchestrator:
         return cr
     def _run_verifier(self, cr:CandidateResult, odir:Path):
         vdir=odir/'candidates'/cr.candidate_id/'verifier'; vdir.mkdir(parents=True,exist_ok=True); out=vdir/'verifier-result.json'
-        if not cr.debug_dir or not _is_verifier_debug_dir(Path(cr.debug_dir)):
-            cr.debug_dir, cr.debug_resolution_status, cr.debug_resolution_reason = _debug_resolution(cr.debug_root, cr.resolved_trace_dir or cr.debug_dir)
-        if not cr.debug_dir or not _is_verifier_debug_dir(Path(cr.debug_dir)):
-            root = cr.debug_root or cr.resolved_trace_dir or cr.debug_dir
-            reason = f'No verifier-compatible Villani Code debug trace found. Expected session_meta.json under {root} or one of its child trace directories.'
-            cr.debug_resolution_status='missing'; cr.debug_resolution_reason=reason
-            cr.verifier_result={'result':None,'verdict':'error','confidence':0.0,'recommendedAction':'inspect_manually','reason':reason,'traceDir':None}; write_json(out, cr.verifier_result); return cr
-        try:
-            if self.verifier:
-                res=self.verifier(debug_dir=Path(cr.debug_dir), repo_dir=cr.worktree_path, workspace=self.config.workspace, backend=self.config.verifier_backend, out=out, trace_dir=vdir/'trace')
-                if isinstance(res,dict): write_json(out,res)
-            else:
-                cmd=[sys.executable,'-m','villani_ops.cli.main','verifier','--debug-dir',str(cr.debug_dir),'--repo-dir',str(cr.worktree_path),'--workspace',str(self.config.workspace),'--json','--out',str(out),'--verifier-timeout-seconds',str(self.config.verifier_timeout_seconds),'--max-verifier-tool-calls',str(self.config.verifier_max_tool_calls),'--trace-dir',str(vdir/'trace')]
-                if self.config.verifier_backend: cmd += ['--backend', self.config.verifier_backend]
-                p=subprocess.run(cmd,text=True,capture_output=True,timeout=self.config.verifier_timeout_seconds+30); (vdir/'stdout.txt').write_text(p.stdout); (vdir/'stderr.txt').write_text(p.stderr)
-                try: res=json.loads(p.stdout or out.read_text())
-                except Exception: res={'result':None,'verdict':'error','confidence':0.0,'recommendedAction':'inspect_manually','reason':'unparseable verifier output','traceDir':None,'stdoutPath':str(vdir/'stdout.txt'),'stderrPath':str(vdir/'stderr.txt')}
-        except Exception as e:
-            res={'result':None,'verdict':'error','confidence':0.0,'recommendedAction':'inspect_manually','reason':f'verifier subprocess failed: {e}','traceDir':None}
-            write_json(out,res)
-        cr.verifier_result=res if isinstance(res,dict) else {'result':None,'verdict':'error'}; cr.verifier_trace_dir=Path(cr.verifier_result.get('traceDir')) if cr.verifier_result.get('traceDir') else None; return cr
+        execution=execute_verifier(
+            debug_root=cr.debug_root,
+            resolved_trace_dir=cr.resolved_trace_dir or cr.debug_dir,
+            repo_dir=cr.worktree_path,
+            workspace=self.config.workspace,
+            backend=self.config.verifier_backend,
+            out=out,
+            trace_dir=vdir/'trace',
+            timeout_seconds=self.config.verifier_timeout_seconds,
+            max_tool_calls=self.config.verifier_max_tool_calls,
+            verifier=self.verifier,
+            invocation='subprocess',
+            stdout_path=vdir/'stdout.txt',
+            stderr_path=vdir/'stderr.txt',
+        )
+        cr.debug_dir=execution.debug_dir
+        cr.debug_resolution_status=execution.resolution_status
+        cr.debug_resolution_reason=execution.resolution_reason
+        cr.verifier_result=execution.result
+        cr.verifier_trace_dir=Path(cr.verifier_result.get('traceDir')) if cr.verifier_result.get('traceDir') else None
+        return cr
     def _record_candidate(self, cr, p):
         v=cr.verifier_result or {}; verifier_trace=wire_path(cr.verifier_trace_dir or v.get('traceDir'))
         return {'candidateId':cr.candidate_id,'worktreePath':str(cr.worktree_path),'status':'verified' if v else cr.run_status,'agent':self.config.agent,'backend':self.config.backend,'startedAt':cr.started_at,'completedAt':cr.completed_at,'debugRoot':str(cr.debug_root) if cr.debug_root else None,'debugDir':str(cr.debug_dir) if cr.debug_dir else None,'candidateDebugDir':wire_path(cr.debug_dir),'resolvedTraceDir':str(cr.resolved_trace_dir) if cr.resolved_trace_dir else None,'debugResolutionStatus':cr.debug_resolution_status,'debugResolutionReason':cr.debug_resolution_reason,'patchPath':str(cr.patch_path) if cr.patch_path else None,'patchStatus':cr.patch_status,'verifierResultPath':str(p/'candidates'/cr.candidate_id/'verifier'/'verifier-result.json'),'verifierTraceDir':verifier_trace,'traceDir':verifier_trace,'result':v.get('result'),'verdict':v.get('verdict'),'confidence':v.get('confidence'),'recommendedAction':v.get('recommendedAction'),'error':cr.error or (v.get('reason') if v.get('verdict')=='error' else None)}
@@ -220,7 +174,7 @@ class VerifierParallelOrchestrator:
             except Exception as e:
                 meta['fallbackUsed']=True; meta['fallbackReason']=str(e); sel.reason += f' LLM comparative selection failed; used deterministic evidence-ranked selector: {e}'
             llm_advisory=meta; sel.llmComparison=meta
-        evidence_matrix = _finalize_evidence_reasons(build_candidate_evidence_matrix(candidates, sel.winnerCandidateId), sel.winnerCandidateId)
+        evidence_matrix = finalize_evidence_reasons(build_candidate_evidence_matrix(candidates, sel.winnerCandidateId), sel.winnerCandidateId)
         selected_row = next((row for row in evidence_matrix if row.get('selection_status') == 'selected'), None)
         if selected_row and selected_row.get('final_selection_reason'):
             sel.reason = selected_row['final_selection_reason']

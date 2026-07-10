@@ -577,15 +577,15 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`M2: complete`
+`M4: complete`
 
 ### Milestone status
 
 - [x] M0: Monorepo and measured baseline
 - [x] M1: Green component baseline
 - [x] M2: Canonical protocol
-- [ ] M3: Deterministic controller with fakes
-- [ ] M4: Real attempt, verifier, selector, and materializer adapters
+- [x] M3: Deterministic controller with fakes
+- [x] M4: Real attempt, verifier, selector, and materializer adapters
 - [ ] M5: Cost accounting and bootstrap escalation policy
 - [ ] M6: Unified public CLI
 - [ ] M7: Native Flight Recorder observability
@@ -784,3 +784,92 @@ Known remaining issues:
 
 Next permitted milestone:
 - M3, only after the user starts a new Codex task from this completed state.
+
+#### 2026-07-10: M3 Deterministic controller with fakes
+
+Status: complete
+
+Changed files:
+- `PLANS.md`
+- `components/villani-ops/villani_ops/closed_loop/__init__.py`
+- `components/villani-ops/villani_ops/closed_loop/controller.py`
+- `components/villani-ops/villani_ops/closed_loop/event_writer.py`
+- `components/villani-ops/villani_ops/closed_loop/interfaces.py`
+- `components/villani-ops/villani_ops/closed_loop/run_store.py`
+- `components/villani-ops/villani_ops/closed_loop/state_machine.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/fakes.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_controller.py`
+
+Verification:
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops/tests/closed_loop/test_controller.py`: exit code 0; 15 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops/tests/closed_loop`: exit code 0; 31 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 602 passed, 0 failed, 0 errors, 0 skipped, 114 deselected.
+- From `components/villani-code`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 670 passed, 0 failed, 0 errors, 1 skipped, 27 warnings.
+- From `components/villani-flight-recorder`, `npm.cmd test`: exit code 0; 73 passed, 0 failed, 0 errors, 0 skipped; 18 test files passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd run typecheck`: exit code 0; TypeScript typecheck passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run build`: exit code 0; TypeScript build passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run format:check`: exit code 0; Prettier reported all matched files use Prettier code style; test counts not applicable.
+- From the repository root, `.\.venv\Scripts\python.exe -m pytest tests\closed_loop -q`: exit code 0; 2 passed, 0 failed, 0 errors, 0 skipped.
+
+Acceptance criteria:
+- PASS: All 15 named M3 fake-controller scenarios pass using only temporary run roots and injected pure fakes, with process and network entry points guarded against use.
+- PASS: The controller implements exactly the 15 canonical states and listed transitions, rejects illegal edges, and rejects every post-terminal transition.
+- PASS: Every accepted generated bundle document and event stream validates against the M2 schemas, with strictly monotonic event sequences and atomic state snapshots.
+- PASS: The controller imports no adaptive, agentic, graph, verifier-parallel, subprocess, network, Villani Code, or Flight Recorder execution path.
+- PASS: Villani Ops, Villani Code, Flight Recorder, and root closed-loop contract verification all remain green.
+
+Known remaining issues:
+- none within this milestone
+
+Next permitted milestone:
+- M4, only after the user starts a new Codex task from this completed state.
+
+#### 2026-07-10: M4 Real attempt, verifier, selector, and materializer adapters
+
+Status: complete
+
+Changed files:
+- `PLANS.md`
+- `components/villani-ops/villani_ops/closed_loop/__init__.py`
+- `components/villani-ops/villani_ops/closed_loop/controller.py`
+- `components/villani-ops/villani_ops/closed_loop/event_writer.py`
+- `components/villani-ops/villani_ops/closed_loop/interfaces.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/__init__.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/evidence_selector.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/git_isolation.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/patch_materializer.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/runtime_event_translation.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/villani_code_attempt.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/villani_verifier.py`
+- `components/villani-ops/villani_ops/materialize.py`
+- `components/villani-ops/villani_ops/orchestrator/selection.py`
+- `components/villani-ops/villani_ops/orchestrator/verifier_parallel.py`
+- `components/villani-ops/villani_ops/verifier/service.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_adapters.py`
+- `integration/fixtures/closed_loop_m4/tiny_repo/example.txt`
+
+Verification:
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops/tests/closed_loop/test_adapters.py`: exit code 0; 13 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops/tests/closed_loop villani_ops/tests/test_verifier_parallel_orchestrator.py villani_ops/tests/test_selection.py villani_ops/tests/test_materialize_verifier_orchestrations.py villani_ops/tests/test_verifier_orchestrator_materialization.py`: exit code 0; 127 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 615 passed, 0 failed, 0 errors, 0 skipped, 114 deselected.
+- From `components/villani-code`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 670 passed, 0 failed, 0 errors, 1 skipped, 27 warnings.
+- From `components/villani-flight-recorder`, `npm.cmd test`: exit code 0; 73 passed, 0 failed, 0 errors, 0 skipped; 18 test files passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd run typecheck`: exit code 0; TypeScript typecheck passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run build`: exit code 0; TypeScript build passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run format:check`: exit code 0; Prettier reported all matched files use Prettier code style; test counts not applicable.
+- From the repository root, `.\.venv\Scripts\python.exe -m pytest tests\closed_loop -q`: exit code 0; 2 passed, 0 failed, 0 errors, 0 skipped.
+
+Acceptance criteria:
+- PASS: The controller completes a temporary Git repository through the real isolation, Villani Code runner-protocol, deterministic verifier, evidence selector, and safe materializer adapters.
+- PASS: All 13 required M4 integration and safety scenarios pass without contacting a model endpoint.
+- PASS: The closed-loop path creates no `.villani-ops/orchestrations` directory and never uses verifier-parallel as its controller.
+- PASS: Missing traces, empty patches, malformed verifier output, verifier timeout, runner exit 127, unsafe patch paths, and failed apply are all non-accepting outcomes.
+- PASS: Runtime model, tool, command, file, and patch events are translated when present, raw debug traces remain under the canonical attempt, and configured secrets are absent from the run bundle.
+- PASS: Verifier-parallel reuses the extracted verifier execution and evidence-finalization services while its existing public behavior and tests remain green.
+- PASS: Villani Ops, Villani Code, Flight Recorder, and root closed-loop contract verification all remain green.
+
+Known remaining issues:
+- none within this milestone
+
+Next permitted milestone:
+- M5, only after the user starts a new Codex task from this completed state.

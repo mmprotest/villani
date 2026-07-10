@@ -1,9 +1,14 @@
-"""Canonical closed-loop protocol contracts and durable I/O primitives.
+"""Canonical closed-loop protocol and deterministic controller."""
 
-This package intentionally contains no controller or execution behavior.
-"""
-
+from .adapters import (
+    EvidenceSelectorAdapter,
+    PatchMaterializerAdapter,
+    VillaniCodeAttemptAdapter,
+    VillaniVerifierAdapter,
+)
+from .controller import ClosedLoopController
 from .durable_io import append_jsonl_durable, read_jsonl_tolerant, write_json_atomic
+from .interfaces import ClosedLoopRunRequest, ClosedLoopRunResult
 from .protocol import (
     AttemptSnapshot,
     ClassificationSnapshot,
@@ -30,8 +35,13 @@ from .schema_validation import (
 __all__ = [
     "AttemptSnapshot",
     "ClassificationSnapshot",
+    "ClosedLoopController",
+    "ClosedLoopRunRequest",
+    "ClosedLoopRunResult",
     "EventEnvelope",
+    "EvidenceSelectorAdapter",
     "MaterializationSnapshot",
+    "PatchMaterializerAdapter",
     "PolicyDecisionSnapshot",
     "ProtocolValidationError",
     "ProtocolValidationIssue",
@@ -41,6 +51,8 @@ __all__ = [
     "SelectionSnapshot",
     "TaskSnapshot",
     "VerificationSnapshot",
+    "VillaniCodeAttemptAdapter",
+    "VillaniVerifierAdapter",
     "append_jsonl_durable",
     "collect_protocol_validation_issues",
     "parse_protocol_document",

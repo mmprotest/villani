@@ -491,7 +491,7 @@ def _make_rejection_reason(row, winner) -> str:
     return 'Rejected because ' + '; '.join(gaps or ['its concrete evidence was weaker than the selected candidate']) + '.'
 
 
-def _finalize_evidence_reasons(rows: list[dict[str, Any]], winner_id: str | None) -> list[dict[str, Any]]:
+def finalize_evidence_reasons(rows: list[dict[str, Any]], winner_id: str | None) -> list[dict[str, Any]]:
     rows=sorted(rows, key=lambda r: r['candidate_id']); rows.sort(key=_evidence_rank_components, reverse=True)
     winner=next((r for r in rows if r['candidate_id']==winner_id), None)
     for r in rows:
@@ -500,6 +500,10 @@ def _finalize_evidence_reasons(rows: list[dict[str, Any]], winner_id: str | None
         else:
             r['selection_status']='rejected'; r['final_selection_reason']=_make_rejection_reason(r, winner)
     return rows
+
+
+# Kept for callers that imported the former private helper.
+_finalize_evidence_reasons = finalize_evidence_reasons
 
 
 def write_candidate_evidence_matrix(path: str | Path, matrix: list[dict[str, Any]]) -> Path:
