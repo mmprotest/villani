@@ -263,6 +263,7 @@ class VillaniVerifierAdapter:
             risk_flags=risks + tuple(f"acceptance_blocker:{item}" for item in blockers),
             raw_verifier_artifact=raw_path.relative_to(run_dir).as_posix(),
             metadata={
+                "verifier_version": "villani_ops_verifier_pipeline_v1",
                 "invocation_status": (
                     "malformed_output"
                     if not raw_shape_valid

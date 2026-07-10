@@ -149,3 +149,33 @@ def read_jsonl_tolerant(path: str | os.PathLike[str]) -> list[dict[str, Any]]:
             raise ValueError(f"JSONL line {index + 1} is not a JSON object")
         documents.append(document)
     return documents
+
+
+def repair_truncated_final_jsonl(path: str | os.PathLike[str]) -> bool:
+    """Remove only one structurally truncated final JSONL fragment.
+
+    Recovery must do this before appending, otherwise a new event would be
+    concatenated onto the unterminated object. Complete malformed lines are
+    never repaired and continue to fail validation.
+    """
+
+    source = Path(path)
+    if not source.is_file():
+        return False
+    raw = source.read_bytes()
+    if not raw or raw.endswith((b"\n", b"\r")):
+        return False
+    line_start = raw.rfind(b"\n") + 1
+    fragment = raw[line_start:].decode("utf-8")
+    try:
+        json.loads(fragment)
+    except json.JSONDecodeError as error:
+        if not _is_truncated_json_object(fragment, error):
+            raise
+    else:
+        return False
+    with source.open("r+b") as handle:
+        handle.truncate(line_start)
+        handle.flush()
+        os.fsync(handle.fileno())
+    return True

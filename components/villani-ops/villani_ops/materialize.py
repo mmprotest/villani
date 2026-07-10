@@ -227,6 +227,39 @@ def apply_patch_safely(repo: Path, patch: Path) -> dict[str, Any]:
     return {'attempted': True, 'exit_code': 0, 'empty_patch': False, 'stdout': ap.stdout, 'stderr': ap.stderr, 'changed_files': _changed_files_from_patch(patch)}
 
 
+def inspect_patch_application(repo: Path, patch: Path) -> dict[str, Any]:
+    """Classify an exact patch as applied, not applied, or unsafe to infer."""
+
+    if not repo.is_dir():
+        raise FileNotFoundError(f'target repo does not exist: {repo}')
+    if not patch.is_file():
+        raise FileNotFoundError(f'selected patch does not exist: {patch}')
+    reverse = _git(repo, ['apply', '--reverse', '--check', str(patch)])
+    if reverse.returncode == 0:
+        return {
+            'status': 'applied',
+            'reverse_check_exit_code': 0,
+            'normal_check_exit_code': None,
+            'changed_files': _changed_files_from_patch(patch),
+        }
+    normal = _git(repo, ['apply', '--check', str(patch)])
+    if normal.returncode == 0:
+        return {
+            'status': 'not_applied',
+            'reverse_check_exit_code': reverse.returncode,
+            'normal_check_exit_code': 0,
+            'changed_files': _changed_files_from_patch(patch),
+        }
+    return {
+        'status': 'unsafe',
+        'reverse_check_exit_code': reverse.returncode,
+        'normal_check_exit_code': normal.returncode,
+        'reverse_check_error': reverse.stderr.strip() or reverse.stdout.strip(),
+        'normal_check_error': normal.stderr.strip() or normal.stdout.strip(),
+        'changed_files': _changed_files_from_patch(patch),
+    }
+
+
 # Backward-compatible private name for existing callers.
 _apply_patch = apply_patch_safely
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 from villani_ops.core.backend import Backend
+from villani_ops.materialize import inspect_patch_application
 
 from .event_writer import EventWriter, failure_payload, redact_data, redact_message
 from .failure_classification import classify_failure, material_progress
@@ -39,6 +41,7 @@ from .interfaces import (
     Requirement,
     Selection,
     SelectionContext,
+    SelectionRanking,
     Selector,
     Verification,
     VerificationSummary,
@@ -64,12 +67,22 @@ from .protocol import (
     VerificationSnapshot,
 )
 from .run_store import RunStore, RunStoreError, json_safe_copy
+from .durable_io import (
+    read_jsonl_tolerant,
+    repair_truncated_final_jsonl,
+)
+from .schema_validation import (
+    parse_protocol_document,
+    validate_event_stream,
+    validate_protocol_document,
+)
 from .state_machine import ClosedLoopStateMachine, TERMINAL_STATES
 from .policy import (
     BootstrapPolicyConfiguration,
     BootstrapPolicyEngine,
     configured_backends,
 )
+from .adapters.git_isolation import validate_target_lineage
 
 
 def _utc_now() -> datetime:
@@ -133,8 +146,14 @@ class _Runtime:
     attempt_start_events: dict[str, str] = field(default_factory=dict)
     attempt_patches: dict[str, str] = field(default_factory=dict)
     verifications: list[VerificationSnapshot] = field(default_factory=list)
+    policy_decisions: list[PolicyDecisionSnapshot] = field(default_factory=list)
+    allocated_attempt_ids: set[str] = field(default_factory=set)
     eligible_candidate_ids: list[str] = field(default_factory=list)
     selected_attempt_id: str | None = None
+    selection: SelectionSnapshot | None = None
+    materialization: MaterializationSnapshot | None = None
+    committed_events: list[EventEnvelope] = field(default_factory=list)
+    loaded_state_terminal: bool = False
     failure: FailureDetail | None = None
     terminal_reason: str | None = None
 
@@ -155,6 +174,7 @@ class ClosedLoopController:
         monotonic: Callable[[], float] | None = None,
         id_factory: Callable[[str], str] | None = None,
         on_event: Callable[[EventEnvelope], None] | None = None,
+        failure_injector: Callable[[str], None] | None = None,
     ) -> None:
         self._classifier = classifier
         self._policy_engine = policy_engine
@@ -166,6 +186,11 @@ class ClosedLoopController:
         self._monotonic = monotonic or time.monotonic
         self._id_factory = id_factory or _default_id
         self._on_event = on_event
+        self._failure_injector = failure_injector
+
+    def _checkpoint(self, boundary: str) -> None:
+        if self._failure_injector is not None:
+            self._failure_injector(boundary)
 
     def run(self, request: ClosedLoopRunRequest) -> ClosedLoopRunResult:
         """Execute one run to a canonical terminal state and return its summary."""
@@ -190,38 +215,10 @@ class ClosedLoopController:
                 events=events,
             )
             self._initialize_bundle(runtime)
+            self._checkpoint("after_run_creation")
             if not self._classify(runtime):
                 return self._result(runtime)
-
-            while not runtime.machine.terminal:
-                decision = self._ask_policy(runtime)
-                if decision is None:
-                    break
-                action, attempt_id = decision
-
-                if action.action == "fail":
-                    self._fail(runtime, "policy_failed", action.reason)
-                    break
-                if action.action == "exhaust":
-                    if runtime.eligible_candidate_ids:
-                        self._select_and_materialize(runtime)
-                    else:
-                        self._exhaust(runtime, action.reason)
-                    break
-                if action.action == "select":
-                    self._select_and_materialize(runtime)
-                    break
-
-                assert attempt_id is not None
-                budget_reason = self._attempt_budget_block(runtime, action)
-                if budget_reason is not None:
-                    if runtime.eligible_candidate_ids:
-                        self._select_and_materialize(runtime)
-                    else:
-                        self._exhaust(runtime, budget_reason)
-                    break
-                self._run_attempt(runtime, action, attempt_id)
-
+            self._drive(runtime)
             return self._result(runtime)
         except Exception as error:
             if runtime is not None and not runtime.machine.terminal:
@@ -251,6 +248,1209 @@ class ClosedLoopController:
                 failure_or_exhaustion_reason=redact_message(str(error)),
             )
 
+    def _drive(
+        self,
+        runtime: _Runtime,
+        pending: tuple[PolicyDecision, str | None] | None = None,
+    ) -> None:
+        """Continue a new or recovered run from a committed controller state."""
+
+        next_decision = pending
+        while not runtime.machine.terminal:
+            decision = next_decision or self._ask_policy(runtime)
+            next_decision = None
+            if decision is None:
+                break
+            action, attempt_id = decision
+
+            if action.action == "fail":
+                self._fail(runtime, "policy_failed", action.reason)
+                break
+            if action.action == "exhaust":
+                if runtime.eligible_candidate_ids:
+                    self._select_and_materialize(runtime)
+                else:
+                    self._exhaust(runtime, action.reason)
+                break
+            if action.action == "select":
+                self._select_and_materialize(runtime)
+                break
+
+            assert attempt_id is not None
+            budget_reason = self._attempt_budget_block(runtime, action)
+            if budget_reason is not None:
+                if runtime.eligible_candidate_ids:
+                    self._select_and_materialize(runtime)
+                else:
+                    self._exhaust(runtime, budget_reason)
+                break
+            self._run_attempt(runtime, action, attempt_id)
+
+    def resume(
+        self, run_id: str, runs_root: str | Path
+    ) -> ClosedLoopRunResult:
+        """Reconcile and continue one interrupted canonical run idempotently."""
+
+        store = RunStore(runs_root, run_id)
+        runtime: _Runtime | None = None
+        try:
+            with store.recovery_lock():
+                runtime = self._load_recovery_runtime(store)
+                # A committed terminal state is read-only: no recovery event,
+                # dependency invocation, snapshot rewrite, or bundle mutation.
+                if runtime.loaded_state_terminal:
+                    return self._result(runtime)
+                if runtime.machine.terminal:
+                    self._recovery_event(
+                        runtime,
+                        "terminal_state_reconciled",
+                        {"committed_terminal_state": runtime.machine.state},
+                    )
+                    return self._result(runtime)
+                repaired: list[str] = []
+                for name in ("events.jsonl", "policy_decisions.jsonl"):
+                    path = store.run_directory / name
+                    if repair_truncated_final_jsonl(path):
+                        repaired.append(name)
+                if repaired:
+                    runtime = self._load_recovery_runtime(store)
+                    self._recovery_event(
+                        runtime,
+                        "truncated_jsonl_repaired",
+                        {"files": repaired},
+                    )
+                self._reconcile_and_continue(runtime)
+                return self._result(runtime)
+        except Exception as error:
+            if runtime is not None and not runtime.machine.terminal:
+                try:
+                    self._recovery_event(
+                        runtime,
+                        "failed",
+                        {
+                            "exception_class": error.__class__.__name__,
+                            "message": redact_message(str(error)),
+                            "manual_inspection_required": True,
+                        },
+                    )
+                    self._fail(
+                        runtime,
+                        "recovery_failure",
+                        redact_message(str(error)),
+                        error=error,
+                    )
+                    return self._result(runtime)
+                except Exception:
+                    pass
+            return ClosedLoopRunResult(
+                run_id=run_id,
+                terminal_state="FAILED",
+                selected_attempt_id=(
+                    runtime.selected_attempt_id if runtime is not None else None
+                ),
+                run_directory=store.run_directory,
+                actual_known_cost_usd=None,
+                accounting_status="unknown",
+                failure_or_exhaustion_reason=redact_message(str(error)),
+            )
+
+    @staticmethod
+    def _read_protocol(path: Path, expected: type[Any]) -> Any:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        validate_protocol_document(document)
+        value = expected.model_validate(document)
+        return value
+
+    def _load_recovery_runtime(self, store: RunStore) -> _Runtime:
+        run_dir = store.run_directory
+        manifest = self._read_protocol(
+            run_dir / "manifest.json", RunManifestSnapshot
+        )
+        state = self._read_protocol(run_dir / "state.json", RunStateSnapshot)
+        task = self._read_protocol(run_dir / "task.json", TaskSnapshot)
+        if not (
+            manifest.run_id == state.run_id == task.run_id == store.run_id
+            and manifest.trace_id == state.trace_id
+            and manifest.task_id == task.task_id
+        ):
+            raise RunStoreError("canonical recovery identities do not agree")
+
+        event_documents = read_jsonl_tolerant(run_dir / "events.jsonl")
+        events = validate_event_stream(event_documents)
+        if not events:
+            raise RunStoreError("canonical run has no committed events")
+        if any(
+            event.run_id != store.run_id or event.trace_id != manifest.trace_id
+            for event in events
+        ):
+            raise RunStoreError("event identity does not match the run manifest")
+        store.open_existing(last_sequence=events[-1].sequence)
+
+        machine = ClosedLoopStateMachine()
+        previous_state: str | None = None
+        state_at_sequence: dict[int, str] = {}
+        for event in events:
+            from_state = event.payload.get("from_state")
+            to_state = event.payload.get("to_state")
+            if to_state is not None:
+                if from_state != machine.state:
+                    raise RunStoreError(
+                        f"event {event.event_id} contradicts committed state "
+                        f"{machine.state}"
+                    )
+                previous_state = machine.state
+                machine.transition(str(to_state))  # type: ignore[arg-type]
+            state_at_sequence[event.sequence] = machine.state
+        if state.last_sequence not in state_at_sequence:
+            raise RunStoreError("state snapshot references an uncommitted event")
+        if state_at_sequence[state.last_sequence] != state.state:
+            raise RunStoreError("state snapshot contradicts its committed event")
+
+        configuration = manifest.metadata.get("policy_configuration")
+        if not isinstance(configuration, Mapping):
+            configuration = {}
+        run_created = events[0]
+        max_attempts_value = run_created.payload.get("max_attempts", 1)
+        budgets = configuration.get("budgets")
+        budget_values = budgets if isinstance(budgets, Mapping) else {}
+        request = ClosedLoopRunRequest(
+            task=task.instruction,
+            repository_path=task.repository_path,
+            success_criteria=task.success_criteria,
+            runs_root=store.runs_root,
+            max_attempts=max(int(max_attempts_value), 1),
+            max_cost=(
+                float(budget_values["max_cost"])
+                if budget_values.get("max_cost") is not None
+                else None
+            ),
+            max_wall_time=(
+                float(budget_values["max_wall_time"])
+                if budget_values.get("max_wall_time") is not None
+                else None
+            ),
+            requires_file_changes=task.requires_file_changes,
+            policy_configuration=dict(configuration),
+        )
+        runtime = _Runtime(
+            request=request,
+            run_id=manifest.run_id,
+            trace_id=manifest.trace_id,
+            task_id=manifest.task_id,
+            created_at=manifest.created_at,
+            started_monotonic=self._monotonic(),
+            store=store,
+            events=EventWriter(store, manifest.trace_id, self._now, self._on_event),
+            machine=machine,
+            last_event=events[-1],
+            previous_state=previous_state,
+            active_attempt_id=state.active_attempt_id,
+            selected_attempt_id=manifest.selected_attempt_id,
+            failure=state.failure,
+            terminal_reason=str(state.metadata.get("terminal_reason") or "") or None,
+            committed_events=list(events),
+            loaded_state_terminal=state.terminal,
+        )
+
+        classification_path = run_dir / "classification.json"
+        if classification_path.is_file():
+            classification = self._read_protocol(
+                classification_path, ClassificationSnapshot
+            )
+            if classification.run_id != runtime.run_id:
+                raise RunStoreError("classification belongs to another run")
+            runtime.classification = classification
+
+        decisions_path = run_dir / "policy_decisions.jsonl"
+        if decisions_path.is_file():
+            decision_documents = read_jsonl_tolerant(decisions_path)
+            for expected_sequence, document in enumerate(decision_documents, 1):
+                parsed = parse_protocol_document(document)
+                if not isinstance(parsed, PolicyDecisionSnapshot):
+                    raise RunStoreError("policy JSONL contains a non-policy document")
+                if (
+                    parsed.run_id != runtime.run_id
+                    or parsed.trace_id != runtime.trace_id
+                    or parsed.decision_sequence != expected_sequence
+                ):
+                    raise RunStoreError("policy decision identity or sequence is invalid")
+                runtime.policy_decisions.append(parsed)
+                if parsed.attempt_id:
+                    runtime.allocated_attempt_ids.add(parsed.attempt_id)
+        runtime.policy_decision_count = len(runtime.policy_decisions)
+
+        attempt_ids = set(manifest.attempt_ids)
+        attempt_ids.update(
+            event.attempt_id
+            for event in events
+            if event.attempt_id and event.event_type == "attempt_started"
+        )
+        attempt_ids.update(runtime.allocated_attempt_ids)
+        attempts_root = run_dir / "attempts"
+        if attempts_root.is_dir():
+            attempt_ids.update(
+                path.name
+                for path in attempts_root.iterdir()
+                if path.is_dir() and path.name.startswith("attempt_")
+            )
+        for attempt_id in sorted(attempt_ids):
+            runtime.allocated_attempt_ids.add(attempt_id)
+            start_event = next(
+                (
+                    event
+                    for event in reversed(events)
+                    if event.event_type == "attempt_started"
+                    and event.attempt_id == attempt_id
+                ),
+                None,
+            )
+            if start_event is not None:
+                runtime.attempt_start_events[attempt_id] = start_event.event_id
+            attempt_path = attempts_root / attempt_id / "attempt.json"
+            if not attempt_path.is_file():
+                continue
+            attempt = self._read_protocol(attempt_path, AttemptSnapshot)
+            if attempt.run_id != runtime.run_id or attempt.attempt_id != attempt_id:
+                raise RunStoreError("attempt snapshot identity is invalid")
+            runtime.attempts.append(attempt)
+            context = self._attempt_context_from_snapshot(runtime, attempt)
+            runtime.attempt_contexts[attempt_id] = context
+            result = self._attempt_result_from_snapshot(runtime, attempt)
+            runtime.attempt_results[attempt_id] = result
+            if result.patch is not None:
+                runtime.attempt_patches[attempt_id] = result.patch
+            for artifact_name in ("worktree.json", "runner_telemetry.json"):
+                artifact = attempts_root / attempt_id / artifact_name
+                if artifact.is_file():
+                    value = json.loads(artifact.read_text(encoding="utf-8"))
+                    if not isinstance(value, dict):
+                        raise RunStoreError(f"{artifact_name} must be a JSON object")
+            verification_path = run_dir / "verification" / f"{attempt_id}.json"
+            if verification_path.is_file():
+                verification = self._read_protocol(
+                    verification_path, VerificationSnapshot
+                )
+                if (
+                    verification.run_id != runtime.run_id
+                    or verification.attempt_id != attempt_id
+                ):
+                    raise RunStoreError("verification snapshot identity is invalid")
+                runtime.verifications.append(verification)
+                if verification.acceptance_eligible:
+                    runtime.eligible_candidate_ids.append(attempt_id)
+
+        selection_path = run_dir / "selection.json"
+        if selection_path.is_file():
+            selection = self._read_protocol(selection_path, SelectionSnapshot)
+            if selection.run_id != runtime.run_id:
+                raise RunStoreError("selection belongs to another run")
+            runtime.selection = selection
+            runtime.selected_attempt_id = (
+                selection.selected_candidate_ids[0]
+                if selection.selected_candidate_ids
+                else None
+            )
+        materialization_path = run_dir / "materialization.json"
+        if materialization_path.is_file():
+            materialization = self._read_protocol(
+                materialization_path, MaterializationSnapshot
+            )
+            if materialization.run_id != runtime.run_id:
+                raise RunStoreError("materialization belongs to another run")
+            runtime.materialization = materialization
+        return runtime
+
+    def _attempt_context_from_snapshot(
+        self, runtime: _Runtime, attempt: AttemptSnapshot
+    ) -> AttemptContext:
+        return AttemptContext(
+            run_id=runtime.run_id,
+            trace_id=runtime.trace_id,
+            task_id=runtime.task_id,
+            attempt_id=attempt.attempt_id,
+            ordinal=attempt.ordinal,
+            task=runtime.request.task,
+            repository_path=str(runtime.request.repository_path),
+            success_criteria=runtime.request.success_criteria,
+            requires_file_changes=runtime.request.requires_file_changes,
+            backend_name=attempt.backend_name,
+            model=attempt.model,
+            policy_configuration=_read_only_mapping(
+                runtime.request.policy_configuration
+            ),
+            run_directory=runtime.store.run_directory,
+            attempt_directory=(
+                runtime.store.run_directory / "attempts" / attempt.attempt_id
+            ),
+        )
+
+    def _artifact_text(self, runtime: _Runtime, value: str | None) -> str:
+        if not value:
+            return ""
+        path = (runtime.store.run_directory / value).resolve()
+        if not path.is_relative_to(runtime.store.run_directory.resolve()):
+            raise RunStoreError("attempt artifact path escapes the run directory")
+        return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+
+    def _attempt_result_from_snapshot(
+        self, runtime: _Runtime, attempt: AttemptSnapshot
+    ) -> AttemptResult:
+        patch = self._artifact_text(runtime, attempt.patch_path)
+        telemetry: Mapping[str, Any] = {}
+        if attempt.runner_telemetry_path:
+            telemetry_path = (
+                runtime.store.run_directory / attempt.runner_telemetry_path
+            ).resolve()
+            if telemetry_path.is_file():
+                loaded = json.loads(telemetry_path.read_text(encoding="utf-8"))
+                telemetry = loaded if isinstance(loaded, dict) else {}
+        return AttemptResult(
+            runner_name=attempt.runner_name,
+            status=attempt.status,
+            worktree_path=attempt.worktree_path,
+            patch=patch,
+            exit_code=attempt.exit_code,
+            model=attempt.model,
+            stdout=self._artifact_text(runtime, attempt.stdout_path),
+            stderr=self._artifact_text(runtime, attempt.stderr_path),
+            runner_telemetry=telemetry,
+            duration_ms=attempt.duration_ms,
+            duration_accounting_status=attempt.duration_accounting_status,
+            input_tokens=attempt.input_tokens,
+            output_tokens=attempt.output_tokens,
+            token_accounting_status=attempt.token_accounting_status,
+            cost_usd=attempt.cost_usd,
+            cost_accounting_status=attempt.cost_accounting_status,
+            error=(
+                DependencyFailure(
+                    code=attempt.error.code,
+                    message=attempt.error.message,
+                    details=attempt.error.details,
+                )
+                if attempt.error is not None
+                else None
+            ),
+            metadata=attempt.metadata,
+        )
+
+    def _recovery_event(
+        self, runtime: _Runtime, action: str, evidence: Mapping[str, Any]
+    ) -> EventEnvelope:
+        event = self._emit_state_event(
+            runtime,
+            f"recovery_{action}",
+            {
+                "previous_state": runtime.machine.state,
+                "evidence": _mapping_copy(evidence),
+            },
+            attempt_id=(
+                runtime.active_attempt_id
+                if action.startswith(("attempt", "verification"))
+                else None
+            ),
+        )
+        self._persist_manifest(runtime)
+        return event
+
+    def _has_event(
+        self,
+        runtime: _Runtime,
+        event_type: str,
+        *,
+        attempt_id: str | None = None,
+        decision_id: str | None = None,
+    ) -> bool:
+        return any(
+            event.event_type == event_type
+            and (attempt_id is None or event.attempt_id == attempt_id)
+            and (
+                decision_id is None
+                or event.payload.get("decision_id") == decision_id
+            )
+            for event in runtime.committed_events
+        )
+
+    def _policy_from_snapshot(
+        self, snapshot: PolicyDecisionSnapshot
+    ) -> PolicyDecision:
+        return PolicyDecision(
+            action=snapshot.action,
+            reason=snapshot.reason,
+            considered_backends=tuple(
+                BackendOption(
+                    backend_name=item.backend_name,
+                    model=item.model,
+                    eligible=item.eligible,
+                    capability_score=item.capability_score,
+                    estimated_cost_usd=item.estimated_cost_usd,
+                    cost_accounting_status=item.cost_accounting_status,
+                    rejection_reasons=tuple(item.rejection_reasons),
+                )
+                for item in snapshot.considered_backends
+            ),
+            chosen_backend=snapshot.chosen_backend,
+            chosen_model=snapshot.chosen_model,
+            policy_version=snapshot.policy_version,
+            classification_reference=snapshot.classification_id,
+            metadata=snapshot.metadata,
+        )
+
+    def _latest_planned_policy(
+        self, runtime: _Runtime
+    ) -> tuple[PolicyDecision, str | None, PolicyDecisionSnapshot] | None:
+        if not runtime.policy_decisions:
+            return None
+        snapshot = runtime.policy_decisions[-1]
+        return self._policy_from_snapshot(snapshot), snapshot.attempt_id, snapshot
+
+    def _reconcile_and_continue(self, runtime: _Runtime) -> None:
+        while not runtime.machine.terminal:
+            state = runtime.machine.state
+            if state == "CREATED":
+                self._recovery_event(
+                    runtime,
+                    "classification_restarted",
+                    {"reason": "run creation committed without classification start"},
+                )
+                if not self._classify(runtime):
+                    return
+                self._drive(runtime)
+                return
+
+            if state == "CLASSIFYING":
+                if runtime.classification is None:
+                    if self._has_event(runtime, "classification_completed"):
+                        raise RunStoreError(
+                            "classification completion exists without a valid snapshot"
+                        )
+                    self._recovery_event(
+                        runtime,
+                        "classification_retried",
+                        {"reason": "classification started without a snapshot"},
+                    )
+                    if not self._classify(runtime, already_started=True):
+                        return
+                else:
+                    self._recovery_event(
+                        runtime,
+                        "classification_completion_reconciled",
+                        {
+                            "classification_id": runtime.classification.classification_id
+                        },
+                    )
+                    self._transition(
+                        runtime,
+                        "CLASSIFIED",
+                        "classification_completed",
+                        {
+                            "classification_id": runtime.classification.classification_id,
+                            "recovered": True,
+                        },
+                    )
+                self._drive(runtime)
+                return
+
+            if runtime.classification is None:
+                raise RunStoreError(
+                    "committed classification state has no valid classification snapshot"
+                )
+
+            planned = self._latest_planned_policy(runtime)
+            if state in {"CLASSIFIED", "REJECTED", "VERIFIED"} and planned:
+                decision, attempt_id, snapshot = planned
+                if not self._has_event(
+                    runtime, "policy_selected", decision_id=snapshot.decision_id
+                ):
+                    self._recovery_event(
+                        runtime,
+                        "policy_completion_reconciled",
+                        {"decision_id": snapshot.decision_id},
+                    )
+                    self._record_policy_state(runtime, decision, snapshot)
+                    state = runtime.machine.state
+
+            if state in {"CLASSIFIED", "REJECTED", "VERIFIED"}:
+                if runtime.selection is not None:
+                    self._reuse_selection(runtime)
+                    return
+                self._drive(runtime)
+                return
+
+            if state == "POLICY_SELECTED":
+                if planned is None:
+                    raise RunStoreError(
+                        "POLICY_SELECTED has no committed policy decision"
+                    )
+                decision, attempt_id, snapshot = planned
+                self._recovery_event(
+                    runtime,
+                    "policy_reused",
+                    {
+                        "decision_id": snapshot.decision_id,
+                        "attempt_id": attempt_id,
+                    },
+                )
+                if decision.action == "select":
+                    if runtime.selection is not None:
+                        self._reuse_selection(runtime)
+                    else:
+                        self._select_and_materialize(runtime)
+                    return
+                if decision.action in {"fail", "exhaust"}:
+                    self._drive(runtime, (decision, attempt_id))
+                    return
+                if attempt_id is None:
+                    raise RunStoreError("attempt policy decision has no attempt ID")
+                if self._has_event(
+                    runtime, "attempt_started", attempt_id=attempt_id
+                ):
+                    raise RunStoreError(
+                        "attempt start event exists but recovered state is POLICY_SELECTED"
+                    )
+                self._drive(runtime, (decision, attempt_id))
+                return
+
+            if state == "ATTEMPT_RUNNING":
+                attempt_id = self._active_attempt_from_events(runtime)
+                runtime.active_attempt_id = attempt_id
+                attempt = next(
+                    (
+                        item
+                        for item in runtime.attempts
+                        if item.attempt_id == attempt_id
+                    ),
+                    None,
+                )
+                if attempt is None:
+                    self._record_interrupted_attempt(runtime, attempt_id)
+                    self._drive(runtime)
+                    return
+                self._recovery_event(
+                    runtime,
+                    "attempt_completion_reconciled",
+                    {
+                        "attempt_id": attempt_id,
+                        "snapshot_status": attempt.status,
+                    },
+                )
+                self._complete_loaded_attempt(runtime, attempt)
+                self._drive(runtime)
+                return
+
+            if state == "ATTEMPT_COMPLETED":
+                attempt_id = self._active_attempt_from_events(runtime)
+                attempt = next(
+                    (item for item in runtime.attempts if item.attempt_id == attempt_id),
+                    None,
+                )
+                if attempt is None:
+                    raise RunStoreError(
+                        "ATTEMPT_COMPLETED has no valid attempt snapshot"
+                    )
+                verification = next(
+                    (
+                        item
+                        for item in runtime.verifications
+                        if item.attempt_id == attempt_id
+                    ),
+                    None,
+                )
+                if verification is not None:
+                    self._transition(
+                        runtime,
+                        "VERIFYING",
+                        "verification_started",
+                        {"attempt_id": attempt_id, "recovered": True},
+                        attempt_id=attempt_id,
+                    )
+                    self._complete_loaded_verification(runtime, verification)
+                else:
+                    self._resume_verification(runtime, attempt, already_started=False)
+                self._drive(runtime)
+                return
+
+            if state == "VERIFYING":
+                attempt_id = self._active_attempt_from_events(runtime)
+                verification = next(
+                    (
+                        item
+                        for item in runtime.verifications
+                        if item.attempt_id == attempt_id
+                    ),
+                    None,
+                )
+                if verification is not None:
+                    self._recovery_event(
+                        runtime,
+                        "verification_completion_reconciled",
+                        {
+                            "attempt_id": attempt_id,
+                            "outcome": verification.outcome,
+                        },
+                    )
+                    self._complete_loaded_verification(runtime, verification)
+                else:
+                    attempt = next(
+                        (
+                            item
+                            for item in runtime.attempts
+                            if item.attempt_id == attempt_id
+                        ),
+                        None,
+                    )
+                    if attempt is None:
+                        raise RunStoreError(
+                            "verification start has no valid attempt snapshot"
+                        )
+                    self._recovery_event(
+                        runtime,
+                        "verification_retried",
+                        {
+                            "attempt_id": attempt_id,
+                            "coding_attempt_rerun": False,
+                        },
+                    )
+                    self._resume_verification(runtime, attempt, already_started=True)
+                self._drive(runtime)
+                return
+
+            if state == "SELECTING":
+                if runtime.selection is not None:
+                    self._reuse_selection(runtime)
+                else:
+                    self._recovery_event(
+                        runtime,
+                        "selection_retried",
+                        {"reason": "selection started without a snapshot"},
+                    )
+                    self._select_and_materialize(runtime)
+                return
+
+            if state == "MATERIALIZING":
+                self._resume_materialization(runtime)
+                return
+
+            raise RunStoreError(f"unsupported recovery state: {state}")
+
+    def _active_attempt_from_events(self, runtime: _Runtime) -> str:
+        for event in reversed(runtime.committed_events):
+            if event.attempt_id and event.event_type in {
+                "attempt_started",
+                "attempt_completed",
+                "attempt_failed",
+                "verification_started",
+                "verification_completed",
+                "verification_failed",
+            }:
+                return event.attempt_id
+        if runtime.active_attempt_id:
+            return runtime.active_attempt_id
+        raise RunStoreError("recovery state has no active attempt identity")
+
+    def _planned_attempt_context(
+        self, runtime: _Runtime, attempt_id: str
+    ) -> AttemptContext:
+        start = next(
+            (
+                event
+                for event in reversed(runtime.committed_events)
+                if event.event_type == "attempt_started"
+                and event.attempt_id == attempt_id
+            ),
+            None,
+        )
+        decision = next(
+            (
+                value
+                for value in reversed(runtime.policy_decisions)
+                if value.attempt_id == attempt_id
+            ),
+            None,
+        )
+        if start is None or decision is None:
+            raise RunStoreError("interrupted attempt lacks start or policy evidence")
+        return AttemptContext(
+            run_id=runtime.run_id,
+            trace_id=runtime.trace_id,
+            task_id=runtime.task_id,
+            attempt_id=attempt_id,
+            ordinal=int(start.payload.get("ordinal") or len(runtime.attempts) + 1),
+            task=runtime.request.task,
+            repository_path=str(runtime.request.repository_path),
+            success_criteria=runtime.request.success_criteria,
+            requires_file_changes=runtime.request.requires_file_changes,
+            backend_name=decision.chosen_backend or "interrupted",
+            model=decision.chosen_model,
+            policy_configuration=_read_only_mapping(
+                runtime.request.policy_configuration
+            ),
+            run_directory=runtime.store.run_directory,
+            attempt_directory=(
+                runtime.store.run_directory / "attempts" / attempt_id
+            ),
+        )
+
+    def _record_interrupted_attempt(
+        self, runtime: _Runtime, attempt_id: str
+    ) -> None:
+        context = self._planned_attempt_context(runtime, attempt_id)
+        runtime.attempt_contexts[attempt_id] = context
+        start = next(
+            event
+            for event in runtime.committed_events
+            if event.event_type == "attempt_started" and event.attempt_id == attempt_id
+        )
+        self._recovery_event(
+            runtime,
+            "attempt_interrupted",
+            {
+                "attempt_id": attempt_id,
+                "failure_category": "infrastructure_failure",
+            },
+        )
+        result = AttemptResult(
+            runner_name="interrupted",
+            status="cancelled",
+            worktree_path="interrupted",
+            patch=None,
+            exit_code=None,
+            model=context.model,
+            stdout=self._artifact_text(
+                runtime, f"attempts/{attempt_id}/stdout.log"
+            ),
+            stderr="Interrupted before a complete attempt snapshot was committed.",
+            duration_accounting_status="unknown",
+            token_accounting_status="unknown",
+            cost_accounting_status="unknown",
+            error=DependencyFailure(
+                code="interrupted_attempt",
+                message="Coding attempt was interrupted before completion.",
+                details={"failure_category": "infrastructure_failure"},
+            ),
+            metadata={
+                "failure_category": "infrastructure_failure",
+                "material_progress": False,
+                "recovered_interruption": True,
+            },
+        )
+        snapshot = self._persist_attempt(
+            runtime, context, result, start.timestamp, self._now()
+        )
+        runtime.attempt_results[attempt_id] = result
+        self._record_attempt_failure(
+            runtime, attempt_id, "infrastructure_failure", False
+        )
+        self._transition(
+            runtime,
+            "ATTEMPT_COMPLETED",
+            "attempt_failed",
+            {
+                "status": snapshot.status,
+                "exit_code": snapshot.exit_code,
+                "interrupted": True,
+            },
+            attempt_id=attempt_id,
+            parent_event_id=start.event_id,
+        )
+        self._transition(
+            runtime,
+            "REJECTED",
+            "candidate_rejected",
+            {
+                "outcome": "interrupted",
+                "reason": "attempt interrupted as infrastructure failure",
+            },
+            attempt_id=attempt_id,
+            parent_event_id=start.event_id,
+        )
+
+    def _complete_loaded_attempt(
+        self, runtime: _Runtime, attempt: AttemptSnapshot
+    ) -> None:
+        event_type = (
+            "attempt_completed"
+            if attempt.status == "completed" and attempt.exit_code == 0
+            else "attempt_failed"
+        )
+        start_event_id = runtime.attempt_start_events.get(attempt.attempt_id)
+        self._transition(
+            runtime,
+            "ATTEMPT_COMPLETED",
+            event_type,
+            {
+                "status": attempt.status,
+                "exit_code": attempt.exit_code,
+                "recovered": True,
+            },
+            attempt_id=attempt.attempt_id,
+            parent_event_id=start_event_id,
+        )
+        self._emit_state_event(
+            runtime,
+            "patch_captured",
+            {
+                "patch_bytes": attempt.patch_bytes,
+                "patch_sha256": attempt.patch_sha256,
+                "recovered": True,
+            },
+            attempt_id=attempt.attempt_id,
+            parent_event_id=start_event_id,
+        )
+        if runtime.request.requires_file_changes and not runtime.attempt_patches.get(
+            attempt.attempt_id, ""
+        ).strip():
+            normalized = self._empty_patch_verification(runtime, attempt.attempt_id)
+            runtime.store.write_protocol(
+                f"verification/{attempt.attempt_id}.json", normalized
+            )
+            runtime.verifications.append(normalized)
+            self._transition(
+                runtime,
+                "REJECTED",
+                "verification_completed",
+                {
+                    "outcome": "rejected",
+                    "acceptance_eligible": False,
+                    "normalization": "empty_patch",
+                    "recovered": True,
+                },
+                attempt_id=attempt.attempt_id,
+            )
+            return
+        self._resume_verification(runtime, attempt, already_started=False)
+
+    def _resume_verification(
+        self,
+        runtime: _Runtime,
+        attempt: AttemptSnapshot,
+        *,
+        already_started: bool,
+    ) -> None:
+        context = runtime.attempt_contexts[attempt.attempt_id]
+        result = runtime.attempt_results[attempt.attempt_id]
+        initial_retry = 1 if already_started else 0
+        policy_values = runtime.request.policy_configuration.get("policy")
+        values = (
+            policy_values
+            if isinstance(policy_values, Mapping)
+            else runtime.request.policy_configuration
+        )
+        retry_limit = (
+            BootstrapPolicyConfiguration.model_validate(values).verifier_retry_limit
+            if values.get("version") == "bootstrap_v1"
+            else 0
+        )
+        if already_started and retry_limit < 1:
+            error = RuntimeError(
+                "verification was interrupted and policy permits no verifier retry"
+            )
+            normalized = self._verifier_error_snapshot(
+                runtime, attempt.attempt_id, error
+            ).model_copy(
+                update={
+                    "metadata": {
+                        "failure_category": "verification_failure",
+                        "verifier_retry_count": 0,
+                        "coding_attempt_rerun_for_verification": False,
+                        "recovery_retry_disallowed": True,
+                    }
+                }
+            )
+            runtime.store.write_protocol(
+                f"verification/{attempt.attempt_id}.json", normalized
+            )
+            runtime.verifications.append(normalized)
+            self._complete_loaded_verification(runtime, normalized)
+            return
+        self._verify_attempt(
+            runtime,
+            context,
+            result,
+            runtime.attempt_start_events.get(attempt.attempt_id, ""),
+            already_started=already_started,
+            initial_retry_count=initial_retry,
+        )
+
+    def _complete_loaded_verification(
+        self, runtime: _Runtime, verification: VerificationSnapshot
+    ) -> None:
+        self._transition(
+            runtime,
+            "VERIFIED",
+            (
+                "verification_failed"
+                if verification.outcome == "error"
+                else "verification_completed"
+            ),
+            {
+                "outcome": verification.outcome,
+                "acceptance_eligible": verification.acceptance_eligible,
+                "recovered": True,
+            },
+            attempt_id=verification.attempt_id,
+        )
+        failure_category = str(
+            verification.metadata.get("failure_category") or ""
+        ) or None
+        if failure_category:
+            self._record_attempt_failure(
+                runtime,
+                verification.attempt_id,
+                failure_category,
+                bool(
+                    next(
+                        item
+                        for item in runtime.attempts
+                        if item.attempt_id == verification.attempt_id
+                    ).metadata.get("material_progress", False)
+                ),
+            )
+        if verification.acceptance_eligible:
+            if verification.attempt_id not in runtime.eligible_candidate_ids:
+                runtime.eligible_candidate_ids.append(verification.attempt_id)
+            self._persist_state(runtime)
+            self._persist_manifest(runtime)
+        else:
+            self._transition(
+                runtime,
+                "REJECTED",
+                "candidate_rejected",
+                {
+                    "outcome": verification.outcome,
+                    "reason": verification.reason,
+                    "recovered": True,
+                },
+                attempt_id=verification.attempt_id,
+            )
+
+    def _selection_interface(self, snapshot: SelectionSnapshot) -> Selection:
+        return Selection(
+            selected_attempt_id=(
+                snapshot.selected_candidate_ids[0]
+                if snapshot.selected_candidate_ids
+                else None
+            ),
+            strategy=snapshot.strategy,
+            reason=snapshot.reason,
+            rankings=tuple(
+                SelectionRanking(
+                    attempt_id=item.attempt_id,
+                    rank=item.rank,
+                    reason=item.reason,
+                    actual_cost_usd=item.actual_cost_usd,
+                    cost_accounting_status=item.cost_accounting_status,
+                    evidence=item.evidence,
+                )
+                for item in snapshot.rankings
+            ),
+            advisory_comparison=snapshot.advisory_comparison,
+            metadata=snapshot.metadata,
+        )
+
+    def _reuse_selection(self, runtime: _Runtime) -> None:
+        selection = runtime.selection
+        if selection is None or not selection.selected_candidate_ids:
+            raise RunStoreError("recovery selection has no selected candidate")
+        selected_id = selection.selected_candidate_ids[0]
+        if selected_id not in runtime.eligible_candidate_ids:
+            raise RunStoreError(
+                "recovery selection is not acceptance eligible"
+            )
+        runtime.selected_attempt_id = selected_id
+        if runtime.machine.state != "SELECTING":
+            self._transition_to_selecting(runtime)
+        self._recovery_event(
+            runtime,
+            "selection_reused",
+            {
+                "selection_id": selection.selection_id,
+                "selected_attempt_id": selected_id,
+            },
+        )
+        if not self._has_event(runtime, "candidate_selected"):
+            self._emit_state_event(
+                runtime,
+                "candidate_selected",
+                {
+                    "selection_id": selection.selection_id,
+                    "attempt_id": selected_id,
+                    "recovered": True,
+                },
+            )
+        self._materialize_reused_selection(runtime, selection)
+
+    def _materialize_reused_selection(
+        self, runtime: _Runtime, selection: SelectionSnapshot
+    ) -> None:
+        selected_id = selection.selected_candidate_ids[0]
+        candidate = next(
+            item
+            for item in self._eligible_candidates(runtime)
+            if item.attempt.attempt_id == selected_id
+        )
+        if runtime.machine.state != "MATERIALIZING":
+            started = self._transition(
+                runtime,
+                "MATERIALIZING",
+                "materialization_started",
+                {
+                    "selection_id": selection.selection_id,
+                    "selected_attempt_id": selected_id,
+                    "recovered": True,
+                },
+            )
+        else:
+            started = next(
+                (
+                    event
+                    for event in reversed(runtime.committed_events)
+                    if event.event_type == "materialization_started"
+                ),
+                runtime.last_event,
+            )
+        returned_selection = self._selection_interface(selection)
+        context = MaterializationContext(
+            run_id=runtime.run_id,
+            trace_id=runtime.trace_id,
+            repository_path=str(runtime.request.repository_path),
+            selected_candidate=candidate,
+            policy_configuration=_read_only_mapping(
+                runtime.request.policy_configuration
+            ),
+            run_directory=runtime.store.run_directory,
+        )
+        returned = self._materializer.materialize(returned_selection, context)
+        if not isinstance(returned, Materialization):
+            raise RunStoreError("materializer returned an invalid recovery result")
+        materialization = self._persist_materialization(
+            runtime, selection, candidate, returned, started.timestamp
+        )
+        self._finish_recovered_materialization(runtime, materialization)
+
+    def _resume_materialization(self, runtime: _Runtime) -> None:
+        if runtime.selection is None or not runtime.selection.selected_candidate_ids:
+            raise RunStoreError(
+                "materialization recovery has no valid recorded selection"
+            )
+        if runtime.materialization is not None:
+            self._recovery_event(
+                runtime,
+                "materialization_snapshot_reused",
+                {
+                    "materialization_id": runtime.materialization.materialization_id,
+                    "status": runtime.materialization.status,
+                },
+            )
+            self._finish_recovered_materialization(
+                runtime, runtime.materialization
+            )
+            return
+        selected_id = runtime.selection.selected_candidate_ids[0]
+        candidate = next(
+            item
+            for item in self._eligible_candidates(runtime)
+            if item.attempt.attempt_id == selected_id
+        )
+        patch_value = candidate.attempt.patch_path
+        if not patch_value:
+            raise RunStoreError("selected candidate has no recorded patch path")
+        patch_path = (runtime.store.run_directory / patch_value).resolve()
+        if not patch_path.is_relative_to(runtime.store.run_directory.resolve()):
+            raise RunStoreError("selected patch escapes the canonical run directory")
+        patch_text = patch_path.read_text(encoding="utf-8", errors="replace")
+        if patch_text != candidate.patch:
+            raise RunStoreError("selected patch bytes differ from the recorded candidate")
+        patch_hash = hashlib.sha256(patch_text.encode("utf-8")).hexdigest()
+        if patch_hash != candidate.attempt.patch_sha256:
+            raise RunStoreError("selected patch hash is invalid")
+        worktree = candidate.attempt.metadata.get("worktree")
+        baseline = worktree.get("source_repository") if isinstance(worktree, dict) else None
+        if not isinstance(baseline, dict):
+            raise RunStoreError("selected candidate lacks repository identity evidence")
+        target_repo = Path(runtime.request.repository_path).resolve()
+        validate_target_lineage(target_repo, baseline)
+        inspection = inspect_patch_application(target_repo, patch_path)
+        self._recovery_event(
+            runtime,
+            "materialization_inspected",
+            {
+                "selected_attempt_id": selected_id,
+                "patch_sha256": patch_hash,
+                "apply_status": inspection.get("status"),
+                "reverse_check_exit_code": inspection.get(
+                    "reverse_check_exit_code"
+                ),
+                "normal_check_exit_code": inspection.get("normal_check_exit_code"),
+            },
+        )
+        if inspection.get("status") == "applied":
+            started = next(
+                event
+                for event in reversed(runtime.committed_events)
+                if event.event_type == "materialization_started"
+            )
+            materialization = self._persist_materialization(
+                runtime,
+                runtime.selection,
+                candidate,
+                Materialization(
+                    status="succeeded",
+                    final_patch=patch_text,
+                    final_report=(
+                        "# Materialization report\n\n"
+                        "Recovery proved the exact selected patch was already applied "
+                        "using `git apply --reverse --check`; it was not applied again.\n"
+                    ),
+                    changed_files=tuple(
+                        str(item) for item in inspection.get("changed_files") or []
+                    ),
+                    metadata={
+                        "recovered_already_applied": True,
+                        "apply_inspection": inspection,
+                    },
+                ),
+                started.timestamp,
+            )
+            self._finish_recovered_materialization(runtime, materialization)
+            return
+        if inspection.get("status") == "not_applied":
+            self._materialize_reused_selection(runtime, runtime.selection)
+            return
+        raise RunStoreError(
+            "selected patch application state is unsafe to infer; manual inspection required"
+        )
+
+    def _finish_recovered_materialization(
+        self, runtime: _Runtime, materialization: MaterializationSnapshot
+    ) -> None:
+        if materialization.status != "succeeded":
+            message = (
+                materialization.failure.message
+                if materialization.failure is not None
+                else "materialization recovery found a failed snapshot"
+            )
+            self._fail(runtime, "materialization_failure", message)
+            return
+        if not self._has_event(runtime, "materialization_completed"):
+            self._emit_state_event(
+                runtime,
+                "materialization_completed",
+                {
+                    "materialization_id": materialization.materialization_id,
+                    "recovered": True,
+                },
+            )
+        if runtime.machine.state == "MATERIALIZING":
+            self._transition(
+                runtime,
+                "COMPLETED",
+                "run_completed",
+                {
+                    "selected_attempt_id": runtime.selected_attempt_id,
+                    "recovered": True,
+                },
+            )
+
     def _initialize_bundle(self, runtime: _Runtime) -> None:
         event = runtime.events.emit(
             "run_created",
@@ -260,6 +1460,7 @@ class ClosedLoopController:
             },
         )
         runtime.last_event = event
+        runtime.committed_events.append(event)
         task = TaskSnapshot(
             schema_version="villani.task.v1",
             task_id=runtime.task_id,
@@ -276,13 +1477,15 @@ class ClosedLoopController:
         self._persist_state(runtime)
         self._persist_manifest(runtime)
 
-    def _classify(self, runtime: _Runtime) -> bool:
-        self._transition(
-            runtime,
-            "CLASSIFYING",
-            "classification_started",
-            {"task_id": runtime.task_id},
-        )
+    def _classify(self, runtime: _Runtime, *, already_started: bool = False) -> bool:
+        if not already_started:
+            self._transition(
+                runtime,
+                "CLASSIFYING",
+                "classification_started",
+                {"task_id": runtime.task_id},
+            )
+            self._checkpoint("after_classification_start")
         try:
             runtime.classification_backend = self._resolve_classification_backend(
                 runtime.request.policy_configuration
@@ -341,6 +1544,7 @@ class ClosedLoopController:
             )
             runtime.store.write_protocol("classification.json", classification)
             runtime.classification = classification
+            self._checkpoint("after_classification_snapshot")
         except Exception as error:
             self._emit_failure_event(
                 runtime, "classification_failed", error, "classification"
@@ -442,7 +1646,7 @@ class ClosedLoopController:
                 raise TypeError("policy engine returned an invalid PolicyDecision")
             self._validate_policy_semantics(runtime, returned)
             attempt_id = (
-                f"attempt_{len(runtime.attempts) + 1:03d}"
+                self._next_attempt_id(runtime)
                 if returned.action in {"attempt", "retry", "escalate"}
                 else None
             )
@@ -451,6 +1655,9 @@ class ClosedLoopController:
                 runtime, returned, attempt_id, budget_before
             )
             runtime.store.append_policy_decision(snapshot)
+            runtime.policy_decisions.append(snapshot)
+            if attempt_id is not None:
+                runtime.allocated_attempt_ids.add(attempt_id)
         except Exception as error:
             self._emit_failure_event(
                 runtime, "policy_selection_failed", error, "policy_selection"
@@ -464,7 +1671,23 @@ class ClosedLoopController:
             return None
 
         self._record_policy_state(runtime, returned, snapshot)
+        self._checkpoint("after_policy_decision")
         return returned, attempt_id
+
+    @staticmethod
+    def _next_attempt_id(runtime: _Runtime) -> str:
+        ordinals = [
+            int(value.removeprefix("attempt_"))
+            for value in runtime.allocated_attempt_ids
+            if value.startswith("attempt_")
+            and value.removeprefix("attempt_").isdigit()
+        ]
+        ordinal = max(ordinals, default=0) + 1
+        candidate = f"attempt_{ordinal:03d}"
+        while candidate in runtime.allocated_attempt_ids:
+            ordinal += 1
+            candidate = f"attempt_{ordinal:03d}"
+        return candidate
 
     def _validate_policy_semantics(
         self, runtime: _Runtime, decision: PolicyDecision
@@ -629,14 +1852,18 @@ class ClosedLoopController:
             attempt_id=attempt_id,
         )
         runtime.attempt_start_events[attempt_id] = started.event_id
+        runtime.allocated_attempt_ids.add(attempt_id)
+        self._checkpoint("after_attempt_start")
         try:
             returned = self._attempt_runner.run(context)
+            self._checkpoint("after_runner_return")
             if not isinstance(returned, AttemptResult):
                 raise TypeError("attempt runner returned an invalid AttemptResult")
             snapshot = self._persist_attempt(
                 runtime, context, returned, started.timestamp, self._now()
             )
             runtime.attempt_results[attempt_id] = returned
+            self._checkpoint("after_attempt_snapshot")
             initial_failure = classify_failure(
                 returned,
                 requires_file_changes=runtime.request.requires_file_changes,
@@ -796,6 +2023,13 @@ class ClosedLoopController:
             runtime.store.write_text(patch_path, result.patch)
             runtime.attempt_patches[context.attempt_id] = result.patch
 
+        attempt_metadata = _mapping_copy(result.metadata)
+        configured_backend = configured_backends(
+            runtime.request.policy_configuration
+        ).get(context.backend_name)
+        if configured_backend is not None:
+            attempt_metadata.setdefault("provider", configured_backend.provider)
+            attempt_metadata.setdefault("backend_model", configured_backend.model)
         snapshot = AttemptSnapshot(
             schema_version="villani.attempt.v1",
             attempt_id=context.attempt_id,
@@ -835,7 +2069,7 @@ class ClosedLoopController:
                 if result.error is not None
                 else None
             ),
-            metadata=_mapping_copy(result.metadata),
+            metadata=attempt_metadata,
         )
         runtime.store.write_protocol(f"{base}/attempt.json", snapshot)
         runtime.attempts.append(snapshot)
@@ -894,15 +2128,20 @@ class ClosedLoopController:
         context: AttemptContext,
         result: AttemptResult,
         attempt_start_event_id: str,
+        *,
+        already_started: bool = False,
+        initial_retry_count: int = 0,
     ) -> None:
-        self._transition(
-            runtime,
-            "VERIFYING",
-            "verification_started",
-            {"attempt_id": context.attempt_id},
-            attempt_id=context.attempt_id,
-            parent_event_id=attempt_start_event_id,
-        )
+        if not already_started:
+            self._transition(
+                runtime,
+                "VERIFYING",
+                "verification_started",
+                {"attempt_id": context.attempt_id},
+                attempt_id=context.attempt_id,
+                parent_event_id=attempt_start_event_id,
+            )
+            self._checkpoint("after_verification_start")
         policy_values = runtime.request.policy_configuration.get("policy")
         if not isinstance(policy_values, Mapping):
             policy_values = runtime.request.policy_configuration
@@ -913,7 +2152,7 @@ class ClosedLoopController:
             if policy_values.get("version") == "bootstrap_v1"
             else 0
         )
-        retry_count = 0
+        retry_count = initial_retry_count
         final_error: Exception | None = None
         failure_category: str | None = None
         while True:
@@ -982,6 +2221,7 @@ class ClosedLoopController:
         )
         runtime.verifications.append(normalized)
         self._write_evidence_matrix(runtime)
+        self._checkpoint("after_verification_snapshot")
         self._transition(
             runtime,
             "VERIFIED",
@@ -1049,6 +2289,8 @@ class ClosedLoopController:
                 or bool(runtime.attempt_patches.get(attempt_id, "").strip())
             )
         )
+        verification_metadata = _mapping_copy(returned.metadata)
+        verification_metadata.setdefault("verifier_version", returned.verifier)
         return VerificationSnapshot(
             schema_version="villani.verification.v1",
             run_id=runtime.run_id,
@@ -1075,7 +2317,7 @@ class ClosedLoopController:
             risk_flags=list(returned.risk_flags),
             recommended_action=returned.recommended_action,
             raw_verifier_artifact=returned.raw_verifier_artifact,
-            metadata=_mapping_copy(returned.metadata),
+            metadata=verification_metadata,
         )
 
     def _requirement_result(self, item: Requirement) -> RequirementResult:
@@ -1131,6 +2373,7 @@ class ClosedLoopController:
             raw_verifier_artifact=None,
             metadata={
                 "normalized_without_verifier": True,
+                "verifier_version": "controller_normalizer_v1",
                 "failure_category": "no_change_failure",
                 "verifier_retry_count": 0,
             },
@@ -1163,7 +2406,10 @@ class ClosedLoopController:
             risk_flags=["acceptance_blocker:verifier_error"],
             recommended_action="retry_verifier",
             raw_verifier_artifact=None,
-            metadata={"exception_class": error.__class__.__name__},
+            metadata={
+                "exception_class": error.__class__.__name__,
+                "verifier_version": "dependency_error_v1",
+            },
         )
 
     def _select_and_materialize(self, runtime: _Runtime) -> None:
@@ -1201,6 +2447,9 @@ class ClosedLoopController:
             runtime.store.write_protocol("selection.json", selection)
             runtime.store.write_text("selection_report.md", returned.report)
             runtime.selected_attempt_id = returned.selected_attempt_id
+            runtime.selection = selection
+            self._label_unselected_accepted_candidates(runtime)
+            self._checkpoint("after_selection_snapshot")
             self._emit_state_event(
                 runtime,
                 "candidate_selected",
@@ -1235,6 +2484,7 @@ class ClosedLoopController:
                 "selected_attempt_id": runtime.selected_attempt_id,
             },
         )
+        self._checkpoint("after_materialization_start")
         materialization_context = MaterializationContext(
             run_id=runtime.run_id,
             trace_id=runtime.trace_id,
@@ -1249,6 +2499,7 @@ class ClosedLoopController:
             returned_materialization = self._materializer.materialize(
                 returned, materialization_context
             )
+            self._checkpoint("after_materializer_return")
             if not isinstance(returned_materialization, Materialization):
                 raise TypeError(
                     "materializer returned an invalid Materialization"
@@ -1300,6 +2551,53 @@ class ClosedLoopController:
             "run_completed",
             {"selected_attempt_id": runtime.selected_attempt_id},
         )
+
+    def _label_unselected_accepted_candidates(self, runtime: _Runtime) -> None:
+        """Persist the only clean-success exception for unmaterialized candidates."""
+
+        policy_values = runtime.request.policy_configuration.get("policy")
+        values = (
+            policy_values
+            if isinstance(policy_values, Mapping)
+            else runtime.request.policy_configuration
+        )
+        try:
+            required = int(values.get("accepted_candidates_required", 1))
+        except (TypeError, ValueError):
+            required = 1
+        if required <= 1 or runtime.selected_attempt_id is None:
+            return
+        unselected = {
+            verification.attempt_id
+            for verification in runtime.verifications
+            if verification.acceptance_eligible
+            and verification.attempt_id != runtime.selected_attempt_id
+        }
+        for attempt_id in sorted(unselected):
+            for index, attempt in enumerate(runtime.attempts):
+                if attempt.attempt_id != attempt_id:
+                    continue
+                metadata = _mapping_copy(attempt.metadata)
+                metadata["capability_outcome_label"] = "accepted_not_selected"
+                updated_attempt = attempt.model_copy(update={"metadata": metadata})
+                runtime.attempts[index] = updated_attempt
+                runtime.store.write_protocol(
+                    f"attempts/{attempt_id}/attempt.json", updated_attempt
+                )
+                break
+            for index, verification in enumerate(runtime.verifications):
+                if verification.attempt_id != attempt_id:
+                    continue
+                metadata = _mapping_copy(verification.metadata)
+                metadata["capability_outcome_label"] = "accepted_not_selected"
+                updated_verification = verification.model_copy(
+                    update={"metadata": metadata}
+                )
+                runtime.verifications[index] = updated_verification
+                runtime.store.write_protocol(
+                    f"verification/{attempt_id}.json", updated_verification
+                )
+                break
 
     def _transition_to_selecting(self, runtime: _Runtime) -> None:
         if runtime.machine.state == "POLICY_SELECTED":
@@ -1433,6 +2731,7 @@ class ClosedLoopController:
             metadata=_mapping_copy(returned.metadata),
         )
         runtime.store.write_protocol("materialization.json", snapshot)
+        runtime.materialization = snapshot
         return snapshot
 
     def _write_evidence_matrix(self, runtime: _Runtime) -> None:
@@ -1716,6 +3015,7 @@ class ClosedLoopController:
         runtime.machine.transition(target)  # type: ignore[arg-type]
         runtime.previous_state = previous
         runtime.last_event = event
+        runtime.committed_events.append(event)
         if runtime.machine.terminal:
             runtime.active_attempt_id = None
         self._persist_state(runtime)
@@ -1738,6 +3038,7 @@ class ClosedLoopController:
             parent_event_id=parent_event_id,
         )
         runtime.last_event = event
+        runtime.committed_events.append(event)
         self._persist_state(runtime)
         return event
 

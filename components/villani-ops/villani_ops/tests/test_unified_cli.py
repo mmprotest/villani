@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -249,8 +250,79 @@ def test_help_contains_no_architecture_selector() -> None:
         "scheduling",
     ):
         assert forbidden not in combined
-    for command in ("init", "backend", "run", "runs", "inspect", "open"):
+    for command in (
+        "init",
+        "backend",
+        "capability",
+        "run",
+        "runs",
+        "inspect",
+        "open",
+    ):
         assert command in root_help.output
+
+
+def test_capability_commands_rebuild_list_and_explain_without_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _init()
+    configuration = yaml.safe_load(config.read_text(encoding="utf-8"))
+    configuration["backends"] = {
+        "fixture": {
+            "provider": "local",
+            "model": "fixture-model",
+            "roles": ["classification", "coding"],
+            "capability_score": 55,
+            "billing_mode": "fixed",
+            "fixed_cost_per_attempt": 0.1,
+        }
+    }
+    unified._write_config(config, configuration)
+    _copy_valid_run(unified._runs_root())
+
+    rebuilt = runner.invoke(unified.app, ["capability", "rebuild"])
+    assert rebuilt.exit_code == 0, rebuilt.output
+    assert "Profile digest:" in rebuilt.output
+    assert (Path(os.environ["VILLANI_HOME"]) / "capabilities" / "profiles-v1.json").is_file()
+
+    listed = runner.invoke(unified.app, ["capability", "list"])
+    assert listed.exit_code == 0, listed.output
+    assert "static=55" in listed.output
+    assert "samples=" in listed.output
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.setattr(unified, "_is_git_repository", lambda path: True)
+    monkeypatch.setattr(
+        unified,
+        "_classify_for_capability_explain",
+        lambda *args, **kwargs: unified.ClassificationSnapshot(
+            schema_version="villani.classification.v1",
+            classification_id="capability_explain",
+            run_id="capability_explain",
+            task_id="capability_explain",
+            classified_at="2026-07-10T00:00:00Z",
+            difficulty="easy",
+            risk="low",
+            category="bug_fix",
+            required_capabilities=[],
+            estimated_attempts_needed=1,
+            needs_tests=True,
+            confidence=0.9,
+            reasoning_summary="fixture",
+            signals={},
+            metadata={"classifier_version": "task_classifier_v1"},
+        ),
+    )
+    explained = runner.invoke(
+        unified.app,
+        ["capability", "explain", "--task", "fix it", "--repo", str(repository)],
+    )
+    assert explained.exit_code == 0, explained.output
+    payload = json.loads(explained.output)
+    assert payload["coding_attempt_executed"] is False
+    assert payload["path_used"] == "bootstrap_v1"
+    assert payload["bootstrap"]["considered_backends"][0]["capability_score"] == 55
 
 
 def test_completed_run_exits_zero_and_prints_evidence_summary(

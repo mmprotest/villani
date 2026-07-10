@@ -66,6 +66,22 @@ def validate_target_identity(target_repo: Path, baseline: dict[str, Any]) -> Non
         raise ValueError("target repository working state changed after attempt isolation")
 
 
+def validate_target_lineage(target_repo: Path, baseline: dict[str, Any]) -> None:
+    """Validate immutable repository identity while allowing patch worktree changes."""
+
+    current = repository_identity(target_repo)
+    if not baseline.get("is_git_repository") or not current.get("is_git_repository"):
+        raise ValueError("materialization recovery requires the original Git repository")
+    if Path(str(current["repository_path"])).resolve() != Path(
+        str(baseline.get("repository_path"))
+    ).resolve():
+        raise ValueError("target repository identity does not match attempt baseline")
+    if current.get("git_root") != baseline.get("git_root"):
+        raise ValueError("target Git root does not match attempt baseline")
+    if current.get("head") != baseline.get("head"):
+        raise ValueError("target repository HEAD changed after attempt isolation")
+
+
 @dataclass(frozen=True, slots=True)
 class IsolatedAttempt:
     copied: CopiedGitCandidate

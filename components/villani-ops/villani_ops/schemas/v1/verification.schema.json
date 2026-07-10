@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/verification.schema.json",
+  "title": "Villani Verification Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "attempt_id",
+    "verified_at",
+    "verifier",
+    "outcome",
+    "acceptance_eligible",
+    "confidence",
+    "reason",
+    "requirement_results",
+    "success_evidence",
+    "failure_evidence",
+    "missing_evidence",
+    "risk_flags",
+    "recommended_action",
+    "raw_verifier_artifact",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.verification.v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "verified_at": { "$ref": "#/$defs/utc_timestamp" },
+    "verifier": { "type": "string", "minLength": 1 },
+    "outcome": { "enum": ["accepted", "rejected", "unclear", "error"] },
+    "acceptance_eligible": { "type": "boolean" },
+    "confidence": {
+      "anyOf": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "null" }
+      ]
+    },
+    "reason": { "type": "string", "minLength": 1 },
+    "requirement_results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/requirement_result" }
+    },
+    "success_evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "failure_evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "risk_flags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recommended_action": {
+      "enum": ["accept", "reject", "retry_verifier", "escalate", "fail"]
+    },
+    "raw_verifier_artifact": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "acceptance_eligible": { "const": true } },
+        "required": ["acceptance_eligible"]
+      },
+      "then": {
+        "properties": {
+          "outcome": { "const": "accepted" },
+          "recommended_action": { "const": "accept" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "requirement_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "description", "outcome", "evidence_ids"],
+      "properties": {
+        "requirement_id": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "outcome": { "enum": ["passed", "failed", "missing", "not_applicable"] },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["evidence_id", "kind", "summary", "artifact_path"],
+      "properties": {
+        "evidence_id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "artifact_path": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}
+

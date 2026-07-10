@@ -1,0 +1,92 @@
+name: release-gate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  villani-code:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: components/villani-code/pyproject.toml
+      - run: python -m pip install -e "components/villani-code[dev]"
+      - run: python -m pytest -q
+        working-directory: components/villani-code
+
+  villani-ops:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: components/villani-ops/pyproject.toml
+      - run: python -m pip install -e "components/villani-ops[test]"
+      - run: python -m pytest -q
+        working-directory: components/villani-ops
+
+  flight-recorder:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18.x, lts/*]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: components/villani-flight-recorder/package-lock.json
+      - run: npm ci
+        working-directory: components/villani-flight-recorder
+      - run: npm test
+        working-directory: components/villani-flight-recorder
+      - run: npm run typecheck
+        working-directory: components/villani-flight-recorder
+      - run: npm run build
+        working-directory: components/villani-flight-recorder
+      - run: npm run format:check
+        working-directory: components/villani-flight-recorder
+
+  cross-component:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            components/villani-code/pyproject.toml
+            components/villani-ops/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: components/villani-flight-recorder/package-lock.json
+      - run: python -m pip install -e "components/villani-code[dev]" -e "components/villani-ops[test]"
+      - run: npm ci
+        working-directory: components/villani-flight-recorder
+      - run: npm run build
+        working-directory: components/villani-flight-recorder
+      - run: python -m pytest components/villani-ops/villani_ops/tests/closed_loop tests/closed_loop -q
+      - run: python scripts/check-secrets.py integration/fixtures
+

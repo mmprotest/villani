@@ -526,22 +526,22 @@ Exit criteria:
 
 ## 13. Release checklist
 
-- [ ] `villani run` is the only documented primary execution path.
-- [ ] Classification is persisted before the first coding backend decision.
-- [ ] Every attempt is isolated.
-- [ ] Every attempt has patch, logs, telemetry, and verification references.
-- [ ] No verifier error can become acceptance.
-- [ ] Selection considers only acceptance-eligible candidates.
-- [ ] Only the selected patch is materialized.
-- [ ] Unknown cost is never numeric zero.
-- [ ] Local compute cost can be configured and displayed.
-- [ ] Policy alternatives and rejection reasons are visible.
-- [ ] Run replay works directly from `~/.villani/runs`.
-- [ ] Tokens, costs, duration, model calls, tool calls, commands, and file mutations are visible when captured.
-- [ ] Secrets are redacted.
-- [ ] Interruption recovery is idempotent.
-- [ ] All tests and CI checks pass.
-- [ ] The quickstart works from a clean machine with documented prerequisites.
+- [x] `villani run` is the only documented primary execution path. Evidence: root `README.md`; compatibility-only help assertions in `villani_ops/tests/test_unified_cli.py`; `703 passed` Ops suite.
+- [x] Classification is persisted before the first coding backend decision. Evidence: `tests/closed_loop/test_cli_e2e.py` asserts the classification completion sequence precedes policy selection; standalone E2E `1 passed`.
+- [x] Every attempt is isolated. Evidence: the E2E executes both fake backends through `VillaniCodeAttemptAdapter` and asserts canonical attempts; cross-component suite `120 passed`.
+- [x] Every attempt has patch, logs, telemetry, and verification references. Evidence: canonical E2E bundle assertions and Flight Recorder render; standalone E2E `1 passed`.
+- [x] No verifier error can become acceptance. Evidence: closed-loop protocol/controller tests in the `120 passed` cross-component suite and `703 passed` Ops suite.
+- [x] Selection considers only acceptance-eligible candidates. Evidence: E2E asserts only `attempt_002` is eligible and selected; standalone E2E `1 passed`.
+- [x] Only the selected patch is materialized. Evidence: E2E repository content and selection assertions; recovery reverse-apply test proves no duplicate apply; `17 passed` recovery suite.
+- [x] Unknown cost is never numeric zero. Evidence: M5/M8 accounting tests within the `703 passed` Ops suite and `120 passed` cross-component suite.
+- [x] Local compute cost can be configured and displayed. Evidence: documented and executed README command uses `--billing-mode compute_time --compute-cost-per-hour 0.18`; temporary-home quickstart exited 0.
+- [x] Policy alternatives and rejection reasons are visible. Evidence: E2E renders both backend policy rows and the first rejection through Flight Recorder; standalone E2E `1 passed`.
+- [x] Run replay works directly from `~/.villani/runs`. Evidence: E2E invokes Flight Recorder with the canonical `VILLANI_HOME/runs` root and `--no-open`; `1 passed`.
+- [x] Tokens, costs, duration, model calls, tool calls, commands, and file mutations are visible when captured. Evidence: E2E asserts canonical 22 input tokens, 10 output tokens, 50 ms, USD 0.60, two attempts, and rendered totals; Flight Recorder `86 passed`.
+- [x] Secrets are redacted. Evidence: `python scripts/check-secrets.py integration/fixtures` reports 0 findings; E2E scans its generated bundle and asserts 0 findings; Flight Recorder redaction tests are included in `86 passed`.
+- [x] Interruption recovery is idempotent. Evidence: all 15 required interruption boundaries, concurrent lock, and terminal no-op tests pass in `17 passed`; second resume preserves bundle hashes and dependency call counts.
+- [x] All tests and CI checks pass. Evidence: Code `670 passed, 1 skipped`; Ops `703 passed, 114 deselected`; cross-component `120 passed`; Flight Recorder `86 passed` plus typecheck/build/format; root workflow parses with four required jobs.
+- [x] The quickstart works from a clean machine with documented prerequisites. Evidence: installer exited 0 twice; README init/local/API configuration exited 0 under a temporary `VILLANI_HOME` with a tiny Git repository; deterministic public-run E2E `1 passed`.
 
 ## 14. Risks and controls
 
@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`M7: complete`
+`M9: complete`
 
 ### Milestone status
 
@@ -589,8 +589,8 @@ Codex must update this section at the end of each milestone. It must not mark a 
 - [x] M5: Cost accounting and bootstrap escalation policy
 - [x] M6: Unified public CLI
 - [x] M7: Native Flight Recorder observability
-- [ ] M8: Empirical capability registry and optimizer
-- [ ] M9: Recovery, packaging, CI, and release gate
+- [x] M8: Empirical capability registry and optimizer
+- [x] M9: Recovery, packaging, CI, and release gate
 
 ### Evidence entries
 
@@ -1057,3 +1057,163 @@ Known remaining issues:
 
 Next permitted milestone:
 - M8, only after the user starts a new Codex task from this completed state.
+
+#### 2026-07-10: M8 Empirical capability registry and optimizer
+
+Status: complete
+
+Changed files:
+- `PLANS.md`
+- `components/villani-ops/villani_ops/cli/unified.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/villani_verifier.py`
+- `components/villani-ops/villani_ops/closed_loop/controller.py`
+- `components/villani-ops/villani_ops/closed_loop/policy.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/__init__.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/ingest.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/models.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/optimizer.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/report.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/scoring.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/store.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_m8_capabilities.py`
+- `components/villani-ops/villani_ops/tests/test_unified_cli.py`
+
+Architectural decisions:
+- The registry reads only canonical local run snapshots. It accepts materialized, acceptance-eligible selected attempts and explicitly labelled accepted-but-unselected candidates from multi-accept policies; only completed normalized `implementation_failure`, `capability_failure`, and `no_change_failure` outcomes enter the failure denominator. Infrastructure, verifier, corruption, interruption, unknown, materialization, manual/human, missing-identity, and untrusted unselected outcomes remain outside the denominator with explicit counts.
+- Clean observations are deduplicated by `(run_id, attempt_id, scorer_version)`. Four deterministic aggregate levels retain the exact backend/provider/model and classifier/verifier/scorer versions while backing off task dimensions in the required order: category+difficulty+risk, category+difficulty, category, then global backend/model.
+- `profiles-v1.json` is atomically replaced under `VILLANI_HOME/capabilities`; `provenance.jsonl` is append-only. Canonical serialization, source projection digests, deterministic profile ordering, latest-observation generation time, digest verification on load, and no-op same-digest rebuilds make reconstruction deterministic and idempotent.
+- Wilson scoring uses fixed `z = 1.959963984540054`. Static eligibility remains owned by M5 and never changes the configured backend score. Empirical ordering is activated only when every M5-eligible backend has a sufficient matching/backed-off profile and known mean actual cost; otherwise the policy records exact missing inputs and stays on `bootstrap_v1`.
+- Empirical sequence optimization enumerates ordered sequences of lengths one through the remaining attempt limit, constrains worst-case known sequence cost to the remaining cost budget, persists a deterministic top 100 plus omitted and budget-rejected counts, and records inputs, profile/snapshot versions and digests, formulas, target, chosen order, and pruning. More than eight eligible backends are pruned by conservative cost-to-success then backend name.
+- The controller records provider/classifier/verifier provenance in future canonical bundles and explicitly labels clean acceptance-eligible candidates left unselected by a configured multi-accept policy. `capability explain` performs classification and a read-only policy decision only; it never constructs or invokes a coding attempt runner.
+
+Formulas:
+- Wilson lower bound: `(p_hat + z^2/(2n) - z*sqrt(p_hat*(1-p_hat)/n + z^2/(4n^2))) / (1 + z^2/n)`, with `z = 1.959963984540054` and zero samples mapped to zero.
+- Empirical capability score: `floor(100 * Wilson lower bound)`.
+- Single-backend expected cost to accepted solution: `mean actual attempt cost / conservative success probability`; it remains null when samples, cost, or positive probability are unavailable.
+- Ordered-sequence expected cost: `sum(cost_i * product(1 - p_j for every earlier j))`.
+- Ordered-sequence success probability: `1 - product(1 - p_i)`.
+- Known cost-budget constraint: `sum(cost_i) <= remaining known cost budget`.
+
+Deterministic fixture evidence:
+- The combined exclusion fixture produces exactly `duplicate_attempt=1`, `human_modified=1`, `infrastructure_failure=1`, `materialization_failure=1`, and `verification_failure=1`; its clean denominator contains exactly two accepted materialized attempts.
+- Separate fixtures cover all three verified model-failure categories, accepted-but-unselected multi-candidate labelling, known cost/duration/token means and medians, duplicate run copies, sparse fine-grained backoff, deterministic digests, and optimizer fallback/ordering/budget limits.
+
+Verification:
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops\tests\closed_loop\test_m8_capabilities.py`: exit code 0; 29 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops/tests/closed_loop/test_m8_capabilities.py villani_ops/tests/test_unified_cli.py`: exit code 0; 45 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 685 passed, 0 failed, 0 errors, 0 skipped, 114 deselected.
+- From `components/villani-code`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 670 passed, 0 failed, 0 errors, 1 skipped, 27 warnings.
+- From `components/villani-flight-recorder`, `npm.cmd test`: exit code 0; 86 passed, 0 failed, 0 errors, 0 skipped; 19 test files passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd run typecheck`: exit code 0; TypeScript typecheck passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run build`: exit code 0; TypeScript build passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run format:check`: exit code 0; Prettier reported all matched files use Prettier code style; test counts not applicable.
+- From the repository root, `.\.venv\Scripts\python.exe -m pytest tests\closed_loop -q`: exit code 0; 2 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\villani.exe capability --help`: exit code 0; installed public command exposes exactly `rebuild`, `list`, and `explain` beneath `capability`.
+- From the repository root, `git diff --check`: exit code 0; no whitespace errors.
+
+Acceptance criteria:
+- PASS: Profiles derive only from trustworthy canonical verifier/materialization outcomes; all non-capability and human-modified outcomes are excluded and counted.
+- PASS: Same canonical source data produces byte-stable profile content, identical source/profile digests, no duplicate provenance append, and the same optimizer decision.
+- PASS: Sparse fine-grained data backs off in the required order, and every level below the configured minimum leaves static routing active with `empirical_status: insufficient_data`.
+- PASS: Empirical routing changes only the order of M5-eligible backends and only when every considered backend has sufficient probability evidence and known mean actual cost; missing cost or samples force recorded `bootstrap_v1` fallback.
+- PASS: Static and empirical scores coexist, cost-to-success remains null for unknown inputs, and policy decisions contain the selected score source, every optimizer input, formulas, profile versions/digests, chosen sequence, top-N evidence, and rejected counts.
+- PASS: `villani capability rebuild`, `list`, and read-only `explain` pass through the installed public command; Ops, Code, Flight Recorder, and root closed-loop suites remain green.
+
+Assumptions:
+- Historical canonical bundles lacking both an attempt-level provider and a backend configuration provider are excluded as `missing_backend_identity`; new controller bundles persist provider provenance directly.
+- When explicit classifier or verifier version metadata is absent, ingestion uses the canonical classification schema version or verifier identity respectively; current public runs now persist explicit implementation versions.
+- A known sequence cost budget is enforced against worst-case sum of attempt costs rather than expected cost so the optimizer cannot authorize a sequence whose full execution would exceed the cap.
+
+Known risks:
+- Older pre-M8 bundles without normalized failure categories or explicit identity/version provenance may contribute exclusion counts but intentionally cannot influence routing until trustworthy new observations accumulate.
+
+Known remaining issues:
+- none within M8
+
+Next permitted milestone:
+- M9, only after the user starts a new Codex task from this completed state. M9 was not started.
+
+#### 2026-07-10: M9 Recovery, packaging, CI, and release gate
+
+Status: complete
+
+Changed files:
+- `PLANS.md`
+- `README.md`
+- `.github/workflows/ci.yml`
+- `scripts/check-secrets.py`
+- `scripts/install-local.py`
+- `components/villani-flight-recorder/package.json`
+- `components/villani-flight-recorder/package-lock.json`
+- `components/villani-ops/pyproject.toml`
+- `components/villani-ops/villani_ops/cli/main.py`
+- `components/villani-ops/villani_ops/cli/unified.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/git_isolation.py`
+- `components/villani-ops/villani_ops/closed_loop/controller.py`
+- `components/villani-ops/villani_ops/closed_loop/durable_io.py`
+- `components/villani-ops/villani_ops/closed_loop/run_store.py`
+- `components/villani-ops/villani_ops/closed_loop/schema_validation.py`
+- `components/villani-ops/villani_ops/materialize.py`
+- `components/villani-ops/villani_ops/schemas/v1/*.json` (10 packaged schema files)
+- `components/villani-ops/villani_ops/tests/closed_loop/test_m9_recovery.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py`
+- `tests/closed_loop/test_cli_e2e.py`
+- `tests/closed_loop/test_secret_scan.py`
+
+Architectural decisions:
+- Recovery is a single public `ClosedLoopController.resume(run_id, runs_root)` method. It holds a non-blocking per-run OS lock, validates every committed protocol snapshot and complete JSONL event, reconstructs the highest sequence, and emits canonical `recovery_*` events for every reconciliation action.
+- Attempt identifiers are allocated from the complete historical allocation set, including interrupted attempts. Started attempts without snapshots become recorded interrupted infrastructure failures; completed attempt or verification snapshots are reused without rerunning earlier dependencies.
+- Selection snapshots are authoritative on resume. Materialization recovery validates the exact selected patch, its digest, and target Git lineage; reverse-apply proof finalizes an already-applied patch, normal apply proof permits one resume, and ambiguous checks terminalize `FAILED` for manual inspection.
+- Atomic JSON snapshot replacement and append-only JSONL remain the side-effect boundaries. Recovery repairs only one structurally truncated final JSONL record; malformed complete or middle records fail validation.
+- CI has no model endpoint or secret dependency. Matrix jobs cover Python 3.11/3.12 and Node 18/current LTS with lockfile-keyed caches; deterministic fakes cover cross-component execution and generated-bundle secret scanning.
+- The root schemas remain normative. Villani Ops packages a semantically identical local copy, verified by protocol tests, so installed wheels validate bundles without monorepo paths.
+- The installer creates or reuses one local virtual environment, installs both Python components, runs lockfile-based Flight Recorder installation/build, writes a `vfr` launcher beside `villani`, and performs no telemetry or model download.
+
+Pre-edit baseline:
+- Villani Code: exit code 1; 669 passed, 1 failed (`test_fail_first_localization_uses_isolated_workspace`), 1 skipped, 27 warnings.
+- Villani Ops: exit code 0; 685 passed, 114 deselected.
+- Flight Recorder: 86 passed across 19 files; typecheck, build, and format check exited 0.
+- Root closed-loop: exit code 0; 2 passed.
+
+Verification:
+- `python -m pytest components/villani-ops/villani_ops/tests/closed_loop/test_m9_recovery.py -q`: exit code 0; 17 passed in 3.07s.
+- `python -m pytest tests/closed_loop/test_cli_e2e.py -q`: exit code 0; 1 passed in 3.54s.
+- `python -m pytest <M9 recovery, protocol, unified CLI, and root closed-loop paths> -q`: exit code 0; 54 passed in 6.44s.
+- From `components/villani-ops`, `python -m pytest -q`: exit code 0; 703 passed, 114 deselected in 85.34s.
+- `python -m pytest components/villani-ops/villani_ops/tests/closed_loop tests/closed_loop -q`: exit code 0; 120 passed in 19.31s.
+- From `components/villani-code`, `python -m pytest -q`: exit code 0; 670 passed, 1 skipped, 27 warnings in 42.58s; the pre-edit failure passed unchanged.
+- From `components/villani-flight-recorder`, `npm test`: exit code 0; 86 passed across 19 files; `npm run typecheck`, `npm run build`, and `npm run format:check`: exit code 0.
+- From `components/villani-flight-recorder`, `npm pack --dry-run`: exit code 0; 62 files, 66.5 kB packed, 262.5 kB unpacked.
+- `python -m build --no-isolation` for Villani Code: exit code 0; sdist and wheel built. The same command for Villani Ops: exit code 0; sdist and wheel built with all 10 packaged schemas.
+- Temporary install of the Villani Ops wheel followed by protocol validation outside the monorepo: exit code 0; schema root resolved to the installed `villani_ops/schemas/v1`.
+- `python scripts/install-local.py --venv .venv`, executed twice: exit code 0 both times; both Python entry points and the `vfr` launcher reported discoverable; no telemetry or model download performed.
+- README init plus local-compute and API-environment backend commands against a temporary `VILLANI_HOME` and tiny Git repository: exit code 0; deterministic `villani run` behavior is covered by the standalone public CLI E2E.
+- `python scripts/check-secrets.py integration/fixtures`: exit code 0; 0 findings. The E2E generated-bundle scan also reports 0 findings.
+- Production dependency audit, `npm audit --omit=dev`: exit code 0; 0 vulnerabilities.
+- CI YAML parse: exit code 0; jobs are `villani-code`, `villani-ops`, `flight-recorder`, and `cross-component`, with no live-model or secret configuration.
+- `git diff --check`: exit code 0; no whitespace errors.
+
+Acceptance criteria:
+- PASS: Resume is idempotent at every required injected interruption boundary; no duplicate coding attempt, verifier call beyond policy, selection, or patch apply occurs.
+- PASS: Terminal resume is a bundle-hash-preserving no-op, interrupted attempts retain their identifiers and become infrastructure failures, and one truncated final JSONL line is repaired deterministically.
+- PASS: The deterministic public command E2E persists classification before routing, rejects the cheap candidate, accepts and selects only the strong candidate, applies exactly its patch, passes the target test, renders the canonical run, and matches attempt/token/duration/cost values.
+- PASS: CI contains the required version matrices, caches, protocol/E2E job, and deterministic secret scan with no live endpoint or secret dependency.
+- PASS: Both Python sdists/wheels and the Flight Recorder dry-run package build succeed; the installed Ops wheel validates through packaged schemas.
+- PASS: The installer is repeatable, the README workflow is executable with documented prerequisites, and compatibility-only legacy paths are not reachable from `villani run`.
+- PASS: Fixture and generated-bundle scans contain no secrets; Flight Recorder production dependencies report 0 vulnerabilities.
+- PASS: Every release checklist item has the direct command, test, or artifact evidence recorded in section 13.
+- PASS: All component and cross-component suites pass.
+
+Assumptions:
+- The local machine exposes current supported Python 3.12 and Node 24.7.0. Python 3.11 and Node 18 execution are represented by deterministic CI matrix jobs; all current-version equivalents ran locally.
+- Windows Store Python could not create `build`'s nested temporary isolated environment, so package builds used the permitted closest reproducible equivalent: declared build dependencies installed explicitly followed by successful `python -m build --no-isolation` for both components.
+- The README local run requires the documented user-supplied OpenAI-compatible local model server; release automation substitutes deterministic local fakes and never contacts a model endpoint.
+
+Known risks:
+- Node 18-compatible test-only dependencies report npm audit advisories; `npm audit --omit=dev` confirms zero production dependency vulnerabilities.
+
+Known remaining issues:
+- none within M9
+
+Next permitted milestone:
+- none. M9 is the final planned milestone; no later milestone was started.

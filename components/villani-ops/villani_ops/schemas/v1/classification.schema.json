@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/classification.schema.json",
+  "title": "Villani Classification Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "classification_id",
+    "run_id",
+    "task_id",
+    "classified_at",
+    "difficulty",
+    "risk",
+    "category",
+    "required_capabilities",
+    "estimated_attempts_needed",
+    "needs_tests",
+    "confidence",
+    "reasoning_summary",
+    "signals",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.classification.v1" },
+    "classification_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "classified_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "difficulty": { "enum": ["easy", "medium", "hard"] },
+    "risk": { "enum": ["low", "medium", "high"] },
+    "category": { "type": "string", "minLength": 1 },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "estimated_attempts_needed": { "type": "integer", "minimum": 1 },
+    "needs_tests": { "type": "boolean" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reasoning_summary": { "type": "string" },
+    "signals": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
+

@@ -13,8 +13,8 @@ from villani_ops.agentic.progress import AgenticProgressReporter
 from villani_ops.core.policy import DEFAULT_TIMEOUT_SECONDS
 from villani_ops.subprocess_utils import resolve_command_prefix
 
-app=typer.Typer(help='Villani Ops: CLI-only multi-agent performance orchestrator for coding tasks.')
-backend_app=typer.Typer(); task_app=typer.Typer(); policy_app=typer.Typer(); runner_app=typer.Typer(); viewer_app=typer.Typer(help='Local run viewer commands'); orchestrate_app=typer.Typer(help='Orchestration modes')
+app=typer.Typer(help='Compatibility-only Villani Ops commands. Use `villani` for the public product.')
+backend_app=typer.Typer(); task_app=typer.Typer(); policy_app=typer.Typer(); runner_app=typer.Typer(); viewer_app=typer.Typer(help='Compatibility-only old viewer; use `villani open`.'); orchestrate_app=typer.Typer(help='Compatibility-only orchestration modes; not used by `villani run`.')
 app.add_typer(backend_app,name='backend'); app.add_typer(task_app,name='task'); app.add_typer(policy_app,name='policy'); app.add_typer(runner_app,name='runner'); app.add_typer(viewer_app,name='viewer'); app.add_typer(orchestrate_app,name='orchestrate')
 console=Console()
 
@@ -296,6 +296,7 @@ def orchestrate_verifier_sequential(
 
 @app.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 def run(ctx: typer.Context, repo: str|None=None, task: str|None=typer.Option(None,'--task'), task_id: str|None=None, success_criteria: str|None=None, mode: str=typer.Option('performance', '--mode', help='Execution mode: performance, cheap, balanced, or quality'), runner: str=typer.Option('villani-code', '--runner'), candidate_attempts: int|None=typer.Option(None, '--candidate-attempts', min=1, max=8), timeout_seconds: int|None=typer.Option(None, '--timeout-seconds', help=f'Maximum run timeout in seconds (default: {DEFAULT_TIMEOUT_SECONDS}).'), classify: bool=typer.Option(True, '--classify/--no-classify'), non_interactive: bool=False, quiet: bool=typer.Option(False, '--quiet'), verbose: bool=typer.Option(False, '--verbose'), orchestrator: str=typer.Option('adaptive', '--orchestrator', help='Orchestrator architecture: adaptive (default; agentic single-task constrained), agentic (decomposition-capable), graph (explicit legacy), verifier-parallel (parallel candidates with verifier selection), or verifier-sequential (sequential verifier selection).'), task_file: str|None=typer.Option(None,'--task-file'), backend: str|None=typer.Option(None, '--backend', help='Backend name for verifier-parallel runs.'), verifier_backend: str|None=typer.Option(None, '--verifier-backend', help='Verifier backend for verifier-parallel runs.'), ui: bool=typer.Option(False, '--ui', help='Start local run viewer'), no_ui: bool=typer.Option(False, '--no-ui', help='Disable local run viewer'), ui_port: int=typer.Option(8765, '--ui-port'), open_ui: bool=typer.Option(False, '--open-ui'), tournament_budget_policy: str=typer.Option('off', '--tournament-budget-policy', help='Tournament budget policy: off, guarded, or planned'), workspace: str='.villani-ops'):
+    """Compatibility-only legacy runner; use `villani run`."""
     forbidden = {
         '--policy': '--policy has been replaced by --mode. Use --mode performance|cheap|balanced|quality. Cost policies moved to villani-ops cost-run.',
         '--human-approval': 'Human approval is not supported in the primary orchestration path. Human approval is not supported in performance orchestration.',
@@ -468,6 +469,7 @@ def viewer_open(run_id: str, port: int=typer.Option(8765,'--port'), open_browser
 
 @app.command('cost-run')
 def cost_run(repo: str|None=None, task: str|None=typer.Option(None,'--task'), task_id: str|None=None, policy: str='balanced', max_attempts: int|None=typer.Option(None, '--max-attempts', min=1, max=10), success_criteria: str|None=None, isolation: str='worktree', workspace: str='.villani-ops', legacy_yaml_policy: bool=False, human_approval: bool=typer.Option(False, '--human-approval/--no-human-approval'), non_interactive: bool=False):
+    """Compatibility-only legacy cost runner; use `villani run`."""
     s=storage(workspace)
     if task_id:
         data=json.loads((s.workspace/'tasks'/task_id/'task.json').read_text()); t=Task.model_validate(data); repo=t.repo_path

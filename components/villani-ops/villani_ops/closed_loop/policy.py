@@ -9,6 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from villani_ops.core.backend import Backend
 
+from .capabilities.models import (
+    CapabilitySnapshot,
+    EmpiricalBackendInput,
+    EmpiricalScoreResolution,
+    SequenceOptimizationResult,
+)
+from .capabilities.optimizer import optimize_sequence
+from .capabilities.report import profile_key_for
+from .capabilities.scoring import resolve_empirical_score
 from .costs import estimate_attempt_cost
 from .interfaces import BackendOption, BudgetContext, PolicyContext, PolicyDecision
 
@@ -27,6 +36,19 @@ class BootstrapPolicyConfiguration(BaseModel):
     accepted_candidates_required: int = Field(default=1, ge=1)
     allow_constraint_violations: bool = False
     allow_no_change_retry: bool = False
+
+
+class EmpiricalCapabilityConfiguration(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    minimum_empirical_samples: int = Field(default=20, ge=1)
+    target_success_probability: float = Field(default=0.80, ge=0, le=1)
+    persisted_sequence_top_n: int = Field(default=100, ge=1)
+    classifier_version: str = Field(default="task_classifier_v1", min_length=1)
+    verifier_version: str = Field(
+        default="villani_ops_verifier_pipeline_v1", min_length=1
+    )
+    scorer_version: str = Field(default="empirical_wilson_v1", min_length=1)
 
 
 def _policy_mapping(configuration: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -94,19 +116,110 @@ class BootstrapPolicyEngine:
         self,
         backends: Mapping[str, Backend],
         configuration: Mapping[str, Any] | None = None,
+        capability_snapshot: CapabilitySnapshot | None = None,
     ) -> None:
         self.backends = dict(backends)
+        self.raw_configuration = dict(configuration or {})
         self.configuration = BootstrapPolicyConfiguration.model_validate(
             _policy_mapping(configuration or {})
         )
+        capability_values = self.raw_configuration.get("capabilities")
+        self.empirical_configuration = EmpiricalCapabilityConfiguration.model_validate(
+            capability_values if isinstance(capability_values, Mapping) else {}
+        )
+        self.capability_snapshot = capability_snapshot
         if self.configuration.version != "bootstrap_v1":
             raise ValueError("bootstrap policy requires version 'bootstrap_v1'")
 
     @classmethod
     def from_configuration(
-        cls, configuration: Mapping[str, Any]
+        cls,
+        configuration: Mapping[str, Any],
+        capability_snapshot: CapabilitySnapshot | None = None,
     ) -> BootstrapPolicyEngine:
-        return cls(configured_backends(configuration), configuration)
+        return cls(
+            configured_backends(configuration),
+            configuration,
+            capability_snapshot=capability_snapshot,
+        )
+
+    def _empirical_routing(
+        self,
+        context: PolicyContext,
+        alternatives: tuple[BackendOption, ...],
+        *,
+        excluded_backends: set[str] | None = None,
+    ) -> tuple[tuple[EmpiricalScoreResolution, ...], SequenceOptimizationResult]:
+        excluded = excluded_backends or set()
+        resolutions: list[EmpiricalScoreResolution] = []
+        inputs: list[EmpiricalBackendInput] = []
+        options = {item.backend_name: item for item in alternatives}
+        for backend in sorted(self.backends.values(), key=lambda item: item.name):
+            if "coding" not in backend.roles:
+                continue
+            resolution = resolve_empirical_score(
+                self.capability_snapshot,
+                profile_key_for(backend, context.classification, self.raw_configuration),
+                static_capability_score=backend.capability_score,
+                minimum_empirical_samples=(
+                    self.empirical_configuration.minimum_empirical_samples
+                ),
+            )
+            resolutions.append(resolution)
+            option = options.get(backend.name)
+            if (
+                option is None
+                or not option.eligible
+                or backend.name in excluded
+            ):
+                continue
+            inputs.append(
+                EmpiricalBackendInput(
+                    backend_name=backend.name,
+                    conservative_success_probability=(
+                        resolution.conservative_success_probability
+                    ),
+                    mean_actual_attempt_cost=resolution.mean_actual_attempt_cost,
+                    sufficient_probability_data=(
+                        resolution.empirical_status == "sufficient_data"
+                    ),
+                    profile_version=(
+                        resolution.selected_profile_key.scorer_version
+                        if resolution.selected_profile_key is not None
+                        else None
+                    ),
+                    profile_digest=resolution.selected_profile_digest,
+                    sample_count=resolution.selected_sample_count,
+                )
+            )
+        cost_budget = (
+            context.budget.remaining_cost_usd
+            if context.budget.cost_accounting_status == "complete"
+            else None
+        )
+        optimization = optimize_sequence(
+            inputs,
+            max_attempts=context.budget.remaining_attempts,
+            known_cost_budget=cost_budget,
+            target_success_probability=(
+                self.empirical_configuration.target_success_probability
+            ),
+            persisted_top_n=self.empirical_configuration.persisted_sequence_top_n,
+        )
+        return tuple(resolutions), optimization
+
+    @staticmethod
+    def _optimization_choice(
+        alternatives: tuple[BackendOption, ...],
+        optimization: SequenceOptimizationResult,
+    ) -> BackendOption | None:
+        if optimization.optimizer_status != "empirical" or not optimization.chosen_sequence:
+            return None
+        name = optimization.chosen_sequence[0]
+        return next(
+            (item for item in alternatives if item.backend_name == name and item.eligible),
+            None,
+        )
 
     def _alternatives(
         self, context: PolicyContext, minimum: float
@@ -238,7 +351,13 @@ class BootstrapPolicyEngine:
         repeats: bool = False,
         escalates: bool = False,
         metadata: Mapping[str, Any] | None = None,
+        empirical_resolutions: tuple[EmpiricalScoreResolution, ...] | None = None,
+        optimization: SequenceOptimizationResult | None = None,
     ) -> PolicyDecision:
+        if empirical_resolutions is None or optimization is None:
+            empirical_resolutions, optimization = self._empirical_routing(
+                context, alternatives
+            )
         projection = self._budget_projection(context.budget, chosen, action)
         alternative_costs = {
             item.backend_name: {
@@ -253,6 +372,26 @@ class BootstrapPolicyEngine:
             "repeats_prior_backend": repeats,
             "escalates_from_prior_backend": escalates,
             "alternative_costs": alternative_costs,
+            "capability_scores": {
+                item.backend_name: item.model_dump(mode="json")
+                for item in empirical_resolutions
+            },
+            "capability_snapshot": (
+                {
+                    "schema_version": self.capability_snapshot.schema_version,
+                    "scorer_version": self.capability_snapshot.scorer_version,
+                    "source_data_digest": self.capability_snapshot.source_data_digest,
+                    "profile_digest": self.capability_snapshot.profile_digest,
+                }
+                if self.capability_snapshot is not None
+                else None
+            ),
+            "empirical_optimizer": optimization.model_dump(mode="json"),
+            "policy_path_used": (
+                "empirical_sequence_v1"
+                if optimization.optimizer_status == "empirical"
+                else "bootstrap_v1"
+            ),
             "budget_consumption": {
                 "actual_attempts_used": context.budget.actual_attempts_used,
                 "actual_known_cost_usd": context.budget.actual_cost_consumed_usd,
@@ -270,7 +409,11 @@ class BootstrapPolicyEngine:
             considered_backends=alternatives,
             chosen_backend=chosen.backend_name if chosen else None,
             chosen_model=chosen.model if chosen else None,
-            policy_version="bootstrap_v1",
+            policy_version=(
+                "empirical_sequence_v1"
+                if optimization.optimizer_status == "empirical"
+                else "bootstrap_v1"
+            ),
             classification_reference=context.classification.classification_id,
             required_capability_score=minimum,
             required_capability_rule=rule,
@@ -284,6 +427,9 @@ class BootstrapPolicyEngine:
     def decide(self, context: PolicyContext) -> PolicyDecision:
         minimum, rule = required_capability(context, self.configuration)
         alternatives = self._alternatives(context, minimum)
+        empirical_resolutions, optimization = self._empirical_routing(
+            context, alternatives
+        )
 
         if len(context.eligible_candidate_ids) >= self.configuration.accepted_candidates_required:
             return self._decision(
@@ -318,9 +464,19 @@ class BootstrapPolicyEngine:
                 action="exhaust", reason="Cost budget exhausted."
             )
 
-        chosen = self._choose(alternatives)
+        chosen = self._optimization_choice(alternatives, optimization)
+        empirical_budget_blocked = bool(
+            optimization.optimizer_status == "empirical"
+            and not optimization.chosen_sequence
+        )
+        if optimization.optimizer_status != "empirical":
+            chosen = self._choose(alternatives)
         violation = False
-        if chosen is None and self.configuration.allow_constraint_violations:
+        if (
+            chosen is None
+            and not empirical_budget_blocked
+            and self.configuration.allow_constraint_violations
+        ):
             feasible = [
                 option
                 for option in alternatives
@@ -359,7 +515,13 @@ class BootstrapPolicyEngine:
                 minimum,
                 rule,
                 action="exhaust",
-                reason="No configured coding backend is eligible under capability and budget constraints.",
+                reason=(
+                    "No empirical backend sequence fits the remaining known cost budget."
+                    if empirical_budget_blocked
+                    else "No configured coding backend is eligible under capability and budget constraints."
+                ),
+                empirical_resolutions=empirical_resolutions,
+                optimization=optimization,
             )
 
         if not context.attempts:
@@ -368,10 +530,17 @@ class BootstrapPolicyEngine:
                 reason = "All eligible estimates are unknown; selected the smallest sufficient capability."
             if violation:
                 reason = "No backend met the threshold; selected the strongest backend under an explicit constraint violation."
+            elif optimization.optimizer_status == "empirical":
+                reason = (
+                    "Selected the first backend in the lowest-expected-cost empirical "
+                    "sequence under the configured target probability."
+                )
             return self._decision(
                 context, alternatives, minimum, rule,
                 action="attempt", reason=reason, chosen=chosen,
                 metadata={"constraint_violation": violation},
+                empirical_resolutions=empirical_resolutions,
+                optimization=optimization,
             )
 
         previous_attempt = context.attempts[-1]
@@ -385,6 +554,30 @@ class BootstrapPolicyEngine:
         )
         if latest_verification and latest_verification.attempt_id == previous_attempt.attempt_id:
             failure = latest_verification.failure_category or failure
+        attempted_backend_names = {item.backend_name for item in context.attempts}
+        remaining_resolutions, remaining_optimization = self._empirical_routing(
+            context,
+            alternatives,
+            excluded_backends=attempted_backend_names,
+        )
+        empirical_remaining = self._optimization_choice(
+            alternatives, remaining_optimization
+        )
+
+        def remaining_or_bootstrap(
+            bootstrap: BackendOption | None,
+        ) -> tuple[
+            BackendOption | None,
+            tuple[EmpiricalScoreResolution, ...],
+            SequenceOptimizationResult,
+        ]:
+            if remaining_optimization.optimizer_status == "empirical":
+                return (
+                    empirical_remaining,
+                    remaining_resolutions,
+                    remaining_optimization,
+                )
+            return bootstrap, remaining_resolutions, remaining_optimization
 
         if failure == "materialization_failure":
             return self._decision(
@@ -403,13 +596,17 @@ class BootstrapPolicyEngine:
                     repeats=True,
                     metadata={"retry_scope": "verification"},
                 )
-            higher = self._next_higher(alternatives, previous) if previous else None
+            higher, route_scores, route_optimization = remaining_or_bootstrap(
+                self._next_higher(alternatives, previous) if previous else None
+            )
             if higher is not None:
                 return self._decision(
                     context, alternatives, minimum, rule,
                     action="escalate",
-                    reason="Verification remained ineligible after its retry; continuing with the next higher-capability backend.",
+                    reason="Verification remained ineligible after its retry; continuing with the next backend in the selected routing path.",
                     chosen=higher, escalates=True,
+                    empirical_resolutions=route_scores,
+                    optimization=route_optimization,
                 )
             return self._decision(
                 context, alternatives, minimum, rule,
@@ -435,7 +632,9 @@ class BootstrapPolicyEngine:
                 item for item in alternatives
                 if item.backend_name != previous_attempt.backend_name
             )
-            replacement = self._choose(others)
+            replacement, route_scores, route_optimization = remaining_or_bootstrap(
+                self._choose(others)
+            )
             if replacement is not None:
                 return self._decision(
                     context, alternatives, minimum, rule,
@@ -443,6 +642,8 @@ class BootstrapPolicyEngine:
                     reason="Repeated infrastructure failure disabled the prior backend; choosing another configured eligible backend.",
                     chosen=replacement, escalates=True,
                     metadata={"prior_backend_failed": True},
+                    empirical_resolutions=route_scores,
+                    optimization=route_optimization,
                 )
             return self._decision(
                 context, alternatives, minimum, rule,
@@ -461,22 +662,30 @@ class BootstrapPolicyEngine:
                     reason="Implementation made material progress; retrying the same backend once.",
                     chosen=previous, repeats=True,
                 )
-            higher = self._next_higher(alternatives, previous) if previous else None
+            higher, route_scores, route_optimization = remaining_or_bootstrap(
+                self._next_higher(alternatives, previous) if previous else None
+            )
             if higher is not None:
                 return self._decision(
                     context, alternatives, minimum, rule,
                     action="escalate",
-                    reason="Implementation retry is unavailable or used; escalating to the next higher-capability backend.",
+                    reason="Implementation retry is unavailable or used; escalating to the next backend in the selected routing path.",
                     chosen=higher, escalates=True,
+                    empirical_resolutions=route_scores,
+                    optimization=route_optimization,
                 )
         if failure == "capability_failure":
-            higher = self._next_higher(alternatives, previous) if previous else None
+            higher, route_scores, route_optimization = remaining_or_bootstrap(
+                self._next_higher(alternatives, previous) if previous else None
+            )
             if higher is not None:
                 return self._decision(
                     context, alternatives, minimum, rule,
                     action="escalate",
-                    reason="Verifier evidence explicitly indicates insufficient capability; escalating immediately.",
+                    reason="Verifier evidence indicates insufficient capability; escalating immediately through the selected routing path.",
                     chosen=higher, escalates=True,
+                    empirical_resolutions=route_scores,
+                    optimization=route_optimization,
                 )
         if failure == "no_change_failure":
             if (
@@ -490,12 +699,16 @@ class BootstrapPolicyEngine:
                     action="retry", reason="Explicit policy permits one no-change retry.",
                     chosen=previous, repeats=True,
                 )
-            higher = self._next_higher(alternatives, previous) if previous else None
+            higher, route_scores, route_optimization = remaining_or_bootstrap(
+                self._next_higher(alternatives, previous) if previous else None
+            )
             if higher is not None:
                 return self._decision(
                     context, alternatives, minimum, rule,
                     action="escalate", reason="No-change failures escalate by default.",
                     chosen=higher, escalates=True,
+                    empirical_resolutions=route_scores,
+                    optimization=route_optimization,
                 )
 
         return self._decision(

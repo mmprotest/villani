@@ -16,7 +16,15 @@ from .protocol import PROTOCOL_MODEL_BY_VERSION, EventEnvelope, ProtocolDocument
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-SCHEMA_ROOT = REPOSITORY_ROOT / "schemas" / "v1"
+ROOT_SCHEMA_ROOT = REPOSITORY_ROOT / "schemas" / "v1"
+PACKAGED_SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "schemas" / "v1"
+# The repository copy is normative during development; built wheels carry a
+# semantically identical package-data copy so protocol validation remains local.
+SCHEMA_ROOT = (
+    ROOT_SCHEMA_ROOT
+    if (ROOT_SCHEMA_ROOT / "event.schema.json").is_file()
+    else PACKAGED_SCHEMA_ROOT
+)
 
 # This is the sole schema-version-to-path registry used by the Python protocol.
 SCHEMA_VERSION_TO_PATH: dict[str, Path] = {

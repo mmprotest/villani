@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import threading
+from contextlib import contextmanager
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +44,65 @@ class RunStore:
             (self.run_directory / "verification").mkdir()
         except OSError as error:
             raise RunStoreError(f"cannot create run directory: {error}") from error
+
+    def open_existing(self, *, last_sequence: int) -> None:
+        if not self.run_directory.is_dir():
+            raise RunStoreError(f"run directory does not exist: {self.run_directory}")
+        if last_sequence < 1:
+            raise RunStoreError("an existing run must contain at least one event")
+        with self._lock:
+            self._last_sequence = last_sequence
+
+    @contextmanager
+    def recovery_lock(self):
+        """Acquire a non-blocking OS-backed lock scoped to this run identity."""
+
+        lock_root = self.runs_root / ".locks"
+        lock_root.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_root / f"{self.run_id}.lock"
+        handle = lock_path.open("a+b")
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        locked = False
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                except OSError as error:
+                    raise RunStoreError(
+                        f"recovery lock is already held for run {self.run_id}"
+                    ) from error
+            else:  # pragma: no cover - exercised by Linux CI
+                import fcntl
+
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError as error:
+                    raise RunStoreError(
+                        f"recovery lock is already held for run {self.run_id}"
+                    ) from error
+            locked = True
+            yield
+        finally:
+            if locked:
+                try:
+                    if os.name == "nt":
+                        import msvcrt
+
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:  # pragma: no cover - exercised by Linux CI
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            handle.close()
 
     def _path(self, relative_path: str | Path) -> Path:
         relative = Path(relative_path)

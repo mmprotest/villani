@@ -8,6 +8,8 @@ import re
 import shlex
 import shutil
 import subprocess
+from dataclasses import asdict
+from datetime import datetime, timezone
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -29,11 +31,16 @@ from villani_ops.closed_loop import (
     VillaniVerifierAdapter,
 )
 from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
+from villani_ops.closed_loop.capabilities.report import backend_score_rows
+from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.event_writer import redact_data
 from villani_ops.closed_loop.interfaces import (
+    BudgetContext,
     Classification,
     ClassificationContext,
+    PolicyContext,
 )
+from villani_ops.closed_loop.protocol import ClassificationSnapshot
 from villani_ops.closed_loop.schema_validation import (
     ProtocolValidationError,
     validate_protocol_document,
@@ -54,7 +61,13 @@ backend_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+capability_app = typer.Typer(
+    help="Rebuild and inspect local empirical capability profiles.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 app.add_typer(backend_app, name="backend")
+app.add_typer(capability_app, name="capability")
 
 
 CONFIG_HEADER = """# Villani local-first configuration.
@@ -74,6 +87,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "accepted_candidates_required": 1,
         "allow_constraint_violations": False,
         "allow_no_change_retry": False,
+    },
+    "capabilities": {
+        "minimum_empirical_samples": 20,
+        "target_success_probability": 0.80,
+        "persisted_sequence_top_n": 100,
+        "classifier_version": "task_classifier_v1",
+        "verifier_version": "villani_ops_verifier_pipeline_v1",
+        "scorer_version": "empirical_wilson_v1",
     },
     "budgets": {
         "max_attempts": 3,
@@ -194,7 +215,10 @@ def initialize(
     home.mkdir(parents=True, exist_ok=True)
     runs.mkdir(parents=True, exist_ok=True)
     if config.exists() and not force:
-        console.print(f"Configuration already exists at {config}; not overwritten.")
+        console.print(
+            f"Configuration already exists at {config}; not overwritten.",
+            soft_wrap=True,
+        )
         return
     _write_config(config, DEFAULT_CONFIG)
     console.print(f"Initialized Villani home at {home}")
@@ -342,6 +366,7 @@ def backend_add(
         "timeout_seconds": timeout_seconds,
         "max_parallel": max_parallel,
         "enabled": True,
+        "metadata": {"allow_dummy_api_key": True} if provider == "local" else {},
     }
     try:
         backend = Backend.model_validate({"name": name, **payload})
@@ -381,6 +406,213 @@ def backend_list() -> None:
         )
 
 
+def _capability_configuration(configuration: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = configuration.get("capabilities")
+    return value if isinstance(value, Mapping) else {}
+
+
+@capability_app.command("rebuild")
+def capability_rebuild() -> None:
+    """Atomically rebuild profiles from canonical local runs only."""
+
+    configuration = _load_config()
+    scorer_version = str(
+        _capability_configuration(configuration).get("scorer_version")
+        or "empirical_wilson_v1"
+    )
+    try:
+        result = CapabilityStore().rebuild(
+            _runs_root(), scorer_version=scorer_version
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        _usage_error(f"capability rebuild failed: {error}")
+    snapshot = result.snapshot
+    console.print(
+        f"Capability snapshot: {'updated' if result.changed else 'unchanged'}; "
+        f"runs={snapshot.source_run_count}; attempts={snapshot.source_attempt_count}; "
+        f"profiles={len(snapshot.profiles)}"
+    )
+    console.print(f"Profile digest: {snapshot.profile_digest}")
+    exclusions = ", ".join(
+        f"{reason}={count}"
+        for reason, count in sorted(snapshot.excluded_outcome_counts.items())
+    )
+    console.print(f"Excluded outcomes: {exclusions or 'none'}")
+
+
+@capability_app.command("list")
+def capability_list() -> None:
+    """List configured static scores beside global empirical values."""
+
+    configuration = _load_config()
+    backends = _load_backends(configuration)
+    capabilities = _capability_configuration(configuration)
+    try:
+        minimum = int(capabilities.get("minimum_empirical_samples", 20))
+        snapshot = CapabilityStore().load()
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        _usage_error(f"cannot read capability registry: {error}")
+    if not backends:
+        console.print("No backends configured.")
+        return
+    for row in backend_score_rows(
+        backends, snapshot, minimum_empirical_samples=minimum
+    ):
+        empirical = (
+            str(row["empirical_capability_score"])
+            if row["empirical_capability_score"] is not None
+            else "unknown"
+        )
+        probability = (
+            f"{float(row['conservative_success_probability']):.6f}"
+            if row["conservative_success_probability"] is not None
+            else "unknown"
+        )
+        console.print(
+            f"{row['backend_name']}: provider={row['provider']}; model={row['model']}; "
+            f"static={row['static_capability_score']} ({row['static_score_source']}); "
+            f"empirical={empirical}; status={row['empirical_status']}; "
+            f"samples={row['sample_count']}; conservative_probability={probability}",
+            soft_wrap=True,
+        )
+
+
+def _classify_for_capability_explain(
+    task: str,
+    repository: Path,
+    success_criteria: str,
+    backends: Mapping[str, Backend],
+    configuration: Mapping[str, Any],
+) -> ClassificationSnapshot:
+    eligible = [
+        backend
+        for backend in backends.values()
+        if backend.enabled and "classification" in backend.roles
+    ]
+    if not eligible:
+        raise ValueError("no enabled classification-capable backend is configured")
+    classification_backend = min(
+        eligible, key=lambda item: (-item.capability_score, item.name)
+    )
+    context = ClassificationContext(
+        run_id="capability_explain",
+        trace_id="capability_explain",
+        task_id="capability_explain",
+        repository_path=str(repository),
+        success_criteria=success_criteria,
+        requires_file_changes=True,
+        policy_configuration=configuration,
+        classification_backend_name=classification_backend.name,
+        classification_backend_model=classification_backend.model,
+    )
+    returned = _ClassifierAdapter(backends).classify(task, context)
+    return ClassificationSnapshot(
+        schema_version="villani.classification.v1",
+        classification_id="capability_explain",
+        run_id="capability_explain",
+        task_id="capability_explain",
+        classified_at=datetime.now(timezone.utc),
+        difficulty=returned.difficulty,
+        risk=returned.risk,
+        category=returned.category,
+        required_capabilities=list(returned.required_capabilities),
+        estimated_attempts_needed=returned.estimated_attempts_needed,
+        needs_tests=returned.needs_tests,
+        confidence=returned.confidence,
+        reasoning_summary=returned.reasoning_summary,
+        signals=dict(returned.signals),
+        metadata=dict(returned.metadata),
+    )
+
+
+@capability_app.command("explain")
+def capability_explain(
+    task: str = typer.Option(..., "--task", help="Coding task to classify only."),
+    repo: Path = typer.Option(..., "--repo", help="Existing Git repository."),
+    success_criteria: str | None = typer.Option(None, "--success-criteria"),
+) -> None:
+    """Explain bootstrap and empirical routing inputs without coding execution."""
+
+    repository = repo.expanduser().resolve()
+    if not repository.exists() or not repository.is_dir():
+        _usage_error(f"repository does not exist or is not a directory: {repository}")
+    if not _is_git_repository(repository):
+        _usage_error(f"repository is not a Git work tree: {repository}")
+    configuration = _load_config()
+    backends = _load_backends(configuration)
+    _validate_run_backends(backends)
+    criteria = success_criteria if success_criteria is not None else task
+    try:
+        classification = _classify_for_capability_explain(
+            task, repository, criteria, backends, configuration
+        )
+        snapshot = CapabilityStore().load()
+        engine = BootstrapPolicyEngine(
+            backends, configuration, capability_snapshot=snapshot
+        )
+        budgets = configuration.get("budgets")
+        budget_values = budgets if isinstance(budgets, Mapping) else {}
+        max_attempts = int(budget_values.get("max_attempts", 3))
+        max_cost_value = budget_values.get("max_cost")
+        max_cost = float(max_cost_value) if max_cost_value is not None else None
+        wall_value = budget_values.get("max_wall_time")
+        wall_ms = int(float(wall_value) * 1000) if wall_value is not None else None
+        decision = engine.decide(
+            PolicyContext(
+                run_id="capability_explain",
+                trace_id="capability_explain",
+                state="CLASSIFIED",
+                classification=classification,
+                attempts=(),
+                verifications=(),
+                eligible_candidate_ids=(),
+                budget=BudgetContext(
+                    remaining_attempts=max_attempts,
+                    remaining_cost_usd=max_cost,
+                    cost_accounting_status=(
+                        "complete" if max_cost is not None else "not_applicable"
+                    ),
+                    remaining_wall_time_ms=wall_ms,
+                    duration_accounting_status=(
+                        "complete" if wall_ms is not None else "not_applicable"
+                    ),
+                ),
+                policy_configuration=configuration,
+            )
+        )
+    except (OSError, TypeError, ValueError, ValidationError, json.JSONDecodeError) as error:
+        message = _validation_message(error) if isinstance(error, ValidationError) else str(error)
+        _usage_error(f"capability explain failed: {message}")
+    explanation = {
+        "classification": classification.model_dump(mode="json"),
+        "bootstrap": {
+            "policy_version": "bootstrap_v1",
+            "required_capability_score": decision.required_capability_score,
+            "required_capability_rule": decision.required_capability_rule,
+            "considered_backends": [
+                asdict(item) for item in decision.considered_backends
+            ],
+        },
+        "empirical": {
+            "profile_digest": snapshot.profile_digest if snapshot else None,
+            "capability_scores": decision.metadata.get("capability_scores", {}),
+            "optimizer": decision.metadata.get("empirical_optimizer", {}),
+        },
+        "path_used": decision.metadata.get("policy_path_used", "bootstrap_v1"),
+        "would_choose_backend": decision.chosen_backend,
+        "would_choose_model": decision.chosen_model,
+        "coding_attempt_executed": False,
+    }
+    typer.echo(
+        json.dumps(
+            redact_data(explanation),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 class _ClassifierAdapter:
     def __init__(self, backends: Mapping[str, Backend]) -> None:
         self._backends = dict(backends)
@@ -414,6 +646,7 @@ class _ClassifierAdapter:
             reasoning_summary=classified.reasoning_summary,
             signals=dict(classified.task_shape_signals),
             metadata={
+                "classifier_version": "task_classifier_v1",
                 "likely_files": list(classified.likely_files),
                 "adjustment_notes": list(classified.adjustment_notes),
                 "relevant_file_paths": list(classified.relevant_file_paths),
@@ -445,7 +678,12 @@ def build_controller(
             _usage_error(
                 f"verifier backend {verifier_backend_name!r} is not configured"
             )
-    policy = BootstrapPolicyEngine(backends, configuration)
+    capability_snapshot = CapabilityStore().load()
+    policy = BootstrapPolicyEngine(
+        backends,
+        configuration,
+        capability_snapshot=capability_snapshot,
+    )
     return ClosedLoopController(
         classifier=_ClassifierAdapter(backends),
         policy_engine=policy,
