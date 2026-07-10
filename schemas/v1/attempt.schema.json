@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/attempt.schema.json",
+  "title": "Villani Attempt Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "attempt_id",
+    "run_id",
+    "trace_id",
+    "ordinal",
+    "backend_name",
+    "runner_name",
+    "model",
+    "status",
+    "started_at",
+    "completed_at",
+    "worktree_path",
+    "patch_path",
+    "patch_sha256",
+    "patch_bytes",
+    "stdout_path",
+    "stderr_path",
+    "runner_telemetry_path",
+    "trace_path",
+    "exit_code",
+    "duration_ms",
+    "duration_accounting_status",
+    "input_tokens",
+    "output_tokens",
+    "token_accounting_status",
+    "cost_usd",
+    "cost_accounting_status",
+    "error",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.attempt.v1" },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "ordinal": { "type": "integer", "minimum": 1 },
+    "backend_name": { "type": "string", "minLength": 1 },
+    "runner_name": { "type": "string", "minLength": 1 },
+    "model": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "status": { "enum": ["pending", "running", "completed", "failed", "cancelled"] },
+    "started_at": {
+      "anyOf": [
+        { "$ref": "#/$defs/utc_timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "completed_at": {
+      "anyOf": [
+        { "$ref": "#/$defs/utc_timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "worktree_path": { "type": "string", "minLength": 1 },
+    "patch_path": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "patch_sha256": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        { "type": "null" }
+      ]
+    },
+    "patch_bytes": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "stdout_path": { "$ref": "#/$defs/nullable_path" },
+    "stderr_path": { "$ref": "#/$defs/nullable_path" },
+    "runner_telemetry_path": { "$ref": "#/$defs/nullable_path" },
+    "trace_path": { "$ref": "#/$defs/nullable_path" },
+    "exit_code": {
+      "anyOf": [{ "type": "integer" }, { "type": "null" }]
+    },
+    "duration_ms": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "duration_accounting_status": { "$ref": "#/$defs/accounting_status" },
+    "input_tokens": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "output_tokens": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "token_accounting_status": { "$ref": "#/$defs/accounting_status" },
+    "cost_usd": {
+      "anyOf": [
+        { "type": "number", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "cost_accounting_status": { "$ref": "#/$defs/accounting_status" },
+    "error": {
+      "anyOf": [
+        { "$ref": "#/$defs/error" },
+        { "type": "null" }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "nullable_path": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "accounting_status": {
+      "enum": ["complete", "partial", "unknown", "not_applicable"]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "details"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": "villani.selection.v1",
+  "selection_id": "selection_001",
+  "run_id": "run_protocol_fixture",
+  "selected_at": "2026-07-10T00:00:21Z",
+  "strategy": "deterministic_evidence_v1",
+  "eligible_candidate_ids": ["attempt_002"],
+  "selected_candidate_ids": ["attempt_002"],
+  "rankings": [
+    {
+      "attempt_id": "attempt_002",
+      "rank": 1,
+      "reason": "Only acceptance-eligible candidate with direct test evidence.",
+      "actual_cost_usd": 0.04,
+      "cost_accounting_status": "complete",
+      "evidence": {
+        "requirement_coverage": 1,
+        "repository_tests_passed": true
+      }
+    }
+  ],
+  "reason": "Selected the only acceptance-eligible candidate.",
+  "advisory_comparison": null,
+  "metadata": {}
+}

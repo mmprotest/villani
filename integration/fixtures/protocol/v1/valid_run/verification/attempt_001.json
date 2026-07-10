@@ -1,0 +1,34 @@
+{
+  "schema_version": "villani.verification.v1",
+  "run_id": "run_protocol_fixture",
+  "attempt_id": "attempt_001",
+  "verified_at": "2026-07-10T00:00:10Z",
+  "verifier": "fixture_verifier",
+  "outcome": "rejected",
+  "acceptance_eligible": false,
+  "confidence": 0.99,
+  "reason": "The implementation subtracts instead of adding.",
+  "requirement_results": [
+    {
+      "requirement_id": "req_addition",
+      "description": "The add function returns the sum.",
+      "outcome": "failed",
+      "evidence_ids": ["evidence_test_failure"]
+    }
+  ],
+  "success_evidence": [],
+  "failure_evidence": [
+    {
+      "evidence_id": "evidence_test_failure",
+      "kind": "test_result",
+      "summary": "test_add failed: expected 5, received -1.",
+      "artifact_path": "attempts/attempt_001/stdout.log",
+      "exit_code": 1
+    }
+  ],
+  "missing_evidence": [],
+  "risk_flags": ["behavioral_test_failed"],
+  "recommended_action": "escalate",
+  "raw_verifier_artifact": null,
+  "metadata": {}
+}

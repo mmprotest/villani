@@ -1,0 +1,26 @@
+{
+  "schema_version": "villani.verification.v1",
+  "run_id": "run_invalid",
+  "attempt_id": "attempt_invalid",
+  "verified_at": "2026-07-10T00:00:00Z",
+  "verifier": "fixture_verifier",
+  "outcome": "error",
+  "acceptance_eligible": true,
+  "confidence": null,
+  "reason": "The verifier output could not be parsed.",
+  "requirement_results": [],
+  "success_evidence": [],
+  "failure_evidence": [],
+  "missing_evidence": [
+    {
+      "evidence_id": "missing_verifier_output",
+      "kind": "missing_artifact",
+      "summary": "No normalized verifier evidence was available.",
+      "artifact_path": null
+    }
+  ],
+  "risk_flags": ["verifier_error"],
+  "recommended_action": "accept",
+  "raw_verifier_artifact": null,
+  "metadata": {}
+}

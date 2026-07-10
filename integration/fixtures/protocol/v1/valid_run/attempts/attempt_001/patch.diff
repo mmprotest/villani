@@ -1,0 +1,8 @@
+diff --git a/calculator.py b/calculator.py
+index 1111111..2222222 100644
+--- a/calculator.py
++++ b/calculator.py
+@@ -1,2 +1,2 @@
+ def add(left, right):
+-    return None
++    return left - right

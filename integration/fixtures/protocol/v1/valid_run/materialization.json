@@ -1,0 +1,18 @@
+{
+  "schema_version": "villani.materialization.v1",
+  "materialization_id": "materialization_001",
+  "run_id": "run_protocol_fixture",
+  "trace_id": "trace_protocol_fixture",
+  "selection_id": "selection_001",
+  "selected_attempt_id": "attempt_002",
+  "started_at": "2026-07-10T00:00:22Z",
+  "completed_at": "2026-07-10T00:00:23Z",
+  "status": "succeeded",
+  "source_patch_path": "attempts/attempt_002/patch.diff",
+  "target_repository_path": "/fixture/repository",
+  "materialized_patch_path": "final.patch",
+  "patch_sha256": "a3e3d61b6c36a12869d2ef6ad0dbd4643e109d964e92a62aecc368a1a01a0f8f",
+  "changed_files": ["calculator.py"],
+  "failure": null,
+  "metadata": {}
+}

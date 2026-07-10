@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/selection.schema.json",
+  "title": "Villani Selection Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "selection_id",
+    "run_id",
+    "selected_at",
+    "strategy",
+    "eligible_candidate_ids",
+    "selected_candidate_ids",
+    "rankings",
+    "reason",
+    "advisory_comparison",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.selection.v1" },
+    "selection_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "selected_at": { "$ref": "#/$defs/utc_timestamp" },
+    "strategy": { "type": "string", "minLength": 1 },
+    "eligible_candidate_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "selected_candidate_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "maxItems": 1
+    },
+    "rankings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ranking" }
+    },
+    "reason": { "type": "string", "minLength": 1 },
+    "advisory_comparison": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        { "type": "null" }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "accounting_status": {
+      "enum": ["complete", "partial", "unknown", "not_applicable"]
+    },
+    "ranking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "rank",
+        "reason",
+        "actual_cost_usd",
+        "cost_accounting_status",
+        "evidence"
+      ],
+      "properties": {
+        "attempt_id": { "type": "string", "minLength": 1 },
+        "rank": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "actual_cost_usd": {
+          "anyOf": [
+            { "type": "number", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "cost_accounting_status": { "$ref": "#/$defs/accounting_status" },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

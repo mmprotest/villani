@@ -1,0 +1,12 @@
+{
+  "schema_version": "villani.event.v1",
+  "event_id": "evt_invalid_missing_run",
+  "sequence": 1,
+  "timestamp": "2026-07-10T00:00:00Z",
+  "trace_id": "trace_invalid",
+  "attempt_id": null,
+  "parent_event_id": null,
+  "source": "controller",
+  "event_type": "run_created",
+  "payload": {}
+}

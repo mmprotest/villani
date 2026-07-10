@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/event.schema.json",
+  "title": "Villani Event Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "sequence",
+    "timestamp",
+    "trace_id",
+    "run_id",
+    "attempt_id",
+    "parent_event_id",
+    "source",
+    "event_type",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.event.v1" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "attempt_id": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "parent_event_id": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "source": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "event_type": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "pattern": "^(attempt_|verification_|patch_|model_|tool_|command_|file_)"
+          }
+        },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "attempt_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+{"schema_version":"villani.event.v1","event_id":"evt_001","sequence":1,"timestamp":"2026-07-10T00:00:00Z","trace_id":"trace_invalid","run_id":"run_invalid","attempt_id":null,"parent_event_id":null,"source":"controller","event_type":"run_created","payload":{}}
+{"schema_version":"villani.event.v1","event_id":BROKEN,"sequence":2}
+{"schema_version":"villani.event.v1","event_id":"evt_003","sequence":3,"timestamp":"2026-07-10T00:00:02Z","trace_id":"trace_invalid","run_id":"run_invalid","attempt_id":null,"parent_event_id":"evt_001","source":"controller","event_type":"classification_completed","payload":{}}

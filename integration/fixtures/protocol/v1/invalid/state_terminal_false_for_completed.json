@@ -1,0 +1,16 @@
+{
+  "schema_version": "villani.run_state.v1",
+  "run_id": "run_invalid",
+  "trace_id": "trace_invalid",
+  "state": "COMPLETED",
+  "previous_state": "MATERIALIZING",
+  "terminal": false,
+  "updated_at": "2026-07-10T00:00:00Z",
+  "last_event_id": "evt_invalid",
+  "last_sequence": 1,
+  "active_attempt_id": null,
+  "attempt_count": 1,
+  "accepted_candidate_ids": ["attempt_001"],
+  "failure": null,
+  "metadata": {}
+}

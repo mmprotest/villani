@@ -1,0 +1,15 @@
+{
+  "run_id": "run_protocol_fixture",
+  "candidates": [
+    {
+      "attempt_id": "attempt_001",
+      "acceptance_eligible": false,
+      "requirement_outcomes": ["failed"]
+    },
+    {
+      "attempt_id": "attempt_002",
+      "acceptance_eligible": true,
+      "requirement_outcomes": ["passed"]
+    }
+  ]
+}

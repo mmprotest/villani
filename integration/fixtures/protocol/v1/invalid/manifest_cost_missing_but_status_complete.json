@@ -1,0 +1,29 @@
+{
+  "schema_version": "villani.run_manifest.v1",
+  "run_id": "run_invalid",
+  "trace_id": "trace_invalid",
+  "task_id": "task_invalid",
+  "created_at": "2026-07-10T00:00:00Z",
+  "updated_at": "2026-07-10T00:00:01Z",
+  "completed_at": null,
+  "final_state": "CREATED",
+  "attempt_ids": [],
+  "selected_attempt_id": null,
+  "total_cost_usd": null,
+  "cost_accounting_status": "complete",
+  "total_input_tokens": null,
+  "total_output_tokens": null,
+  "token_accounting_status": "unknown",
+  "total_duration_ms": null,
+  "duration_accounting_status": "unknown",
+  "artifact_paths": {
+    "task": "task.json",
+    "classification": "classification.json",
+    "state": "state.json",
+    "events": "events.jsonl",
+    "policy_decisions": "policy_decisions.jsonl",
+    "selection": "selection.json",
+    "materialization": "materialization.json"
+  },
+  "metadata": {}
+}

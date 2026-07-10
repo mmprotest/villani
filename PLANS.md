@@ -577,13 +577,13 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`M1: complete`
+`M2: complete`
 
 ### Milestone status
 
 - [x] M0: Monorepo and measured baseline
 - [x] M1: Green component baseline
-- [ ] M2: Canonical protocol
+- [x] M2: Canonical protocol
 - [ ] M3: Deterministic controller with fakes
 - [ ] M4: Real attempt, verifier, selector, and materializer adapters
 - [ ] M5: Cost accounting and bootstrap escalation policy
@@ -719,3 +719,68 @@ Known remaining issues:
 
 Next permitted milestone:
 - M2, only after the user starts a new Codex task from this completed state.
+
+#### 2026-07-10: M2 Canonical protocol
+
+Status: complete
+
+Changed files:
+- `.gitattributes`
+- `.gitignore`
+- `PLANS.md`
+- `schemas/v1/attempt.schema.json`
+- `schemas/v1/classification.schema.json`
+- `schemas/v1/event.schema.json`
+- `schemas/v1/materialization.schema.json`
+- `schemas/v1/policy-decision.schema.json`
+- `schemas/v1/run-manifest.schema.json`
+- `schemas/v1/run-state.schema.json`
+- `schemas/v1/selection.schema.json`
+- `schemas/v1/task.schema.json`
+- `schemas/v1/verification.schema.json`
+- `components/villani-ops/pyproject.toml`
+- `components/villani-ops/villani_ops/closed_loop/__init__.py`
+- `components/villani-ops/villani_ops/closed_loop/durable_io.py`
+- `components/villani-ops/villani_ops/closed_loop/protocol.py`
+- `components/villani-ops/villani_ops/closed_loop/schema_validation.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/__init__.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py`
+- `components/villani-flight-recorder/package.json`
+- `components/villani-flight-recorder/package-lock.json`
+- `components/villani-flight-recorder/src/providers/villaniProtocol.ts`
+- `components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts`
+- `components/villani-flight-recorder/dist/providers/villaniProtocol.js`
+- `components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js`
+- `components/villani-flight-recorder/test/villaniProtocol.test.ts`
+- `integration/fixtures/protocol/v1/valid_run/` (28 fixture files)
+- `integration/fixtures/protocol/v1/invalid/` (10 fixture files)
+- `tests/closed_loop/test_protocol_contract.py`
+
+Verification:
+- From `components/villani-code`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 670 passed, 0 failed, 0 errors, 1 skipped, 27 warnings.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q villani_ops/tests/closed_loop`: exit code 0; 16 passed, 0 failed, 0 errors, 0 skipped.
+- From `components/villani-ops`, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 587 passed, 0 failed, 0 errors, 0 skipped, 114 deselected.
+- From `components/villani-flight-recorder`, `npm.cmd test -- villaniProtocol.test.ts`: exit code 0; 11 passed, 0 failed, 0 errors, 0 skipped; 1 test file passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd test`: exit code 0; 73 passed, 0 failed, 0 errors, 0 skipped; 18 test files passed and 0 test files failed.
+- From `components/villani-flight-recorder`, `npm.cmd run typecheck`: exit code 0; TypeScript typecheck passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run build`: exit code 0; TypeScript build passed with no diagnostics; test counts not applicable.
+- From `components/villani-flight-recorder`, `npm.cmd run format:check`: exit code 0; Prettier reported all matched files use Prettier code style; test counts not applicable.
+- From the repository root, `.\.venv\Scripts\python.exe -m pytest tests/closed_loop -q`: exit code 0; 2 passed, 0 failed, 0 errors, 0 skipped.
+- From the repository root, `git diff --check`: exit code 0; no whitespace errors.
+
+Acceptance criteria:
+- PASS: Exactly 10 Draft 2020-12 schemas exist under `schemas/v1`; every schema has a stable `https://villani.dev/schemas/v1/` ID, a required exact v1 `schema_version`, and a closed top-level object.
+- PASS: Python and TypeScript validate the same complete 28-file root fixture bundle, including two attempts, one rejected verification, one accepted verification, one selection, and successful materialization.
+- PASS: Python and TypeScript reject all 8 invalid JSON documents for their intended schema or named semantic rule.
+- PASS: Python reads the 2 complete events preceding the one truncated final JSONL line and raises on the malformed middle line and malformed complete final lines.
+- PASS: Both event-stream validators reject non-increasing sequences, the event envelope has exactly the 11 required fields, future event types remain open, and scoped attempt/runtime events require a non-null `attempt_id`.
+- PASS: Python exposes 10 strict Pydantic v2 models, validates the normative root schemas with `jsonschema`, and provides atomic snapshot plus durable compact JSONL I/O.
+- PASS: TypeScript exposes all 10 protocol types and uses Ajv 2020 with structured `instancePath`, `keyword`, and `message` validation errors.
+- PASS: Protocol source contains no controller loop, routing policy, subprocess runner, unified CLI, provider, UI, or materialization behavior.
+- PASS: All existing Villani Code, Villani Ops, and Flight Recorder tests and checks remain green.
+
+Known remaining issues:
+- none within this milestone
+
+Next permitted milestone:
+- M3, only after the user starts a new Codex task from this completed state.

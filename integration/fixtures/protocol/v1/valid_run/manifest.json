@@ -1,0 +1,31 @@
+{
+  "schema_version": "villani.run_manifest.v1",
+  "run_id": "run_protocol_fixture",
+  "trace_id": "trace_protocol_fixture",
+  "task_id": "task_protocol_fixture",
+  "created_at": "2026-07-10T00:00:00Z",
+  "updated_at": "2026-07-10T00:00:24Z",
+  "completed_at": "2026-07-10T00:00:24Z",
+  "final_state": "COMPLETED",
+  "attempt_ids": ["attempt_001", "attempt_002"],
+  "selected_attempt_id": "attempt_002",
+  "total_cost_usd": 0.05,
+  "cost_accounting_status": "complete",
+  "total_input_tokens": 180,
+  "total_output_tokens": 95,
+  "token_accounting_status": "complete",
+  "total_duration_ms": 9000,
+  "duration_accounting_status": "complete",
+  "artifact_paths": {
+    "task": "task.json",
+    "classification": "classification.json",
+    "state": "state.json",
+    "events": "events.jsonl",
+    "policy_decisions": "policy_decisions.jsonl",
+    "selection": "selection.json",
+    "materialization": "materialization.json"
+  },
+  "metadata": {
+    "fixture": true
+  }
+}

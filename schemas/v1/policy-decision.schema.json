@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/policy-decision.schema.json",
+  "title": "Villani Policy Decision Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "decision_id",
+    "run_id",
+    "trace_id",
+    "timestamp",
+    "decision_sequence",
+    "classification_id",
+    "policy_version",
+    "action",
+    "reason",
+    "considered_backends",
+    "chosen_backend",
+    "chosen_model",
+    "attempt_id",
+    "budget_before",
+    "budget_after",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.policy_decision.v1" },
+    "decision_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "timestamp": { "$ref": "#/$defs/utc_timestamp" },
+    "decision_sequence": { "type": "integer", "minimum": 1 },
+    "classification_id": { "type": "string", "minLength": 1 },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "action": {
+      "enum": ["attempt", "retry", "escalate", "select", "exhaust", "fail"]
+    },
+    "reason": { "type": "string", "minLength": 1 },
+    "considered_backends": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/backend_consideration" }
+    },
+    "chosen_backend": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "chosen_model": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "attempt_id": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "budget_before": { "$ref": "#/$defs/budget" },
+    "budget_after": { "$ref": "#/$defs/budget" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "accounting_status": {
+      "enum": ["complete", "partial", "unknown", "not_applicable"]
+    },
+    "backend_consideration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend_name",
+        "model",
+        "eligible",
+        "capability_score",
+        "estimated_cost_usd",
+        "cost_accounting_status",
+        "rejection_reasons"
+      ],
+      "properties": {
+        "backend_name": { "type": "string", "minLength": 1 },
+        "model": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "eligible": { "type": "boolean" },
+        "capability_score": {
+          "anyOf": [
+            { "type": "number", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "estimated_cost_usd": {
+          "anyOf": [
+            { "type": "number", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "cost_accounting_status": { "$ref": "#/$defs/accounting_status" },
+        "rejection_reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "remaining_attempts",
+        "remaining_cost_usd",
+        "cost_accounting_status",
+        "remaining_wall_time_ms",
+        "duration_accounting_status"
+      ],
+      "properties": {
+        "remaining_attempts": {
+          "anyOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "remaining_cost_usd": {
+          "anyOf": [
+            { "type": "number", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "cost_accounting_status": { "$ref": "#/$defs/accounting_status" },
+        "remaining_wall_time_ms": {
+          "anyOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "duration_accounting_status": { "$ref": "#/$defs/accounting_status" }
+      }
+    }
+  }
+}

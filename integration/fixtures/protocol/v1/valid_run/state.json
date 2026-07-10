@@ -1,0 +1,16 @@
+{
+  "schema_version": "villani.run_state.v1",
+  "run_id": "run_protocol_fixture",
+  "trace_id": "trace_protocol_fixture",
+  "state": "COMPLETED",
+  "previous_state": "MATERIALIZING",
+  "terminal": true,
+  "updated_at": "2026-07-10T00:00:24Z",
+  "last_event_id": "evt_024",
+  "last_sequence": 24,
+  "active_attempt_id": null,
+  "attempt_count": 2,
+  "accepted_candidate_ids": ["attempt_002"],
+  "failure": null,
+  "metadata": {}
+}

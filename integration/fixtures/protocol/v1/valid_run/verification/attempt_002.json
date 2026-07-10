@@ -1,0 +1,34 @@
+{
+  "schema_version": "villani.verification.v1",
+  "run_id": "run_protocol_fixture",
+  "attempt_id": "attempt_002",
+  "verified_at": "2026-07-10T00:00:20Z",
+  "verifier": "fixture_verifier",
+  "outcome": "accepted",
+  "acceptance_eligible": true,
+  "confidence": 0.99,
+  "reason": "The required behavior has direct repository test evidence.",
+  "requirement_results": [
+    {
+      "requirement_id": "req_addition",
+      "description": "The add function returns the sum.",
+      "outcome": "passed",
+      "evidence_ids": ["evidence_test_pass"]
+    }
+  ],
+  "success_evidence": [
+    {
+      "evidence_id": "evidence_test_pass",
+      "kind": "test_result",
+      "summary": "The repository test passed.",
+      "artifact_path": "attempts/attempt_002/stdout.log",
+      "exit_code": 0
+    }
+  ],
+  "failure_evidence": [],
+  "missing_evidence": [],
+  "risk_flags": [],
+  "recommended_action": "accept",
+  "raw_verifier_artifact": null,
+  "metadata": {}
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": "villani.event.v1",
+  "event_id": "evt_invalid_attempt_scope",
+  "sequence": 1,
+  "timestamp": "2026-07-10T00:00:00Z",
+  "trace_id": "trace_invalid",
+  "run_id": "run_invalid",
+  "attempt_id": null,
+  "parent_event_id": null,
+  "source": "runner",
+  "event_type": "attempt_started",
+  "payload": {}
+}

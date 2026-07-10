@@ -1,0 +1,19 @@
+{
+  "schema_version": "villani.classification.v1",
+  "classification_id": "classification_001",
+  "run_id": "run_protocol_fixture",
+  "task_id": "task_protocol_fixture",
+  "classified_at": "2026-07-10T00:00:02Z",
+  "difficulty": "medium",
+  "risk": "low",
+  "category": "bug_fix",
+  "required_capabilities": ["code_editing", "test_execution"],
+  "estimated_attempts_needed": 2,
+  "needs_tests": true,
+  "confidence": 0.91,
+  "reasoning_summary": "A small behavioral correction with a direct test oracle.",
+  "signals": {
+    "likely_files": ["calculator.py", "test_calculator.py"]
+  },
+  "metadata": {}
+}

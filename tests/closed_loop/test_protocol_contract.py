@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from villani_ops.closed_loop import (
+    ProtocolValidationError,
+    read_jsonl_tolerant,
+    validate_jsonl_event_stream,
+    validate_protocol_document,
+)
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+FIXTURE_ROOT = REPOSITORY_ROOT / "integration" / "fixtures" / "protocol" / "v1"
+VALID_RUN = FIXTURE_ROOT / "valid_run"
+
+
+def _load_json(path: Path) -> dict[str, object]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def test_shared_protocol_bundle_validates_from_repository_root() -> None:
+    snapshots = (
+        VALID_RUN / "task.json",
+        VALID_RUN / "manifest.json",
+        VALID_RUN / "state.json",
+        VALID_RUN / "classification.json",
+        VALID_RUN / "attempts" / "attempt_001" / "attempt.json",
+        VALID_RUN / "attempts" / "attempt_002" / "attempt.json",
+        VALID_RUN / "verification" / "attempt_001.json",
+        VALID_RUN / "verification" / "attempt_002.json",
+        VALID_RUN / "selection.json",
+        VALID_RUN / "materialization.json",
+    )
+    for snapshot in snapshots:
+        validate_protocol_document(_load_json(snapshot))
+
+    for decision in read_jsonl_tolerant(VALID_RUN / "policy_decisions.jsonl"):
+        validate_protocol_document(decision)
+    assert len(validate_jsonl_event_stream(VALID_RUN / "events.jsonl")) == 24
+
+
+def test_shared_invalid_json_documents_fail_from_repository_root() -> None:
+    invalid_root = FIXTURE_ROOT / "invalid"
+    invalid_documents = sorted(invalid_root.glob("*.json"))
+    assert len(invalid_documents) == 8
+    for invalid_document in invalid_documents:
+        with pytest.raises(ProtocolValidationError):
+            validate_protocol_document(_load_json(invalid_document))

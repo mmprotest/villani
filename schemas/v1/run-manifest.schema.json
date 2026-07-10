@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/run-manifest.schema.json",
+  "title": "Villani Run Manifest Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "trace_id",
+    "task_id",
+    "created_at",
+    "updated_at",
+    "completed_at",
+    "final_state",
+    "attempt_ids",
+    "selected_attempt_id",
+    "total_cost_usd",
+    "cost_accounting_status",
+    "total_input_tokens",
+    "total_output_tokens",
+    "token_accounting_status",
+    "total_duration_ms",
+    "duration_accounting_status",
+    "artifact_paths",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.run_manifest.v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "created_at": { "$ref": "#/$defs/utc_timestamp" },
+    "updated_at": { "$ref": "#/$defs/utc_timestamp" },
+    "completed_at": {
+      "anyOf": [
+        { "$ref": "#/$defs/utc_timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "final_state": { "$ref": "#/$defs/controller_state" },
+    "attempt_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "selected_attempt_id": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "total_cost_usd": {
+      "anyOf": [
+        { "type": "number", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "cost_accounting_status": { "$ref": "#/$defs/accounting_status" },
+    "total_input_tokens": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "total_output_tokens": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "token_accounting_status": { "$ref": "#/$defs/accounting_status" },
+    "total_duration_ms": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "duration_accounting_status": { "$ref": "#/$defs/accounting_status" },
+    "artifact_paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task",
+        "classification",
+        "state",
+        "events",
+        "policy_decisions",
+        "selection",
+        "materialization"
+      ],
+      "properties": {
+        "task": { "type": "string", "minLength": 1 },
+        "classification": { "type": "string", "minLength": 1 },
+        "state": { "type": "string", "minLength": 1 },
+        "events": { "type": "string", "minLength": 1 },
+        "policy_decisions": { "type": "string", "minLength": 1 },
+        "selection": { "type": "string", "minLength": 1 },
+        "materialization": { "type": "string", "minLength": 1 }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "accounting_status": {
+      "enum": ["complete", "partial", "unknown", "not_applicable"]
+    },
+    "controller_state": {
+      "enum": [
+        "CREATED",
+        "CLASSIFYING",
+        "CLASSIFIED",
+        "POLICY_SELECTED",
+        "ATTEMPT_RUNNING",
+        "ATTEMPT_COMPLETED",
+        "VERIFYING",
+        "VERIFIED",
+        "REJECTED",
+        "ESCALATING",
+        "SELECTING",
+        "MATERIALIZING",
+        "COMPLETED",
+        "EXHAUSTED",
+        "FAILED"
+      ]
+    }
+  }
+}
