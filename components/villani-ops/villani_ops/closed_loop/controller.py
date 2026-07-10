@@ -63,6 +63,7 @@ from .protocol import (
     RunManifestSnapshot,
     RunStateSnapshot,
     SelectionSnapshot,
+    StageUsage,
     TaskSnapshot,
     VerificationSnapshot,
 )
@@ -82,7 +83,10 @@ from .policy import (
     BootstrapPolicyEngine,
     configured_backends,
 )
+from .costs import estimate_attempt_cost
 from .adapters.git_isolation import validate_target_lineage
+from villani_ops.isolation.copy_git import remove_tree
+from villani_ops.providers import validate_closed_loop_backend
 
 
 def _utc_now() -> datetime:
@@ -133,6 +137,7 @@ class _Runtime:
     started_monotonic: float
     store: RunStore
     events: EventWriter
+    wall_clock_offset_ms: int = 0
     machine: ClosedLoopStateMachine = field(default_factory=ClosedLoopStateMachine)
     last_event: EventEnvelope | None = None
     previous_state: str | None = None
@@ -215,6 +220,7 @@ class ClosedLoopController:
                 events=events,
             )
             self._initialize_bundle(runtime)
+            self._validate_run_configuration(runtime.request.policy_configuration)
             self._checkpoint("after_run_creation")
             if not self._classify(runtime):
                 return self._result(runtime)
@@ -247,6 +253,32 @@ class ClosedLoopController:
                 accounting_status="unknown",
                 failure_or_exhaustion_reason=redact_message(str(error)),
             )
+
+    @staticmethod
+    def _validate_run_configuration(configuration: Mapping[str, Any]) -> None:
+        backends = configured_backends(configuration)
+        currencies: set[str] = set()
+        for backend in backends.values():
+            if backend.enabled and (
+                "classification" in backend.roles or "coding" in backend.roles
+            ):
+                validate_closed_loop_backend(backend)
+                currencies.add(backend.currency)
+        if len(currencies) > 1:
+            raise ValueError(
+                "enabled classification/coding backends must use one currency per run; "
+                "currency conversion is not performed"
+            )
+        verifier = configuration.get("verifier")
+        if isinstance(verifier, Mapping) and not bool(verifier.get("no_llm", True)):
+            verifier_backend = backends.get(str(verifier.get("backend")))
+            if verifier_backend is not None:
+                validate_closed_loop_backend(verifier_backend)
+                if currencies and verifier_backend.currency not in currencies:
+                    raise ValueError(
+                        "enabled classification/coding/verifier backends must use one currency per run; "
+                        "currency conversion is not performed"
+                    )
 
     def _drive(
         self,
@@ -439,6 +471,7 @@ class ClosedLoopController:
             task_id=manifest.task_id,
             created_at=manifest.created_at,
             started_monotonic=self._monotonic(),
+            wall_clock_offset_ms=max(int(manifest.run_wall_clock_duration_ms or 0), 0),
             store=store,
             events=EventWriter(store, manifest.trace_id, self._now, self._on_event),
             machine=machine,
@@ -1490,6 +1523,24 @@ class ClosedLoopController:
             runtime.classification_backend = self._resolve_classification_backend(
                 runtime.request.policy_configuration
             )
+            if runtime.request.max_cost is not None and runtime.classification_backend:
+                projected, projected_status = self._projected_classification_cost(
+                    runtime
+                )
+                if projected_status != "complete" or projected is None:
+                    self._fail(
+                        runtime,
+                        "cost_budget_configuration",
+                        "cost budget cannot permit classification with unknown projected spend",
+                    )
+                    return False
+                if projected > runtime.request.max_cost:
+                    self._fail(
+                        runtime,
+                        "cost_budget_exhausted",
+                        "cost budget is below the projected classifier spend",
+                    )
+                    return False
             context = ClassificationContext(
                 run_id=runtime.run_id,
                 trace_id=runtime.trace_id,
@@ -1532,7 +1583,8 @@ class ClosedLoopController:
                 metadata={
                     **_mapping_copy(returned.metadata),
                     "classification_backend": (
-                        {
+                        _mapping_copy(returned.metadata).get("classification_backend")
+                        or {
                             "name": runtime.classification_backend.name,
                             "model": runtime.classification_backend.model,
                             "role": "classification",
@@ -1541,6 +1593,19 @@ class ClosedLoopController:
                         else None
                     ),
                 },
+                llm_usage=[
+                    StageUsage.model_validate(
+                        {
+                            key: value
+                            for key, value in item.items()
+                            if key != "error"
+                        }
+                    )
+                    for item in _mapping_copy(returned.metadata).get(
+                        "classifier_attempts", []
+                    )
+                    if isinstance(item, Mapping)
+                ],
             )
             runtime.store.write_protocol("classification.json", classification)
             runtime.classification = classification
@@ -1557,6 +1622,17 @@ class ClosedLoopController:
             )
             return False
 
+        if classification.metadata.get("classification_fallback"):
+            self._emit_state_event(
+                runtime,
+                "classification_fallback",
+                {
+                    "reason": classification.metadata.get(
+                        "classification_fallback_reason", "classifier failure"
+                    ),
+                    "failed_calls": len(classification.llm_usage),
+                },
+            )
         self._transition(
             runtime,
             "CLASSIFIED",
@@ -1882,6 +1958,7 @@ class ClosedLoopController:
             snapshot = self._persist_synthetic_failed_attempt(
                 runtime, context, started.timestamp, error
             )
+            self._cleanup_attempt_worktree(runtime, context)
             self._transition(
                 runtime,
                 "ATTEMPT_COMPLETED",
@@ -1959,9 +2036,61 @@ class ClosedLoopController:
                 attempt_id=attempt_id,
                 parent_event_id=started.event_id,
             )
+            self._cleanup_attempt_worktree(runtime, context)
             return
 
-        self._verify_attempt(runtime, context, returned, started.event_id)
+        try:
+            self._verify_attempt(runtime, context, returned, started.event_id)
+        finally:
+            # Verification failures, including malformed dependency output,
+            # must not leave an attempt export behind by accident.
+            self._cleanup_attempt_worktree(runtime, context)
+
+    def _cleanup_attempt_worktree(
+        self, runtime: _Runtime, context: AttemptContext
+    ) -> None:
+        """Remove an attempt-owned export once patch capture and verification end."""
+
+        isolation = runtime.request.policy_configuration.get("isolation")
+        settings = isolation if isinstance(isolation, Mapping) else {}
+        if bool(settings.get("keep_attempt_worktrees", False)):
+            return
+        attempt_dir = Path(context.attempt_directory).absolute()
+        worktree = attempt_dir / "worktree"
+        try:
+            # Do not resolve this path: resolving a symlink could turn a cleanup
+            # operation into deletion of an external target.
+            worktree.absolute().relative_to(attempt_dir)
+            if worktree.is_symlink():
+                worktree.unlink(missing_ok=True)
+            else:
+                remove_tree(worktree)
+            worktree_info_path = attempt_dir / "worktree.json"
+            worktree_info: dict[str, Any] = {}
+            if worktree_info_path.is_file():
+                loaded = json.loads(worktree_info_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    worktree_info = loaded
+            worktree_info.update({"retained": False, "cleanup_status": "removed"})
+            runtime.store.write_json(
+                f"attempts/{context.attempt_id}/worktree.json", worktree_info
+            )
+            self._emit_state_event(
+                runtime,
+                "attempt_worktree_removed",
+                {"retained": False},
+                attempt_id=context.attempt_id,
+            )
+        except Exception as error:
+            self._emit_state_event(
+                runtime,
+                "attempt_cleanup_failed",
+                {
+                    "message": redact_message(str(error)),
+                    "manual_cleanup_path": str(worktree),
+                },
+                attempt_id=context.attempt_id,
+            )
 
     def _record_attempt_failure(
         self,
@@ -2155,11 +2284,18 @@ class ClosedLoopController:
         retry_count = initial_retry_count
         final_error: Exception | None = None
         failure_category: str | None = None
+        verification_usage: list[StageUsage] = []
         while True:
+            verification_started = self._monotonic()
             try:
                 returned = self._verifier.verify(context, result)
                 if not isinstance(returned, Verification):
                     raise TypeError("verifier returned an invalid Verification")
+                verification_usage.extend(
+                    StageUsage.model_validate(dict(item))
+                    for item in returned.llm_usage
+                    if isinstance(item, Mapping)
+                )
                 normalized = self._normalize_verification(
                     runtime, context.attempt_id, returned
                 )
@@ -2172,6 +2308,20 @@ class ClosedLoopController:
             except Exception as error:
                 final_error = error
                 failure_category = "verification_failure"
+                verification_usage.append(
+                    StageUsage(
+                        stage="verification",
+                        model_calls=None,
+                        model_call_accounting_status="unknown",
+                        cost=None,
+                        cost_accounting_status="unknown",
+                        duration_ms=max(
+                            int((self._monotonic() - verification_started) * 1000), 0
+                        ),
+                        duration_accounting_status="complete",
+                        failure_state="failed",
+                    )
+                )
                 normalized = self._verifier_error_snapshot(
                     runtime, context.attempt_id, error
                 )
@@ -2215,7 +2365,9 @@ class ClosedLoopController:
                 "coding_attempt_rerun_for_verification": False,
             }
         )
-        normalized = normalized.model_copy(update={"metadata": metadata})
+        normalized = normalized.model_copy(
+            update={"metadata": metadata, "llm_usage": verification_usage}
+        )
         runtime.store.write_protocol(
             f"verification/{context.attempt_id}.json", normalized
         )
@@ -2318,6 +2470,7 @@ class ClosedLoopController:
             recommended_action=returned.recommended_action,
             raw_verifier_artifact=returned.raw_verifier_artifact,
             metadata=verification_metadata,
+            llm_usage=[],
         )
 
     def _requirement_result(self, item: Requirement) -> RequirementResult:
@@ -2761,12 +2914,18 @@ class ClosedLoopController:
         )
         known_cost, actual_cost_status = self._actual_cost(runtime)
         elapsed = max(
-            int((self._monotonic() - runtime.started_monotonic) * 1000), 0
+            runtime.wall_clock_offset_ms
+            + int((self._monotonic() - runtime.started_monotonic) * 1000),
+            0,
         )
         if runtime.request.max_cost is None:
             remaining_cost = None
             cost_status = "not_applicable"
-        elif not runtime.attempts:
+        elif (
+            runtime.classification is None
+            and not runtime.attempts
+            and not runtime.verifications
+        ):
             remaining_cost = runtime.request.max_cost
             cost_status = "complete"
         else:
@@ -2861,7 +3020,84 @@ class ClosedLoopController:
                 return "cost budget cannot permit an attempt with unknown estimated cost"
             if option.estimated_cost_usd > (budget.remaining_cost_usd or 0.0):
                 return "cost budget exhausted before unaffordable attempt"
+            verifier_cost, verifier_status = self._projected_verification_cost(runtime)
+            if verifier_status != "complete" or verifier_cost is None:
+                return "cost budget cannot permit an attempt with unknown projected verification spend"
+            if (
+                option.estimated_cost_usd + verifier_cost
+                > (budget.remaining_cost_usd or 0.0)
+            ):
+                return "cost budget exhausted before coding and verification projected spend"
         return None
+
+    def _projected_verification_cost(
+        self, runtime: _Runtime
+    ) -> tuple[float | None, str]:
+        verifier = runtime.request.policy_configuration.get("verifier")
+        settings = verifier if isinstance(verifier, Mapping) else {}
+        if bool(settings.get("no_llm", True)):
+            return 0.0, "complete"
+        backend_name = settings.get("backend")
+        backend = configured_backends(runtime.request.policy_configuration).get(
+            str(backend_name)
+        )
+        if backend is None:
+            return None, "unknown"
+        estimate = estimate_attempt_cost(backend)
+        if estimate.total is None:
+            return None, estimate.accounting_status
+        policy = runtime.request.policy_configuration.get("policy")
+        values = policy if isinstance(policy, Mapping) else runtime.request.policy_configuration
+        retry_limit = 0
+        if values.get("version") == "bootstrap_v1":
+            try:
+                retry_limit = max(
+                    0,
+                    int(
+                        BootstrapPolicyConfiguration.model_validate(values).verifier_retry_limit
+                    ),
+                )
+            except (TypeError, ValueError):
+                return None, "unknown"
+        # The verifier is allowed to retry without rerunning coding.  Reserve
+        # the full configured worst case so a cost cap cannot be exceeded by a
+        # transient verifier failure.
+        return estimate.total * (retry_limit + 1), estimate.accounting_status
+
+    def _projected_classification_cost(
+        self, runtime: _Runtime
+    ) -> tuple[float | None, str]:
+        backend = runtime.classification_backend
+        if backend is None:
+            return 0.0, "complete"
+        configured = configured_backends(runtime.request.policy_configuration)
+        policy = runtime.request.policy_configuration.get("policy")
+        values = policy if isinstance(policy, Mapping) else runtime.request.policy_configuration
+        try:
+            retry_limit = max(0, int(values.get("classifier_retry_limit", 1)))
+        except (TypeError, ValueError):
+            return None, "unknown"
+        names = [backend.name]
+        fallback_names = values.get("classifier_fallback_backends")
+        if isinstance(fallback_names, list):
+            names.extend(
+                str(name)
+                for name in fallback_names
+                if str(name) not in names
+                and str(name) in configured
+                and configured[str(name)].enabled
+                and "classification" in configured[str(name)].roles
+            )
+        total = 0.0
+        for name in names:
+            candidate = configured.get(name, backend if name == backend.name else None)
+            if candidate is None:
+                return None, "unknown"
+            estimate = estimate_attempt_cost(candidate)
+            if estimate.total is None or estimate.accounting_status != "complete":
+                return None, estimate.accounting_status
+            total += estimate.total * (retry_limit + 1)
+        return total, "complete"
 
     def _chosen_backend_option(
         self, decision: PolicyDecision
@@ -2876,18 +3112,158 @@ class ClosedLoopController:
         )
 
     def _actual_cost(self, runtime: _Runtime) -> tuple[float | None, str]:
-        if not runtime.attempts:
+        if runtime.classification is None and not runtime.attempts and not runtime.verifications:
             return None, "unknown"
-        known = [
-            item.cost_usd for item in runtime.attempts if item.cost_usd is not None
+        total = self._stage_metrics(runtime).get("total")
+        if total is None:
+            return None, "unknown"
+        return total.cost, total.cost_accounting_status
+
+    @staticmethod
+    def _aggregate_stage(
+        stage: str, usages: list[StageUsage], currency: str
+    ) -> StageUsage:
+        if not usages:
+            return StageUsage(
+                stage=stage,  # type: ignore[arg-type]
+                token_accounting_status="not_applicable",
+                model_call_accounting_status="not_applicable",
+                cost_accounting_status="not_applicable",
+                duration_accounting_status="not_applicable",
+                currency=currency,
+            )
+
+        def total_for(name: str, status_name: str) -> tuple[int | float | None, str]:
+            values = [getattr(item, name) for item in usages]
+            statuses = [getattr(item, status_name) for item in usages]
+            active = [
+                (value, status)
+                for value, status in zip(values, statuses)
+                if status != "not_applicable"
+            ]
+            if not active:
+                return None, "not_applicable"
+            active_values = [value for value, _status in active]
+            known = [value for value in active_values if value is not None]
+            if all(status == "complete" for _value, status in active) and len(known) == len(active_values):
+                return sum(known), "complete"
+            if known:
+                return sum(known), "partial"
+            return None, "unknown"
+
+        input_tokens, input_status = total_for(
+            "input_tokens", "token_accounting_status"
+        )
+        output_tokens, output_status = total_for(
+            "output_tokens", "token_accounting_status"
+        )
+        total_tokens = (
+            int(input_tokens) + int(output_tokens)
+            if input_tokens is not None and output_tokens is not None
+            else None
+        )
+        token_status = (
+            "complete"
+            if input_status == output_status == "complete"
+            else "partial"
+            if input_tokens is not None or output_tokens is not None
+            else "not_applicable"
+            if input_status == output_status == "not_applicable"
+            else "unknown"
+        )
+        model_calls, model_status = total_for(
+            "model_calls", "model_call_accounting_status"
+        )
+        cost, cost_status = total_for("cost", "cost_accounting_status")
+        duration, duration_status = total_for(
+            "duration_ms", "duration_accounting_status"
+        )
+        return StageUsage(
+            stage=stage,  # type: ignore[arg-type]
+            input_tokens=int(input_tokens) if input_tokens is not None else None,
+            output_tokens=int(output_tokens) if output_tokens is not None else None,
+            total_tokens=total_tokens,
+            token_accounting_status=token_status,  # type: ignore[arg-type]
+            model_calls=int(model_calls) if model_calls is not None else None,
+            model_call_accounting_status=model_status,  # type: ignore[arg-type]
+            cost=float(cost) if cost is not None else None,
+            cost_accounting_status=cost_status,  # type: ignore[arg-type]
+            currency=currency,
+            duration_ms=int(duration) if duration is not None else None,
+            duration_accounting_status=duration_status,  # type: ignore[arg-type]
+            failure_state=(
+                "failed"
+                if all(item.failure_state == "failed" for item in usages)
+                else "succeeded"
+                if any(item.failure_state == "succeeded" for item in usages)
+                else "unknown"
+            ),
+        )
+
+    def _stage_metrics(self, runtime: _Runtime) -> dict[str, StageUsage]:
+        configured = configured_backends(runtime.request.policy_configuration)
+        currency = next(
+            (
+                item.currency
+                for item in configured.values()
+                if item.enabled
+                and ("classification" in item.roles or "coding" in item.roles)
+            ),
+            "USD",
+        )
+        classification = list(runtime.classification.llm_usage) if runtime.classification else []
+        verification = [
+            usage
+            for snapshot in runtime.verifications
+            for usage in snapshot.llm_usage
         ]
-        if len(known) == len(runtime.attempts) and all(
-            item.cost_accounting_status == "complete" for item in runtime.attempts
-        ):
-            return float(sum(known)), "complete"
-        if known:
-            return float(sum(known)), "partial"
-        return None, "unknown"
+        # Existing bundles may not have a runner model-call counter, so keep
+        # their coding usage readable with explicit unknown accounting.
+        coding: list[StageUsage] = []
+        for attempt in runtime.attempts:
+            metrics_value = attempt.metadata.get("runner_metrics")
+            metrics = metrics_value if isinstance(metrics_value, Mapping) else {}
+            calls_value = metrics.get("model_requests")
+            calls = int(calls_value) if isinstance(calls_value, int) and calls_value >= 0 else None
+            backend = configured.get(attempt.backend_name)
+            coding.append(
+                StageUsage(
+                    stage="coding",
+                    backend=attempt.backend_name,
+                    model=attempt.model,
+                    input_tokens=attempt.input_tokens,
+                    output_tokens=attempt.output_tokens,
+                    total_tokens=(
+                        attempt.input_tokens + attempt.output_tokens
+                        if attempt.input_tokens is not None and attempt.output_tokens is not None
+                        else None
+                    ),
+                    token_accounting_status=attempt.token_accounting_status,
+                    model_calls=calls,
+                    model_call_accounting_status="complete" if calls is not None else "unknown",
+                    cost=attempt.cost_usd,
+                    cost_accounting_status=attempt.cost_accounting_status,
+                    currency=backend.currency if backend else currency,
+                    duration_ms=attempt.duration_ms,
+                    duration_accounting_status=attempt.duration_accounting_status,
+                    failure_state="succeeded" if attempt.status == "completed" else "failed",
+                )
+            )
+        stages = {
+            "classification": self._aggregate_stage("classification", classification, currency),
+            "coding": self._aggregate_stage("coding", coding, currency),
+            "verification": self._aggregate_stage("verification", verification, currency),
+            "selection": self._aggregate_stage("selection", [], currency),
+            "materialization": self._aggregate_stage("materialization", [], currency),
+        }
+        included = [
+            stages[name]
+            for name in ("classification", "coding", "verification")
+            if stages[name].cost_accounting_status != "not_applicable"
+            or stages[name].duration_accounting_status != "not_applicable"
+        ]
+        stages["total"] = self._aggregate_stage("total", included, currency)
+        return stages
 
     def _accounting_total(
         self,
@@ -2920,14 +3296,13 @@ class ClosedLoopController:
         return totals, "unknown"
 
     def _persist_manifest(self, runtime: _Runtime) -> None:
-        cost, cost_status = self._actual_cost(runtime)
-        tokens, token_status = self._accounting_total(
-            runtime,
-            ("input_tokens", "output_tokens"),
-            "token_accounting_status",
-        )
-        durations, duration_status = self._accounting_total(
-            runtime, ("duration_ms",), "duration_accounting_status"
+        stage_metrics = self._stage_metrics(runtime)
+        total = stage_metrics["total"]
+        coding = stage_metrics["coding"]
+        has_stage_usage = bool(
+            runtime.classification is not None
+            or runtime.attempts
+            or runtime.verifications
         )
         terminal = runtime.machine.state in TERMINAL_STATES
         manifest = RunManifestSnapshot(
@@ -2941,13 +3316,19 @@ class ClosedLoopController:
             final_state=runtime.machine.state,
             attempt_ids=[item.attempt_id for item in runtime.attempts],
             selected_attempt_id=runtime.selected_attempt_id,
-            total_cost_usd=cost,
-            cost_accounting_status=cost_status,
-            total_input_tokens=tokens[0],
-            total_output_tokens=tokens[1],
-            token_accounting_status=token_status,
-            total_duration_ms=durations[0],
-            duration_accounting_status=duration_status,
+            total_cost_usd=total.cost,
+            cost_accounting_status=(
+                total.cost_accounting_status if has_stage_usage else "unknown"
+            ),
+            total_input_tokens=total.input_tokens,
+            total_output_tokens=total.output_tokens,
+            token_accounting_status=(
+                total.token_accounting_status if has_stage_usage else "unknown"
+            ),
+            total_duration_ms=coding.duration_ms,
+            duration_accounting_status=(
+                coding.duration_accounting_status if runtime.attempts else "unknown"
+            ),
             artifact_paths=RunArtifactPaths(
                 task="task.json",
                 classification="classification.json",
@@ -2963,6 +3344,18 @@ class ClosedLoopController:
                 ),
                 "terminal_reason": runtime.terminal_reason,
             },
+            currency=total.currency,
+            stage_metrics=stage_metrics,
+            total_model_calls=total.model_calls,
+            model_call_accounting_status=(
+                total.model_call_accounting_status if has_stage_usage else "unknown"
+            ),
+            run_wall_clock_duration_ms=max(
+                runtime.wall_clock_offset_ms
+                + int((self._monotonic() - runtime.started_monotonic) * 1000),
+                0,
+            ),
+            run_wall_clock_duration_accounting_status="complete",
         )
         runtime.store.write_protocol("manifest.json", manifest)
 
@@ -3109,6 +3502,7 @@ class ClosedLoopController:
         if state not in TERMINAL_STATES:
             state = "FAILED"
         cost, accounting = self._actual_cost(runtime)
+        currency = self._stage_metrics(runtime)["total"].currency
         return ClosedLoopRunResult(
             run_id=runtime.run_id,
             terminal_state=state,  # type: ignore[arg-type]
@@ -3117,4 +3511,5 @@ class ClosedLoopController:
             actual_known_cost_usd=cost,
             accounting_status=accounting,  # type: ignore[arg-type]
             failure_or_exhaustion_reason=runtime.terminal_reason,
+            currency=currency,
         )

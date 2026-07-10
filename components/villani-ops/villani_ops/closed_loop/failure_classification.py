@@ -15,6 +15,89 @@ FailureCategory: TypeAlias = Literal[
     "no_change_failure",
     "materialization_failure",
 ]
+RunnerFailureCategory: TypeAlias = Literal[
+    "executable_not_found",
+    "provider_config_error",
+    "backend_connection_error",
+    "backend_auth_error",
+    "backend_rate_limited",
+    "runner_nonzero_exit",
+]
+
+
+def classify_runner_failure(
+    exit_code: int | None, stdout: str = "", stderr: str = ""
+) -> RunnerFailureCategory:
+    """Classify a Villani Code process failure from its exit and safe output."""
+
+    text = f"{stderr}\n{stdout}".lower()
+    if exit_code == 127 or any(
+        marker in text
+        for marker in (
+            "was not found",
+            "not recognized as",
+            "command not found",
+            "no such file or directory",
+            "cannot find the path",
+            "could not be found",
+        )
+    ):
+        return "executable_not_found"
+    if any(
+        marker in text
+        for marker in (
+            "invalid provider",
+            "unknown provider",
+            "base_url",
+            "base url",
+            "base-url",
+            "missing option '--base-url'",
+            "missing option '--model'",
+            "invalid value for '--provider'",
+            "must be one of",
+            "no resolved api key",
+            "requires an api key",
+        )
+    ):
+        return "provider_config_error"
+    if any(
+        marker in text
+        for marker in ("429", "rate limit", "rate_limit", "too many requests")
+    ):
+        return "backend_rate_limited"
+    if any(
+        marker in text
+        for marker in (
+            "401",
+            "403",
+            "unauthorized",
+            "forbidden",
+            "authentication",
+            "invalid api key",
+            "invalid_api_key",
+        )
+    ):
+        return "backend_auth_error"
+    if any(
+        marker in text
+        for marker in (
+            "connection refused",
+            "connecterror",
+            "connection error",
+            "timed out",
+            "timeout",
+            "name or service not known",
+            "temporary failure in name resolution",
+            "name resolution",
+            "getaddrinfo failed",
+            "nameresolutionerror",
+            "nodename nor servname",
+            "dns",
+            "network is unreachable",
+        )
+    ):
+        return "backend_connection_error"
+    return "runner_nonzero_exit"
 
 
 _INFRASTRUCTURE_CODES = (
@@ -26,6 +109,12 @@ _INFRASTRUCTURE_CODES = (
     "configuration",
     "isolation",
     "runner_exception",
+    "executable_not_found",
+    "provider_config_error",
+    "backend_connection_error",
+    "backend_auth_error",
+    "backend_rate_limited",
+    "runner_command_not_found",
 )
 _VERIFICATION_STATUSES = {
     "timed_out",

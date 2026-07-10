@@ -16,6 +16,7 @@ class Backend(BaseModel):
     api_key_env: str | None = None
     input_cost_per_million: float = Field(default=0.0, ge=0)
     output_cost_per_million: float = Field(default=0.0, ge=0)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
     billing_mode: BillingMode = "unknown"
     compute_cost_per_hour: float | None = Field(default=None, ge=0)
     fixed_cost_per_attempt: float | None = Field(default=None, ge=0)
@@ -32,6 +33,18 @@ class Backend(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)  # backward compatible
     command_name: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_provider_defaults(self) -> "Backend":
+        # Keep legacy provider values parseable for compatibility commands. The
+        # public closed loop validates its narrower vocabulary before execution.
+        self.provider = str(self.provider).strip().lower().replace("_", "-")  # type: ignore[assignment]
+        self.currency = self.currency.upper()
+        if self.base_url:
+            self.base_url = self.base_url.strip()
+        if self.provider == "openai" and not str(self.base_url or "").strip():
+            self.base_url = "https://api.openai.com/v1"
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -58,17 +71,17 @@ class Backend(BaseModel):
     def resolved_api_key(self) -> str | None:
         if self.api_key_env:
             return os.environ.get(self.api_key_env)
-        return self.api_key
+        return self.api_key if self.api_key != "***REDACTED***" else None
 
     def api_key_configured(self) -> bool:
-        if self.api_key is not None and self.api_key != "":
+        if self.api_key not in {None, "", "***REDACTED***"}:
             return True
         if self.api_key_env:
             return bool(os.environ.get(self.api_key_env))
         return False
 
     def api_key_status(self) -> str:
-        if self.api_key is not None and self.api_key != "":
+        if self.api_key not in {None, "", "***REDACTED***"}:
             return "direct_key_configured"
         if self.api_key_env:
             return "env_var_present" if os.environ.get(self.api_key_env) else "env_var_missing"

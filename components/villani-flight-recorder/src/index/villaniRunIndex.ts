@@ -97,6 +97,7 @@ export function villaniSessionFields(
     inputTokenCount: manifest?.total_input_tokens ?? undefined,
     outputTokenCount: manifest?.total_output_tokens ?? undefined,
     costUsd: manifest?.total_cost_usd ?? undefined,
+    currency: manifest?.currency ?? "USD",
     costAccountingStatus: manifest?.cost_accounting_status ?? "unknown",
     state: manifest?.final_state,
     attemptCount: manifest?.attempt_ids.length ?? run.attempts.length,

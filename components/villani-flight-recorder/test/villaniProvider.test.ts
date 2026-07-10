@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { launchVillaniRun } from "../src/commands/launchVillani.js";
 import { scanToIndex } from "../src/index/sessionIndex.js";
-import { parseVillaniRun } from "../src/providers/villani.js";
+import { parseVillaniRun, readVillaniJsonl } from "../src/providers/villani.js";
 import { renderDashboard } from "../src/render/dashboard.js";
 import { deriveReplayViewModel } from "../src/render/viewModel.js";
 import { renderReplay } from "../src/render/renderReplay.js";
@@ -31,6 +31,39 @@ async function updateJson(
 }
 
 describe("native Villani provider", () => {
+  it("accepts a valid final JSONL object without a trailing newline", async () => {
+    const file = path.join(
+      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-jsonl-")),
+      "events.jsonl",
+    );
+    await fs.writeFile(file, '{"ok":true}');
+    await expect(readVillaniJsonl(file)).resolves.toMatchObject({
+      values: [{ ok: true }],
+      warnings: [],
+    });
+  });
+
+  it("ignores only a genuinely truncated final JSONL object", async () => {
+    const file = path.join(
+      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-jsonl-")),
+      "events.jsonl",
+    );
+    await fs.writeFile(file, '{"ok":true}\n{"partial":');
+    await expect(readVillaniJsonl(file)).resolves.toMatchObject({
+      values: [{ ok: true }],
+      warnings: [expect.stringContaining("truncated")],
+    });
+  });
+
+  it("reports a complete malformed final JSON object", async () => {
+    const file = path.join(
+      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-jsonl-")),
+      "events.jsonl",
+    );
+    await fs.writeFile(file, '{"ok":true}\n{"broken":}');
+    await expect(readVillaniJsonl(file)).rejects.toThrow(/malformed JSONL/);
+  });
+
   it("detects and parses the complete canonical fixture without writing to it", async () => {
     const fixture = await copyVillaniFixture();
     const before = await snapshotRunFiles(fixture.run);
@@ -135,7 +168,7 @@ describe("native Villani provider", () => {
       "9.00s",
     );
     expect(view.metrics.find((metric) => metric.id === "cost")?.value).toBe(
-      "$0.05",
+      "USD 0.05",
     );
   });
 
@@ -164,7 +197,7 @@ describe("native Villani provider", () => {
     expect(row?.textContent).toContain("fixture-large");
     expect(row?.textContent).toContain("275 tokens");
     expect(row?.textContent).toContain("9s duration");
-    expect(row?.textContent).toContain("$0.05 cost");
+    expect(row?.textContent).toContain("USD 0.05 cost");
   });
 
   it("renders null cost as unknown rather than zero", async () => {

@@ -32,6 +32,7 @@ class BootstrapPolicyConfiguration(BaseModel):
     economy_confidence_threshold: float = Field(default=0.80, ge=0, le=1)
     conservative_confidence_threshold: float = Field(default=0.65, ge=0, le=1)
     max_same_backend_retries: int = Field(default=1, ge=0)
+    classifier_retry_limit: int = Field(default=1, ge=0)
     verifier_retry_limit: int = Field(default=1, ge=0)
     accepted_candidates_required: int = Field(default=1, ge=1)
     allow_constraint_violations: bool = False
@@ -43,6 +44,12 @@ class EmpiricalCapabilityConfiguration(BaseModel):
 
     minimum_empirical_samples: int = Field(default=20, ge=1)
     target_success_probability: float = Field(default=0.80, ge=0, le=1)
+    # By default the routing confidence target is also the minimum Wilson
+    # lower bound for empirical qualification. Operators can set a lower
+    # explicit bound when empirical evidence should qualify earlier.
+    minimum_empirical_wilson_lower_bound: float | None = Field(
+        default=None, ge=0, le=1
+    )
     persisted_sequence_top_n: int = Field(default=100, ge=1)
     classifier_version: str = Field(default="task_classifier_v1", min_length=1)
     verifier_version: str = Field(
@@ -151,6 +158,12 @@ class BootstrapPolicyEngine:
         excluded_backends: set[str] | None = None,
     ) -> tuple[tuple[EmpiricalScoreResolution, ...], SequenceOptimizationResult]:
         excluded = excluded_backends or set()
+        wilson_threshold = (
+            self.empirical_configuration.minimum_empirical_wilson_lower_bound
+            if self.empirical_configuration.minimum_empirical_wilson_lower_bound
+            is not None
+            else self.empirical_configuration.target_success_probability
+        )
         resolutions: list[EmpiricalScoreResolution] = []
         inputs: list[EmpiricalBackendInput] = []
         options = {item.backend_name: item for item in alternatives}
@@ -182,6 +195,8 @@ class BootstrapPolicyEngine:
                     mean_actual_attempt_cost=resolution.mean_actual_attempt_cost,
                     sufficient_probability_data=(
                         resolution.empirical_status == "sufficient_data"
+                        and resolution.conservative_success_probability is not None
+                        and resolution.conservative_success_probability >= wilson_threshold
                     ),
                     profile_version=(
                         resolution.selected_profile_key.scorer_version
@@ -225,17 +240,39 @@ class BootstrapPolicyEngine:
         self, context: PolicyContext, minimum: float
     ) -> tuple[BackendOption, ...]:
         cost_cap_active = context.budget.cost_accounting_status != "not_applicable"
+        wilson_threshold = (
+            self.empirical_configuration.minimum_empirical_wilson_lower_bound
+            if self.empirical_configuration.minimum_empirical_wilson_lower_bound
+            is not None
+            else self.empirical_configuration.target_success_probability
+        )
         alternatives: list[BackendOption] = []
         for backend in sorted(self.backends.values(), key=lambda item: item.name):
             if "coding" not in backend.roles:
                 continue
             estimate = estimate_attempt_cost(backend)
+            empirical = resolve_empirical_score(
+                self.capability_snapshot,
+                profile_key_for(backend, context.classification, self.raw_configuration),
+                static_capability_score=backend.capability_score,
+                minimum_empirical_samples=self.empirical_configuration.minimum_empirical_samples,
+            )
+            static_eligible = backend.capability_score >= minimum
+            empirical_eligible = bool(
+                empirical.empirical_status == "sufficient_data"
+                and empirical.capability_score_used >= minimum
+                and (
+                    empirical.conservative_success_probability is not None
+                    and empirical.conservative_success_probability >= wilson_threshold
+                )
+            )
             reasons: list[str] = []
             if not backend.enabled:
                 reasons.append("backend is disabled")
-            if backend.capability_score < minimum:
+            if not static_eligible and not empirical_eligible:
                 reasons.append(
-                    f"capability {backend.capability_score} is below required {minimum:g}"
+                    f"static capability {backend.capability_score} and empirical qualification "
+                    f"do not meet required {minimum:g}"
                 )
             if cost_cap_active:
                 if context.budget.cost_accounting_status != "complete":
@@ -249,11 +286,24 @@ class BootstrapPolicyEngine:
                     backend_name=backend.name,
                     model=backend.model,
                     eligible=not reasons,
+                    # Keep the configured score stable for deterministic
+                    # ordering/reporting.  Empirical qualification is an
+                    # additional eligibility signal, persisted below with its
+                    # effective Wilson-derived score.
                     capability_score=float(backend.capability_score),
                     estimated_cost_usd=estimate.total,
                     cost_accounting_status=estimate.accounting_status,
                     rejection_reasons=tuple(reasons),
-                    cost_components=estimate.as_dict(),
+                    cost_components={
+                        **estimate.as_dict(),
+                        "static_eligible": static_eligible,
+                        "empirical_eligible": empirical_eligible,
+                        "capability_score_source": empirical.score_source,
+                        "effective_capability_score": empirical.capability_score_used,
+                        "minimum_wilson_lower_bound": wilson_threshold,
+                        "empirical_sample_count": empirical.selected_sample_count,
+                        "empirical_wilson_lower_bound": empirical.conservative_success_probability,
+                    },
                     cost_source=estimate.source,
                 )
             )
@@ -375,6 +425,21 @@ class BootstrapPolicyEngine:
             "capability_scores": {
                 item.backend_name: item.model_dump(mode="json")
                 for item in empirical_resolutions
+            },
+            "eligibility_by_backend": {
+                item.backend_name: {
+                    key: item.cost_components.get(key)
+                    for key in (
+                        "static_eligible",
+                        "empirical_eligible",
+                        "capability_score_source",
+                        "effective_capability_score",
+                        "minimum_wilson_lower_bound",
+                        "empirical_sample_count",
+                        "empirical_wilson_lower_bound",
+                    )
+                }
+                for item in alternatives
             },
             "capability_snapshot": (
                 {

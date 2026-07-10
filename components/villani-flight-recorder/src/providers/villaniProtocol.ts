@@ -1,6 +1,30 @@
 export type VillaniAccountingStatus =
   "complete" | "partial" | "unknown" | "not_applicable";
 
+export interface VillaniStageUsage {
+  stage:
+    | "classification"
+    | "coding"
+    | "verification"
+    | "selection"
+    | "materialization"
+    | "total";
+  backend: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  token_accounting_status: VillaniAccountingStatus;
+  model_calls: number | null;
+  model_call_accounting_status: VillaniAccountingStatus;
+  cost: number | null;
+  cost_accounting_status: VillaniAccountingStatus;
+  currency: string;
+  duration_ms: number | null;
+  duration_accounting_status: VillaniAccountingStatus;
+  failure_state: "succeeded" | "failed" | "unknown";
+}
+
 export type VillaniControllerState =
   | "CREATED"
   | "CLASSIFYING"
@@ -67,6 +91,13 @@ export interface VillaniRunManifestSnapshot {
   duration_accounting_status: VillaniAccountingStatus;
   artifact_paths: VillaniRunArtifactPaths;
   metadata: Record<string, unknown>;
+  /** Added after v1 launch; absent fields remain valid for older run bundles. */
+  currency?: string;
+  stage_metrics?: Record<string, VillaniStageUsage>;
+  total_model_calls?: number | null;
+  model_call_accounting_status?: VillaniAccountingStatus;
+  run_wall_clock_duration_ms?: number | null;
+  run_wall_clock_duration_accounting_status?: VillaniAccountingStatus;
 }
 
 export interface VillaniRunStateSnapshot {
@@ -116,6 +147,7 @@ export interface VillaniClassificationSnapshot {
   reasoning_summary: string;
   signals: Record<string, unknown>;
   metadata: Record<string, unknown>;
+  llm_usage?: VillaniStageUsage[];
 }
 
 export interface VillaniBackendConsideration {
@@ -222,6 +254,7 @@ export interface VillaniVerificationSnapshot {
     "accept" | "reject" | "retry_verifier" | "escalate" | "fail";
   raw_verifier_artifact: string | null;
   metadata: Record<string, unknown>;
+  llm_usage?: VillaniStageUsage[];
 }
 
 export interface VillaniCandidateRanking {

@@ -141,6 +141,7 @@ class Verification:
     risk_flags: tuple[str, ...] = ()
     raw_verifier_artifact: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    llm_usage: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +316,7 @@ class ClosedLoopRunResult:
     actual_known_cost_usd: float | None
     accounting_status: AccountingStatus
     failure_or_exhaustion_reason: str | None
+    currency: str = "USD"
 
     @property
     def actual_known_cost(self) -> float | None:

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/materialization.schema.json",
+  "title": "Villani Materialization Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "materialization_id",
+    "run_id",
+    "trace_id",
+    "selection_id",
+    "selected_attempt_id",
+    "started_at",
+    "completed_at",
+    "status",
+    "source_patch_path",
+    "target_repository_path",
+    "materialized_patch_path",
+    "patch_sha256",
+    "changed_files",
+    "failure",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.materialization.v1" },
+    "materialization_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "selection_id": { "type": "string", "minLength": 1 },
+    "selected_attempt_id": { "type": "string", "minLength": 1 },
+    "started_at": { "$ref": "#/$defs/utc_timestamp" },
+    "completed_at": {
+      "anyOf": [
+        { "$ref": "#/$defs/utc_timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "status": { "enum": ["pending", "running", "succeeded", "failed"] },
+    "source_patch_path": { "type": "string", "minLength": 1 },
+    "target_repository_path": { "type": "string", "minLength": 1 },
+    "materialized_patch_path": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "patch_sha256": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        { "type": "null" }
+      ]
+    },
+    "changed_files": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "failure": {
+      "anyOf": [
+        { "$ref": "#/$defs/failure" },
+        { "type": "null" }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "succeeded" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "completed_at": { "$ref": "#/$defs/utc_timestamp" },
+          "materialized_patch_path": { "type": "string", "minLength": 1 },
+          "patch_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "failure": { "type": "null" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "details"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}
+

@@ -50,7 +50,34 @@
     "metadata": {
       "type": "object",
       "additionalProperties": true
+    },
+    "llm_usage": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stage_usage" }
+    }
+  },
+  "$defs": {
+    "stage_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "backend", "model", "input_tokens", "output_tokens", "total_tokens", "token_accounting_status", "model_calls", "model_call_accounting_status", "cost", "cost_accounting_status", "currency", "duration_ms", "duration_accounting_status", "failure_state"],
+      "properties": {
+        "stage": { "enum": ["classification", "coding", "verification", "selection", "materialization", "total"] },
+        "backend": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "model": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "input_tokens": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "output_tokens": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "total_tokens": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "token_accounting_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
+        "model_calls": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "model_call_accounting_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
+        "cost": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+        "cost_accounting_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
+        "currency": { "type": "string", "pattern": "^[A-Za-z]{3}$" },
+        "duration_ms": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "duration_accounting_status": { "enum": ["complete", "partial", "unknown", "not_applicable"] },
+        "failure_state": { "enum": ["succeeded", "failed", "unknown"] }
+      }
     }
   }
 }
-

@@ -19,6 +19,11 @@ python scripts/install-local.py
 
 The installer prints the exact activation command that makes `villani` and `vfr` discoverable. It is safe to run twice and does not collect telemetry or download a model.
 
+The canonical closed-loop provider names are `local`, `openai-compatible`, and
+`openai`. The first two require an explicit `--base-url`; `openai` uses
+`https://api.openai.com/v1` when no URL is supplied. All three are translated to
+Villani Code's supported `--provider openai` protocol mode.
+
 ## Quickstart
 
 Create the local configuration and run store:
@@ -31,6 +36,14 @@ Add a local OpenAI-compatible backend. This example declares both its bootstrap 
 
 ```console
 villani backend add local-qwen --provider local --base-url http://127.0.0.1:11434/v1 --model qwen2.5-coder --role classification --role coding --capability-score 55 --billing-mode compute_time --compute-cost-per-hour 0.18
+```
+
+For another OpenAI-compatible local server, use the same vocabulary and keep
+the API key in the environment:
+
+```console
+export LOCAL_API_KEY="dummy"
+villani backend add local-stub --provider openai-compatible --base-url http://127.0.0.1:8000/v1 --model deterministic --role classification --role coding --capability-score 55 --billing-mode compute_time --compute-cost-per-hour 0.18 --api-key-env LOCAL_API_KEY
 ```
 
 Or add an API backend without putting a literal key in configuration or shell history:
@@ -52,6 +65,8 @@ Inspect and replay local runs:
 villani runs
 villani inspect RUN_ID
 villani open RUN_ID
+villani resume RUN_ID
+villani resume --latest
 ```
 
 `villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.

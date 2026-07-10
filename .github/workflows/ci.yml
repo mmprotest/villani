@@ -57,6 +57,8 @@ jobs:
           cache-dependency-path: components/villani-flight-recorder/package-lock.json
       - run: npm ci
         working-directory: components/villani-flight-recorder
+      - run: npm audit --omit=dev
+        working-directory: components/villani-flight-recorder
       - run: npm test
         working-directory: components/villani-flight-recorder
       - run: npm run typecheck
@@ -64,6 +66,8 @@ jobs:
       - run: npm run build
         working-directory: components/villani-flight-recorder
       - run: npm run format:check
+        working-directory: components/villani-flight-recorder
+      - run: npm pack --dry-run
         working-directory: components/villani-flight-recorder
 
   cross-component:
@@ -90,3 +94,42 @@ jobs:
       - run: python -m pytest components/villani-ops/villani_ops/tests/closed_loop tests/closed_loop -q
       - run: python scripts/check-secrets.py integration/fixtures
 
+  package-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: python -m pip install build pytest
+      - run: python -m build --wheel --outdir "$RUNNER_TEMP/villani-wheels" components/villani-code
+      - run: python -m build --wheel --outdir "$RUNNER_TEMP/villani-wheels" components/villani-ops
+      - run: python -m venv "$RUNNER_TEMP/villani-smoke"
+      - run: "$RUNNER_TEMP/villani-smoke/bin/python" -m pip install pytest
+      - run: "$RUNNER_TEMP/villani-smoke/bin/python" -m pip install "$RUNNER_TEMP/villani-wheels"/*.whl
+      - run: "$RUNNER_TEMP/villani-smoke/bin/villani" --help
+      - run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/villani-home/runs"
+          set +e
+          output=$(VILLANI_HOME="$RUNNER_TEMP/villani-home" "$RUNNER_TEMP/villani-smoke/bin/villani" resume missing 2>&1)
+          status=$?
+          set -e
+          test "$status" -eq 2
+          printf '%s\n' "$output" | grep -F "run not found"
+          set +e
+          latest=$(VILLANI_HOME="$RUNNER_TEMP/villani-home" "$RUNNER_TEMP/villani-smoke/bin/villani" resume --latest 2>&1)
+          status=$?
+          set -e
+          test "$status" -eq 2
+          printf '%s\n' "$latest" | grep -F "no interrupted run"
+      - run: npm ci
+        working-directory: components/villani-flight-recorder
+      - run: npm run build
+        working-directory: components/villani-flight-recorder
+      - run: |
+          PATH="$RUNNER_TEMP/villani-smoke/bin:$PATH" \
+            "$RUNNER_TEMP/villani-smoke/bin/python" -m pytest tests/closed_loop/test_cli_e2e.py -m e2e -q

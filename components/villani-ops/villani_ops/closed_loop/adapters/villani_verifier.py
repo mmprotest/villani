@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from typing import Any, Callable, Mapping
 
 from villani_ops.verifier.service import execute_verifier
+from villani_ops.closed_loop.costs import actual_attempt_cost
+from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
+from villani_ops.core.backend import Backend
 
 from ..event_writer import redact_data
 from ..interfaces import (
@@ -112,6 +116,7 @@ class VillaniVerifierAdapter:
         max_tool_calls: int = 12,
         base_url: str | None = None,
         model: str | None = None,
+        backend_config: Backend | None = None,
     ) -> None:
         self._raw_verifier = raw_verifier
         self._invocation = invocation
@@ -121,6 +126,103 @@ class VillaniVerifierAdapter:
         self._max_tool_calls = max_tool_calls
         self._base_url = base_url
         self._model = model
+        self._backend_config = backend_config
+
+    def _llm_usage(
+        self, trace_dir: Path, duration_ms: int, failure_state: str
+    ) -> tuple[dict[str, Any], ...]:
+        backend = self._backend_config
+        records: list[dict[str, Any]] = []
+        source = trace_dir / "llm_raw_responses.jsonl"
+        if source.is_file():
+            try:
+                records = read_jsonl_tolerant(source)
+            except Exception:
+                records = []
+        if not records:
+            attempted_cost = (
+                actual_attempt_cost(
+                    backend,
+                    input_tokens=None,
+                    output_tokens=None,
+                    duration_seconds=duration_ms / 1000,
+                    started=not self._no_llm,
+                )
+                if backend is not None and not self._no_llm
+                else None
+            )
+            return (
+                {
+                    "stage": "verification",
+                    "backend": backend.name if backend else self._backend,
+                    "model": backend.model if backend else self._model,
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "total_tokens": None,
+                    "token_accounting_status": "not_applicable" if self._no_llm else "unknown",
+                    "model_calls": 0 if self._no_llm else None,
+                    "model_call_accounting_status": "complete" if self._no_llm else "unknown",
+                    "cost": attempted_cost.total if attempted_cost else None,
+                    "cost_accounting_status": (
+                        "not_applicable"
+                        if self._no_llm
+                        else attempted_cost.accounting_status
+                        if attempted_cost
+                        else "unknown"
+                    ),
+                    "currency": backend.currency if backend else "USD",
+                    "duration_ms": duration_ms,
+                    "duration_accounting_status": "complete",
+                    "failure_state": failure_state,
+                },
+            )
+        usages: list[dict[str, Any]] = []
+        for record in records:
+            usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
+            has_usage = bool(usage)
+            input_tokens = (
+                int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+                if has_usage
+                else None
+            )
+            output_tokens = (
+                int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+                if has_usage
+                else None
+            )
+            call_duration = int(record.get("durationMs") or 0)
+            cost = (
+                actual_attempt_cost(
+                    backend,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    duration_seconds=call_duration / 1000,
+                    started=True,
+                )
+                if backend is not None
+                else None
+            )
+            status = str(record.get("status") or "unknown")
+            usages.append(
+                {
+                    "stage": "verification",
+                    "backend": backend.name if backend else self._backend,
+                    "model": str(record.get("model") or (backend.model if backend else self._model) or "") or None,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens if has_usage else None,
+                    "token_accounting_status": "complete" if has_usage else "unknown",
+                    "model_calls": 1,
+                    "model_call_accounting_status": "complete",
+                    "cost": cost.total if cost else None,
+                    "cost_accounting_status": cost.accounting_status if cost else "unknown",
+                    "currency": backend.currency if backend else "USD",
+                    "duration_ms": call_duration,
+                    "duration_accounting_status": "complete",
+                    "failure_state": "succeeded" if status == "ok" else "failed",
+                }
+            )
+        return tuple(usages)
 
     def verify(
         self,
@@ -131,11 +233,20 @@ class VillaniVerifierAdapter:
         raw_dir = run_dir / "verification" / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
         raw_path = raw_dir / f"{attempt_context.attempt_id}.json"
+        # Each verifier retry gets its own explicit trace directory.  The
+        # trace writer intentionally rejects reusing an existing directory,
+        # and separate paths preserve usage for every call rather than
+        # overwriting the first retry's records.
         trace_dir = raw_dir / f"{attempt_context.attempt_id}_trace"
+        suffix = 2
+        while trace_dir.exists():
+            trace_dir = raw_dir / f"{attempt_context.attempt_id}_trace_{suffix}"
+            suffix += 1
         trace_value = attempt_result.metadata.get("debug_trace_path")
         trace_path = (
             (run_dir / str(trace_value)).resolve() if trace_value else None
         )
+        started = time.monotonic()
         execution = execute_verifier(
             debug_root=trace_path,
             resolved_trace_dir=trace_path,
@@ -151,7 +262,9 @@ class VillaniVerifierAdapter:
             no_llm=self._no_llm,
             base_url=self._base_url,
             model=self._model,
+            api_key=(self._backend_config.resolved_api_key() if self._backend_config else None),
         )
+        duration_ms = max(int((time.monotonic() - started) * 1000), 0)
         raw = redact_data(execution.result)
         if not isinstance(raw, dict):
             raw = {}
@@ -277,4 +390,9 @@ class VillaniVerifierAdapter:
                 "raw_verdict": verdict,
                 "raw_recommended_action": raw_action,
             },
+            llm_usage=self._llm_usage(
+                trace_dir,
+                duration_ms,
+                "failed" if execution.invocation_status != "completed" else "succeeded",
+            ),
         )

@@ -23,13 +23,16 @@ Candidate generation is intentionally clean: each candidate receives the origina
 
 ## Install
 
-From the repository root:
+From the repository root (install both public Python entry points so the
+`villani` runner dependency is available):
 
 ```bash
-pip install -e .
+pip install -e components/villani-code -e components/villani-ops
 ```
 
-Villani Ops currently expects `villani-code` to be available as the coding runner.
+If `villani-code` is not installed, `villani run` stops before the first coding
+attempt with an installation message. The local installer performs this paired
+installation automatically.
 
 ## Quick start
 
@@ -68,6 +71,9 @@ villani-ops run \
   --orchestrator adaptive \
   --non-interactive
 ```
+
+The canonical public CLI is `villani run`; interrupted runs can be resumed with
+`villani resume <run_id>` or `villani resume --latest`.
 
 `--candidate-attempts 4` means Villani Ops will try to run four independent candidate attempts. Parallelism is bounded by the backend's `--max-parallel` value.
 

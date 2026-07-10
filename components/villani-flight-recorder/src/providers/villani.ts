@@ -13,6 +13,7 @@ import type {
   VillaniRunManifestSnapshot,
   VillaniRunStateSnapshot,
   VillaniSelectionSnapshot,
+  VillaniStageUsage,
   VillaniTaskSnapshot,
   VillaniVerificationSnapshot,
 } from "./villaniProtocol.js";
@@ -36,6 +37,10 @@ export interface VillaniAttemptData {
 
 export interface VillaniAggregateData {
   costUsd: number | null;
+  currency: string;
+  stageMetrics?: Record<string, VillaniStageUsage>;
+  totalModelCalls?: number | null;
+  runWallClockDurationMs?: number | null;
   costAccountingStatus: VillaniAccountingStatus;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -120,6 +125,31 @@ interface TolerantJsonlResult {
   warnings: string[];
 }
 
+function isStructurallyTruncatedJson(line: string): boolean {
+  const text = line.trim();
+  if (!text) return false;
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let invalidNesting = false;
+  for (const character of text) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{" || character === "[") {
+      stack.push(character === "{" ? "}" : "]");
+    } else if (character === "}" || character === "]") {
+      if (stack.pop() !== character) invalidNesting = true;
+    }
+  }
+  return !invalidNesting && (inString || stack.length > 0);
+}
+
 export async function readVillaniJsonl(
   file: string,
 ): Promise<TolerantJsonlResult> {
@@ -141,7 +171,11 @@ export async function readVillaniJsonl(
     try {
       values.push(JSON.parse(line));
     } catch (error) {
-      if (index === lastNonEmpty && finalLineIsTruncated) {
+      // A missing terminal newline is normal. Tolerate only a physically
+      // incomplete JSON structure; `{"x":}` and other complete malformed
+      // objects must remain visible corruption, not a recoverable crash tail.
+      const structurallyOpen = isStructurallyTruncatedJson(line);
+      if (index === lastNonEmpty && finalLineIsTruncated && structurallyOpen) {
         warnings.push(
           `${path.basename(file)} ignored a truncated final JSONL line ${index + 1}`,
         );
@@ -326,6 +360,10 @@ function aggregate(
 ): VillaniAggregateData {
   return {
     costUsd: manifest.total_cost_usd,
+    currency: manifest.currency ?? "USD",
+    stageMetrics: manifest.stage_metrics,
+    totalModelCalls: manifest.total_model_calls,
+    runWallClockDurationMs: manifest.run_wall_clock_duration_ms,
     costAccountingStatus: manifest.cost_accounting_status,
     inputTokens: manifest.total_input_tokens,
     outputTokens: manifest.total_output_tokens,

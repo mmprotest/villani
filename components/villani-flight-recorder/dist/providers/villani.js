@@ -39,6 +39,37 @@ async function exists(file) {
         .then((stat) => stat.isFile())
         .catch(() => false);
 }
+function isStructurallyTruncatedJson(line) {
+    const text = line.trim();
+    if (!text)
+        return false;
+    const stack = [];
+    let inString = false;
+    let escaped = false;
+    let invalidNesting = false;
+    for (const character of text) {
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (character === "\\")
+                escaped = true;
+            else if (character === '"')
+                inString = false;
+            continue;
+        }
+        if (character === '"') {
+            inString = true;
+        }
+        else if (character === "{" || character === "[") {
+            stack.push(character === "{" ? "}" : "]");
+        }
+        else if (character === "}" || character === "]") {
+            if (stack.pop() !== character)
+                invalidNesting = true;
+        }
+    }
+    return !invalidNesting && (inString || stack.length > 0);
+}
 export async function readVillaniJsonl(file) {
     const text = await fs.readFile(file, "utf8");
     const lines = text.split(/\r?\n/);
@@ -60,7 +91,11 @@ export async function readVillaniJsonl(file) {
             values.push(JSON.parse(line));
         }
         catch (error) {
-            if (index === lastNonEmpty && finalLineIsTruncated) {
+            // A missing terminal newline is normal. Tolerate only a physically
+            // incomplete JSON structure; `{"x":}` and other complete malformed
+            // objects must remain visible corruption, not a recoverable crash tail.
+            const structurallyOpen = isStructurallyTruncatedJson(line);
+            if (index === lastNonEmpty && finalLineIsTruncated && structurallyOpen) {
                 warnings.push(`${path.basename(file)} ignored a truncated final JSONL line ${index + 1}`);
                 continue;
             }
@@ -186,6 +221,10 @@ function positiveEventCount(events, eventType) {
 function aggregate(manifest, attempts, events) {
     return {
         costUsd: manifest.total_cost_usd,
+        currency: manifest.currency ?? "USD",
+        stageMetrics: manifest.stage_metrics,
+        totalModelCalls: manifest.total_model_calls,
+        runWallClockDurationMs: manifest.run_wall_clock_duration_ms,
         costAccountingStatus: manifest.cost_accounting_status,
         inputTokens: manifest.total_input_tokens,
         outputTokens: manifest.total_output_tokens,

@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 from collections.abc import Callable, Mapping
@@ -20,6 +21,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from villani_ops.classification import TaskClassifier
+from villani_ops.llm.client import LLMCallError, LLMCallResult
 from villani_ops.closed_loop import (
     BootstrapPolicyEngine,
     ClosedLoopController,
@@ -46,6 +48,13 @@ from villani_ops.closed_loop.schema_validation import (
     validate_protocol_document,
 )
 from villani_ops.core.backend import Backend
+from villani_ops.closed_loop.costs import actual_attempt_cost
+from villani_ops.providers import (
+    CANONICAL_PROVIDERS,
+    ProviderConfigurationError,
+    canonical_provider,
+    validate_closed_loop_backend,
+)
 from villani_ops.core.task import Task
 from villani_ops.subprocess_utils import resolve_command_prefix
 
@@ -83,6 +92,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "economy_confidence_threshold": 0.80,
         "conservative_confidence_threshold": 0.65,
         "max_same_backend_retries": 1,
+        "classifier_retry_limit": 1,
         "verifier_retry_limit": 1,
         "accepted_candidates_required": 1,
         "allow_constraint_violations": False,
@@ -91,6 +101,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "capabilities": {
         "minimum_empirical_samples": 20,
         "target_success_probability": 0.80,
+        "minimum_empirical_wilson_lower_bound": None,
         "persisted_sequence_top_n": 100,
         "classifier_version": "task_classifier_v1",
         "verifier_version": "villani_ops_verifier_pipeline_v1",
@@ -109,6 +120,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_tool_calls": 12,
         "base_url": None,
         "model": None,
+    },
+    "isolation": {
+        "include_untracked_attempt_files": False,
+        "keep_attempt_worktrees": False,
+        "max_file_size_bytes": 52428800,
+        "max_total_size_bytes": 524288000,
     },
     "backends": {},
 }
@@ -197,6 +214,22 @@ def _validate_run_backends(backends: Mapping[str, Backend]) -> None:
         for backend in backends.values()
     ):
         _usage_error("an enabled backend with role 'coding' is required")
+    active = [
+        backend
+        for backend in backends.values()
+        if backend.enabled and ({"classification", "coding"} & set(backend.roles))
+    ]
+    try:
+        for backend in active:
+            validate_closed_loop_backend(backend)
+    except ProviderConfigurationError as error:
+        _usage_error(str(error))
+    currencies = {backend.currency for backend in active}
+    if len(currencies) > 1:
+        _usage_error(
+            "enabled classification/coding backends must use one currency per run; "
+            "currency conversion is not performed"
+        )
 
 
 @app.command("init")
@@ -319,9 +352,19 @@ def backend_add(
     api_key_env: str | None = typer.Option(None, "--api-key-env"),
     timeout_seconds: int | None = typer.Option(None, "--timeout-seconds"),
     max_parallel: int = typer.Option(1, "--max-parallel"),
+    currency: str = typer.Option("USD", "--currency"),
 ) -> None:
     """Add or replace one backend without resolving its secret."""
 
+    provider = canonical_provider(provider)
+    if provider not in CANONICAL_PROVIDERS:
+        _usage_error(
+            "--provider must be one of: " + ", ".join(sorted(CANONICAL_PROVIDERS))
+        )
+    if provider in {"local", "openai-compatible"} and not str(base_url or "").strip():
+        _usage_error(f"--provider {provider} requires --base-url")
+    if not re.fullmatch(r"[A-Za-z]{3}", currency):
+        _usage_error("--currency must be a three-letter ISO-style code")
     roles = list(dict.fromkeys(role or ["coding"]))
     if "coding" in roles and capability_score is None:
         _usage_error("--capability-score is required for a coding backend")
@@ -358,6 +401,7 @@ def backend_add(
         "billing_mode": billing_mode,
         "input_cost_per_million": input_cost_per_million or 0.0,
         "output_cost_per_million": output_cost_per_million or 0.0,
+        "currency": currency.upper(),
         "compute_cost_per_hour": compute_cost_per_hour,
         "fixed_cost_per_attempt": fixed_cost_per_attempt,
         "estimated_input_tokens": estimated_input_tokens,
@@ -400,6 +444,7 @@ def backend_list() -> None:
             f"{backend.name}: provider={backend.provider}; model={backend.model}; "
             f"roles={','.join(backend.roles)}; capability={backend.capability_score:g} "
             f"({backend.capability_score_source}); billing={backend.billing_mode}; "
+            f"currency={backend.currency}; "
             f"credential={credential}; "
             f"state={'enabled' if backend.enabled else 'disabled'}",
             soft_wrap=True,
@@ -449,6 +494,14 @@ def capability_list() -> None:
     capabilities = _capability_configuration(configuration)
     try:
         minimum = int(capabilities.get("minimum_empirical_samples", 20))
+        wilson_threshold_value = capabilities.get(
+            "minimum_empirical_wilson_lower_bound"
+        )
+        wilson_threshold = float(
+            wilson_threshold_value
+            if wilson_threshold_value is not None
+            else capabilities.get("target_success_probability", 0.80)
+        )
         snapshot = CapabilityStore().load()
     except (OSError, ValueError, json.JSONDecodeError) as error:
         _usage_error(f"cannot read capability registry: {error}")
@@ -456,7 +509,10 @@ def capability_list() -> None:
         console.print("No backends configured.")
         return
     for row in backend_score_rows(
-        backends, snapshot, minimum_empirical_samples=minimum
+        backends,
+        snapshot,
+        minimum_empirical_samples=minimum,
+        minimum_empirical_wilson_lower_bound=wilson_threshold,
     ):
         empirical = (
             str(row["empirical_capability_score"])
@@ -472,7 +528,8 @@ def capability_list() -> None:
             f"{row['backend_name']}: provider={row['provider']}; model={row['model']}; "
             f"static={row['static_capability_score']} ({row['static_score_source']}); "
             f"empirical={empirical}; status={row['empirical_status']}; "
-            f"samples={row['sample_count']}; conservative_probability={probability}",
+            f"samples={row['sample_count']}; conservative_probability={probability}; "
+            f"wilson_threshold={row['minimum_wilson_lower_bound']:.6f}",
             soft_wrap=True,
         )
 
@@ -505,7 +562,7 @@ def _classify_for_capability_explain(
         classification_backend_name=classification_backend.name,
         classification_backend_model=classification_backend.model,
     )
-    returned = _ClassifierAdapter(backends).classify(task, context)
+    returned = _ClassifierAdapter(backends, configuration).classify(task, context)
     return ClassificationSnapshot(
         schema_version="villani.classification.v1",
         classification_id="capability_explain",
@@ -614,8 +671,67 @@ def capability_explain(
 
 
 class _ClassifierAdapter:
-    def __init__(self, backends: Mapping[str, Backend]) -> None:
+    def __init__(
+        self, backends: Mapping[str, Backend], configuration: Mapping[str, Any]
+    ) -> None:
         self._backends = dict(backends)
+        self._configuration = dict(configuration)
+
+    @staticmethod
+    def _usage(
+        backend: Backend,
+        result: LLMCallResult | None,
+        duration_ms: int,
+        failure_state: str,
+        error: Exception | None = None,
+    ) -> dict[str, Any]:
+        has_usage = bool(result and (result.usage or result.input_tokens or result.output_tokens))
+        input_tokens = result.input_tokens if result is not None and has_usage else None
+        output_tokens = result.output_tokens if result is not None and has_usage else None
+        cost = actual_attempt_cost(
+            backend,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            duration_seconds=duration_ms / 1000,
+            started=True,
+        )
+        return {
+            "stage": "classification",
+            "backend": backend.name,
+            "model": backend.model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": (
+                input_tokens + output_tokens
+                if input_tokens is not None and output_tokens is not None
+                else None
+            ),
+            "token_accounting_status": "complete" if has_usage else "unknown",
+            "model_calls": 1,
+            "model_call_accounting_status": "complete",
+            "cost": cost.total,
+            "cost_accounting_status": cost.accounting_status,
+            "currency": backend.currency,
+            "duration_ms": duration_ms,
+            "duration_accounting_status": "complete",
+            "failure_state": failure_state,
+            "error": redact_data(str(error)) if error is not None else None,
+        }
+
+    def _fallback_backend_names(self, primary: str) -> list[str]:
+        policy = self._configuration.get("policy")
+        policy_values = policy if isinstance(policy, Mapping) else self._configuration
+        configured = policy_values.get("classifier_fallback_backends")
+        if not isinstance(configured, list):
+            return []
+        return [
+            str(name)
+            for name in configured
+            if str(name) != primary
+            and str(name) in self._backends
+            and self._backends[str(name)].enabled
+            and "classification" in self._backends[str(name)].roles
+        ]
 
     def classify(
         self, task: str, context: ClassificationContext
@@ -630,28 +746,74 @@ class _ClassifierAdapter:
             instruction=task,
             success_criteria=context.success_criteria,
         )
-        classified, _ = TaskClassifier().classify(
-            task_model,
-            self._backends,
-            backend_override=self._backends[backend_name],
-        )
+        policy = self._configuration.get("policy")
+        policy_values = policy if isinstance(policy, Mapping) else self._configuration
+        retry_limit = max(0, int(policy_values.get("classifier_retry_limit", 1)))
+        attempts: list[dict[str, Any]] = []
+        candidates = [backend_name, *self._fallback_backend_names(backend_name)]
+        for candidate_name in candidates:
+            backend = self._backends[candidate_name]
+            for _retry in range(retry_limit + 1):
+                started = time.monotonic()
+                result: LLMCallResult | None = None
+                try:
+                    classified, result = TaskClassifier().classify(
+                        task_model,
+                        self._backends,
+                        backend_override=backend,
+                    )
+                    elapsed = max(int((time.monotonic() - started) * 1000), 0)
+                    if result.error:
+                        error = RuntimeError(result.error)
+                        attempts.append(self._usage(backend, result, elapsed, "failed", error))
+                        continue
+                    attempts.append(self._usage(backend, result, elapsed, "succeeded"))
+                    return Classification(
+                        difficulty=classified.difficulty,
+                        risk=classified.risk,
+                        category=classified.category,
+                        required_capabilities=tuple(classified.required_capabilities),
+                        estimated_attempts_needed=classified.estimated_attempts_needed,
+                        needs_tests=classified.needs_tests,
+                        confidence=classified.confidence,
+                        reasoning_summary=classified.reasoning_summary,
+                        signals=dict(classified.task_shape_signals),
+                        metadata={
+                            "classifier_version": "task_classifier_v1",
+                            "classification_backend": {
+                                "name": backend.name,
+                                "model": backend.model,
+                                "provider": backend.provider,
+                            },
+                            "classifier_attempts": attempts,
+                            "likely_files": list(classified.likely_files),
+                            "adjustment_notes": list(classified.adjustment_notes),
+                            "relevant_file_paths": list(classified.relevant_file_paths),
+                            "original_difficulty": classified.original_difficulty,
+                            "original_risk": classified.original_risk,
+                        },
+                    )
+                except Exception as error:
+                    elapsed = max(int((time.monotonic() - started) * 1000), 0)
+                    partial = error.result if isinstance(error, LLMCallError) else None
+                    attempts.append(self._usage(backend, partial, elapsed, "failed", error))
+        # No opaque classifier failure can choose a cheap backend. This route is
+        # deliberately conservative and retains every failed model invocation.
         return Classification(
-            difficulty=classified.difficulty,
-            risk=classified.risk,
-            category=classified.category,
-            required_capabilities=tuple(classified.required_capabilities),
-            estimated_attempts_needed=classified.estimated_attempts_needed,
-            needs_tests=classified.needs_tests,
-            confidence=classified.confidence,
-            reasoning_summary=classified.reasoning_summary,
-            signals=dict(classified.task_shape_signals),
+            difficulty="hard",
+            risk="high",
+            category="unknown",
+            required_capabilities=(),
+            estimated_attempts_needed=1,
+            needs_tests=True,
+            confidence=0.0,
+            reasoning_summary="Classifier backends failed to produce parseable output; used conservative fallback.",
+            signals={},
             metadata={
                 "classifier_version": "task_classifier_v1",
-                "likely_files": list(classified.likely_files),
-                "adjustment_notes": list(classified.adjustment_notes),
-                "relevant_file_paths": list(classified.relevant_file_paths),
-                "original_difficulty": classified.original_difficulty,
-                "original_risk": classified.original_risk,
+                "classification_fallback": True,
+                "classification_fallback_reason": "all configured classifier calls failed or returned unparseable output",
+                "classifier_attempts": attempts,
             },
         )
 
@@ -664,6 +826,14 @@ def build_controller(
 
     backends = _load_backends(configuration)
     _validate_run_backends(backends)
+    for backend in backends.values():
+        if backend.enabled and "coding" in backend.roles:
+            command = backend.command_name or "villani-code"
+            if resolve_command_prefix(command) is None:
+                _usage_error(
+                    f"Villani Code command {command!r} is unavailable; install the "
+                    "villani-code package before running `villani run`"
+                )
     verifier_config = configuration.get("verifier")
     if not isinstance(verifier_config, Mapping):
         verifier_config = {}
@@ -678,6 +848,21 @@ def build_controller(
             _usage_error(
                 f"verifier backend {verifier_backend_name!r} is not configured"
             )
+        if not bool(verifier_config.get("no_llm", True)):
+            try:
+                validate_closed_loop_backend(verifier_backend)
+            except ProviderConfigurationError as error:
+                _usage_error(f"verifier configuration error: {error}")
+            run_currencies = {
+                backend.currency
+                for backend in backends.values()
+                if backend.enabled and ("classification" in backend.roles or "coding" in backend.roles)
+            }
+            if run_currencies and verifier_backend.currency not in run_currencies:
+                _usage_error(
+                    "enabled classification/coding/verifier backends must use one currency per run; "
+                    "currency conversion is not performed"
+                )
     capability_snapshot = CapabilityStore().load()
     policy = BootstrapPolicyEngine(
         backends,
@@ -685,7 +870,7 @@ def build_controller(
         capability_snapshot=capability_snapshot,
     )
     return ClosedLoopController(
-        classifier=_ClassifierAdapter(backends),
+        classifier=_ClassifierAdapter(backends, configuration),
         policy_engine=policy,
         attempt_runner=VillaniCodeAttemptAdapter(backends=backends),
         verifier=VillaniVerifierAdapter(
@@ -708,6 +893,7 @@ def build_controller(
                 if verifier_backend
                 else None
             ),
+            backend_config=verifier_backend,
         ),
         selector=EvidenceSelectorAdapter(),
         materializer=PatchMaterializerAdapter(),
@@ -769,8 +955,9 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _cost_text(value: Any, status: Any) -> str:
-    return f"USD {float(value):.6f}" if value is not None else f"unknown ({status})"
+def _cost_text(value: Any, status: Any, currency: Any = "USD") -> str:
+    code = str(currency or "USD").upper()
+    return f"{code} {float(value):.6f}" if value is not None else f"unknown ({status})"
 
 
 def _print_terminal_summary(
@@ -816,6 +1003,7 @@ def _print_terminal_summary(
         + _cost_text(
             manifest.get("total_cost_usd"),
             manifest.get("cost_accounting_status", result.accounting_status),
+            manifest.get("currency", "USD"),
         )
     )
     tokens = (
@@ -832,6 +1020,9 @@ def _print_terminal_summary(
         else f"unknown ({manifest.get('duration_accounting_status', 'unknown')})"
     )
     console.print(f"Duration: {duration}")
+    wall = manifest.get("run_wall_clock_duration_ms")
+    if wall is not None:
+        console.print(f"Run wall clock: {wall} ms")
     patch_status = materialization.get("status") or (
         "recorded" if (run_dir / "final.patch").is_file() else "not materialized"
     )
@@ -926,6 +1117,131 @@ def run_command(
         raise typer.Exit(4)
 
 
+def _latest_interrupted_run(root: Path) -> str | None:
+    if not root.is_dir():
+        return None
+    candidates: list[Path] = []
+    for directory in root.iterdir():
+        if not directory.is_dir() or directory.name == ".locks":
+            continue
+        state = _read_json(directory / "state.json")
+        if state and not bool(state.get("terminal")):
+            candidates.append(directory)
+    return max(candidates, key=lambda item: item.stat().st_mtime).name if candidates else None
+
+
+def _resume_materialization_is_safe(run_dir: Path, state: Mapping[str, Any]) -> None:
+    """Fail before recovery mutates a repository whose materialization baseline changed."""
+
+    if str(state.get("state")) not in {"SELECTING", "MATERIALIZING", "VERIFIED"}:
+        return
+    task = _read_json(run_dir / "task.json") or {}
+    repository = Path(str(task.get("repository_path") or ""))
+    if not repository.is_dir() or not _is_git_repository(repository):
+        _usage_error("recovery error: target repository is missing or is no longer a Git work tree")
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=repository,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0 or result.stdout:
+        _usage_error(
+            "recovery error: target repository is dirty; refusing unsafe patch materialization"
+        )
+
+
+def _resume_configuration(persisted: Mapping[str, Any]) -> dict[str, Any]:
+    """Use the durable policy, but refresh credentials from the current config.
+
+    Run bundles deliberately redact direct API keys.  Keeping the persisted
+    policy is important for deterministic recovery, while loading the current
+    config supplies a redacted direct credential when one is available.
+    """
+
+    configuration = dict(persisted)
+    path = _config_path()
+    if not path.is_file():
+        return configuration
+    current = _load_config()
+    persisted_backends = configuration.get("backends")
+    current_backends = current.get("backends")
+    if isinstance(persisted_backends, Mapping) and isinstance(
+        current_backends, Mapping
+    ):
+        # Preserve the policy-selected backend/model/URL from the run bundle;
+        # only restore a redacted direct key from the current credential store.
+        merged_backends = {
+            str(name): dict(value)
+            for name, value in persisted_backends.items()
+            if isinstance(value, Mapping)
+        }
+        for name, persisted in merged_backends.items():
+            current_value = current_backends.get(name)
+            if not isinstance(current_value, Mapping):
+                continue
+            if persisted.get("api_key") == "***REDACTED***" and current_value.get(
+                "api_key"
+            ):
+                persisted["api_key"] = current_value["api_key"]
+        configuration["backends"] = merged_backends
+    return configuration
+
+
+@app.command("resume")
+def resume_command(
+    run_id: str | None = typer.Argument(None, help="Interrupted canonical run ID."),
+    latest: bool = typer.Option(False, "--latest", help="Resume the newest interrupted run."),
+) -> None:
+    """Safely reconcile and continue an interrupted canonical closed-loop run."""
+
+    if bool(run_id) == latest:
+        _usage_error("provide exactly one of RUN_ID or --latest")
+    root = _runs_root()
+    selected = _latest_interrupted_run(root) if latest else run_id
+    if not selected:
+        _usage_error("no interrupted run was found")
+    directory = _run_dir(selected)
+    if not directory.is_dir():
+        _usage_error(f"run not found: {selected}")
+    try:
+        manifest = _protocol_document(directory / "manifest.json")
+        state = _protocol_document(directory / "state.json")
+    except ValueError as error:
+        _usage_error(f"recovery error: {error}")
+    if bool(state.get("terminal")):
+        console.print(f"Run ID: {selected}")
+        console.print(f"State: {state.get('state')}")
+        return
+    _resume_materialization_is_safe(directory, state)
+    persisted_configuration = (manifest.get("metadata") or {}).get(
+        "policy_configuration"
+    )
+    if not isinstance(persisted_configuration, Mapping):
+        _usage_error("recovery error: run bundle has no usable persisted configuration")
+    try:
+        configuration = _resume_configuration(persisted_configuration)
+    except typer.Exit:
+        raise
+    except Exception as error:
+        _usage_error(f"recovery error: cannot load current credentials: {error}")
+    builder = _controller_builder or build_controller
+    try:
+        controller = builder(dict(configuration), _run_progress_listener(root))
+    except (TypeError, ValueError, ValidationError) as error:
+        message = _validation_message(error) if isinstance(error, ValidationError) else str(error)
+        _usage_error(f"recovery error: invalid persisted configuration: {message}")
+    try:
+        result = controller.resume(selected, root)
+    except Exception as error:
+        _usage_error(f"recovery error: {redact_data(str(error))}")
+    _print_terminal_summary(result)
+    if result.terminal_state == "EXHAUSTED":
+        raise typer.Exit(3)
+    if result.terminal_state == "FAILED":
+        raise typer.Exit(4)
+
+
 def _protocol_document(path: Path) -> dict[str, Any]:
     try:
         document = _read_json(path)
@@ -978,6 +1294,7 @@ def list_runs() -> None:
             cost = _cost_text(
                 manifest.get("total_cost_usd"),
                 manifest.get("cost_accounting_status"),
+                manifest.get("currency", "USD"),
             )
             duration = (
                 f"{manifest.get('total_duration_ms')} ms"
@@ -1101,7 +1418,7 @@ def inspect_run(
             f"- {attempt.get('attempt_id')}: {attempt.get('backend_name')}/"
             f"{attempt.get('model') or 'unknown'}; status={attempt.get('status')}; "
             f"tokens={attempt.get('input_tokens')}/{attempt.get('output_tokens')}; "
-            f"cost={_cost_text(attempt.get('cost_usd'), attempt.get('cost_accounting_status'))}"
+            f"cost={_cost_text(attempt.get('cost_usd'), attempt.get('cost_accounting_status'), manifest.get('currency', 'USD'))}"
         )
         cost = (attempt.get("metadata") or {}).get("cost_breakdown")
         if cost:

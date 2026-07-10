@@ -100,7 +100,7 @@ export function deriveMetrics(
           : "Not captured",
       subvalue:
         tokenUsage?.totalTokens !== undefined
-          ? tokenParts || "Token telemetry captured"
+          ? `${tokenParts || "Token telemetry captured"}${session.villani?.aggregate?.totalModelCalls !== null && session.villani?.aggregate?.totalModelCalls !== undefined ? ` · ${session.villani.aggregate.totalModelCalls} model calls` : ""}`
           : "No token telemetry",
       icon: "tokens",
       telemetryAvailable: tokenUsage?.totalTokens !== undefined,
@@ -108,11 +108,11 @@ export function deriveMetrics(
     },
     {
       id: "cost",
-      label: "COST (USD)",
+      label: `COST (${session.villani?.aggregate?.currency ?? "USD"})`,
       value:
         session.villani?.aggregate?.costUsd !== undefined &&
         session.villani.aggregate.costUsd !== null
-          ? `$${session.villani.aggregate.costUsd.toFixed(2)}`
+          ? `${session.villani.aggregate.currency} ${session.villani.aggregate.costUsd.toFixed(2)}`
           : "Unknown",
       subvalue: session.villani
         ? `Accounting: ${session.villani.aggregate?.costAccountingStatus ?? "unknown"}`
@@ -148,7 +148,7 @@ export function deriveMetrics(
       label: "DURATION",
       value: dur,
       subvalue: session.startedAt
-        ? `Started ${fmtTime(session.startedAt)}`
+        ? `Started ${fmtTime(session.startedAt)}${session.villani?.aggregate?.runWallClockDurationMs !== null && session.villani?.aggregate?.runWallClockDurationMs !== undefined ? ` · wall ${fmtDuration(session.villani.aggregate.runWallClockDurationMs)}` : ""}`
         : "No duration captured",
       icon: "clock",
       empty: dur === "Duration unavailable",

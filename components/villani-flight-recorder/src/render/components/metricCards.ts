@@ -42,7 +42,7 @@ const villaniCards = (vm: ReplayDashboardViewModel) => {
   const cost =
     aggregate?.costUsd === null || aggregate?.costUsd === undefined
       ? "Unknown"
-      : `$${aggregate.costUsd.toFixed(2)}`;
+      : `${aggregate.currency} ${aggregate.costUsd.toFixed(2)}`;
   const duration =
     aggregate?.durationMs === null || aggregate?.durationMs === undefined
       ? "Unknown"

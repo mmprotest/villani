@@ -59,7 +59,7 @@ export function renderSessionBrowser(sourceIndex, opts = {}) {
             ? formatTokenCount(session.tokenCount)
             : "",
         costLabel: session.costUsd !== undefined
-            ? `$${session.costUsd.toFixed(2)}`
+            ? `${session.currency ?? "USD"} ${session.costUsd.toFixed(2)}`
             : "Unknown",
         costAccountingStatus: session.costAccountingStatus ?? "",
         failureSummary: session.failureSummary ?? "",

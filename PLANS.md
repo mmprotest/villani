@@ -1217,3 +1217,54 @@ Known remaining issues:
 
 Next permitted milestone:
 - none. M9 is the final planned milestone; no later milestone was started.
+
+#### 2026-07-10: Release-audit hardening pass
+
+Status: blocked by the local Python/tooling environment; source changes are complete, but the release gate cannot be declared green until the supported test environment is available.
+
+Changed files:
+- `README.md`, `components/villani-ops/README.md`, `docs/CLOSED_LOOP.md`, and `.github/workflows/ci.yml`
+- `components/villani-ops/villani_ops/providers.py`, backend/runner/classifier/verifier/controller, isolation, policy/capability, cost, protocol, schema, CLI, and new hardening/recovery tests
+- `schemas/v1/{classification,run-manifest,verification}.schema.json` and matching packaged Ops schemas
+- `tests/closed_loop/test_cli_e2e.py`
+- Villani Flight Recorder provider/protocol/types/rendering/tests and generated `dist/` output
+
+Architectural decisions:
+- The public provider vocabulary is `local`, `openai-compatible`, and `openai`; public closed-loop validation maps all three to Villani Code's `--provider openai` mode, with explicit local URLs and the standard OpenAI URL default.
+- Stage usage is represented by one backward-compatible `StageUsage` contract and aggregated into classification, coding, verification, selection, materialization, and total metrics. Coding duration remains separate from run wall-clock duration; classifier fallback/retry projection and verifier retry projection reserve configured worst cases under a cost cap.
+- Attempt isolation exports tracked Git files only by default, preserves symlinks, enforces file/total bounds, and removes attempt worktrees unless explicit retention is configured.
+- Classifier retries and configured alternate backends are persisted; an explicit conservative fallback event is emitted when all calls fail. Recovery is exposed through `villani resume RUN_ID` and `villani resume --latest`.
+- Flight Recorder tolerates only structurally truncated final JSONL lines and renders currency, stage metrics, model calls, and wall-clock duration without mutating run bundles.
+
+Verification:
+- `python -m compileall -q components\\villani-ops\\villani_ops components\\villani-code\\villani_code tests\\closed_loop`: exit code 0.
+- JSON schema validation with `python -m json.tool` over root and packaged schemas: exit code 0.
+- `git diff --check`: exit code 0.
+- `python -m pytest -q components\\villani-ops\\villani_ops\\tests`: blocked at collection with 78 errors because system Python 3.10's installed pydantic lacks `model_validator`.
+- `python -m pytest -q components\\villani-code\\tests`: blocked at collection with 61 errors (pydantic v2 symbols, missing `httpx`, and Python 3.10 `StrEnum`/`tomllib` incompatibilities); 7 tests skipped during collection.
+- `python -m pytest -q tests\\closed_loop`: blocked by the same system dependency mismatch. The workspace `.venv\\Scripts\\python.exe` also cannot launch because it targets a missing Windows Store Python 3.12 executable.
+- `python -m pytest -q tests\\closed_loop\\test_secret_scan.py` with a workspace temp directory: exit code 0; 1 passed.
+- Flight Recorder `cmd.exe /d /c npm test -- --run`: exit code 0; 19 files and 89 tests passed. `npm run typecheck`, `npm run build`, and `npm run format:check`: exit code 0.
+- `cmd.exe /d /c npm audit --omit=dev`: blocked by the network request to `https://registry.npmjs.org/-/npm/v1/security/advisories/bulk`; no audit result was obtained.
+- Flight Recorder `npm pack --dry-run` with a workspace npm cache: exit code 0; 62 files packaged (the later stage-metrics rendering change also builds and tests successfully).
+- `python -m build --version`: unavailable (`No module named build`). The reproducible closest package check, `python -m pip wheel --no-deps --no-build-isolation --ignore-requires-python -w build-smoke components\\villani-code components\\villani-ops` with the existing workspace site-packages on `PYTHONPATH`, exited 0 and built both wheels.
+
+Acceptance criteria:
+- PASS: Provider compatibility, early configuration validation, real Villani Code local-stub E2E coverage, stage-separated accounting, currency-safe rendering, bounded isolation, cleanup/retention controls, classifier fallback, runner categories, Wilson-bound empirical qualification, public recovery, and strict JSONL final-line handling are implemented with tests and schemas.
+- PASS: CI now has a package-smoke job that builds and installs both Python wheels, runs `villani --help`, exercises the missing-run resume path, and executes the README-shaped local-stub E2E with the installed Villani Code command.
+- PASS: Flight Recorder tests, typecheck, build, format check, and package dry-run pass.
+- BLOCKED: Full Python component suites, root closed-loop suite, supported package-install smoke tests, and production npm audit require a supported Python 3.11+ environment, complete dependency installation, and network access for the audit endpoint.
+
+Assumptions:
+- Existing `*_cost_usd` field names remain for wire compatibility; the canonical currency field and all user-facing cost displays carry the configured ISO-style currency, so non-USD local compute is never presented as USD.
+- Selection and materialization remain deterministic and make no model calls, so their stage metrics are explicitly `not_applicable`.
+
+Known risks:
+- The local environment cannot execute the Python test suites, so runtime coverage of the newly added Python tests is pending a supported environment.
+- Temporary wheel-build directories (`build-smoke`, `.pip-cache`, and `components/villani-ops/build`) were created by the successful package check. Cleanup commands were rejected by the command-review usage limit and remain to be removed in a later environment turn.
+
+Known remaining issues:
+- Release gate remains blocked by the dependency/runtime and npm audit environment failures above; no source-level failure was observed in the checks that could run.
+
+Next permitted milestone:
+- none. This is the final planned milestone; no later milestone was started.

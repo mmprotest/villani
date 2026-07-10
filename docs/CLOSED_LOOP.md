@@ -17,6 +17,14 @@ Version 1 must provide:
 - Complete task, policy, model, tool, command, patch, verification, token, duration, and cost observability when the underlying runner supplies the data.
 - Explicit `unknown` accounting when cost or usage data is unavailable. Missing cost must never be displayed or ranked as zero.
 
+Empirical routing is an eligibility signal only when
+`capabilities.minimum_empirical_samples` and
+`capabilities.minimum_empirical_wilson_lower_bound` are met (the latter
+defaults to `target_success_probability`). The history is policy-selected and
+censored (for example, rejected or infrastructure-failed candidates are not a
+random sample), so empirical profiles must not be interpreted as randomized
+model-performance estimates.
+
 Version 1 does not include:
 
 - Multi-task decomposition.

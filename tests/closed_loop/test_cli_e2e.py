@@ -5,11 +5,14 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from collections import deque
 from pathlib import Path
 from typing import Any
 
 import yaml
+import pytest
 from typer.testing import CliRunner
 
 from villani_ops.cli import unified
@@ -200,14 +203,14 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     config["budgets"]["max_attempts"] = 2
     config["backends"] = {
         "economy": {
-            "provider": "local", "model": "fake-small",
+            "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-small",
             "roles": ["classification", "coding"], "capability_score": 25,
             "billing_mode": "fixed", "fixed_cost_per_attempt": 0.10,
             "command_name": str(executable),
             "metadata": {"allow_dummy_api_key": True},
         },
         "capable": {
-            "provider": "local", "model": "fake-large",
+            "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-large",
             "roles": ["coding"], "capability_score": 90,
             "billing_mode": "fixed", "fixed_cost_per_attempt": 0.50,
             "command_name": str(executable),
@@ -292,3 +295,113 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
         ROOT,
     )
     assert "0 findings" in secret_scan.stdout
+
+
+class _DeterministicOpenAIHandler(BaseHTTPRequestHandler):
+    calls = 0
+
+    def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("content-length", "0"))
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        tools = payload.get("tools") or []
+        if not tools:
+            content = json.dumps(
+                {
+                    "difficulty": "easy",
+                    "risk": "low",
+                    "category": "bug_fix",
+                    "estimated_attempts_needed": 1,
+                    "needs_tests": True,
+                    "required_capabilities": [],
+                    "reasoning_summary": "deterministic local classifier",
+                    "confidence": 0.99,
+                }
+            )
+            response = {"choices": [{"message": {"role": "assistant", "content": content}}]}
+        else:
+            type(self).calls += 1
+            if self.calls == 1:
+                tool = {
+                    "id": "write-1",
+                    "type": "function",
+                    "function": {
+                        "name": "Write",
+                        "arguments": json.dumps(
+                            {
+                                "file_path": "calculator.py",
+                                "content": "def add(a, b):\n    return a + b\n",
+                            }
+                        ),
+                    },
+                }
+                response = {"choices": [{"message": {"role": "assistant", "tool_calls": [tool]}}]}
+            elif self.calls == 2:
+                tool = {
+                    "id": "bash-1",
+                    "type": "function",
+                    "function": {
+                        "name": "Bash",
+                        "arguments": json.dumps({"command": "python -m pytest -q"}),
+                    },
+                }
+                response = {"choices": [{"message": {"role": "assistant", "tool_calls": [tool]}}]}
+            else:
+                response = {"choices": [{"message": {"role": "assistant", "content": "Completed the requested fix."}}]}
+        body = json.dumps({**response, "usage": {"prompt_tokens": 12, "completion_tokens": 6}}).encode()
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args: object) -> None:
+        return
+
+
+@pytest.mark.e2e
+def test_public_local_stub_quickstart_uses_real_villani_code_cli(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Exercise the README command shape against a real Villani Code process."""
+
+    if shutil.which("villani-code") is None:
+        pytest.skip("villani-code is not installed; package smoke test installs it")
+    repo = _tiny_repo(tmp_path)
+    home = tmp_path / "home"
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _DeterministicOpenAIHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv("VILLANI_HOME", str(home))
+        runner = CliRunner()
+        assert runner.invoke(unified.app, ["init"]).exit_code == 0
+        config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+        config["budgets"]["max_attempts"] = 1
+        config["backends"] = {
+            "local-stub": {
+                "provider": "local",
+                "base_url": f"http://127.0.0.1:{server.server_port}/v1",
+                "model": "deterministic",
+                "roles": ["classification", "coding"],
+                "capability_score": 100,
+                "billing_mode": "unknown",
+                "metadata": {"allow_dummy_api_key": True},
+            }
+        }
+        unified._write_config(home / "config.yaml", config)
+        result = runner.invoke(
+            unified.app,
+            [
+                "run",
+                "Fix calculator addition",
+                "--repo",
+                str(repo),
+                "--success-criteria",
+                "The test suite passes",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert (repo / "calculator.py").read_text(encoding="utf-8").endswith("return a + b\n")
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
