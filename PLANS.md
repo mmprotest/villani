@@ -1660,3 +1660,170 @@ Known remaining issues:
 
 Next permitted milestone:
 - Remote workers or enterprise policy administration only after an explicit user request. Neither was started in this pass.
+
+#### 2026-07-11: Single-region control-plane ingestion and persistence pass
+
+Status: complete
+
+Changed files:
+- New Python 3.11+ FastAPI distribution under `components/villani-control-plane`, including API dependencies/routes, configuration, SQLAlchemy 2 models, repository/service boundaries, authentication, v2 ingestion, run queries, operational endpoints, and packaging.
+- Two Alembic revisions, Alembic configuration, Dockerfile, Docker Compose PostgreSQL/API development stack, component documentation, and a durable 100,000-event smoke result.
+- Unit/API/authorization tests, exact daemon-v2 contract tests, PostgreSQL migration/concurrency/tenant/pagination/rollback/query-plan integration tests, and an opt-in PostgreSQL load smoke.
+- Root `.dockerignore` scoped to the two Python package sources needed by the new API image.
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- PostgreSQL is the production store. Tenant tables use organization-scoped composite identities and composite foreign keys so a child cannot reference a parent from another organization. Mutable catalog resources, runs, installations, and API tokens have soft-delete timestamps; immutable telemetry/outbox rows do not.
+- FastAPI handlers translate HTTP only. Services own validation, authorization, transaction boundaries, idempotency, and orchestration; repositories own SQLAlchemy queries. The existing normative Villani Ops v2 schema validator validates every document before a batch writes anything.
+- Null organization/workspace routing metadata is bound to the authenticated token scope. Explicit tenant identifiers must match it. Explicit repositories are resolved inside that tenant and imply their recorded project when the protocol project is null; fully local null project/repository telemetry uses a deterministic workspace-local catalog entry.
+- Development bearer tokens are scoped to exactly one organization/workspace. Persistence stores a salted scrypt verifier and a SHA-256 lookup digest, never plaintext. The documented Compose token is disposable development configuration, not a stored database value.
+- Batch identity and event identity are organization-scoped. Replays with byte-equivalent normalized v2 content are duplicates; identity reuse with different content is a conflict. A batch row is flushed first to serialize concurrent duplicate submissions, and every failure rolls the session back.
+- Exact normalized v2 documents are stored in PostgreSQL JSONB. `occurred_at` and `observed_at` are separate indexed columns; event pagination orders by `observed_at` plus the database event identity, never solely by the client clock.
+- Runs, attempts, and spans are projections of accepted telemetry. Artifact endpoints persist descriptors only, never bytes. Outcomes bind through the authorized run/attempt. Each new event, descriptor, or outcome writes a same-transaction outbox record; no Kafka or Redis was introduced.
+- Alembic revision `4bf1fe1c3274` is the zero-to-initial schema and `d4973fd72304` is the supported previous-revision upgrade path. Readiness requires database reachability and migration head equality. Liveness, migration state, and build version remain separate endpoints.
+
+Verification:
+- Control-plane full suite against PostgreSQL 16: exit code 0; 15 passed, 1 opt-in load test skipped, and one third-party TestClient deprecation warning in 2.41s. The four PostgreSQL tests cover zero/previous migrations, uniqueness, concurrent duplicate ingestion, tenant isolation, rollback, pagination, and representative index plans.
+- Exact daemon v2 fixture contract tests are included in the passing control-plane suite. Scoped Ruff, Ruff format check, compileall, and PostgreSQL offline Alembic SQL generation all exited 0; the generated migration stream contained 33 table/index/column operations.
+- 100,000-event PostgreSQL smoke through schema validation, the ingestion service, SQLAlchemy persistence, and same-transaction outbox: exit code 0; 100,000 events in 319.061 seconds, measured 313.4 events/second, database size 235,011,095 bytes. These are recorded development-host measurements, not an asserted SLO.
+- Docker Compose: PostgreSQL 16 image pulled and became healthy; the Python 3.11 API image built successfully; Alembic reached head; Uvicorn started; repeated `/readiness` health probes returned HTTP 200. Test containers/network were removed afterward and the database volume was preserved.
+- New-component secret scan: exit code 0; 1 root and 0 findings. `git diff --check`: exit code 0 with existing Flight Recorder line-ending notices only.
+- Villani Ops full suite: exit code 0; 774 passed, 1 skipped, 114 deselected, and one non-failing pytest-cache ACL warning in 121.30s.
+- Villani Code final full suite with Git untracked-status display bounded away from this new untracked component: exit code 0; 671 passed, 1 skipped, and 28 warnings in 43.90s. The initial ordinary dirty-root invocation reproduced the already-recorded unrelated test defect (670 passed, 1 skipped, 1 failed); its targeted bounded rerun passed before the bounded full suite.
+- Root closed-loop integration: exit code 0; 6 passed in 24.30s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+
+Acceptance criteria:
+- PASS: duplicate batches and events do not create duplicate events or outbox records, including two concurrent PostgreSQL submissions.
+- PASS: cross-tenant reads and writes fail at authorization and tenant-consistent foreign-key boundaries.
+- PASS: a failed batch leaves no partial batch, event, span, run, or outbox transaction state.
+- PASS: PostgreSQL migrates from zero and the previous-revision fixture upgrades without losing its seeded row.
+- PASS: event cursors use observed time plus server identity while preserving both clocks, and representative event/run filters use their intended PostgreSQL indexes.
+- PASS: the existing local product suites remain usable without the control plane; no existing runtime component was coupled to or changed for this service.
+
+Assumptions:
+- Development tokens are generated with sufficient entropy and are at least 24 characters. Production identity, token issuance/rotation APIs, and enterprise SSO remain outside this pass.
+- The single-region service receives v2 telemetry only. Artifact bytes remain in separately authorized storage represented by opaque descriptor references.
+- The preserved Docker volume is development evidence and may be removed manually when no longer useful.
+
+Known risks:
+- The measured service path performs conservative per-event identity and projection checks and reached 313.4 events/second on this host. No production capacity claim is made; later optimization must preserve transaction/idempotency semantics and remeasure.
+- Development bootstrap creates only the configured organization/workspace and token. Project/repository administration APIs are intentionally absent; production provisioning remains a later concern.
+- This pass has no regional failover, outbox dispatcher, retention worker, or object-storage authorization layer. The durable outbox is ready for a later downstream processor but is not dispatched here.
+
+Known remaining issues:
+- None within single-region ingestion and persistence. The pre-existing Villani Code dirty-root-sensitive test still requires bounded Git status while a legitimate new root directory is untracked; its bounded full suite is green.
+
+Next permitted milestone:
+- A web UI, enterprise identity, billing, routing enforcement, outbox processing, or remote execution only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Artifact transfer, live subscriptions, and daemon synchronization pass
+
+Status: complete
+
+Changed files:
+- Extended `components/villani-control-plane` with filesystem and S3-compatible object stores, content-addressed artifact transfer, sensitivity/retention admission policy, one-time daemon enrollment and credential rotation, installation ingest limits, leased outbox delivery, and tenant-scoped server-sent event subscriptions.
+- Added Alembic revision `e18b9e61f721`, synchronization configuration, Docker object storage, API/service/model changes, and unit/PostgreSQL coverage for artifacts, enrollment, limits, committed-only publication, and tenant isolation.
+- Extended `components/villani-agentd` with schema-v2 spool migration, persistent retry/dead-letter state, acknowledged event deletion, bounded artifact uploads, jittered backoff and Retry-After handling, enrollment/rotation CLI commands, and OS-keyring/protected-file credential storage.
+- Added daemon disconnect/offline/causal-order synchronization tests and updated component documentation and this progress section only.
+
+Architectural decisions:
+- Artifact metadata always points to immutable organization-scoped SHA-256 object keys. Descriptor registration is idempotent by digest; bytes use a dedicated upload endpoint in filesystem development mode and presigned direct S3-compatible PUTs in production. Completion streams and verifies the stored bytes, size, and digest before setting `available`; mismatch deletes the candidate and records rejection.
+- Sensitivity and retention classes are configurable allowlists, with the `secret` sensitivity class prohibited by default. Admission happens before an upload instruction or artifact row is created.
+- Enrollment tokens and installation credentials are independently salted-scrypt verified with SHA-256 lookup digests; plaintext credentials are returned only at exchange/rotation. Agentd prefers an OS keyring with verified round-trip and falls back to a permission-restricted file documented for the platform.
+- The spool remains authoritative while offline. Events are selected in sequence-scope/sequence order, sent as deterministic batches, and deleted only after server acknowledgement. Permanent 4xx responses enter durable dead-letter state; transient failures use bounded full-jitter exponential backoff, numeric or HTTP-date Retry-After, and bounded artifact concurrency.
+- The daemon has no synchronization configuration by default, so normal local-only startup creates no external client or connection. Enrollment is the explicit transition to synchronized mode.
+- Live updates originate only from committed transactional outbox rows. Workers claim rows with PostgreSQL leases and `SKIP LOCKED`, publish idempotently by outbox ID, acknowledge after delivery, and recover after transient claim/delivery errors. SSE subscriptions authorize the run before streaming and the broker rechecks organization/workspace/run scope for every event; bounded queues disconnect slow subscribers.
+- Per-installation batch and rolling event limits provide ingest backpressure with Retry-After responses. No Kafka, Redis, remote execution, or UI was introduced.
+
+Verification:
+- Control-plane final local suite: exit code 0; 19 passed, 5 PostgreSQL/load tests skipped, and one third-party TestClient deprecation warning in 2.73s. Focused synchronization/unit suite after retry hardening: 24 passed in 2.69s.
+- Control-plane PostgreSQL 16 suite with the new revision: exit code 0; 23 passed, 1 opt-in load test skipped, and one third-party warning in 3.67s. Zero and previous-revision migration paths, concurrent idempotency, tenant isolation, rollback, pagination, and index plans passed; offline Alembic SQL generation included all three revisions.
+- Real Compose daemon-to-control-plane synchronization: enrollment used the one-time token and protected-file credential fallback; one spooled event and artifact synchronized; daemon reported `events=1` and `artifacts=1`; PostgreSQL contained one event, the artifact was `available`, and the outbox had zero unpublished rows. Compose was stopped afterward with development data volumes preserved.
+- Villani Agentd full suite: exit code 0; 42 passed and one non-failing pytest-cache ACL warning in 6.80s.
+- Villani Ops full suite: exit code 0; 774 passed, 1 skipped, 114 deselected, and one non-failing pytest-cache ACL warning in 112.22s.
+- Root closed-loop integration: exit code 0; 6 passed in 19.43s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0. The initial `npm` PowerShell shim was blocked by host execution policy before running; the command shim completed normally.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 70.98s. The sole failure is the previously documented dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which sees this milestone's legitimate root changes despite monkeypatching an unused runner method.
+- Ruff check and Ruff format check across the control plane and daemon, changed-source compileall, and `git diff --check` all exited 0; only existing line-ending notices were emitted.
+
+Acceptance criteria:
+- PASS: descriptor, upload, and completion disconnect tests retain artifact bytes and safely replay every boundary; server batch/event identities and content digests prevent duplicates.
+- PASS: a size or SHA-256 mismatch never reaches `available`, and prohibited sensitivity/retention classes are rejected before upload.
+- PASS: offline events synchronize after reconnection in causal order within each sequence scope, with server acknowledgement preceding spool deletion and permanent failures retained as dead letters.
+- PASS: live subscriptions expose committed outbox events only, enforce tenant/run scope per publication, and bound slow consumers.
+- PASS: event-stream and artifact-content tests deny cross-tenant access; installation credentials and limits are tenant/workspace scoped.
+- PASS: local-only mode remains the default and creates no outbound connection.
+
+Assumptions:
+- S3-compatible deployments support conditional `PutObject`, checksum headers, presigned URLs, and streaming `GetObject`; compatibility must be checked against the selected vendor before production enablement.
+- Live subscriptions are intentionally ephemeral; durable replay remains the paginated event API and transactional outbox rather than per-subscriber delivery state.
+- Development filesystem uploads may use the dedicated bounded API upload endpoint. Production large-object transfer is direct to object storage and never traverses ordinary event ingestion.
+
+Known risks:
+- The in-process live broker is single-region/single-API-process. Multiple API replicas require a later durable fan-out transport while preserving the existing tenant checks and outbox contract.
+- Filesystem development upload buffering is bounded by the configured maximum but is not intended for production-scale artifacts; production should use the S3-compatible implementation.
+- The in-app browser capability was unavailable on this host, so SSE behavior is verified through API/broker tests and the real committed-outbox synchronization path rather than a manual browser session.
+
+Known remaining issues:
+- No failures within artifact transfer, enrollment, daemon synchronization, outbox delivery, live subscriptions, or tenant isolation. The unrelated Villani Code dirty-root-sensitive test remains as documented above.
+
+Next permitted milestone:
+- Remote execution, UI, or multi-region/live fan-out only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Controlled pull-based remote dispatch pass
+
+Status: complete
+
+Changed files:
+- Extended `components/villani-control-plane` models, strict request schemas, API routes, settings, service exports, and documentation with workers, heartbeat history, immutable remote tasks, task leases, capability/residency admission, cancellation, retry/dead-letter, and idempotent completion.
+- Added Alembic revision `f3a1c2d4e5f6_remote_dispatch.py`, including tenant foreign keys, claim/expiration indexes, a PostgreSQL partial unique index allowing one active lease per task, and a trigger that prevents mutation of task input, repository reference, policy, constraints, priority, deadline, retry budget, and idempotency identities.
+- Added `villani_control_plane/services/remote_dispatch.py` and unit/API/PostgreSQL tests for authority separation, capability/residency filtering, lease recovery, concurrent claims, normalized evidence, cancellation, retry/dead-letter, and exactly-once completion.
+- Added `villani_agentd/remote_worker.py`, explicit worker enable/disable/one-shot CLI commands, worker lifecycle integration, capability discovery from the actual Villani configuration, scoped checkout-secret brokering, outbound pull/renew/complete behavior, managed remote workspaces, and child cancellation monitoring.
+- Hardened the existing Windows process-tree termination path to verify `taskkill` completion and force-kill a process that remains alive. Updated agent daemon status/doctor output, component documentation, tests, and this progress section only.
+
+Architectural decisions:
+- Workers authenticate with existing scoped installation credentials and initiate every connection. Control-plane API tokens submit/cancel tasks; installation credentials may only heartbeat, claim for their own registered worker, renew an owned lease, and complete that lease. The server opens no inbound worker connection.
+- Worker capabilities contain platform, architecture, probed execution providers and agent adapters, configured reachable models/runtimes, actual CPU and memory, configured GPU metadata, concurrency, network class, residency labels, and version. All required sets/minima and residency labels are checked before a lease row is created.
+- Task input, policy version, repository reference/revision, capability constraints, priority, deadline, max attempts, and server finalization identity are immutable in both the service boundary and PostgreSQL trigger. Repository URLs containing credentials are rejected.
+- Claiming orders eligible work by priority and creation time and uses `FOR UPDATE SKIP LOCKED`. A partial unique index is a second database-level guard against two live leases for one task. Worker capacity and heartbeat freshness are checked under lock.
+- Lease renewal extends ownership only while the lease is live. Expiration, worker-reported failure, and elapsed deadlines deterministically requeue or dead-letter. A stale owner cannot complete after reassignment. Cancellation is terminal once recorded and is returned through renewal so the worker terminates its child process tree.
+- Every queue, dispatch, lease, renewal, expiration, cancellation, retry, dead-letter, and completion transition writes a normalized v2 event, corresponding lifecycle/lease spans, and a same-transaction outbox row. Assignment events include policy version and capability/residency evidence.
+- Completion is serialized under task/lease locks. The server-issued finalization key and completion digest make replay idempotent; successful completion requires materialized and finalized evidence, and only the first matching completion can set those terminal fields. Re-execution occurs only in isolated managed clones, never directly in a user's checkout.
+- Checkout tasks contain only an opaque broker reference, repository scope, and lifetime capped at 15 minutes. A locally configured shell-free command mints the credential through the existing secret broker; Git receives it only through subprocess environment configuration and neither server persistence nor completion evidence contains its value.
+- Enrollment continues to enable synchronization only. `worker-enable` is a separate explicit action and requires an existing local Villani configuration. Ordinary local `villani run` remains independent and available without enrollment or worker registration.
+
+Verification:
+- Control-plane final full suite against PostgreSQL 16: exit code 0; 30 passed, 1 opt-in load test skipped, and one third-party TestClient warning in 6.15s. The PostgreSQL suite migrated from zero/previous head, proved concurrent `SKIP LOCKED` claiming with one active lease, exercised the partial unique index, and verified the immutable-task trigger.
+- Focused remote-dispatch/worker suite: exit code 0; 9 passed in 0.96s. Coverage includes wrong platform/residency exclusion, lease death/reassignment, stale-owner rejection, idempotent completion, retry/dead-letter, schema-valid transition events, cancellation propagation, child termination, explicit local default, and ephemeral scoped checkout credentials.
+- Real Compose/HTTP exercise: Python 3.11 API image rebuilt; PostgreSQL and API reached healthy state and migration head; a daemon exchanged a one-time enrollment token, heartbeated, pulled one task, and completed it. PostgreSQL recorded state `completed`, attempt count 1, `materialized=true`, `finalized=true`, normalized dispatch events, and zero active leases. Containers were stopped afterward and named volumes preserved.
+- Villani Agentd full suite: exit code 0; 46 passed with one non-failing pytest-cache ACL warning in 11.32s.
+- Villani Ops full suite: exit code 0; 774 passed, 1 skipped, 114 deselected, and one non-failing pytest-cache ACL warning in 117.04s.
+- Root closed-loop integration: exit code 0; 6 passed in 21.27s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 67.01s. The sole failure remains the documented dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which observes this milestone's legitimate repository changes instead of its monkeypatched task-local method.
+- Ruff check, Ruff format check, compileall, targeted mypy for both new production modules, offline four-revision Alembic SQL generation, and `git diff --check` all exited 0; only existing line-ending notices were emitted.
+
+Acceptance criteria:
+- PASS: two PostgreSQL workers racing for one task produce exactly one non-null claim, one live lease, and one lease event.
+- PASS: lease expiry reassigns within the configured lease plus retry bound; the old owner cannot complete, and successful finalization/materialization fields are set only once by idempotency key.
+- PASS: platform, architecture, provider/adapter, model/runtime, resource, network, GPU, and residency mismatches are evaluated before assignment; wrong-platform and wrong-residency workers receive no task.
+- PASS: cancellation is returned during renewal, terminates the real child process tree promptly, and persists cancellation plus terminal evidence.
+- PASS: enrollment and synchronization do not enable remote execution; the daemon creates no remote worker unless explicitly configured, and local execution remains unchanged.
+
+Assumptions:
+- Reachable model/runtime identifiers are operator-validated declarations in worker configuration; provider and adapter availability is probed from the exact local Villani configuration used by the child.
+- A checkout secret broker command returns a short-lived token whose actual issuer scope and expiry match the task reference. Villani enforces the reference scope/lifetime and never persists the returned value, but the external issuer remains authoritative.
+- Remote execution produces and finalizes evidence in an isolated managed clone. Applying the selected result to a separate user checkout remains outside this dispatch milestone.
+
+Known risks:
+- Capability matching is intentionally deterministic set/minimum matching, not learned routing or global scheduling. Large heterogeneous fleets will eventually need indexed capability projections without changing lease semantics.
+- Heartbeat history is append-only in this pass; a later operational retention job will be needed for long-running production installations.
+- A worker currently pulls synchronously and therefore may use less than its advertised maximum concurrency. The server enforces the maximum, so this is a utilization limitation rather than an ownership-safety issue.
+- The unrelated Villani Code dirty-root-sensitive test remains failing while legitimate milestone changes are uncommitted.
+
+Known remaining issues:
+- None within controlled remote dispatch, lease recovery, capability/residency enforcement, cancellation, credential handling, or local-execution compatibility.
+
+Next permitted milestone:
+- Learned routing, enterprise scheduling, remote result materialization into a user's checkout, or multi-region dispatch only after an explicit user request. None was started in this pass.

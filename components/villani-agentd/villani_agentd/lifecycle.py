@@ -10,11 +10,12 @@ import signal
 import subprocess
 import sys
 import time
+import threading
 from pathlib import Path
 from typing import Any
 
 from .client import ClientError, LocalClient, is_loopback_host
-from .config import AgentdPaths, Limits, ServerConfig
+from .config import AgentdPaths, Limits, ServerConfig, SyncConfig
 from .spool import SQLiteSpool
 from .adapters import ADAPTERS
 
@@ -77,7 +78,27 @@ def run_foreground_service(paths: AgentdPaths, limits: Limits | None = None) -> 
     token = paths.token.read_text(encoding="utf-8").strip()
     if not token:
         raise RuntimeError("local daemon token is empty")
-    serve(ServerConfig(host="127.0.0.1", port=0, limits=selected_limits), paths, token)
+    stop = threading.Event()
+    sync_config = SyncConfig.load(paths.sync_config)
+    worker_threads: list[threading.Thread] = []
+    if sync_config is not None:
+        from .uploader import SynchronizationWorker
+
+        worker = SynchronizationWorker(paths, sync_config, selected_limits)
+        worker_threads.append(threading.Thread(target=worker.run, args=(stop,), daemon=True))
+        if sync_config.remote_execution_enabled:
+            from .remote_worker import RemoteExecutionWorker
+
+            remote = RemoteExecutionWorker(paths, sync_config, selected_limits)
+            worker_threads.append(threading.Thread(target=remote.run, args=(stop,), daemon=True))
+        for worker_thread in worker_threads:
+            worker_thread.start()
+    try:
+        serve(ServerConfig(host="127.0.0.1", port=0, limits=selected_limits), paths, token)
+    finally:
+        stop.set()
+        for worker_thread in worker_threads:
+            worker_thread.join(timeout=5)
 
 
 def _pid_exists(pid: int) -> bool:
@@ -231,12 +252,17 @@ def doctor(paths: AgentdPaths) -> tuple[bool, dict[str, Any]]:
     token_permissions = None
     if paths.token.exists() and os.name != "nt":
         token_permissions = oct(paths.token.stat().st_mode & 0o777)
+    sync_config = SyncConfig.load(paths.sync_config)
     report = {
         "database_integrity": spool.integrity_check(),
         "endpoint_loopback": endpoint_loopback,
         "running": running,
         "token_permissions": token_permissions,
-        "upload_mode": "offline",
+        "upload_mode": "synchronized" if sync_config else "offline",
+        "remote_execution": {
+            "enabled": bool(sync_config and sync_config.remote_execution_enabled),
+            "worker_id": sync_config.worker_id if sync_config else None,
+        },
         "adapters": [
             adapter.detect().as_dict() for name, adapter in ADAPTERS.items() if name != "generic"
         ],

@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..errors import AuthenticationError
+from ..models import AgentInstallation, ApiToken
+from ..security import Principal, token_lookup_digest, verify_token
+
+
+class AuthenticationService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def authenticate(self, token: str) -> Principal:
+        record = self.session.scalar(
+            select(ApiToken).where(
+                ApiToken.lookup_digest == token_lookup_digest(token),
+                ApiToken.deleted_at.is_(None),
+            )
+        )
+        if record is None or not verify_token(token, record.secret_hash):
+            installation = self.session.scalar(
+                select(AgentInstallation).where(
+                    AgentInstallation.credential_lookup_digest == token_lookup_digest(token),
+                    AgentInstallation.deleted_at.is_(None),
+                )
+            )
+            if (
+                installation is None
+                or not installation.credential_hash
+                or not verify_token(token, installation.credential_hash)
+            ):
+                raise AuthenticationError("invalid API or installation credential")
+            return Principal(
+                installation.id,
+                installation.organization_id,
+                installation.workspace_id,
+                installation.id,
+            )
+        return Principal(record.id, record.organization_id, record.workspace_id)

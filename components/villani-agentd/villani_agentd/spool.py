@@ -59,9 +59,9 @@ class SQLiteSpool:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=FULL")
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if version > 1:
+            if version > 2:
                 raise SpoolError(
-                    f"spool schema version {version} is newer than supported version 1"
+                    f"spool schema version {version} is newer than supported version 2"
                 )
             existing_tables = {
                 str(row[0])
@@ -115,8 +115,26 @@ class SQLiteSpool:
                 );
                 """
             )
-            if version == 0:
-                connection.execute("PRAGMA user_version=1")
+            if version < 2:
+                event_columns = {row[1] for row in connection.execute("PRAGMA table_info(events)")}
+                artifact_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(artifacts)")
+                }
+                for name, definition in (
+                    ("last_error", "TEXT"),
+                    ("dead_lettered_at", "TEXT"),
+                ):
+                    if name not in event_columns:
+                        connection.execute(f"ALTER TABLE events ADD COLUMN {name} {definition}")
+                for name, definition in (
+                    ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
+                    ("next_retry_at", "TEXT"),
+                    ("last_error", "TEXT"),
+                    ("dead_lettered_at", "TEXT"),
+                ):
+                    if name not in artifact_columns:
+                        connection.execute(f"ALTER TABLE artifacts ADD COLUMN {name} {definition}")
+                connection.execute("PRAGMA user_version=2")
 
     def register_run(self, run_id: str, trace_id: str | None, created_at: str) -> bool:
         if not run_id:
@@ -318,7 +336,16 @@ class SQLiteSpool:
             run_count = int(connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0])
             pending = int(
                 connection.execute(
-                    "SELECT COUNT(*) FROM events WHERE upload_state='offline'"
+                    "SELECT COUNT(*) FROM events WHERE upload_state IN ('offline','retry')"
+                ).fetchone()[0]
+            )
+            dead_letters = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM events WHERE upload_state='dead_letter'"
+                ).fetchone()[0]
+            ) + int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM artifacts WHERE upload_state='dead_letter'"
                 ).fetchone()[0]
             )
         return {
@@ -326,8 +353,92 @@ class SQLiteSpool:
             "events": event_count,
             "artifacts": artifact_count,
             "pending_events": pending,
+            "dead_letters": dead_letters,
             "upload_mode": "offline",
         }
+
+    def pending_events(self, limit: int, now: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT event_id,payload_json,retry_count FROM events
+                   WHERE upload_state IN ('offline','retry')
+                     AND (next_retry_at IS NULL OR next_retry_at<=?)
+                   ORDER BY sequence_scope,sequence,event_id LIMIT ?""",
+                (now, limit),
+            ).fetchall()
+        return [
+            {
+                "event_id": row["event_id"],
+                "document": json.loads(row["payload_json"]),
+                "retry_count": row["retry_count"],
+            }
+            for row in rows
+        ]
+
+    def acknowledge_events(self, event_ids: Iterable[str]) -> None:
+        values = list(event_ids)
+        if not values:
+            return
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.executemany(
+                    "DELETE FROM events WHERE event_id=?", ((value,) for value in values)
+                )
+                connection.execute("COMMIT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+
+    def retry_events(self, event_ids: Iterable[str], next_retry_at: str, error: str) -> None:
+        with self._connect() as connection:
+            connection.executemany(
+                """UPDATE events SET upload_state='retry',retry_count=retry_count+1,
+                   next_retry_at=?,last_error=? WHERE event_id=?""",
+                ((next_retry_at, error[:500], value) for value in event_ids),
+            )
+
+    def dead_letter_events(self, event_ids: Iterable[str], now: str, error: str) -> None:
+        with self._connect() as connection:
+            connection.executemany(
+                """UPDATE events SET upload_state='dead_letter',dead_lettered_at=?,last_error=?
+                   WHERE event_id=?""",
+                ((now, error[:500], value) for value in event_ids),
+            )
+
+    def pending_artifacts(self, limit: int, now: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT artifact_id,run_id,descriptor_json,storage_reference,retry_count FROM artifacts
+                   WHERE upload_state IN ('offline','retry')
+                     AND (next_retry_at IS NULL OR next_retry_at<=?)
+                   ORDER BY artifact_id LIMIT ?""",
+                (now, limit),
+            ).fetchall()
+        return [dict(row) | {"descriptor": json.loads(row["descriptor_json"])} for row in rows]
+
+    def acknowledge_artifact(self, artifact_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE artifacts SET upload_state='acknowledged',next_retry_at=NULL,last_error=NULL WHERE artifact_id=?",
+                (artifact_id,),
+            )
+
+    def retry_artifact(self, artifact_id: str, next_retry_at: str, error: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE artifacts SET upload_state='retry',retry_count=retry_count+1,
+                   next_retry_at=?,last_error=? WHERE artifact_id=?""",
+                (next_retry_at, error[:500], artifact_id),
+            )
+
+    def dead_letter_artifact(self, artifact_id: str, now: str, error: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE artifacts SET upload_state='dead_letter',dead_lettered_at=?,last_error=?
+                   WHERE artifact_id=?""",
+                (now, error[:500], artifact_id),
+            )
 
     def integrity_check(self) -> str:
         with self._connect() as connection:

@@ -12,6 +12,7 @@ dependencies = ["villani-ops>=0.2.0"]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "ruff>=0.6", "mypy>=1.10"]
+keyring = ["keyring>=25,<26"]
 
 [project.scripts]
 villani-agentd = "villani_agentd.cli:main"
@@ -33,4 +34,3 @@ select = ["E9", "F"]
 python_version = "3.11"
 ignore_missing_imports = true
 no_implicit_optional = true
-

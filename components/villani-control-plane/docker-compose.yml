@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: villani
+      POSTGRES_USER: villani
+      POSTGRES_PASSWORD: villani
+    ports:
+      - "5432:5432"
+    volumes:
+      - villani-control-plane-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U villani -d villani"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: ../..
+      dockerfile: components/villani-control-plane/Dockerfile
+    environment:
+      VILLANI_CONTROL_PLANE_DATABASE_URL: postgresql+psycopg://villani:villani@postgres:5432/villani
+      VILLANI_CONTROL_PLANE_BUILD_VERSION: dev-compose
+      VILLANI_CONTROL_PLANE_DEV_API_TOKEN: local-development-token-change-me-123456
+      VILLANI_CONTROL_PLANE_DEV_ENROLLMENT_TOKEN: local-enrollment-token-change-me-123456
+      VILLANI_CONTROL_PLANE_OBJECT_STORE_PATH: /data/objects
+    volumes:
+      - villani-control-plane-objects:/data/objects
+    command:
+      - /bin/sh
+      - -c
+      - alembic upgrade head && uvicorn villani_control_plane.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readiness')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  villani-control-plane-postgres:
+  villani-control-plane-objects:

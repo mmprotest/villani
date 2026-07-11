@@ -78,6 +78,11 @@ def terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
                 stderr=subprocess.DEVNULL,
                 timeout=5,
             )
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
         except (OSError, subprocess.TimeoutExpired):
             process.kill()
     else:

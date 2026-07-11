@@ -229,7 +229,7 @@ def test_committed_events_survive_spool_restart_and_wal_is_enabled(paths: Agentd
 
     with sqlite3.connect(paths.database) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_unknown_legacy_spool_layout_is_refused(paths: AgentdPaths) -> None:
@@ -372,6 +372,7 @@ def test_http_run_event_artifact_and_finalize_endpoints(running_server) -> None:
         "events": 1,
         "artifacts": 1,
         "pending_events": 1,
+        "dead_letters": 0,
         "upload_mode": "offline",
     }
 

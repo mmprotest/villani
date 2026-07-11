@@ -21,6 +21,7 @@ from .config import AgentdPaths, ServerConfig
 from .spool import LimitError, SQLiteSpool, SpoolError
 from .structured_log import StructuredLogger
 from .otlp import normalize_otlp_traces
+from .config import SyncConfig
 
 
 def utc_now() -> str:
@@ -104,11 +105,18 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         if not self._authenticated():
             return
         if self.path == "/v1/status" and self.command == "GET":
+            sync_config = SyncConfig.load(self.server.spool.paths.sync_config)
             self._send(
                 HTTPStatus.OK,
                 {
                     "status": "running",
                     **self.server.spool.status(),
+                    "upload_mode": ("synchronized" if sync_config else "offline"),
+                    "remote_execution": (
+                        "enabled"
+                        if sync_config and sync_config.remote_execution_enabled
+                        else "disabled"
+                    ),
                     "limits": self.server.config.limits.as_dict(),
                 },
             )

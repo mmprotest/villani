@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "villani-control-plane"
+version = "0.1.0"
+description = "Single-region Villani v2 ingestion and persistence service"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.13,<2",
+  "boto3>=1.35,<2",
+  "fastapi>=0.115,<1",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.4,<3",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn[standard]>=0.30,<1",
+  "villani-ops>=0.2.0",
+]
+
+[project.optional-dependencies]
+test = ["httpx>=0.27", "pytest>=8", "pytest-xdist>=3", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+include = ["villani_control_plane*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "postgres: requires a PostgreSQL database",
+  "load: 100,000-event load smoke test",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E9", "F", "I"]
