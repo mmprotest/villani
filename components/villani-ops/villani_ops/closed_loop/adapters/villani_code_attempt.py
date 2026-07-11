@@ -129,7 +129,7 @@ class VillaniCodeAttemptAdapter:
             cache_root=Path(attempt_context.run_directory).parent.parent
             / "cache"
             / "execution-environments",
-            selection=backend.execution_environment,
+            selection=attempt_context.execution_provider or backend.execution_environment,
         )
         prepared_environment = environment_provider.prepare(
             repository=Path(attempt_context.repository_path),

@@ -11,7 +11,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from villani_ops.closed_loop.protocol_v2 import (
     ArtifactDescriptorV2,
-    OutcomeV2,
     TelemetryEnvelopeV2,
 )
 from villani_ops.closed_loop.schema_validation import (
@@ -403,56 +402,6 @@ class IngestionService:
         return normalized
 
     def record_outcome(self, document: dict[str, Any], principal: Principal) -> dict[str, Any]:
-        try:
-            parsed = parse_protocol_document(document)
-        except ProtocolValidationError as error:
-            raise ServiceError(f"v2 schema validation failed: {error}") from error
-        if not isinstance(parsed, OutcomeV2):
-            raise ServiceError("outcome must use villani.outcome.v2")
-        run = self.ingestion.run(principal.organization_id, parsed.run_id)
-        if run is None or run.workspace_id != principal.workspace_id:
-            raise NotFoundError("run not found")
-        if parsed.attempt_id:
-            attempt = self.session.get(
-                models.Attempt, (principal.organization_id, parsed.attempt_id)
-            )
-            if attempt is None or attempt.run_id != parsed.run_id:
-                raise AuthorizationError("outcome attempt_id is not part of run_id")
-        normalized = parsed.model_dump(mode="json")
-        existing = (
-            self.session.query(models.Outcome)
-            .filter_by(
-                organization_id=principal.organization_id,
-                run_id=parsed.run_id,
-                attempt_id=parsed.attempt_id,
-            )
-            .one_or_none()
-        )
-        if existing:
-            if existing.document != normalized:
-                raise ConflictError("outcome already has different content")
-            return normalized
-        self.ingestion.add(
-            models.Outcome(
-                organization_id=principal.organization_id,
-                workspace_id=principal.workspace_id,
-                run_id=parsed.run_id,
-                attempt_id=parsed.attempt_id,
-                attempt_key=parsed.attempt_id or "",
-                document=normalized,
-            )
-        )
-        if parsed.accepted is True:
-            run.status = "accepted"
-        self.ingestion.add(
-            models.Outbox(
-                organization_id=principal.organization_id,
-                workspace_id=principal.workspace_id,
-                topic="outcome.recorded",
-                aggregate_type="run",
-                aggregate_id=parsed.run_id,
-                payload={"run_id": parsed.run_id, "attempt_id": parsed.attempt_id},
-            )
-        )
-        self.session.commit()
-        return normalized
+        from .outcome_ledger import OutcomeLedgerService
+
+        return OutcomeLedgerService(self.session).record_v2(document, principal)["outcome"]

@@ -1827,3 +1827,157 @@ Known remaining issues:
 
 Next permitted milestone:
 - Learned routing, enterprise scheduling, remote result materialization into a user's checkout, or multi-region dispatch only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Recommendation-only shadow routing and outcome ledger pass
+
+Status: complete
+
+Changed files:
+- Added `villani_ops.closed_loop.shadow_routing` with frozen versioned TaskFeatures, per-feature extractor versions, deterministic repository snapshot extraction, immutable backend/agent capability catalog snapshots, and advisory ShadowRecommendation scoring.
+- Updated the deterministic controller to persist `task_features.json`, `capability_catalog_snapshot.json`, and append-only `shadow_recommendations.jsonl` immediately before the real policy decision without passing any shadow output to the production PolicyEngine.
+- Added control-plane outcome-ledger request contracts, append-only versioned outcomes and correction lineage, normalized outcome signals, shadow-routing observations and metrics, authenticated API routes, a fake Git provider, and Alembic revision `a4b5c6d7e8f9`.
+- Added focused Villani Ops and control-plane tests for deterministic extraction, explicit missingness, shadow/actual divergence, immutable corrections, fake-provider replay, and verified-only capability labels. Updated this progress section only.
+
+Architectural decisions:
+- `ShadowRouter` deliberately does not implement the controller `PolicyEngine` protocol. Its recommendation is persisted through a one-way evidence method before the production policy call; it cannot return a controller action, and shadow failures are recorded as advisory observability failures rather than changing controller state.
+- Repository features derive from sorted non-generated file metadata and SHA-256 content digests. Persisted provenance contains snapshot/input digests and source identities, not source contents. Historical features accept only named numeric aggregates; absent history is an explicit null/missing feature.
+- Capability snapshots contain redacted configuration-derived backend, model, adapter, role, capability, limit, and known-cost data. Their immutable snapshot identity is the digest of the versioned canonical option set; timestamps are metadata and not part of identity.
+- Existing v2 Outcome remains the wire payload. The ledger wraps it with monotonically increasing per-run/attempt versions, explicit supersession, provenance, and confidence. Different content conflicts unless the caller names the current version as a correction; corrections append and never update the prior row.
+- Git outcome ingestion uses one provider-neutral contract for run, attempt, verification, materialization, CI, developer disposition, merge, revert, and defect signals. This pass registers only a deterministic fake provider and makes no live GitHub or GitLab call.
+- A capability-success label is true only for a recorded, verifier-accepted v2 outcome with `accepted=true`; recorded verifier rejection is the only failure label. Infrastructure failures, verifier failures, unclear/error/not-run verification, missing provenance, CI-only success, merge-only success, and other unverifiable outcomes remain operational ledger entries with a null label.
+
+Verification:
+- Villani Ops required full suite: exit code 0; 776 passed, 1 skipped, 114 deselected in 114.38s. Focused shadow/policy/capability coverage: 56 passed, and the dedicated shadow suite passed 2 tests.
+- Control plane full local suite: exit code 0; 27 passed and 6 PostgreSQL/load tests skipped, with one third-party TestClient deprecation warning in 4.13s. Its complete unit suite passed 26 tests.
+- Offline PostgreSQL Alembic SQL generation reached revision `a4b5c6d7e8f9` and emitted the outcome-version, outcome-signal, and shadow-observation tables, constraints, and indexes successfully. A live PostgreSQL suite was not available in this pass.
+- Root closed-loop integration: exit code 0; 6 passed in 20.31s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 69.78s. The sole failure is the previously documented dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which listed this pass's legitimate uncommitted root files instead of respecting its mocked task-local delta.
+- Ruff checks and formatting checks for the changed production/test modules, compileall for both changed Python components, and `git diff --check` exited 0; only existing line-ending notices were emitted.
+
+Acceptance criteria:
+- PASS: the test records a concrete shadow recommendation for `shadow-cheap:shadow-model` while the production PolicyEngine independently selects and executes `production-low`; the recommendation is marked `advisory_only=true` and cannot implement the production decision interface.
+- PASS: repeated extraction from an unchanged repository snapshot produces equal TaskFeatures, every extractor has an explicit version, and absent historical aggregates remain `value=null, missing=true` with provenance.
+- PASS: capability catalog snapshots are frozen/versioned and digest-addressed; backend secrets and source contents are not persisted.
+- PASS: changed outcomes conflict unless submitted as explicit corrections, and corrections create a new version with supersession and provenance while retaining both versions.
+- PASS: authenticated fake-provider webhook ingestion is idempotent, provider-neutral signal types are linked to run/attempt identities, and shadow metrics compare shadow choice, actual choice, and observed verified labels.
+- PASS: unverified success and infrastructure/unverifiable outcomes never produce a capability-success label.
+
+Assumptions:
+- Repository file paths, sizes, and content digests are acceptable local routing provenance; file contents are never embedded in TaskFeatures or historical aggregates.
+- Operators supplying historical routing aggregates provide a stable snapshot identifier and numeric aggregate definitions. This pass records those inputs but does not learn, rebuild, or enforce a router from them.
+- Shadow-routing observations are uploaded through the authenticated control-plane endpoint by a later synchronization integration; absence of an observation produces no metric rather than an inferred value.
+
+Known risks:
+- Deterministic snapshot hashing reads every included repository file and may be costly for very large repositories; generated/vendor directories are excluded, but incremental hashing is deferred.
+- The fake provider proves the provider-neutral boundary and idempotency only. Live GitHub/GitLab signature verification and provider adapters remain intentionally absent.
+- PostgreSQL DDL was generated offline and model behavior was exercised against SQLite; the opt-in live PostgreSQL tests were unavailable locally.
+- The unrelated Villani Code dirty-root-sensitive test remains failing while legitimate milestone changes are uncommitted.
+
+Known remaining issues:
+- None within recommendation-only routing, feature/capability snapshotting, append-only correction semantics, authenticated fake-provider ingestion, verified-only labels, or shadow metrics. The Villani Code baseline failure remains as documented above.
+
+Next permitted milestone:
+- Production routing control, learned routing, live Git-provider adapters, or later control-plane work only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Offline evaluation and safe policy publication pass
+
+Status: complete
+
+Changed files:
+- Added `villani_ops.closed_loop.offline_evaluation` with frozen experiment/assignment contracts, stable salted assignment, constraint-filtered holdout/shadow/bounded exploration, direct/IPS/doubly-robust offline estimates, deterministic bootstrap intervals, segment calibration, transparent segmented optimization, drift monitoring, and JSON/Markdown replay reporting.
+- Added the `villani evaluate replay` offline CLI and `integration/fixtures/offline_evaluation/shadow_outcome_dataset.json`, which contains linked fixture shadow recommendations, verified outcome-ledger rows, assignment provenance, propensities, explicit outcome-model inputs, costs, latency, backend versions, and task features.
+- Extended the control plane with immutable policy publication snapshots, append-only state transitions and approvals, canary percentages, rollback thresholds, prior-version restoration, emergency global disable, authenticated APIs, and Alembic revision `b5c6d7e8f9a0`.
+- Added Villani Ops and control-plane tests for reproducibility/balance, zero unsafe exploration, censored-data refusal, IPS/DR prerequisites, confidence intervals, calibration, optimization, drift, immutable publication, approval, rollback, emergency disable, and structural separation from live execution. Updated this progress section only.
+
+Architectural decisions:
+- Assignment hashes the experiment salt and stable unit ID into a deterministic uniform draw. Probabilities are renormalized only across safe eligible arms, so rejected options have exactly zero propensity; every selected control or exploratory arm records its normalized propensity, seed, eligibility, policy snapshot/digest, mode, and timestamp.
+- Shadow-only always records the control arm with propensity 1. Holdout and bounded exploration remain offline records in this pass. Capability, security approval, known maximum cost, residency intersection, configured option allowlists, and per-user permission are checked before any exploratory probability exists.
+- Direct estimates use observed outcomes only. IPS is invalid if any observed row lacks propensity. Doubly robust estimation is emitted only when every used row has logged/target predictions and explicit model-input provenance. Deterministically seeded non-parametric bootstrap samples produce 95% intervals, while segment calibration preserves raw counts and observed/predicted rates.
+- Evaluation publication and replay fail closed when assignment provenance or propensity is unknown. Censored data without propensity is identified explicitly, and a requested causal-savings claim is rejected when censoring or provenance prevents identification.
+- Policy optimization implements a transparent segmented estimator behind a `PolicyOptimizer` protocol. It uses minimum samples, a conservative normal lower bound for verified success, complete known costs, and stable selection; no neural or live router was added.
+- Drift monitoring covers each task feature plus backend-version distribution, verified success, cost, latency, and calibration error. Missing required metric evidence is itself a drift signal.
+- A policy publication row and its policy snapshot are immutable; PostgreSQL rejects update/delete. State is derived only from append-only transitions through draft, shadow, canary, active, paused, and rolled_back. Manual approval is a separate immutable record. Automatic rollback appends `rolled_back` to the candidate and `active` restoration to its prior immutable publication.
+- Emergency disable is workspace-global publication safety metadata and appends pauses to active/canary publications. The controller and remote dispatch do not import publication, assignment, or optimized-policy types; every offline/publication response states that it does not control live execution.
+
+Verification:
+- Villani Ops required full suite: exit code 0; 785 passed, 1 skipped, 114 deselected in 107.33s. Focused offline-evaluation suite: 9 passed in 0.60s.
+- Control plane full local suite: exit code 0; 31 passed, 6 PostgreSQL/load tests skipped, and one third-party TestClient warning in 5.27s. Focused publication plus ledger coverage passed 4 tests; the final publication suite passed 4 tests including structural separation.
+- Offline PostgreSQL Alembic SQL generation reached `b5c6d7e8f9a0` and emitted immutable publication, transition, approval, safety-control, foreign-key, index, and trigger DDL successfully. Live PostgreSQL tests were not available.
+- Root closed-loop integration: exit code 0; 6 passed in 20.23s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 62.82s. The sole failure remains `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which observes legitimate uncommitted root changes instead of its mocked task-local delta.
+- Ruff checks, focused Ruff formatting checks, compileall for changed Python packages, and `git diff --check` exited 0; only existing line-ending notices were emitted.
+
+Acceptance criteria:
+- PASS: 10,000 deterministic 50/50 assignments were reproducible and within 3 percentage points of balance; shadow-only control propensity is exactly 1.
+- PASS: capability, security, cost, residency, allowlist, and user-permission violations produced zero exploratory selections across the test matrix.
+- PASS: missing assignment provenance blocks replay/publication, censored data without propensity is detected, and an invalid causal-savings claim is refused.
+- PASS: direct, IPS, explicit-input doubly robust, bootstrap interval, segment calibration, minimum-sample, segmented optimizer, and all required drift signals are covered by deterministic fixture tests.
+- PASS: failed canary thresholds append rollback and restore the prior immutable snapshot; manual approval and emergency disable gates pass.
+- PASS: structural tests confirm policy publication and offline evaluation are absent from controller and remote-dispatch dependencies, so no policy controls live execution.
+
+Assumptions:
+- The stable unit ID is a non-secret durable task/run identity chosen by the experiment owner, and experiment salts are stable versioned configuration rather than security credentials.
+- Fixture outcome-model predictions represent an externally produced, versioned model; this pass evaluates explicit inputs but does not train that model.
+- Bootstrap intervals quantify sampling variation in the supplied offline observations; they do not correct unmeasured confounding or selection bias.
+
+Known risks:
+- Normal-approximation conservative bounds in the transparent segmented optimizer are intentionally simple and can be very conservative for small samples; minimum-sample fallback prevents their use as strong evidence.
+- Offline drift thresholds are uniform by default. Production operating thresholds require domain-specific configuration and validation before any future enforcement.
+- PostgreSQL immutability and migration DDL were generated offline and lifecycle behavior was exercised with SQLite; the opt-in live PostgreSQL suite was unavailable.
+- The unrelated Villani Code dirty-root-sensitive test remains failing while legitimate pass changes are uncommitted.
+
+Known remaining issues:
+- None within offline assignment/evaluation, fixture replay, conservative optimization, drift reporting, immutable publication lifecycle, rollback restoration, approval, or emergency disable. The Villani Code baseline failure remains as documented above.
+
+Next permitted milestone:
+- Live policy enforcement, learned/contextual routing beyond the transparent interface, online experimentation, or later work only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Guarded task-level routing pass
+
+Status: complete
+
+Changed files:
+- Added `villani_ops.closed_loop.guarded_routing` with immutable task-route, alternative, circuit-breaker, and controlled-decision contracts; hierarchical configuration resolution; and deterministic guarded routing.
+- Integrated guarded decisions into the closed-loop controller, attempt context, budget accounting, and the existing Villani Code attempt adapter. Added `villani run --mode` and `villani policy explain` commands.
+- Added `test_guarded_routing.py` for mode isolation, eligibility, reproducibility, policy fallback, configuration precedence, budget/marginal-value gates, all circuit breakers, emergency disable, persistence, and CLI explanation. Updated this progress section only.
+
+Architectural decisions:
+- `observe` is the installation default. `observe` and `recommend` preserve the bootstrap controller decision exactly; the frozen guarded decision model exposes `controls_execution=false`. Only `enforce` can substitute a task route.
+- Enforcement requires an immutable active or last-known-good policy version, explicit user and workspace permission, and a configured emergency fallback. Alternatives are rejected before selection for capability, security, cost, residency, and user constraints. If eligibility cannot be proven, routing fails closed.
+- Each task route records the agent adapter, backend/model, execution provider, maximum attempts, candidate strategy, verifier graph version, and escalation sequence. The decision artifact also records every alternative and rejection, estimates, uncertainty, policy/assignment provenance, resolved scope precedence, actual spend, evidence summary, marginal value, circuit state, final reason, and a digest of replay inputs.
+- Policy resolution is deterministic in organization, workspace, project, then repository precedence. Policy selection falls through active, last-known-good, deterministic bootstrap, then fail-closed. The explain command emits the resolved redacted configuration and selected fallback source.
+- Classification, coding, verification, and retries contribute to the guarded stage-attempt and monetary caps. Before escalation the router recomputes remaining budget and conservative expected marginal value from actual spend and accumulated verifier evidence.
+- Provider failure rate, provider latency, rate limits, verifier disagreement, budget anomalies, and emergency disable are evaluated before another paid attempt. An open breaker exhausts the run safely. Routing remains task-level; no per-model-call routing was introduced.
+
+Verification:
+- Villani Ops required full suite: exit code 0; 797 passed, 1 skipped, 114 deselected in 120.72s. Final focused guarded-routing suite: 12 passed in 0.78s.
+- Control plane full local suite: exit code 0; 31 passed, 6 PostgreSQL/load tests skipped, and one third-party TestClient deprecation warning in 6.55s.
+- Root closed-loop integration: exit code 0; 6 passed in 21.13s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 68.69s. The sole failure remains the dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which observes legitimate uncommitted milestone files instead of its mocked task-local delta.
+- Ruff lint and formatting checks for all guarded-routing changes, compileall, and `git diff --check` exited 0. Git emitted only existing line-ending and inaccessible global-ignore warnings.
+
+Acceptance criteria:
+- PASS: observe and recommend decisions cannot alter execution structurally or behaviorally; controller integration tests prove the bootstrap backend remains selected.
+- PASS: enforce selected only the safe eligible alternative while recording the rejected unsafe option and its reason.
+- PASS: cost and attempt caps account for classification, coding, verification, and retries; low marginal value stops escalation using current spend and evidence.
+- PASS: every circuit breaker and emergency disable prevents the next attempt, and configured thresholds are persisted in the decision record.
+- PASS: repeated routing from identical persisted inputs and policy version produces the same route and replay digest.
+
+Assumptions:
+- Immutable active and last-known-good publication snapshots are synchronized into local routing configuration before a run; the deterministic controller does not query a network control plane.
+- Emergency fallback is a required, validated safe configuration. An open circuit or global disable stops before another paid attempt rather than spending on that fallback in this milestone.
+- Candidate strategy and verifier graph identifiers select existing supported task-level behavior; this pass adds no runner, verifier implementation, or step-level routing.
+
+Known risks:
+- Circuit statistics are derived from the current run unless operators synchronize aggregated provider evidence into configuration; fleet-wide breaker aggregation remains outside this milestone.
+- An emergency fallback is validated and recorded but deliberately not attempted after a circuit opens, prioritizing the acceptance requirement that disable/breakers take effect before another paid attempt.
+- The unrelated Villani Code dirty-root-sensitive test remains failing while legitimate milestone changes are uncommitted.
+
+Known remaining issues:
+- None within guarded task-level mode gating, deterministic policy fallback, safe eligibility, persisted decision provenance, hierarchical configuration explanation, budget/marginal-value recomputation, or circuit breaking. The Villani Code repository-dirty test remains as documented above.
+
+Next permitted milestone:
+- Step-level routing, additional runners, learned online routing, or later control-plane work only after an explicit user request. None was started in this pass.

@@ -38,6 +38,8 @@ from villani_ops.closed_loop import (
 from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
 from villani_ops.closed_loop.capabilities.report import backend_score_rows
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
+from villani_ops.closed_loop.offline_evaluation.replay import replay_file
+from villani_ops.closed_loop.guarded_routing import resolve_routing_configuration
 from villani_ops.closed_loop.event_writer import redact_data
 from villani_ops.closed_loop.interfaces import (
     BudgetContext,
@@ -84,8 +86,78 @@ capability_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+evaluate_app = typer.Typer(
+    help="Offline-only policy replay and evaluation.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+policy_app = typer.Typer(
+    help="Explain guarded task-level policy resolution.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 app.add_typer(backend_app, name="backend")
 app.add_typer(capability_app, name="capability")
+app.add_typer(evaluate_app, name="evaluate")
+app.add_typer(policy_app, name="policy")
+
+
+@policy_app.command("explain")
+def policy_explain(json_output: bool = typer.Option(False, "--json")) -> None:
+    """Show organization-to-repository precedence without executing a task."""
+
+    configuration = _load_config()
+    resolved, precedence = resolve_routing_configuration(configuration)
+    active = resolved.get("active_policy")
+    lkg = resolved.get("last_known_good_policy")
+    source = (
+        "active_policy"
+        if isinstance(active, Mapping) and active.get("state") == "active"
+        else "last_known_good_policy"
+        if isinstance(lkg, Mapping) and lkg.get("state") == "active"
+        else "bootstrap_policy"
+    )
+    explanation = {
+        "schema_version": "villani.policy_resolution_explain.v1",
+        "mode": resolved.get("mode", "observe"),
+        "applied_precedence": list(precedence),
+        "policy_fallback_source": source,
+        "resolved_configuration": redact_data(resolved),
+        "step_level_routing": False,
+    }
+    if json_output:
+        typer.echo(json.dumps(explanation, sort_keys=True))
+    else:
+        console.print(f"Mode: {explanation['mode']}")
+        console.print(f"Precedence: {' -> '.join(precedence)}")
+        console.print(f"Policy source: {source}")
+
+
+@evaluate_app.command("replay")
+def evaluate_replay(
+    input_path: Path = typer.Option(..., "--input", exists=True, dir_okay=False),
+    json_output: Path = typer.Option(..., "--json-output"),
+    markdown_output: Path = typer.Option(..., "--markdown-output"),
+    minimum_samples: int = typer.Option(5, "--minimum-samples", min=2),
+) -> None:
+    """Replay fixture observations without publishing or activating a policy."""
+
+    try:
+        report = replay_file(
+            input_path,
+            json_output=json_output,
+            markdown_output=markdown_output,
+            minimum_sample_size=minimum_samples,
+        )
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
+        _usage_error(f"offline evaluation failed: {error}")
+    evaluation = report["evaluation"]
+    console.print(
+        f"Offline evaluation: raw={evaluation['raw_count']}; "
+        f"observed={evaluation['observed_count']}; censored={evaluation['censored_count']}"
+    )
+    console.print(f"JSON report: {json_output}")
+    console.print(f"Markdown report: {markdown_output}")
 
 
 CONFIG_HEADER = """# Villani local-first configuration.
@@ -93,6 +165,11 @@ CONFIG_HEADER = """# Villani local-first configuration.
 # variables and put only the variable name in api_key_env.
 """
 DEFAULT_CONFIG: dict[str, Any] = {
+    "routing": {
+        "mode": "observe",
+        "permissions": {"user_enforce": False, "workspace_enforce": False},
+        "emergency_disabled": False,
+    },
     "policy": {
         "version": "bootstrap_v1",
         "easy_min_capability": 20,
@@ -1359,6 +1436,7 @@ def run_command(
         None, "--accepted-candidates-required"
     ),
     open_after: bool = typer.Option(False, "--open"),
+    mode: str | None = typer.Option(None, "--mode", help="observe, recommend, or enforce"),
 ) -> None:
     """Run one canonical deterministic closed loop."""
 
@@ -1368,6 +1446,13 @@ def run_command(
     if not _is_git_repository(repository):
         _usage_error(f"repository is not a Git work tree: {repository}")
     configuration = _load_config()
+    if mode is not None:
+        if mode not in {"observe", "recommend", "enforce"}:
+            _usage_error("--mode must be observe, recommend, or enforce")
+        routing = configuration.setdefault("routing", {})
+        if not isinstance(routing, dict):
+            _usage_error("config routing must be a YAML object")
+        routing["mode"] = mode
     budgets = configuration.get("budgets")
     if not isinstance(budgets, Mapping):
         budgets = {}

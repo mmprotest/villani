@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -279,6 +280,11 @@ class Outcome(Base, TimestampMixin):
     run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     attempt_key: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    supersedes_outcome_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    capability_success_label: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     document: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
     __table_args__ = (
         ForeignKeyConstraint(
@@ -293,8 +299,199 @@ class Outcome(Base, TimestampMixin):
             ondelete="CASCADE",
             name="fk_outcomes_run_tenant",
         ),
-        UniqueConstraint("organization_id", "run_id", "attempt_key", name="uq_outcomes_attempt"),
+        UniqueConstraint(
+            "organization_id",
+            "run_id",
+            "attempt_key",
+            "version",
+            name="uq_outcomes_attempt_version",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "supersedes_outcome_id"],
+            ["outcomes.organization_id", "outcomes.id"],
+            name="fk_outcomes_supersedes",
+        ),
         Index("ix_outcomes_run", "organization_id", "run_id"),
+    )
+
+
+class OutcomeSignal(Base):
+    __tablename__ = "outcome_signals"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    signal_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    correction_of_signal_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "run_id"],
+            ["runs.organization_id", "runs.id"],
+            ondelete="CASCADE",
+            name="fk_outcome_signals_run_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "correction_of_signal_id"],
+            ["outcome_signals.organization_id", "outcome_signals.id"],
+            name="fk_outcome_signals_correction",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "source_provider",
+            "source_event_id",
+            "signal_type",
+            name="uq_outcome_signal_source",
+        ),
+        Index("ix_outcome_signals_run", "organization_id", "run_id", "observed_at"),
+    )
+
+
+class ShadowRoutingObservation(Base):
+    __tablename__ = "shadow_routing_observations"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    recommendation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    shadow_strategy: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actual_strategy: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    shadow_policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    actual_policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "run_id"],
+            ["runs.organization_id", "runs.id"],
+            ondelete="CASCADE",
+            name="fk_shadow_observations_run_tenant",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "run_id",
+            "recommendation_id",
+            name="uq_shadow_observation_recommendation",
+        ),
+        Index("ix_shadow_observations_metrics", "organization_id", "workspace_id", "recorded_at"),
+    )
+
+
+class PolicyPublication(Base):
+    __tablename__ = "policy_publications"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    prior_publication_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    canary_percentage: Mapped[float] = mapped_column(Float, nullable=False)
+    rollback_thresholds: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    evaluation_provenance: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    manual_approval_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            ondelete="RESTRICT",
+            name="fk_policy_publications_workspace",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "prior_publication_id"],
+            ["policy_publications.organization_id", "policy_publications.id"],
+            name="fk_policy_publications_prior",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "policy_id",
+            "policy_version",
+            name="uq_policy_publication_version",
+        ),
+        Index(
+            "ix_policy_publications_policy",
+            "organization_id",
+            "workspace_id",
+            "policy_id",
+            "created_at",
+        ),
+    )
+
+
+class PolicyPublicationTransition(Base):
+    __tablename__ = "policy_publication_transitions"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    publication_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "publication_id"],
+            ["policy_publications.organization_id", "policy_publications.id"],
+            ondelete="CASCADE",
+            name="fk_policy_transition_publication",
+        ),
+        Index(
+            "ix_policy_transitions_publication",
+            "organization_id",
+            "publication_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+
+class PolicyPublicationApproval(Base):
+    __tablename__ = "policy_publication_approvals"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    publication_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "publication_id"],
+            ["policy_publications.organization_id", "policy_publications.id"],
+            ondelete="CASCADE",
+            name="fk_policy_approval_publication",
+        ),
+        UniqueConstraint(
+            "organization_id", "publication_id", name="uq_policy_publication_approval"
+        ),
+    )
+
+
+class PolicySafetyControl(Base, TimestampMixin):
+    __tablename__ = "policy_safety_controls"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    globally_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reason: Mapped[str] = mapped_column(String(255), nullable=False, default="not_disabled")
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            ondelete="CASCADE",
+            name="fk_policy_safety_workspace",
+        ),
     )
 
 

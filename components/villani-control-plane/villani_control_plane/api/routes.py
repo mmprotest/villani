@@ -13,10 +13,18 @@ from ..schemas import (
     ArtifactDescriptorRequest,
     EnrollmentRequest,
     EventPage,
+    GitOutcomeWebhook,
     IngestBatchRequest,
+    OutcomeLedgerRequest,
+    PolicyCanaryEvaluationRequest,
+    PolicyEmergencyDisableRequest,
+    PolicyPublicationApprovalRequest,
+    PolicyPublicationCreateRequest,
+    PolicyPublicationTransitionRequest,
     RemoteTaskRequest,
     RunDetail,
     RunList,
+    ShadowRoutingObservationRequest,
     TaskCancellationRequest,
     TaskCompletionRequest,
     WorkerHeartbeatRequest,
@@ -26,6 +34,8 @@ from ..services import (
     EnrollmentService,
     IngestionService,
     OperationsService,
+    OutcomeLedgerService,
+    PolicyPublicationService,
     RemoteDispatchService,
     RunQueryService,
 )
@@ -276,6 +286,119 @@ def outcome(
     session: SessionDependency,
 ) -> dict[str, Any]:
     return {"outcome": IngestionService(session).record_outcome(document, principal)}
+
+
+@router.post("/v1/outcome-ledger/outcomes", status_code=status.HTTP_201_CREATED)
+def outcome_ledger_record(
+    request: OutcomeLedgerRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return OutcomeLedgerService(session).record_v2(
+        request.outcome,
+        principal,
+        provenance=request.provenance,
+        confidence=request.confidence,
+        corrects_version=request.corrects_version,
+    )
+
+
+@router.post("/v1/outcome-ledger/git-webhooks", status_code=status.HTTP_201_CREATED)
+def outcome_ledger_webhook(
+    request: GitOutcomeWebhook,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return {"signals": OutcomeLedgerService(session).ingest_webhook(request, principal)}
+
+
+@router.get("/v1/outcome-ledger/runs/{run_id}")
+def outcome_ledger_run(
+    run_id: str,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return OutcomeLedgerService(session).ledger(run_id, principal)
+
+
+@router.post("/v1/shadow-routing/observations", status_code=status.HTTP_201_CREATED)
+def shadow_routing_observation(
+    request: ShadowRoutingObservationRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return OutcomeLedgerService(session).record_shadow(request, principal)
+
+
+@router.get("/v1/shadow-routing/metrics")
+def shadow_routing_metrics(
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return OutcomeLedgerService(session).metrics(principal)
+
+
+@router.post("/v1/policy-publications", status_code=status.HTTP_201_CREATED)
+def create_policy_publication(
+    request: PolicyPublicationCreateRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return PolicyPublicationService(session).create(request, principal)
+
+
+@router.get("/v1/policy-publications/{publication_id}")
+def get_policy_publication(
+    publication_id: str,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return PolicyPublicationService(session).get(publication_id, principal)
+
+
+@router.post("/v1/policy-publications/{publication_id}/approve")
+def approve_policy_publication(
+    publication_id: str,
+    request: PolicyPublicationApprovalRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return PolicyPublicationService(session).approve(publication_id, request.evidence, principal)
+
+
+@router.post("/v1/policy-publications/{publication_id}/transition")
+def transition_policy_publication(
+    publication_id: str,
+    request: PolicyPublicationTransitionRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return PolicyPublicationService(session).transition(
+        publication_id, request.state, request.reason, principal
+    )
+
+
+@router.post("/v1/policy-publications/{publication_id}/evaluate-canary")
+def evaluate_policy_canary(
+    publication_id: str,
+    request: PolicyCanaryEvaluationRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return PolicyPublicationService(session).evaluate_canary(
+        publication_id, request.model_dump(mode="python"), principal
+    )
+
+
+@router.post("/v1/policy-publications/emergency-disable")
+def emergency_policy_disable(
+    request: PolicyEmergencyDisableRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return PolicyPublicationService(session).emergency_disable(
+        request.disabled, request.reason, principal
+    )
 
 
 @router.get("/v1/runs/{run_id}", response_model=RunDetail)

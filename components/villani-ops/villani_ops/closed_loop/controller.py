@@ -74,6 +74,7 @@ from villani_ops.execution_environment import preflight_report
 from villani_ops.execution_environment import ExecutionPolicyDenied
 from .protocol_v2 import ResourceV2
 from .durable_io import (
+    append_jsonl_durable,
     read_jsonl_tolerant,
     repair_truncated_final_jsonl,
 )
@@ -92,6 +93,14 @@ from .costs import estimate_attempt_cost
 from .adapters.git_isolation import validate_target_lineage
 from villani_ops.isolation.copy_git import remove_tree
 from villani_ops.providers import validate_closed_loop_backend
+from .shadow_routing import (
+    CapabilityCatalogSnapshot,
+    ShadowRouter,
+    TaskFeatures,
+    capability_catalog_snapshot,
+    extract_task_features,
+)
+from .guarded_routing import GuardedTaskRouter
 
 
 def _utc_now() -> datetime:
@@ -149,6 +158,8 @@ class _Runtime:
     active_attempt_id: str | None = None
     classification: ClassificationSnapshot | None = None
     classification_backend: Backend | None = None
+    task_features: TaskFeatures | None = None
+    capability_catalog: CapabilityCatalogSnapshot | None = None
     policy_decision_count: int = 0
     attempts: list[AttemptSnapshot] = field(default_factory=list)
     attempt_results: dict[str, AttemptResult] = field(default_factory=dict)
@@ -323,9 +334,7 @@ class ClosedLoopController:
                 break
             self._run_attempt(runtime, action, attempt_id)
 
-    def resume(
-        self, run_id: str, runs_root: str | Path
-    ) -> ClosedLoopRunResult:
+    def resume(self, run_id: str, runs_root: str | Path) -> ClosedLoopRunResult:
         """Reconcile and continue one interrupted canonical run idempotently."""
 
         store = RunStore(runs_root, run_id)
@@ -400,9 +409,7 @@ class ClosedLoopController:
 
     def _load_recovery_runtime(self, store: RunStore) -> _Runtime:
         run_dir = store.run_directory
-        manifest = self._read_protocol(
-            run_dir / "manifest.json", RunManifestSnapshot
-        )
+        manifest = self._read_protocol(run_dir / "manifest.json", RunManifestSnapshot)
         state = self._read_protocol(run_dir / "state.json", RunStateSnapshot)
         task = self._read_protocol(run_dir / "task.json", TaskSnapshot)
         if not (
@@ -511,7 +518,9 @@ class ClosedLoopController:
                     or parsed.trace_id != runtime.trace_id
                     or parsed.decision_sequence != expected_sequence
                 ):
-                    raise RunStoreError("policy decision identity or sequence is invalid")
+                    raise RunStoreError(
+                        "policy decision identity or sequence is invalid"
+                    )
                 runtime.policy_decisions.append(parsed)
                 if parsed.attempt_id:
                     runtime.allocated_attempt_ids.add(parsed.attempt_id)
@@ -628,7 +637,9 @@ class ClosedLoopController:
         path = (runtime.store.run_directory / value).resolve()
         if not path.is_relative_to(runtime.store.run_directory.resolve()):
             raise RunStoreError("attempt artifact path escapes the run directory")
-        return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        return (
+            path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        )
 
     def _attempt_result_from_snapshot(
         self, runtime: _Runtime, attempt: AttemptSnapshot
@@ -701,16 +712,11 @@ class ClosedLoopController:
         return any(
             event.event_type == event_type
             and (attempt_id is None or event.attempt_id == attempt_id)
-            and (
-                decision_id is None
-                or event.payload.get("decision_id") == decision_id
-            )
+            and (decision_id is None or event.payload.get("decision_id") == decision_id)
             for event in runtime.committed_events
         )
 
-    def _policy_from_snapshot(
-        self, snapshot: PolicyDecisionSnapshot
-    ) -> PolicyDecision:
+    def _policy_from_snapshot(self, snapshot: PolicyDecisionSnapshot) -> PolicyDecision:
         return PolicyDecision(
             action=snapshot.action,
             reason=snapshot.reason,
@@ -772,9 +778,7 @@ class ClosedLoopController:
                     self._recovery_event(
                         runtime,
                         "classification_completion_reconciled",
-                        {
-                            "classification_id": runtime.classification.classification_id
-                        },
+                        {"classification_id": runtime.classification.classification_id},
                     )
                     self._transition(
                         runtime,
@@ -839,9 +843,7 @@ class ClosedLoopController:
                     return
                 if attempt_id is None:
                     raise RunStoreError("attempt policy decision has no attempt ID")
-                if self._has_event(
-                    runtime, "attempt_started", attempt_id=attempt_id
-                ):
+                if self._has_event(runtime, "attempt_started", attempt_id=attempt_id):
                     raise RunStoreError(
                         "attempt start event exists but recovered state is POLICY_SELECTED"
                     )
@@ -878,7 +880,11 @@ class ClosedLoopController:
             if state == "ATTEMPT_COMPLETED":
                 attempt_id = self._active_attempt_from_events(runtime)
                 attempt = next(
-                    (item for item in runtime.attempts if item.attempt_id == attempt_id),
+                    (
+                        item
+                        for item in runtime.attempts
+                        if item.attempt_id == attempt_id
+                    ),
                     None,
                 )
                 if attempt is None:
@@ -1023,14 +1029,10 @@ class ClosedLoopController:
                 runtime.request.policy_configuration
             ),
             run_directory=runtime.store.run_directory,
-            attempt_directory=(
-                runtime.store.run_directory / "attempts" / attempt_id
-            ),
+            attempt_directory=(runtime.store.run_directory / "attempts" / attempt_id),
         )
 
-    def _record_interrupted_attempt(
-        self, runtime: _Runtime, attempt_id: str
-    ) -> None:
+    def _record_interrupted_attempt(self, runtime: _Runtime, attempt_id: str) -> None:
         context = self._planned_attempt_context(runtime, attempt_id)
         runtime.attempt_contexts[attempt_id] = context
         start = next(
@@ -1053,9 +1055,7 @@ class ClosedLoopController:
             patch=None,
             exit_code=None,
             model=context.model,
-            stdout=self._artifact_text(
-                runtime, f"attempts/{attempt_id}/stdout.log"
-            ),
+            stdout=self._artifact_text(runtime, f"attempts/{attempt_id}/stdout.log"),
             stderr="Interrupted before a complete attempt snapshot was committed.",
             duration_accounting_status="unknown",
             token_accounting_status="unknown",
@@ -1134,9 +1134,10 @@ class ClosedLoopController:
             attempt_id=attempt.attempt_id,
             parent_event_id=start_event_id,
         )
-        if runtime.request.requires_file_changes and not runtime.attempt_patches.get(
-            attempt.attempt_id, ""
-        ).strip():
+        if (
+            runtime.request.requires_file_changes
+            and not runtime.attempt_patches.get(attempt.attempt_id, "").strip()
+        ):
             normalized = self._empty_patch_verification(runtime, attempt.attempt_id)
             runtime.store.write_protocol(
                 f"verification/{attempt.attempt_id}.json", normalized
@@ -1227,9 +1228,9 @@ class ClosedLoopController:
             },
             attempt_id=verification.attempt_id,
         )
-        failure_category = str(
-            verification.metadata.get("failure_category") or ""
-        ) or None
+        failure_category = (
+            str(verification.metadata.get("failure_category") or "") or None
+        )
         if failure_category:
             self._record_attempt_failure(
                 runtime,
@@ -1291,9 +1292,7 @@ class ClosedLoopController:
             raise RunStoreError("recovery selection has no selected candidate")
         selected_id = selection.selected_candidate_ids[0]
         if selected_id not in runtime.eligible_candidate_ids:
-            raise RunStoreError(
-                "recovery selection is not acceptance eligible"
-            )
+            raise RunStoreError("recovery selection is not acceptance eligible")
         runtime.selected_attempt_id = selected_id
         if runtime.machine.state != "SELECTING":
             self._transition_to_selecting(runtime)
@@ -1382,9 +1381,7 @@ class ClosedLoopController:
                     "status": runtime.materialization.status,
                 },
             )
-            self._finish_recovered_materialization(
-                runtime, runtime.materialization
-            )
+            self._finish_recovered_materialization(runtime, runtime.materialization)
             return
         selected_id = runtime.selection.selected_candidate_ids[0]
         candidate = next(
@@ -1400,12 +1397,16 @@ class ClosedLoopController:
             raise RunStoreError("selected patch escapes the canonical run directory")
         patch_text = patch_path.read_text(encoding="utf-8", errors="replace")
         if patch_text != candidate.patch:
-            raise RunStoreError("selected patch bytes differ from the recorded candidate")
+            raise RunStoreError(
+                "selected patch bytes differ from the recorded candidate"
+            )
         patch_hash = hashlib.sha256(patch_text.encode("utf-8")).hexdigest()
         if patch_hash != candidate.attempt.patch_sha256:
             raise RunStoreError("selected patch hash is invalid")
         worktree = candidate.attempt.metadata.get("worktree")
-        baseline = worktree.get("source_repository") if isinstance(worktree, dict) else None
+        baseline = (
+            worktree.get("source_repository") if isinstance(worktree, dict) else None
+        )
         if not isinstance(baseline, dict):
             raise RunStoreError("selected candidate lacks repository identity evidence")
         target_repo = Path(runtime.request.repository_path).resolve()
@@ -1418,9 +1419,7 @@ class ClosedLoopController:
                 "selected_attempt_id": selected_id,
                 "patch_sha256": patch_hash,
                 "apply_status": inspection.get("status"),
-                "reverse_check_exit_code": inspection.get(
-                    "reverse_check_exit_code"
-                ),
+                "reverse_check_exit_code": inspection.get("reverse_check_exit_code"),
                 "normal_check_exit_code": inspection.get("normal_check_exit_code"),
             },
         )
@@ -1530,7 +1529,9 @@ class ClosedLoopController:
                 host_id=None,
                 process_id=None,
                 attributes={
-                    "villani.execution_environment.provider": preflight["provider"]["provider"],
+                    "villani.execution_environment.provider": preflight["provider"][
+                        "provider"
+                    ],
                     "villani.execution_environment.fingerprint": fingerprint,
                     "villani.execution_environment.preflight": "preflight.json",
                 },
@@ -1624,11 +1625,7 @@ class ClosedLoopController:
                 },
                 llm_usage=[
                     StageUsage.model_validate(
-                        {
-                            key: value
-                            for key, value in item.items()
-                            if key != "error"
-                        }
+                        {key: value for key, value in item.items() if key != "error"}
                     )
                     for item in _mapping_copy(returned.metadata).get(
                         "classifier_attempts", []
@@ -1710,12 +1707,16 @@ class ClosedLoopController:
                     status=attempt.status,
                     cost_usd=attempt.cost_usd,
                     cost_accounting_status=attempt.cost_accounting_status,
-                    failure_category=str(
-                        attempt.metadata.get("failure_category") or ""
-                    )
+                    failure_category=str(attempt.metadata.get("failure_category") or "")
                     or None,
                     material_progress=bool(
                         attempt.metadata.get("material_progress", False)
+                    ),
+                    duration_ms=attempt.duration_ms,
+                    rate_limited=(
+                        str(attempt.metadata.get("failure_category") or "")
+                        == "rate_limit"
+                        or bool(attempt.error and "rate" in attempt.error.code.lower())
                     ),
                 )
                 for attempt in runtime.attempts
@@ -1733,6 +1734,9 @@ class ClosedLoopController:
                     verifier_retry_count=int(
                         verification.metadata.get("verifier_retry_count") or 0
                     ),
+                    disagreement=bool(
+                        verification.metadata.get("verifier_disagreement", False)
+                    ),
                 )
                 for verification in runtime.verifications
             ),
@@ -1742,13 +1746,43 @@ class ClosedLoopController:
                 runtime.request.policy_configuration
             ),
         )
+        # This is intentionally a one-way evidence side effect. ShadowRouter does
+        # not implement PolicyEngine, and no field from its output is supplied to
+        # the production policy engine below.
+        self._record_shadow_recommendation(runtime)
         try:
-            policy_engine = self._policy_engine or BootstrapPolicyEngine.from_configuration(
-                runtime.request.policy_configuration
+            policy_engine = (
+                self._policy_engine
+                or BootstrapPolicyEngine.from_configuration(
+                    runtime.request.policy_configuration
+                )
             )
             returned = policy_engine.decide(context)
             if not isinstance(returned, PolicyDecision):
                 raise TypeError("policy engine returned an invalid PolicyDecision")
+            routing_values = runtime.request.policy_configuration.get("routing")
+            routing_configuration = (
+                routing_values if isinstance(routing_values, Mapping) else {}
+            )
+            assignment = routing_configuration.get("experiment_assignment")
+            returned, guarded = GuardedTaskRouter(
+                runtime.request.policy_configuration
+            ).evaluate(
+                run_id=runtime.run_id,
+                sequence=runtime.policy_decision_count + 1,
+                bootstrap=returned,
+                attempts=context.attempts,
+                verifications=context.verifications,
+                budget=budget_before,
+                timestamp=self._now(),
+                experiment_assignment=(
+                    assignment if isinstance(assignment, Mapping) else None
+                ),
+            )
+            append_jsonl_durable(
+                runtime.store.run_directory / "guarded_routing_decisions.jsonl",
+                guarded.model_dump(mode="json"),
+            )
             self._validate_policy_semantics(runtime, returned)
             attempt_id = (
                 self._next_attempt_id(runtime)
@@ -1779,13 +1813,106 @@ class ClosedLoopController:
         self._checkpoint("after_policy_decision")
         return returned, attempt_id
 
+    def _record_shadow_recommendation(self, runtime: _Runtime) -> None:
+        """Persist advisory routing evidence without participating in execution."""
+
+        assert runtime.classification is not None
+        try:
+            if runtime.task_features is None:
+                path = runtime.store.run_directory / "task_features.json"
+                if path.is_file():
+                    runtime.task_features = TaskFeatures.model_validate_json(
+                        path.read_text(encoding="utf-8")
+                    )
+                else:
+                    shadow_values = runtime.request.policy_configuration.get(
+                        "shadow_routing", {}
+                    )
+                    shadow_configuration = (
+                        shadow_values if isinstance(shadow_values, Mapping) else {}
+                    )
+                    aggregates = shadow_configuration.get("historical_aggregates")
+                    runtime.task_features = extract_task_features(
+                        runtime.request.repository_path,
+                        run_id=runtime.run_id,
+                        task=runtime.request.task,
+                        success_criteria=runtime.request.success_criteria,
+                        classification=runtime.classification,
+                        historical_aggregates=(
+                            aggregates if isinstance(aggregates, Mapping) else None
+                        ),
+                        historical_snapshot_id=(
+                            str(shadow_configuration["historical_snapshot_id"])
+                            if shadow_configuration.get("historical_snapshot_id")
+                            else None
+                        ),
+                    )
+                    runtime.store.write_json(
+                        "task_features.json",
+                        runtime.task_features.model_dump(mode="json"),
+                    )
+            if runtime.capability_catalog is None:
+                path = runtime.store.run_directory / "capability_catalog_snapshot.json"
+                if path.is_file():
+                    runtime.capability_catalog = (
+                        CapabilityCatalogSnapshot.model_validate_json(
+                            path.read_text(encoding="utf-8")
+                        )
+                    )
+                else:
+                    runtime.capability_catalog = capability_catalog_snapshot(
+                        configured_backends(runtime.request.policy_configuration),
+                        generated_at=self._now(),
+                    )
+                    runtime.store.write_json(
+                        "capability_catalog_snapshot.json",
+                        runtime.capability_catalog.model_dump(mode="json"),
+                    )
+            shadow_values = runtime.request.policy_configuration.get(
+                "shadow_routing", {}
+            )
+            shadow_configuration = (
+                shadow_values if isinstance(shadow_values, Mapping) else {}
+            )
+            by_backend = shadow_configuration.get("historical_by_backend")
+            recommendation = ShadowRouter().recommend(
+                run_id=runtime.run_id,
+                decision_sequence=runtime.policy_decision_count + 1,
+                features=runtime.task_features,
+                catalog=runtime.capability_catalog,
+                classification=runtime.classification,
+                timestamp=self._now(),
+                historical_by_backend=(
+                    by_backend if isinstance(by_backend, Mapping) else None
+                ),
+            )
+            append_jsonl_durable(
+                runtime.store.run_directory / "shadow_recommendations.jsonl",
+                recommendation.model_dump(mode="json"),
+            )
+            self._emit_state_event(
+                runtime,
+                "shadow_recommendation_recorded",
+                {
+                    "recommendation_id": recommendation.recommendation_id,
+                    "chosen_strategy": recommendation.chosen_strategy,
+                    "advisory_only": True,
+                },
+            )
+        except Exception as error:
+            # Observability cannot acquire controller authority by failing closed.
+            self._emit_state_event(
+                runtime,
+                "shadow_recommendation_failed",
+                {"message": redact_message(str(error)), "advisory_only": True},
+            )
+
     @staticmethod
     def _next_attempt_id(runtime: _Runtime) -> str:
         ordinals = [
             int(value.removeprefix("attempt_"))
             for value in runtime.allocated_attempt_ids
-            if value.startswith("attempt_")
-            and value.removeprefix("attempt_").isdigit()
+            if value.startswith("attempt_") and value.removeprefix("attempt_").isdigit()
         ]
         ordinal = max(ordinals, default=0) + 1
         candidate = f"attempt_{ordinal:03d}"
@@ -1941,8 +2068,17 @@ class ClosedLoopController:
                 runtime.request.policy_configuration
             ),
             run_directory=runtime.store.run_directory,
-            attempt_directory=(
-                runtime.store.run_directory / "attempts" / attempt_id
+            attempt_directory=(runtime.store.run_directory / "attempts" / attempt_id),
+            execution_provider=(
+                str(decision.metadata.get("guarded_task_route", {}).get("execution_provider"))
+                if isinstance(decision.metadata.get("guarded_task_route"), Mapping)
+                and decision.metadata.get("guarded_task_route", {}).get("execution_provider")
+                else None
+            ),
+            guarded_task_route=(
+                _read_only_mapping(decision.metadata["guarded_task_route"])
+                if isinstance(decision.metadata.get("guarded_task_route"), Mapping)
+                else MappingProxyType({})
             ),
         )
         runtime.active_attempt_id = attempt_id
@@ -2045,9 +2181,7 @@ class ClosedLoopController:
             normalized = self._empty_patch_verification(runtime, attempt_id)
             recorded_category = str(
                 next(
-                    item
-                    for item in runtime.attempts
-                    if item.attempt_id == attempt_id
+                    item for item in runtime.attempts if item.attempt_id == attempt_id
                 ).metadata.get("failure_category")
                 or "no_change_failure"
             )
@@ -2059,9 +2193,7 @@ class ClosedLoopController:
                     }
                 }
             )
-            runtime.store.write_protocol(
-                f"verification/{attempt_id}.json", normalized
-            )
+            runtime.store.write_protocol(f"verification/{attempt_id}.json", normalized)
             runtime.verifications.append(normalized)
             self._write_evidence_matrix(runtime)
             self._transition(
@@ -2151,9 +2283,7 @@ class ClosedLoopController:
             )
             updated = attempt.model_copy(update={"metadata": metadata})
             runtime.attempts[index] = updated
-            runtime.store.write_protocol(
-                f"attempts/{attempt_id}/attempt.json", updated
-            )
+            runtime.store.write_protocol(f"attempts/{attempt_id}/attempt.json", updated)
             self._persist_manifest(runtime)
             return
         raise RuntimeError(f"cannot classify unknown attempt {attempt_id}")
@@ -2287,9 +2417,7 @@ class ClosedLoopController:
                 details={"exception_class": error.__class__.__name__},
             ),
         )
-        return self._persist_attempt(
-            runtime, context, result, started_at, self._now()
-        )
+        return self._persist_attempt(runtime, context, result, started_at, self._now())
 
     def _verify_attempt(
         self,
@@ -2367,10 +2495,7 @@ class ClosedLoopController:
                     runtime, context.attempt_id, error
                 )
 
-            if (
-                failure_category == "verification_failure"
-                and retry_count < retry_limit
-            ):
+            if failure_category == "verification_failure" and retry_count < retry_limit:
                 retry_count += 1
                 self._emit_state_event(
                     runtime,
@@ -2420,7 +2545,9 @@ class ClosedLoopController:
         self._transition(
             runtime,
             "VERIFIED",
-            "verification_failed" if final_error is not None else "verification_completed",
+            "verification_failed"
+            if final_error is not None
+            else "verification_completed",
             (
                 failure_payload(final_error, operation="verification")
                 if final_error is not None
@@ -2497,8 +2624,7 @@ class ClosedLoopController:
             confidence=returned.confidence,
             reason=returned.reason,
             requirement_results=[
-                self._requirement_result(item)
-                for item in returned.requirement_results
+                self._requirement_result(item) for item in returned.requirement_results
             ],
             success_evidence=[
                 self._evidence(item) for item in returned.success_evidence
@@ -2655,9 +2781,7 @@ class ClosedLoopController:
                 },
             )
         except Exception as error:
-            self._emit_failure_event(
-                runtime, "selection_failed", error, "selection"
-            )
+            self._emit_failure_event(runtime, "selection_failed", error, "selection")
             self._fail(
                 runtime,
                 "selector_violation",
@@ -2697,9 +2821,7 @@ class ClosedLoopController:
             )
             self._checkpoint("after_materializer_return")
             if not isinstance(returned_materialization, Materialization):
-                raise TypeError(
-                    "materializer returned an invalid Materialization"
-                )
+                raise TypeError("materializer returned an invalid Materialization")
             materialization = self._persist_materialization(
                 runtime,
                 selection,
@@ -2812,22 +2934,16 @@ class ClosedLoopController:
                 attempt_id=runtime.active_attempt_id,
             )
         else:
-            raise RuntimeError(
-                f"selection cannot start from {runtime.machine.state}"
-            )
+            raise RuntimeError(f"selection cannot start from {runtime.machine.state}")
 
-    def _eligible_candidates(
-        self, runtime: _Runtime
-    ) -> tuple[EligibleCandidate, ...]:
+    def _eligible_candidates(self, runtime: _Runtime) -> tuple[EligibleCandidate, ...]:
         candidates: list[EligibleCandidate] = []
         for attempt_id in runtime.eligible_candidate_ids:
             attempt = next(
                 item for item in runtime.attempts if item.attempt_id == attempt_id
             )
             verification = next(
-                item
-                for item in runtime.verifications
-                if item.attempt_id == attempt_id
+                item for item in runtime.verifications if item.attempt_id == attempt_id
             )
             candidates.append(
                 EligibleCandidate(
@@ -2941,8 +3057,7 @@ class ClosedLoopController:
                         "outcome": item.outcome,
                         "acceptance_eligible": item.acceptance_eligible,
                         "success_evidence_ids": [
-                            evidence.evidence_id
-                            for evidence in item.success_evidence
+                            evidence.evidence_id for evidence in item.success_evidence
                         ],
                         "risk_flags": list(item.risk_flags),
                     }
@@ -3006,10 +3121,13 @@ class ClosedLoopController:
             duration_accounting_status=cast(AccountingStatus, duration_status),
             actual_attempts_used=len(runtime.attempts),
             actual_cost_consumed_usd=known_cost,
-            actual_cost_accounting_status=cast(
-                AccountingStatus, actual_cost_status
-            ),
+            actual_cost_accounting_status=cast(AccountingStatus, actual_cost_status),
             actual_wall_time_ms=elapsed,
+            actual_stage_attempts_used=(
+                len(runtime.attempts)
+                + (len(runtime.classification.llm_usage) if runtime.classification else 0)
+                + sum(len(item.llm_usage) for item in runtime.verifications)
+            ),
         )
 
     def _budget_after_decision(
@@ -3028,8 +3146,7 @@ class ClosedLoopController:
                 cost_status = "unknown"
             else:
                 remaining_cost = max(
-                    (before.remaining_cost_usd or 0.0)
-                    - option.estimated_cost_usd,
+                    (before.remaining_cost_usd or 0.0) - option.estimated_cost_usd,
                     0.0,
                 )
         return BudgetContext(
@@ -3042,6 +3159,7 @@ class ClosedLoopController:
             actual_cost_consumed_usd=before.actual_cost_consumed_usd,
             actual_cost_accounting_status=before.actual_cost_accounting_status,
             actual_wall_time_ms=before.actual_wall_time_ms,
+            actual_stage_attempts_used=before.actual_stage_attempts_used,
         )
 
     def _budget_snapshot(self, budget: BudgetContext) -> BudgetSnapshot:
@@ -3073,15 +3191,16 @@ class ClosedLoopController:
                 or option.cost_accounting_status != "complete"
                 or option.estimated_cost_usd is None
             ):
-                return "cost budget cannot permit an attempt with unknown estimated cost"
+                return (
+                    "cost budget cannot permit an attempt with unknown estimated cost"
+                )
             if option.estimated_cost_usd > (budget.remaining_cost_usd or 0.0):
                 return "cost budget exhausted before unaffordable attempt"
             verifier_cost, verifier_status = self._projected_verification_cost(runtime)
             if verifier_status != "complete" or verifier_cost is None:
                 return "cost budget cannot permit an attempt with unknown projected verification spend"
-            if (
-                option.estimated_cost_usd + verifier_cost
-                > (budget.remaining_cost_usd or 0.0)
+            if option.estimated_cost_usd + verifier_cost > (
+                budget.remaining_cost_usd or 0.0
             ):
                 return "cost budget exhausted before coding and verification projected spend"
         return None
@@ -3103,14 +3222,20 @@ class ClosedLoopController:
         if estimate.total is None:
             return None, estimate.accounting_status
         policy = runtime.request.policy_configuration.get("policy")
-        values = policy if isinstance(policy, Mapping) else runtime.request.policy_configuration
+        values = (
+            policy
+            if isinstance(policy, Mapping)
+            else runtime.request.policy_configuration
+        )
         retry_limit = 0
         if values.get("version") == "bootstrap_v1":
             try:
                 retry_limit = max(
                     0,
                     int(
-                        BootstrapPolicyConfiguration.model_validate(values).verifier_retry_limit
+                        BootstrapPolicyConfiguration.model_validate(
+                            values
+                        ).verifier_retry_limit
                     ),
                 )
             except (TypeError, ValueError):
@@ -3128,7 +3253,11 @@ class ClosedLoopController:
             return 0.0, "complete"
         configured = configured_backends(runtime.request.policy_configuration)
         policy = runtime.request.policy_configuration.get("policy")
-        values = policy if isinstance(policy, Mapping) else runtime.request.policy_configuration
+        values = (
+            policy
+            if isinstance(policy, Mapping)
+            else runtime.request.policy_configuration
+        )
         try:
             retry_limit = max(0, int(values.get("classifier_retry_limit", 1)))
         except (TypeError, ValueError):
@@ -3155,9 +3284,7 @@ class ClosedLoopController:
             total += estimate.total * (retry_limit + 1)
         return total, "complete"
 
-    def _chosen_backend_option(
-        self, decision: PolicyDecision
-    ) -> BackendOption | None:
+    def _chosen_backend_option(self, decision: PolicyDecision) -> BackendOption | None:
         return next(
             (
                 item
@@ -3168,7 +3295,11 @@ class ClosedLoopController:
         )
 
     def _actual_cost(self, runtime: _Runtime) -> tuple[float | None, str]:
-        if runtime.classification is None and not runtime.attempts and not runtime.verifications:
+        if (
+            runtime.classification is None
+            and not runtime.attempts
+            and not runtime.verifications
+        ):
             return None, "unknown"
         total = self._stage_metrics(runtime).get("total")
         if total is None:
@@ -3203,7 +3334,9 @@ class ClosedLoopController:
                 return None, "not_applicable"
             active_values = [value for value, _status in active]
             known = [value for value in active_values if value is not None]
-            if all(status == "complete" for _value, status in active) and len(known) == len(active_values):
+            if all(status == "complete" for _value, status in active) and len(
+                known
+            ) == len(active_values):
                 return sum(known), "complete"
             if known:
                 return sum(known), "partial"
@@ -3269,11 +3402,11 @@ class ClosedLoopController:
             ),
             "USD",
         )
-        classification = list(runtime.classification.llm_usage) if runtime.classification else []
+        classification = (
+            list(runtime.classification.llm_usage) if runtime.classification else []
+        )
         verification = [
-            usage
-            for snapshot in runtime.verifications
-            for usage in snapshot.llm_usage
+            usage for snapshot in runtime.verifications for usage in snapshot.llm_usage
         ]
         # Existing bundles may not have a runner model-call counter, so keep
         # their coding usage readable with explicit unknown accounting.
@@ -3282,7 +3415,11 @@ class ClosedLoopController:
             metrics_value = attempt.metadata.get("runner_metrics")
             metrics = metrics_value if isinstance(metrics_value, Mapping) else {}
             calls_value = metrics.get("model_requests")
-            calls = int(calls_value) if isinstance(calls_value, int) and calls_value >= 0 else None
+            calls = (
+                int(calls_value)
+                if isinstance(calls_value, int) and calls_value >= 0
+                else None
+            )
             backend = configured.get(attempt.backend_name)
             coding.append(
                 StageUsage(
@@ -3293,24 +3430,33 @@ class ClosedLoopController:
                     output_tokens=attempt.output_tokens,
                     total_tokens=(
                         attempt.input_tokens + attempt.output_tokens
-                        if attempt.input_tokens is not None and attempt.output_tokens is not None
+                        if attempt.input_tokens is not None
+                        and attempt.output_tokens is not None
                         else None
                     ),
                     token_accounting_status=attempt.token_accounting_status,
                     model_calls=calls,
-                    model_call_accounting_status="complete" if calls is not None else "unknown",
+                    model_call_accounting_status="complete"
+                    if calls is not None
+                    else "unknown",
                     cost=attempt.cost_usd,
                     cost_accounting_status=attempt.cost_accounting_status,
                     currency=backend.currency if backend else currency,
                     duration_ms=attempt.duration_ms,
                     duration_accounting_status=attempt.duration_accounting_status,
-                    failure_state="succeeded" if attempt.status == "completed" else "failed",
+                    failure_state="succeeded"
+                    if attempt.status == "completed"
+                    else "failed",
                 )
             )
         stages = {
-            "classification": self._aggregate_stage("classification", classification, currency),
+            "classification": self._aggregate_stage(
+                "classification", classification, currency
+            ),
             "coding": self._aggregate_stage("coding", coding, currency),
-            "verification": self._aggregate_stage("verification", verification, currency),
+            "verification": self._aggregate_stage(
+                "verification", verification, currency
+            ),
             "selection": self._aggregate_stage("selection", [], currency),
             "materialization": self._aggregate_stage("materialization", [], currency),
         }
@@ -3332,8 +3478,7 @@ class ClosedLoopController:
         if not runtime.attempts:
             return [None for _ in value_names], "unknown"
         values_by_name = [
-            [getattr(item, name) for item in runtime.attempts]
-            for name in value_names
+            [getattr(item, name) for item in runtime.attempts] for name in value_names
         ]
         all_known = all(
             all(value is not None for value in values) for values in values_by_name

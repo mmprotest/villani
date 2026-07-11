@@ -111,6 +111,100 @@ class TaskCompletionRequest(StrictRequest):
     result: dict[str, Any] = Field(default_factory=dict)
 
 
+class OutcomeProvenance(StrictRequest):
+    source: str = Field(min_length=1, max_length=128)
+    source_event_id: str = Field(min_length=1, max_length=255)
+    observed_at: datetime
+    actor: str | None = Field(default=None, max_length=255)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class OutcomeLedgerRequest(StrictRequest):
+    outcome: dict[str, Any]
+    provenance: OutcomeProvenance
+    confidence: float = Field(ge=0, le=1)
+    corrects_version: int | None = Field(default=None, ge=1)
+
+
+class GitOutcomeEvent(StrictRequest):
+    event_type: Literal[
+        "run",
+        "attempt",
+        "verification",
+        "materialization",
+        "ci",
+        "developer_disposition",
+        "merge",
+        "revert",
+        "defect",
+    ]
+    state: str = Field(min_length=1, max_length=64)
+    external_id: str = Field(min_length=1, max_length=255)
+    confidence: float = Field(ge=0, le=1)
+    correction_of_signal_id: str | None = Field(default=None, max_length=36)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class GitOutcomeWebhook(StrictRequest):
+    contract_version: Literal["villani.git_outcome_webhook.v1"] = "villani.git_outcome_webhook.v1"
+    provider: str = Field(min_length=1, max_length=64)
+    delivery_id: str = Field(min_length=1, max_length=255)
+    repository_id: str = Field(min_length=1, max_length=128)
+    run_id: str = Field(min_length=1, max_length=128)
+    attempt_id: str | None = Field(default=None, max_length=128)
+    observed_at: datetime
+    events: list[GitOutcomeEvent] = Field(min_length=1, max_length=100)
+
+
+class ShadowRoutingObservationRequest(StrictRequest):
+    run_id: str = Field(min_length=1, max_length=128)
+    recommendation_id: str = Field(min_length=1, max_length=128)
+    shadow_strategy: str | None = Field(default=None, max_length=255)
+    actual_strategy: str | None = Field(default=None, max_length=255)
+    shadow_policy_version: str = Field(min_length=1, max_length=128)
+    actual_policy_version: str = Field(min_length=1, max_length=128)
+    recorded_at: datetime
+
+
+class EvaluationPublicationProvenance(StrictRequest):
+    evaluation_report_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_dataset_id: str = Field(min_length=1, max_length=255)
+    assignment_provenance_complete: bool
+    propensity_known: bool
+
+
+class PolicyPublicationCreateRequest(StrictRequest):
+    policy_id: str = Field(min_length=1, max_length=128)
+    policy_version: str = Field(min_length=1, max_length=128)
+    policy_snapshot: dict[str, Any]
+    prior_publication_id: str | None = Field(default=None, max_length=36)
+    canary_percentage: float = Field(default=0, ge=0, le=100)
+    rollback_thresholds: dict[str, float] = Field(default_factory=dict)
+    manual_approval_required: bool = True
+    evaluation_provenance: EvaluationPublicationProvenance
+
+
+class PolicyPublicationTransitionRequest(StrictRequest):
+    state: Literal["draft", "shadow", "canary", "active", "paused", "rolled_back"]
+    reason: str = Field(min_length=1, max_length=255)
+
+
+class PolicyPublicationApprovalRequest(StrictRequest):
+    evidence: dict[str, Any]
+
+
+class PolicyCanaryEvaluationRequest(StrictRequest):
+    success_rate: float | None = Field(default=None, ge=0, le=1)
+    cost_usd: float | None = Field(default=None, ge=0)
+    latency_ms: float | None = Field(default=None, ge=0)
+    calibration_error: float | None = Field(default=None, ge=0, le=1)
+
+
+class PolicyEmergencyDisableRequest(StrictRequest):
+    disabled: bool
+    reason: str = Field(min_length=1, max_length=255)
+
+
 class EventPage(BaseModel):
     events: list[dict[str, Any]]
     next_cursor: str | None

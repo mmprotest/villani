@@ -186,6 +186,7 @@ class BudgetContext:
     actual_cost_consumed_usd: float | None = None
     actual_cost_accounting_status: AccountingStatus = "unknown"
     actual_wall_time_ms: int | None = None
+    actual_stage_attempts_used: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,6 +212,8 @@ class AttemptSummary:
     cost_accounting_status: AccountingStatus
     failure_category: str | None = None
     material_progress: bool = False
+    duration_ms: int | None = None
+    rate_limited: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +224,7 @@ class VerificationSummary:
     recommended_action: str
     failure_category: str | None = None
     verifier_retry_count: int = 0
+    disagreement: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +256,8 @@ class AttemptContext:
     policy_configuration: Mapping[str, Any]
     run_directory: Path
     attempt_directory: Path
+    execution_provider: str | None = None
+    guarded_task_route: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
