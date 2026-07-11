@@ -22,6 +22,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@villani/run-model": "file:../villani-run-model",
     "ajv": "^8.17.1",
     "commander": "^12.1.0",
     "fast-glob": "^3.3.2"

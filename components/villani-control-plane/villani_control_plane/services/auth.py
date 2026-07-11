@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..errors import AuthenticationError
+from ..errors import AuthenticationError, AuthorizationError
 from ..models import AgentInstallation, ApiToken
 from ..security import Principal, token_lookup_digest, verify_token
 
@@ -39,3 +41,28 @@ class AuthenticationService:
                 installation.id,
             )
         return Principal(record.id, record.organization_id, record.workspace_id)
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedQueryScope:
+    organization_id: str
+    workspace_id: str
+    permission_version: str = "tenant_scope.v1"
+
+
+class AuthorizationService:
+    """Stable query-authorization boundary for future enterprise role policies."""
+
+    def query_scope(self, principal: Principal) -> AuthorizedQueryScope:
+        return AuthorizedQueryScope(principal.organization_id, principal.workspace_id)
+
+    def authorize_query_fields(
+        self, principal: Principal, fields: list[str], sensitivities: dict[str, str]
+    ) -> list[str]:
+        del principal
+        denied = [field for field in fields if sensitivities.get(field, "restricted") != "metadata"]
+        if denied:
+            raise AuthorizationError(
+                f"query fields require an unavailable sensitive-data permission: {', '.join(sorted(denied))}"
+            )
+        return list(fields)

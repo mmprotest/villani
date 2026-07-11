@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from ..errors import NotFoundError, ServiceError
 from ..repositories import QueryRepository
-from ..schemas import EventPage, RunDetail, RunList, RunSummary
-from ..security import Principal
+from ..schemas import ArtifactPage, EventPage, RunDetail, RunList, RunSummary, SpanPage
+from ..security import Principal, mask_sensitive_fields
 
 
 def _run_summary(run) -> RunSummary:
@@ -58,7 +58,7 @@ class RunQueryService:
             for attempt in self.repository.attempts(principal.organization_id, run_id)
         ]
         outcomes = [
-            outcome.document
+            mask_sensitive_fields(outcome.document)
             for outcome in self.repository.outcomes(principal.organization_id, run_id)
         ]
         return RunDetail(
@@ -85,7 +85,76 @@ class RunQueryService:
         next_cursor = (
             encode_cursor(page[-1].observed_at, page[-1].internal_id) if has_more and page else None
         )
-        return EventPage(events=[row.document for row in page], next_cursor=next_cursor)
+        return EventPage(
+            events=[mask_sensitive_fields(row.document) for row in page],
+            next_cursor=next_cursor,
+            cursor=encode_cursor(page[-1].observed_at, page[-1].internal_id) if page else cursor,
+        )
+
+    def spans(
+        self, run_id: str, principal: Principal, *, cursor: str | None, limit: int
+    ) -> SpanPage:
+        self._authorized_run(run_id, principal)
+        rows = self.repository.spans(
+            principal.organization_id, run_id, limit=limit + 1, after=cursor
+        )
+        page = rows[:limit]
+        return SpanPage(
+            spans=[
+                {
+                    "schema_version": "villani.span.v2",
+                    "trace_id": row.trace_id,
+                    "span_id": row.span_id,
+                    "parent_span_id": row.parent_span_id,
+                    "run_id": row.run_id,
+                    "attempt_id": row.attempt_id,
+                    "kind": row.kind,
+                    "name": row.name,
+                    "status": row.status,
+                    "started_at": row.started_at,
+                    "ended_at": row.ended_at,
+                    "attributes": mask_sensitive_fields(row.attributes),
+                }
+                for row in page
+            ],
+            next_cursor=page[-1].span_id if len(rows) > limit and page else None,
+        )
+
+    def artifacts(
+        self, run_id: str, principal: Principal, *, cursor: str | None, limit: int
+    ) -> ArtifactPage:
+        self._authorized_run(run_id, principal)
+        rows = self.repository.artifacts(
+            principal.organization_id, run_id, limit=limit + 1, after=cursor
+        )
+        page = rows[:limit]
+        artifacts = []
+        for row in page:
+            document = row.document
+            sensitivity = document.get("sensitivity", "internal")
+            if sensitivity == "secret":
+                artifacts.append(
+                    {
+                        "artifact_id": row.id,
+                        "logical_role": document.get("logical_role", "artifact"),
+                        "media_type": document.get("media_type", "application/octet-stream"),
+                        "size_bytes": row.size_bytes,
+                        "sensitivity": "secret",
+                        "status": "redacted",
+                    }
+                )
+                continue
+            artifacts.append(mask_sensitive_fields(document) | {"status": row.status})
+        return ArtifactPage(
+            artifacts=artifacts,
+            next_cursor=page[-1].id if len(rows) > limit and page else None,
+        )
+
+    def _authorized_run(self, run_id: str, principal: Principal):
+        run = self.repository.get_run(principal.organization_id, run_id)
+        if run is None or run.workspace_id != principal.workspace_id:
+            raise NotFoundError("run not found")
+        return run
 
     def list_runs(
         self,

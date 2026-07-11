@@ -118,6 +118,26 @@ class Run(Base, TimestampMixin, SoftDeleteMixin):
     repository_id: Mapped[str] = mapped_column(String(128), nullable=False)
     trace_id: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="unknown")
+    agent_name: Mapped[str | None] = mapped_column(String(128))
+    model_name: Mapped[str | None] = mapped_column(String(255))
+    provider_name: Mapped[str | None] = mapped_column(String(128))
+    policy_version: Mapped[str | None] = mapped_column(String(128))
+    task_category: Mapped[str | None] = mapped_column(String(128))
+    verification_status: Mapped[str | None] = mapped_column(String(64))
+    failure_category: Mapped[str | None] = mapped_column(String(128))
+    cost_usd: Mapped[float | None] = mapped_column(Float)
+    cost_accounting_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    total_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    token_accounting_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger)
+    queue_time_ms: Mapped[int | None] = mapped_column(BigInteger)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    escalation_count: Mapped[int] = mapped_column(Integer, default=0)
+    verifier_cost_usd: Mapped[float | None] = mapped_column(Float)
+    verifier_disagreement: Mapped[bool | None] = mapped_column(Boolean)
+    rejected_cost_usd: Mapped[float | None] = mapped_column(Float)
+    tags: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, default=list)
+    tags_text: Mapped[str] = mapped_column(Text, default="")
     first_occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -142,6 +162,37 @@ class Run(Base, TimestampMixin, SoftDeleteMixin):
         ),
         Index("ix_runs_tenant_filters", "organization_id", "project_id", "repository_id", "status"),
         Index("ix_runs_tenant_time", "organization_id", "last_observed_at", "id"),
+        Index(
+            "ix_runs_fleet_dimensions",
+            "organization_id",
+            "workspace_id",
+            "provider_name",
+            "model_name",
+            "status",
+        ),
+        Index(
+            "ix_runs_fleet_policy",
+            "organization_id",
+            "workspace_id",
+            "policy_version",
+            "task_category",
+            "verification_status",
+        ),
+        Index(
+            "ix_runs_fleet_cost",
+            "organization_id",
+            "workspace_id",
+            "cost_usd",
+            "total_tokens",
+            "duration_ms",
+        ),
+        Index(
+            "ix_runs_fleet_failure",
+            "organization_id",
+            "workspace_id",
+            "failure_category",
+            "last_observed_at",
+        ),
     )
 
 
@@ -805,4 +856,209 @@ class TaskLease(Base):
         ),
         Index("ix_task_leases_expiration", "state", "expires_at"),
         Index("ix_task_leases_worker", "organization_id", "worker_id", "state"),
+    )
+
+
+class SavedView(Base, TimestampMixin):
+    __tablename__ = "saved_views"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="private")
+    filter_ast: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    columns: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    sort: Mapped[list[dict[str, Any]]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_saved_views_scope", "organization_id", "workspace_id", "visibility", "owner_id"),
+    )
+
+
+class AlertRule(Base, TimestampMixin):
+    __tablename__ = "alert_rules"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    rule_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    filter_ast: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    threshold: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    cooldown_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
+    destination: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_alert_rules_active", "organization_id", "workspace_id", "enabled", "rule_type"),
+    )
+
+
+class AlertInstance(Base, TimestampMixin):
+    __tablename__ = "alert_instances"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    last_value: Mapped[float | None] = mapped_column(Float)
+    last_source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "rule_id", "dedupe_key", name="uq_alert_instances_dedupe"
+        ),
+        Index("ix_alert_instances_state", "organization_id", "workspace_id", "state", "updated_at"),
+    )
+
+
+class AlertEvent(Base, TimestampMixin):
+    __tablename__ = "alert_events"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_message_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    document: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "rule_id", "source_message_id", name="uq_alert_event_replay"
+        ),
+        Index("ix_alert_events_scope", "organization_id", "workspace_id", "created_at"),
+    )
+
+
+class RunFeedback(Base, TimestampMixin):
+    __tablename__ = "run_feedback"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    document: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    corrects_feedback_id: Mapped[str | None] = mapped_column(String(36))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "run_id"], ["runs.organization_id", "runs.id"], ondelete="CASCADE"
+        ),
+        Index("ix_run_feedback_queue", "organization_id", "workspace_id", "kind", "created_at"),
+    )
+
+
+class ReviewQueueItem(Base, TimestampMixin):
+    __tablename__ = "review_queue_items"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    queue: Mapped[str] = mapped_column(String(128), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="open")
+    assigned_to: Mapped[str | None] = mapped_column(String(128))
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "run_id"], ["runs.organization_id", "runs.id"], ondelete="CASCADE"
+        ),
+        Index(
+            "ix_review_queue",
+            "organization_id",
+            "workspace_id",
+            "queue",
+            "state",
+            "priority",
+            "created_at",
+        ),
+    )
+
+
+class FailureCluster(Base, TimestampMixin):
+    __tablename__ = "failure_clusters"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    signature: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    failure_category: Mapped[str] = mapped_column(String(128), nullable=False)
+    deterministic_label: Mapped[str] = mapped_column(String(255), nullable=False)
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    advisory_label: Mapped[str | None] = mapped_column(String(255))
+    advisory_label_version: Mapped[str | None] = mapped_column(String(64))
+    __table_args__ = (
+        Index(
+            "ix_failure_clusters_scope",
+            "organization_id",
+            "workspace_id",
+            "occurrence_count",
+            "last_seen_at",
+        ),
+    )
+
+
+class QueryConversation(Base, TimestampMixin):
+    __tablename__ = "query_conversations"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    structured_context: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_query_conversations_owner",
+            "organization_id",
+            "workspace_id",
+            "owner_id",
+            "updated_at",
+        ),
+    )
+
+
+class QueryAuditLog(Base, TimestampMixin):
+    __tablename__ = "query_audit_logs"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(String(36))
+    question_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_usage: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    query_plan: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    sql_sha256: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_category: Mapped[str | None] = mapped_column(String(128))
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_query_audit_scope",
+            "organization_id",
+            "workspace_id",
+            "created_at",
+        ),
     )

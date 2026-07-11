@@ -37,6 +37,79 @@ def comparable_timestamp(value):
     return value.timestamp()
 
 
+def _first(mapping: dict[str, Any], *names: str):
+    return next((mapping[name] for name in names if mapping.get(name) is not None), None)
+
+
+def project_run_observability(run: models.Run, event: TelemetryEnvelopeV2) -> None:
+    values = {**event.attributes, **event.body}
+    text_fields = {
+        "agent_name": ("agent_name", "agent"),
+        "model_name": ("model_name", "model"),
+        "provider_name": ("provider_name", "provider"),
+        "policy_version": ("policy_version",),
+        "task_category": ("task_category", "category"),
+        "verification_status": ("verification_status", "verification_outcome"),
+        "failure_category": ("failure_category", "root_cause_category"),
+    }
+    for target, names in text_fields.items():
+        value = _first(values, *names)
+        if isinstance(value, str) and value:
+            setattr(run, target, value)
+    numeric_fields = {
+        "cost_usd": ("total_cost_usd", "cost_usd"),
+        "total_tokens": ("total_tokens",),
+        "duration_ms": ("duration_ms", "run_duration_ms"),
+        "queue_time_ms": ("queue_time_ms",),
+        "verifier_cost_usd": ("verifier_cost_usd",),
+        "rejected_cost_usd": ("rejected_cost_usd", "wasted_cost_usd"),
+    }
+    for target, names in numeric_fields.items():
+        value = _first(values, *names)
+        if isinstance(value, (int, float)) and value >= 0:
+            setattr(run, target, value)
+    if isinstance(values.get("cost_accounting_status"), str):
+        run.cost_accounting_status = values["cost_accounting_status"]
+    if isinstance(values.get("token_accounting_status"), str):
+        run.token_accounting_status = values["token_accounting_status"]
+    if isinstance(values.get("verifier_disagreement"), bool):
+        run.verifier_disagreement = values["verifier_disagreement"]
+    tags = values.get("tags")
+    if isinstance(tags, list):
+        normalized = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
+        run.tags = normalized
+        run.tags_text = "|" + "|".join(normalized) + "|" if normalized else ""
+    if event.name == "escalation_selected":
+        run.escalation_count += 1
+
+
+def record_failure_cluster(session: Session, run: models.Run, event: TelemetryEnvelopeV2) -> None:
+    if event.name != "run_failed":
+        return
+    values = {**event.attributes, **event.body}
+    category = run.failure_category or str(values.get("failure_category") or "unclassified")
+    detail = str(values.get("root_cause") or values.get("message") or event.name)
+    normalized = " ".join(detail.lower().split())[:512]
+    signature = hashlib.sha256(f"{category}|{normalized}".encode()).hexdigest()
+    cluster = session.get(models.FailureCluster, (run.organization_id, signature))
+    if cluster is None:
+        session.add(
+            models.FailureCluster(
+                organization_id=run.organization_id,
+                workspace_id=run.workspace_id,
+                signature=signature,
+                failure_category=category,
+                deterministic_label=f"{category}: {normalized[:160]}",
+                occurrence_count=1,
+                first_seen_at=event.occurred_at,
+                last_seen_at=event.occurred_at,
+            )
+        )
+    else:
+        cluster.occurrence_count += 1
+        cluster.last_seen_at = max(cluster.last_seen_at, event.occurred_at)
+
+
 @dataclass(frozen=True, slots=True)
 class BatchIngestionResult:
     batch_id: str
@@ -251,6 +324,9 @@ class IngestionService:
             if event.name in terminal_names:
                 run.status = terminal_names[event.name]
 
+            project_run_observability(run, event)
+            record_failure_cluster(self.session, run, event)
+
             if event.attempt_id:
                 attempt = self.session.get(
                     models.Attempt, (principal.organization_id, event.attempt_id)
@@ -264,6 +340,7 @@ class IngestionService:
                             status=event.status,
                         )
                     )
+                    run.attempt_count += 1
                 elif attempt.run_id != event.run_id:
                     raise AuthorizationError("attempt_id belongs to another run")
                 else:

@@ -152,6 +152,28 @@ class QueryRepository:
             or 0
         )
 
+    def spans(
+        self, organization_id: str, run_id: str, *, limit: int, after: str | None
+    ) -> list[models.Span]:
+        query = select(models.Span).where(
+            models.Span.organization_id == organization_id,
+            models.Span.run_id == run_id,
+        )
+        if after is not None:
+            query = query.where(models.Span.span_id > after)
+        return list(self.session.scalars(query.order_by(models.Span.span_id).limit(limit)))
+
+    def artifacts(
+        self, organization_id: str, run_id: str, *, limit: int, after: str | None
+    ) -> list[models.Artifact]:
+        query = select(models.Artifact).where(
+            models.Artifact.organization_id == organization_id,
+            models.Artifact.run_id == run_id,
+        )
+        if after is not None:
+            query = query.where(models.Artifact.id > after)
+        return list(self.session.scalars(query.order_by(models.Artifact.id).limit(limit)))
+
     def events(
         self,
         organization_id: str,

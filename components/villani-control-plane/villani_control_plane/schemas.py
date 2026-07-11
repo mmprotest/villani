@@ -208,6 +208,17 @@ class PolicyEmergencyDisableRequest(StrictRequest):
 class EventPage(BaseModel):
     events: list[dict[str, Any]]
     next_cursor: str | None
+    cursor: str | None = None
+
+
+class SpanPage(BaseModel):
+    spans: list[dict[str, Any]]
+    next_cursor: str | None
+
+
+class ArtifactPage(BaseModel):
+    artifacts: list[dict[str, Any]]
+    next_cursor: str | None
 
 
 class RunSummary(BaseModel):
@@ -230,3 +241,96 @@ class RunDetail(RunSummary):
 
 class RunList(BaseModel):
     runs: list[RunSummary]
+
+
+class FleetFilters(StrictRequest):
+    started_after: datetime | None = None
+    started_before: datetime | None = None
+    organization_id: str | None = Field(default=None, max_length=128)
+    workspace_id: str | None = Field(default=None, max_length=128)
+    project_id: str | None = Field(default=None, max_length=128)
+    repository_id: str | None = Field(default=None, max_length=128)
+    agent: str | None = Field(default=None, max_length=128)
+    model: str | None = Field(default=None, max_length=255)
+    provider: str | None = Field(default=None, max_length=128)
+    policy_version: str | None = Field(default=None, max_length=128)
+    task_category: str | None = Field(default=None, max_length=128)
+    state: str | None = Field(default=None, max_length=64)
+    verification: str | None = Field(default=None, max_length=64)
+    failure_category: str | None = Field(default=None, max_length=128)
+    min_cost_usd: float | None = Field(default=None, ge=0)
+    max_cost_usd: float | None = Field(default=None, ge=0)
+    min_tokens: int | None = Field(default=None, ge=0)
+    max_tokens: int | None = Field(default=None, ge=0)
+    min_duration_ms: int | None = Field(default=None, ge=0)
+    max_duration_ms: int | None = Field(default=None, ge=0)
+    tags: list[str] = Field(default_factory=list, max_length=32)
+
+
+class FleetSearchRequest(StrictRequest):
+    filters: FleetFilters = Field(default_factory=FleetFilters)
+    cursor: str | None = None
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class FleetRunPage(BaseModel):
+    runs: list[dict[str, Any]]
+    next_cursor: str | None
+
+
+class SavedViewRequest(StrictRequest):
+    name: str = Field(min_length=1, max_length=255)
+    visibility: Literal["private", "workspace"] = "private"
+    filter_ast: dict[str, Any] = Field(default_factory=dict)
+    columns: list[str] = Field(default_factory=list, max_length=64)
+    sort: list[dict[str, Any]] = Field(default_factory=list, max_length=8)
+    version: int = Field(default=1, ge=1)
+
+
+class MetricRequest(StrictRequest):
+    filters: FleetFilters = Field(default_factory=FleetFilters)
+    group_by: Literal["agent", "model", "provider", "policy_version"] | None = None
+
+
+class AlertRuleRequest(StrictRequest):
+    name: str = Field(min_length=1, max_length=255)
+    rule_type: Literal[
+        "spend",
+        "failure_rate",
+        "latency",
+        "loop_signature",
+        "provider_health",
+        "verifier_disagreement",
+        "policy_drift",
+        "suspicious_tools",
+        "spool_backlog",
+        "worker_capacity",
+    ]
+    filter_ast: dict[str, Any] = Field(default_factory=dict)
+    threshold: dict[str, Any]
+    cooldown_seconds: int = Field(default=300, ge=0, le=604800)
+    destination: dict[str, Any] = Field(default_factory=lambda: {"type": "test_webhook"})
+    enabled: bool = True
+
+
+class FeedbackRequest(StrictRequest):
+    kind: Literal["annotation", "label", "developer_disposition", "correction"]
+    document: dict[str, Any]
+    corrects_feedback_id: str | None = Field(default=None, max_length=36)
+
+
+class ReviewQueueRequest(StrictRequest):
+    run_id: str = Field(min_length=1, max_length=128)
+    queue: str = Field(min_length=1, max_length=128)
+    priority: int = Field(default=0, ge=-1000, le=1000)
+    reason: str = Field(min_length=1, max_length=255)
+
+
+class FleetExportRequest(StrictRequest):
+    filters: FleetFilters = Field(default_factory=FleetFilters)
+    format: Literal["csv", "json"] = "json"
+
+
+class InterrogationRequestModel(StrictRequest):
+    question: str = Field(min_length=1, max_length=2000)
+    conversation_id: str | None = Field(default=None, max_length=36)

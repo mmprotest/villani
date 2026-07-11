@@ -2125,3 +2125,122 @@ Known remaining issues:
 
 Next permitted milestone:
 - Later closed-loop work only after an explicit user request. Marketplace, remote code download, task decomposition, and subsequent milestones were not started in this pass.
+
+#### 2026-07-11: Live individual-run web application pass
+
+Status: complete
+
+Changed files:
+- Added `components/villani-web`, a TypeScript/React/Vite individual-run application with the run header, live timeline, causal span graph, candidate evidence, cost/token, file/patch, policy, failure, reconnect/cursor catch-up, paginated artifact/span loading, and self-contained offline export views.
+- Added `components/villani-run-model`, the shared TypeScript status, candidate, accounting, file, failure, and masking derivation package; migrated Flight Recorder captured-run status derivation to this package and added golden bundle parity coverage.
+- Extended tenant-scoped control-plane run reads with event checkpoint cursors plus paginated v2 span and artifact-descriptor endpoints. Masked named sensitive fields in run outcomes, event pages, span attributes, artifact descriptors, and live SSE payloads; secret artifacts are metadata-only and cannot be downloaded.
+- Added control-plane authorization/redaction tests, web component/static/parity tests, and Chromium E2E coverage for live progression, reconnect, failed runs, multiple candidates, redacted artifacts, authorization failure, and static export. Updated this progress section only.
+
+Architectural decisions:
+- `@villani/run-model` is the single status interpretation used by both Flight Recorder and the web UI. Canonical terminal controller state owns the terminal label, while command/test lifecycle IDs prevent paired start/result telemetry from being double-counted.
+- The browser uses authenticated `fetch` streaming instead of `EventSource`, because the control plane requires an authorization header. Each connection drains the paginated event API from its last server cursor before opening SSE; reconnect repeats the catch-up step and deduplicates by event/idempotency ID.
+- Spans and artifact descriptors are separately cursor-paginated. The UI renders bounded timeline windows and explicit additional pages; artifact bytes are fetched only on an authorized user action, and secret-classified content is never requested or rendered.
+- Static export explicitly pages through the complete event, span, and artifact-descriptor snapshot and emits escaped, self-contained HTML with no server or external asset dependency. It never includes secret artifact descriptors or raw artifact bytes.
+- Resume and cancel links are rendered only when an authorized failure payload supplies them. No new control mutation endpoint, fleet dashboard, natural-language query, or later UX page was added.
+
+Verification:
+- Villani web: unit/component/golden parity suite exited 0 with 3 files/4 tests passed; TypeScript typecheck, Vite production build, and Prettier check exited 0. Chromium E2E exited 0 with 7 tests passed.
+- Shared run model: unit suite exited 0 with 1 file/3 tests passed; typecheck, build, and Prettier check exited 0.
+- Flight Recorder required suite: `npm.cmd test` exited 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Control plane full suite: exit code 0; 32 passed, 6 skipped, with one existing Starlette/httpx deprecation warning. Ruff format/check exited 0.
+- Root closed-loop integration: exit code 0; 6 passed in 19.52s. `git diff --check` exited 0.
+
+Assumptions:
+- Browser deployments provide the control-plane bearer token through the existing session/bootstrap environment; the application does not persist it outside session storage.
+- Artifact content authorization remains server-owned. The web UI treats a 404 as non-enumerating and does not infer whether an artifact or run exists in another tenant.
+- Explicit offline export may page through all safe descriptors because it is a user-requested snapshot operation; ordinary interactive loading remains bounded and paginated.
+
+Known risks:
+- The in-app browser surface was unavailable for the optional manual smoke check; the seven real Chromium Playwright scenarios passed instead.
+- `npm install` reported five transitive dependency audit findings (three moderate, one high, one critical). No broad or breaking dependency upgrade was attempted in this scoped UX milestone.
+- Cursor ordering for spans and artifacts uses stable IDs; producers must continue assigning stable unique IDs as required by the v2 contracts.
+
+Known remaining issues:
+- None within the individual-run web UX, shared status parity, live reconnect/catch-up, paginated spans/artifacts, secret masking, authorization behavior, or offline export covered by this pass.
+
+Next permitted milestone:
+- Fleet dashboards, natural-language run query, additional control actions, or later web work only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Structured fleet observability pass
+
+Status: complete
+
+Changed files:
+- Added indexed fleet-observability projections to control-plane runs, a forward Alembic migration, deterministic failure-cluster storage, saved views, alert rules/instances/events, annotations/labels/dispositions/corrections, and human-review queue records.
+- Added `FleetObservabilityService` and tenant-scoped APIs for keyset-paginated structured run search, versioned saved views, explicit metric definitions and aggregates/comparisons, redacted CSV/JSON export, feedback, review queues, failure clusters, and test-only alerts.
+- Projected agent, model, provider, policy, task category, verification, failure, cost/accounting status, tokens/accounting status, duration, queue time, attempts, escalations, verifier spend/disagreement, rejected spend, and tags during telemetry/outcome ingestion.
+- Extended the outbox worker to evaluate alert rules before acknowledgement with source-message replay deduplication, dedupe keys, cooldown, firing/resolved lifecycle events, and recorded-but-never-sent test webhook delivery receipts.
+- Added the `/fleet` React UI with structured filters, 100-row server pages, saved views, metric cards and definitions, model/agent/provider/policy comparisons, alerts, review queues, deterministic failure clusters, and permission-filtered exports. Added fleet metric/isolation/alert/ingestion/index/100,000-run tests and Chromium scale coverage. Updated this progress section only.
+
+Architectural decisions:
+- Fleet search uses indexed denormalized run dimensions and a `(last_observed_at DESC, run_id)` keyset cursor. Organization and workspace are always taken from the authenticated principal; explicit conflicting scope filters fail closed.
+- Metric contract `villani.fleet_metrics.v1` publishes numerator, denominator, and unknown rules. Unknown cost, duration, queue time, verifier spend, rejected spend, disagreement, and verification outcomes are counted separately and never coerced to numeric zero or silently removed.
+- Saved views persist owner, private/workspace visibility, structured filter AST, columns, sort, and optimistic version. Updates require the current version and owner identity.
+- Alert types cover spend, failure rate, latency, loop signatures, provider health, verifier disagreement, policy drift, suspicious tools, spool backlog, and worker capacity. Failure/provider rates use terminal runs in a bounded window; other rules consume structured outbox telemetry. Only `test_webhook` destinations are accepted and no network notification code exists.
+- Feedback is append-only and versioned through correction links. Labels may update searchable run tags, while developer dispositions provide downstream labels for false-acceptance/rejection metrics. Deterministic failure signatures own cluster identity; optional advisory labels have a separate explicit version and never replace the deterministic label.
+- Ordinary fleet UI navigation holds one 100-row page. Aggregates and exports remain server-owned and tenant-filtered; the browser never loads the 100,000-run representative dataset.
+
+Verification:
+- Control-plane full suite: exit code 0; 37 passed, 6 skipped, with one existing Starlette/httpx deprecation warning. Fleet-focused suite: 5 passed, including exact metric denominators/unknowns, tenant isolation, saved-view version conflict, redacted exports/feedback, alert replay/cooldown/resolve, ingestion projections, deterministic clustering, 100,000 synthetic runs, disjoint cursor pages, and indexed SQLite query plan. Ruff format/check exited 0.
+- PostgreSQL-targeted Alembic offline upgrade rendered every revision through `c6d7e8f9a0b1` successfully. SQLite online migration remains unsupported by an earlier baseline constraint-alter revision and did not reach this migration.
+- Villani web: unit/component/golden parity suite exited 0 with 3 files/4 tests passed; typecheck, production build, and format check exited 0. Chromium E2E exited 0 with 8 tests passed, including the 100,000-run server-pagination scenario.
+- Flight Recorder: 20 files/102 tests passed; typecheck, build, and format check exited 0. A parallel validation invocation transiently failed three CLI tests because concurrent web parity tests and Flight Recorder both invoked its build; the required isolated rerun passed all 102 tests.
+- Root closed-loop integration: exit code 0; 6 passed in 21.81s. `git diff --check` exited 0.
+
+Assumptions:
+- Telemetry producers use the documented structured attribute/body names for indexed projections. Missing optional accounting values remain null with their accounting status.
+- Aggregate endpoints operate on the authenticated filtered population and return explicit unknown counts; representative large-run validation focuses on indexed search/keyset pagination, which is the interactive scale boundary.
+- Human and downstream labels are absent until explicitly recorded, so false-acceptance/rejection denominators include only labeled eligible runs and report unlabeled counts separately.
+
+Known risks:
+- The in-app browser surface was unavailable; the eight real Chromium Playwright scenarios passed instead.
+- The existing Node dependency audit findings from the individual-run milestone remain; no broad dependency upgrade was included.
+- PostgreSQL integration tests remain environment-gated when `VILLANI_TEST_POSTGRES_URL` is not configured. Offline PostgreSQL migration rendering and representative SQLite query-plan coverage passed.
+
+Known remaining issues:
+- None within structured fleet search, saved views, metric definitions/aggregates, comparisons, alert lifecycle, feedback/review queues, exports, deterministic clustering, tenant isolation, or server-pagination scale covered by this pass.
+
+Next permitted milestone:
+- Natural-language fleet query, real external notification delivery, learned clustering labels, or later fleet/control-plane work only after an explicit user request. None was started in this pass.
+
+#### 2026-07-12: Authorized natural-language interrogation pass
+
+Status: complete
+
+Changed files:
+- Added the versioned `QueryPlan` AST, allowlisted semantic catalog, bounded validator/estimator, authorization scope injection, deterministic parameterized SQL compiler, planner protocol/default catalog planner, and interrogation service under the control plane.
+- Added independently gated catalog/query APIs, authorization-service query hooks, query-conversation and redacted audit models, settings, schemas, and Alembic revision `d7e8f9a0b1c2`.
+- Added the accessible `/ask` React view, API contracts, structured plan/definition/filter/missingness/result/support rendering, and structured follow-up handling.
+- Added control-plane adversarial/isolation/determinism/boundedness/audit tests plus web component and Chromium E2E tests. Updated this progress section only.
+
+Architectural decisions:
+- Models can return only `villani.query_plan.v1`; unknown keys, fields, metrics, dimensions, filters, operators, time ranges, and limits fail validation. Compilation owns the only table name (`runs`) and all column/metric expressions; user/model values are named parameters.
+- Tenant organization/workspace predicates come from `AuthorizationService.query_scope` after model generation and cannot be represented or overridden in the model AST. `authorize_query_fields` is the stable seam for later enterprise-role policy.
+- Aggregate metadata is the default and only result mode in this milestone. Prompt, response, task, source, patch, log, and artifact fields require explicit requests and are denied by the current sensitivity policy; no sensitive row is placed into planner input.
+- Every plan has a timezone-aware maximum 366-day range, bounded result limit, exact authorized scan/cardinality estimate, and cost-unit estimate. Plans above configured scan policy fail before result execution.
+- Follow-ups persist only the prior validated structured plan and interpretation, never transcript or result rows. Audit records store question/SQL hashes, redacted filter values, plan structure, and masked model-usage accounting.
+- `natural_language_query_enabled` disables only interrogation; structured fleet search and metrics remain available.
+
+Verification:
+- Control-plane full suite: exit code 0; 54 passed, 6 skipped. Interrogation-focused suite: 17 passed. Ruff check/format passed, and PostgreSQL Alembic offline rendering reached `d7e8f9a0b1c2` successfully.
+- Villani web: unit/component/golden parity suite exited 0 with 3 files/5 tests passed; typecheck, production build, and format check exited 0. Chromium E2E exited 0 with 10 tests passed, including structured follow-up and independent disablement.
+- The in-app browser backend was unavailable (no browser instances listed); the repository's real Chromium Playwright suite supplied rendered browser verification instead.
+
+Assumptions:
+- The default deterministic catalog planner provides local-first operation. A hosted or local model can implement the same `QueryPlanModel` typed boundary without gaining SQL, authorization, or result-row access.
+- Supporting links use existing authorized run-detail routes, so following a link repeats server-side tenant checks.
+
+Known risks:
+- Exact scan counting is deliberately conservative and may reject otherwise efficient grouped queries on very large authorized populations; future optimization may use database estimates without weakening the hard boundedness policy.
+- PostgreSQL integration remains environment-gated when `VILLANI_TEST_POSTGRES_URL` is absent; offline PostgreSQL migration SQL and SQLite service behavior passed.
+
+Known remaining issues:
+- None within typed planning, allowlisting, tenant injection, deterministic SQL, sensitive-field denial, boundedness, structured follow-up, redacted audit, response provenance, or independent feature gating covered by this pass.
+
+Next permitted milestone:
+- Enterprise roles, broader sensitive-data grants, answer-generation over permitted rows, or any later milestone only after an explicit user request. None was started in this pass.

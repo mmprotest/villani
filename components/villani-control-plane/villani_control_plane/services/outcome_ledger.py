@@ -133,6 +133,13 @@ class OutcomeLedgerService:
             document=normalized,
         )
         self.session.add(row)
+        if parsed.verification_status is not None:
+            run.verification_status = parsed.verification_status
+        if parsed.cost is not None:
+            run.cost_usd = parsed.cost
+        run.cost_accounting_status = parsed.cost_accounting_status
+        if parsed.latency_ms is not None:
+            run.duration_ms = int(parsed.latency_ms)
         if parsed.accepted is True:
             run.status = "accepted"
         self.session.add(

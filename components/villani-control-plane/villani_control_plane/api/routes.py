@@ -10,11 +10,19 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from ..config import get_settings
 from ..live import broker, encode_sse
 from ..schemas import (
+    AlertRuleRequest,
     ArtifactDescriptorRequest,
+    ArtifactPage,
     EnrollmentRequest,
     EventPage,
+    FeedbackRequest,
+    FleetExportRequest,
+    FleetRunPage,
+    FleetSearchRequest,
     GitOutcomeWebhook,
     IngestBatchRequest,
+    InterrogationRequestModel,
+    MetricRequest,
     OutcomeLedgerRequest,
     PolicyCanaryEvaluationRequest,
     PolicyEmergencyDisableRequest,
@@ -22,26 +30,180 @@ from ..schemas import (
     PolicyPublicationCreateRequest,
     PolicyPublicationTransitionRequest,
     RemoteTaskRequest,
+    ReviewQueueRequest,
     RunDetail,
     RunList,
+    SavedViewRequest,
     ShadowRoutingObservationRequest,
+    SpanPage,
     TaskCancellationRequest,
     TaskCompletionRequest,
     WorkerHeartbeatRequest,
 )
 from ..services import (
+    AlertService,
     ArtifactTransferService,
     EnrollmentService,
+    FleetObservabilityService,
     IngestionService,
+    NaturalLanguageInterrogationService,
     OperationsService,
     OutcomeLedgerService,
     PolicyPublicationService,
     RemoteDispatchService,
     RunQueryService,
 )
+from ..services.interrogation import InterrogationRequest, semantic_catalog
 from .dependencies import ObjectStoreDependency, PrincipalDependency, SessionDependency
 
 router = APIRouter()
+
+
+@router.get("/v1/interrogation/catalog")
+def interrogation_catalog(
+    principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    del principal, session
+    if not get_settings().natural_language_query_enabled:
+        from ..errors import NotFoundError
+
+        raise NotFoundError("natural-language interrogation is disabled")
+    return semantic_catalog()
+
+
+@router.post("/v1/interrogation/query")
+def interrogate_runs(
+    request: InterrogationRequestModel,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return NaturalLanguageInterrogationService(session).ask(
+        InterrogationRequest(request.question, request.conversation_id), principal
+    )
+
+
+@router.post("/v1/fleet/runs/search", response_model=FleetRunPage)
+def fleet_run_search(
+    request: FleetSearchRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> FleetRunPage:
+    return FleetObservabilityService(session).search(request, principal)
+
+
+@router.get("/v1/fleet/metrics/definitions")
+def fleet_metric_definitions(
+    principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    del principal
+    return FleetObservabilityService(session).metric_definitions()
+
+
+@router.post("/v1/fleet/metrics")
+def fleet_metrics(
+    request: MetricRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return FleetObservabilityService(session).metrics(request, principal)
+
+
+@router.post("/v1/fleet/saved-views", status_code=status.HTTP_201_CREATED)
+def create_saved_view(
+    request: SavedViewRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return FleetObservabilityService(session).create_view(request, principal)
+
+
+@router.get("/v1/fleet/saved-views")
+def list_saved_views(principal: PrincipalDependency, session: SessionDependency) -> dict[str, Any]:
+    return {"views": FleetObservabilityService(session).list_views(principal)}
+
+
+@router.put("/v1/fleet/saved-views/{view_id}")
+def update_saved_view(
+    view_id: str,
+    request: SavedViewRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return FleetObservabilityService(session).update_view(view_id, request, principal)
+
+
+@router.post("/v1/fleet/alerts", status_code=status.HTTP_201_CREATED)
+def create_alert_rule(
+    request: AlertRuleRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return AlertService(session).create(request, principal)
+
+
+@router.get("/v1/fleet/alerts")
+def list_alert_rules(principal: PrincipalDependency, session: SessionDependency) -> dict[str, Any]:
+    service = AlertService(session)
+    return {"rules": service.list(principal), "events": service.events(principal)}
+
+
+@router.post("/v1/fleet/runs/{run_id}/feedback", status_code=status.HTTP_201_CREATED)
+def create_run_feedback(
+    run_id: str,
+    request: FeedbackRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return FleetObservabilityService(session).create_feedback(run_id, request, principal)
+
+
+@router.get("/v1/fleet/runs/{run_id}/feedback")
+def list_run_feedback(
+    run_id: str,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return {"feedback": FleetObservabilityService(session).feedback(run_id, principal)}
+
+
+@router.post("/v1/fleet/review-queue", status_code=status.HTTP_201_CREATED)
+def enqueue_human_review(
+    request: ReviewQueueRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, Any]:
+    return FleetObservabilityService(session).enqueue_review(request, principal)
+
+
+@router.get("/v1/fleet/review-queue")
+def list_human_review_queue(
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    queue: str | None = None,
+) -> dict[str, Any]:
+    return {"items": FleetObservabilityService(session).review_queue(principal, queue)}
+
+
+@router.get("/v1/fleet/failure-clusters")
+def list_failure_clusters(
+    principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    return {"clusters": FleetObservabilityService(session).clusters(principal)}
+
+
+@router.post("/v1/fleet/export")
+def export_fleet_runs(
+    request: FleetExportRequest,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> Response:
+    media_type, body = FleetObservabilityService(session).export(request, principal)
+    extension = "csv" if request.format == "csv" else "json"
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="villani-fleet.{extension}"'},
+    )
 
 
 @router.put("/v1/workers/{worker_id}/heartbeat")
@@ -227,6 +389,7 @@ def download_artifact(
         artifact is None
         or artifact.workspace_id != principal.workspace_id
         or artifact.status != "available"
+        or artifact.document.get("sensitivity") == "secret"
     ):
         raise NotFoundError("artifact not found")
     redirect = store.presign_download(artifact.object_key, 300)
@@ -415,6 +578,28 @@ def get_run_events(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> EventPage:
     return RunQueryService(session).events(run_id, principal, cursor=cursor, limit=limit)
+
+
+@router.get("/v1/runs/{run_id}/spans", response_model=SpanPage)
+def get_run_spans(
+    run_id: str,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 250,
+) -> SpanPage:
+    return RunQueryService(session).spans(run_id, principal, cursor=cursor, limit=limit)
+
+
+@router.get("/v1/runs/{run_id}/artifacts", response_model=ArtifactPage)
+def get_run_artifacts(
+    run_id: str,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=250)] = 50,
+) -> ArtifactPage:
+    return RunQueryService(session).artifacts(run_id, principal, cursor=cursor, limit=limit)
 
 
 @router.get("/v1/runs", response_model=RunList)

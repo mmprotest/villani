@@ -31,6 +31,7 @@ from villani_control_plane.services import (
     AuthenticationService,
     EnrollmentService,
     IngestionService,
+    RunQueryService,
 )
 from villani_control_plane.services import ingestion as ingestion_module
 from villani_control_plane.services.synchronization import ArtifactTransferService
@@ -183,6 +184,67 @@ def test_artifact_download_is_tenant_scoped(session, principal, tmp_path) -> Non
         headers={"Authorization": "Bearer other-tenant-development-token-long-enough"},
     )
     assert denied.status_code == 404
+
+
+def test_run_span_and_artifact_pages_are_authorized_masked_and_secret_safe(
+    session, principal
+) -> None:
+    create_run(session, principal)
+    span = session.get(
+        models.Span,
+        (principal.organization_id, "0123456789abcdef0123456789abcdef", "0123456789abcdef"),
+    )
+    assert span is not None
+    span.attributes = {"api_key": "must-not-leak", "safe": "visible"}
+    session.add(
+        models.Artifact(
+            organization_id=principal.organization_id,
+            id="legacy_secret",
+            workspace_id=principal.workspace_id,
+            run_id="run_001",
+            digest_sha256="a" * 64,
+            size_bytes=10,
+            status="available",
+            object_key="legacy/secret",
+            document={
+                "artifact_id": "legacy_secret",
+                "logical_role": "command_log",
+                "media_type": "text/plain",
+                "size_bytes": 10,
+                "sensitivity": "secret",
+                "token": "must-not-leak",
+            },
+        )
+    )
+    session.commit()
+    query = RunQueryService(session)
+    assert query.spans("run_001", principal, cursor=None, limit=1).spans[0]["attributes"] == {
+        "api_key": "********",
+        "safe": "visible",
+    }
+    secret = query.artifacts("run_001", principal, cursor=None, limit=1).artifacts[0]
+    assert secret == {
+        "artifact_id": "legacy_secret",
+        "logical_role": "command_log",
+        "media_type": "text/plain",
+        "size_bytes": 10,
+        "sensitivity": "secret",
+        "status": "redacted",
+    }
+    other = principal.__class__("other", "other", principal.workspace_id, None)
+    with pytest.raises(Exception, match="run not found"):
+        query.artifacts("run_001", other, cursor=None, limit=1)
+    encoded = live_module.encode_sse(
+        LiveMessage(
+            "masked",
+            principal.organization_id,
+            principal.workspace_id,
+            "telemetry.ingested",
+            {"run_id": "run_001", "event": {"body": {"api_key": "must-not-leak"}}},
+        )
+    )
+    assert "must-not-leak" not in encoded
+    assert "********" in encoded
 
 
 def test_outbox_claim_sees_only_committed_rows(tmp_path, monkeypatch) -> None:

@@ -14,6 +14,7 @@ from sqlalchemy import or_, select
 from .config import get_settings
 from .database import SessionFactory
 from .models import Outbox, utc_now
+from .security import mask_sensitive_fields
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +137,7 @@ async def outbox_worker(stop: asyncio.Event) -> None:
         for message in messages:
             try:
                 await broker.publish(message)
+                await asyncio.to_thread(evaluate_alerts, message)
                 await asyncio.to_thread(acknowledge_outbox, owner, message.id)
             except Exception:
                 # The lease makes the message eligible again after expiry. Publishing is
@@ -150,9 +152,16 @@ async def outbox_worker(stop: asyncio.Event) -> None:
                 pass
 
 
+def evaluate_alerts(message: LiveMessage) -> int:
+    from .services.fleet import AlertService
+
+    with SessionFactory() as session:
+        return AlertService(session).evaluate(message)
+
+
 def encode_sse(message: LiveMessage) -> str:
     body = json.dumps(
-        {"topic": message.topic, "payload": message.payload},
+        {"topic": message.topic, "payload": mask_sensitive_fields(message.payload)},
         sort_keys=True,
         separators=(",", ":"),
     )

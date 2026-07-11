@@ -46,48 +46,7 @@ export function deriveReplayViewModel(session, git) {
         outputWritten: true,
         htmlValidated: true,
     });
-    const capturedRunStatus = session.villani?.manifest
-        ? session.villani.manifest.final_state === "COMPLETED"
-            ? {
-                status: "succeeded",
-                label: "Completed",
-                tone: "success",
-                reason: "Canonical controller state COMPLETED",
-                failedCommands: 0,
-                failedTests: 0,
-                totalCommands: session.villani.aggregate?.commands ?? 0,
-                totalTests: 0,
-                fileEdits: session.villani.aggregate?.fileWrites ?? 0,
-                hasFinalAnswer: true,
-            }
-            : session.villani.manifest.final_state === "FAILED"
-                ? {
-                    status: "failed",
-                    label: "Failed",
-                    tone: "error",
-                    reason: "Canonical controller state FAILED",
-                    failedCommands: 0,
-                    failedTests: 0,
-                    totalCommands: session.villani.aggregate?.commands ?? 0,
-                    totalTests: 0,
-                    fileEdits: session.villani.aggregate?.fileWrites ?? 0,
-                    hasFinalAnswer: true,
-                }
-                : session.villani.manifest.final_state === "EXHAUSTED"
-                    ? {
-                        status: "partial",
-                        label: "Exhausted",
-                        tone: "warning",
-                        reason: "Canonical controller state EXHAUSTED",
-                        failedCommands: 0,
-                        failedTests: 0,
-                        totalCommands: session.villani.aggregate?.commands ?? 0,
-                        totalTests: 0,
-                        fileEdits: session.villani.aggregate?.fileWrites ?? 0,
-                        hasFinalAnswer: true,
-                    }
-                    : deriveCapturedRunStatus(events)
-        : deriveCapturedRunStatus(events);
+    const capturedRunStatus = deriveCapturedRunStatus(events, session.villani?.manifest?.final_state);
     const timeline = deriveTimeline(events);
     const eventFiles = changedFilesFromEvents(events);
     const liveFiles = changedFilesFromGit(git);

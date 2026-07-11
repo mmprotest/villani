@@ -4,6 +4,32 @@ import hashlib
 import hmac
 import os
 from dataclasses import dataclass
+from typing import Any
+
+SENSITIVE_FIELD_PARTS = (
+    "secret",
+    "token",
+    "password",
+    "credential",
+    "authorization",
+    "api_key",
+    "private_key",
+)
+
+
+def mask_sensitive_fields(value: Any) -> Any:
+    """Mask named sensitive fields without changing the surrounding contract."""
+    if isinstance(value, list):
+        return [mask_sensitive_fields(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: "********"
+        if any(part in key.lower() for part in SENSITIVE_FIELD_PARTS)
+        else mask_sensitive_fields(item)
+        for key, item in value.items()
+    }
+
 
 SCRYPT_N = 2**14
 SCRYPT_R = 8

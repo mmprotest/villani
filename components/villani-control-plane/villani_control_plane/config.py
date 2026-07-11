@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     remote_task_retry_delay_seconds: int = 5
     remote_task_claim_candidates: int = 100
     worker_heartbeat_stale_seconds: int = 120
+    natural_language_query_enabled: bool = True
+    natural_language_query_max_scan_rows: int = 100_000
+    natural_language_query_max_result_rows: int = 200
+    natural_language_query_default_days: int = 30
 
     @property
     def sensitivity_policy(self) -> frozenset[str]:
