@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`M9: complete`
+`Release-audit repair pass: complete`
 
 ### Milestone status
 
@@ -1268,3 +1268,52 @@ Known remaining issues:
 
 Next permitted milestone:
 - none. This is the final planned milestone; no later milestone was started.
+
+#### 2026-07-11: Release-audit repair pass
+
+Status: complete
+
+Changed files:
+- Release automation and hygiene: `.github/workflows/ci.yml`, `.gitignore`, component `.gitignore` files, `pytest.ini`, and removal of tracked `.pip-cache`, `build-smoke`, and `components/villani-ops/build` artifacts.
+- Villani Code: CLI task-file boundary, repository-scoped Git evidence, command-environment filtering, Windows executable discovery, and focused tests.
+- Villani Ops: accounting and controller policy, bounded legacy non-Git isolation and materialization, deterministic CLI validation, empirical capability reporting, verifier evidence extraction, runner failure classification, command resolution, focused typing fixes, and regression tests.
+- Cross-component and documentation: `tests/closed_loop/test_cli_e2e.py`, `docs/CLOSED_LOOP.md`, and Flight Recorder `.prettierrc.json`. Tracked Flight Recorder `dist` remains the intentional package payload and has no semantic diff.
+
+Architectural decisions:
+- Non-billed stages with `not_applicable` accounting do not consume or poison a fully known coding-attempt budget; genuinely unknown monetary spend remains `null` with an accounting status.
+- The canonical public `villani run` path still requires Git and tracked-files-only isolation. Compatibility-only legacy orchestrators may use a bounded non-Git snapshot that preserves symlinks, rejects oversized files/snapshots, and excludes environment files, virtual environments, dependency trees, caches, build output, Villani state, and known secret files.
+- Empirical capability evidence is an independent eligibility source from static capability scoring, and both sources are persisted.
+- Direct deterministic validation command evidence satisfies the validation-artifact requirement without inventing a duplicate missing `validations.jsonl` failure; verifier errors and genuinely missing acceptance evidence remain ineligible.
+- The hermetic E2E uses an in-test Git repository, stdlib `unittest`, installed `villani` and `villani-code` entry points, a loopback OpenAI-compatible stub, both proxy modes, and actual Flight Recorder rendering.
+
+Verification:
+- From `components/villani-code`, `python -m pytest -q`: exit code 0; 671 passed, 1 skipped, 27 warnings in 46.88s.
+- From `components/villani-ops`, `python -m pytest -q --basetemp final-temp-full-0711c`: exit code 0; 730 passed, 114 deselected in 98.84s.
+- From the repository root, `python -m pytest tests/closed_loop -q --basetemp root-final-temp-0711b`: exit code 0; 6 passed in 15.29s.
+- From the repository root with installed entry points on `PATH`, `python -m pytest tests/closed_loop/test_cli_e2e.py -m e2e -q`: exit code 0; 2 passed, 1 deselected in 12.56s. The fresh-wheel environment rerun also exited 0 with 2 passed and 1 deselected in 12.45s.
+- From Flight Recorder, `npm ci`: exit code 0; 135 packages added and 136 audited. `npm test`: exit code 0; 19 files and 89 tests passed. `npm run typecheck`, `npm run build`, and `npm run format:check`: exit code 0. `npm audit --omit=dev`: exit code 0; 0 vulnerabilities. `npm pack --dry-run`: exit code 0; 62 files, 67.2 kB packed, 265.3 kB unpacked.
+- Isolated `python -m build --wheel` for Villani Code and Villani Ops: exit code 0; `villani_code-0.1.0rc1-py3-none-any.whl` and `villani_ops-0.2.0-py3-none-any.whl` built. Fresh Python 3.12 environment installation, `villani --help`, and `villani-code --help`: exit code 0.
+- Villani Code focused `ruff check --select E9,F ...`: exit code 0; all checks passed. Focused `mypy ...`: exit code 0; no issues in 3 source files.
+- Villani Ops focused `ruff check --select E9,F ...`: exit code 0; all checks passed. Focused `mypy --follow-imports=skip --ignore-missing-imports ...`: exit code 0; no issues in 28 source files.
+- `python scripts/check-secrets.py integration/fixtures`: exit code 0; 1 root, 0 findings. The generated fresh-wheel E2E tree scan also exited 0 with 1 root and 0 findings.
+
+Acceptance criteria:
+- PASS: All required component, closed-loop, E2E, Flight Recorder, isolated-wheel, installed-entry-point, focused Ruff/mypy, and secret-scan commands exit zero on local Python 3.12.
+- PASS: The real local-stub E2E applies the correct patch and reaches `COMPLETED` in both proxy modes without a live provider, paid model, global pytest dependency in the target repository, or secret.
+- PASS: CI runs Python 3.11/3.12 on Linux, executes the real package-smoke E2E without a conditional executable skip, and validates both installed CLI entry points.
+- PASS: No test was deleted, xfailed, broadly skipped, or weakened to hide a regression; all pytest markers used by root tests are registered.
+- PASS: Generated caches, wheel smoke outputs, component build trees, egg metadata, and `node_modules` are excluded from the deliverable. Flight Recorder `dist` remains because the npm package contract intentionally tracks it.
+
+Assumptions:
+- The audit's Linux baseline (Ops 698 passed/23 failed/114 deselected; Code 669 passed/1 failed/1 skipped) is the reproduction source of truth. This workstation has no installed WSL distribution or running Docker daemon, so the repaired Linux execution is enforced by the existing Ubuntu CI matrix rather than duplicated locally.
+- Python 3.12 is the local supported interpreter used for the complete release gate; Python 3.11 remains covered by CI.
+
+Known risks:
+- Linux Python 3.11/3.12 results depend on the next CI run; the local complete run was Windows Python 3.12. The repaired failures are cross-platform or have explicit platform-safe tests, but no Linux runtime was available in this workspace.
+- Sandbox-owned ignored pytest directories may remain physically present on this workstation because their ACLs reject deletion even outside the managed sandbox; they are ignored, untracked, and absent from the deliverable. All tracked generated artifacts were removed.
+
+Known remaining issues:
+- none within this release-audit repair pass
+
+Next permitted milestone:
+- none. Prompt 01 and all later roadmap work were not started.

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Literal, Mapping
 
 from villani_ops.core.backend import Backend
 from villani_ops.runners.base import RunnerAdapter, RunnerContext, RunnerResult
@@ -18,8 +17,8 @@ from villani_ops.verifier.service import resolve_verifier_debug_dir
 from ..durable_io import write_json_atomic
 from ..costs import actual_attempt_cost
 from ..event_writer import redact_data
-from ..interfaces import AttemptContext, AttemptResult, DependencyFailure
-from ..protocol import AttemptSnapshot, FailureDetail
+from ..interfaces import AttemptContext, AttemptResult, DependencyFailure, RuntimeEvent
+from ..protocol import AccountingStatus, AttemptSnapshot, FailureDetail
 from .git_isolation import GitIsolationAdapter
 from .runtime_event_translation import (
     preserve_raw_trace,
@@ -63,11 +62,13 @@ def _secret_values(backend: Backend, env: Mapping[str, str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
-def _token_accounting(result: RunnerResult) -> tuple[int | None, int | None, str]:
+def _token_accounting(
+    result: RunnerResult,
+) -> tuple[int | None, int | None, AccountingStatus]:
     status = str(result.token_accounting_status or "missing").lower()
     if status == "missing":
         return None, None, "unknown"
-    mapped = "complete" if status == "verified" else "partial"
+    mapped: AccountingStatus = "complete" if status == "verified" else "partial"
     return result.input_tokens, result.output_tokens, mapped
 
 
@@ -154,7 +155,7 @@ class VillaniCodeAttemptAdapter:
         resolved = resolve_verifier_debug_dir(debug_root, runner_trace)
         trace_source = resolved or debug_root or runner_trace
         raw_trace_path: Path | None = None
-        runtime_events = ()
+        runtime_events: tuple[RuntimeEvent, ...] = ()
         if trace_source is not None and trace_source.exists():
             raw_trace_path = preserve_raw_trace(
                 trace_source,
@@ -227,7 +228,7 @@ class VillaniCodeAttemptAdapter:
                 message=str(redact_data(capture.failure_reason, secrets=secrets)),
             )
 
-        status = (
+        status: Literal["completed", "failed"] = (
             "completed"
             if runner_result.exit_code == 0 and not capture.failure_reason
             else "failed"

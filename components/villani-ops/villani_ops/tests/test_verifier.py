@@ -29,7 +29,7 @@ def test_evidence_extractor():
     assert any('syntax error' in e.text for e in f)
     assert any('refused' in e.text for e in f)
     assert len([c for c in r.commands if c.command])==7
-    assert mut and val and m
+    assert mut and val and not m
 def test_recovery_classifier_and_active_failure():
     r=load_debug_run(FIX/'verifier_success'); s,f,*_=extract_evidence(r); active,rec=classify_recovered(f,s)
     assert rec and not active

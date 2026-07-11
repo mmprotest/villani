@@ -1,4 +1,8 @@
 from pathlib import Path
+import os
+import shlex
+import subprocess
+import sys
 from typer.testing import CliRunner
 from villani_ops.cli.main import app
 
@@ -21,7 +25,12 @@ def test_run_configured_shell_edits_file_valid(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path); setup_workspace(tmp_path)
     repo=tmp_path/"repo"; repo.mkdir(); (repo/"hello.txt").write_text("hello\n")
     script=tmp_path/"edit.py"; script.write_text("from pathlib import Path\nPath('hello.txt').write_text('changed\\n')\n")
-    assert runner.invoke(app,["runner","set","shell","--command",f"python {script}"], catch_exceptions=False).exit_code==0
+    command = (
+        subprocess.list2cmdline([sys.executable, str(script)])
+        if os.name == "nt"
+        else shlex.join([sys.executable, str(script)])
+    )
+    assert runner.invoke(app,["runner","set","shell","--command",command], catch_exceptions=False).exit_code==0
     res=runner.invoke(app,["cost-run","--repo",str(repo),"--task","edit","--policy",".villani-ops/policies/p.yaml","--legacy-yaml-policy"], catch_exceptions=False)
     assert res.exit_code==0 and "ACCEPTED" in res.output
     assert (repo/"hello.txt").read_text()=="hello\n"

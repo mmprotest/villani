@@ -136,6 +136,15 @@ def extract_evidence(run):
         if c.exitCode not in (None,0) or FAIL_RE.search(blob): failures.append(EvidenceItem('failure_signal','commands','high' if is_validation_command(cmd) else 'medium',text,c.toolCallId,timestamp=c.ts,order=c.index))
         if (c.exitCode==0 and is_validation_command(cmd)) or PASS_RE.search(blob) or ('git clone' in cmd and c.exitCode==0) or ('git push' in cmd and c.exitCode==0):
             ev=EvidenceItem('validation' if is_validation_command(cmd) else 'success_signal','commands','high' if is_validation_command(cmd) else 'medium',text,c.toolCallId,timestamp=c.ts,order=c.index); success.append(ev); validations.append(ev)
+    if validations:
+        # A successful captured validation command is direct evidence. The
+        # optional validations.jsonl projection must not create a contradictory
+        # missing-evidence blocker when commands.jsonl already proves the run.
+        missing = [
+            item
+            for item in missing
+            if item.text != 'No validations.jsonl artifact was present.'
+        ]
     tm,ti,td,tf=tool_call_evidence(run,spec); mutations+=tm; success+=td; failures+=tf
     return success,failures,risks,missing,mutations,validations,ti,td,spec
 def classify_recovered(failures, successes):

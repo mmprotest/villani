@@ -199,7 +199,11 @@ class AgentRunner(ABC):
                 if not entry:
                     continue
                 candidate = Path(entry.strip('"')) / executable
-                if candidate.is_file():
+                try:
+                    is_file = candidate.is_file()
+                except OSError:
+                    continue
+                if is_file:
                     resolved = str(candidate)
                     break
         resolved = resolved or shutil.which(executable)

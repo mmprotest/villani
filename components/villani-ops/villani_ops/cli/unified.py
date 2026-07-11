@@ -6,14 +6,13 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import typer
 import yaml
@@ -148,7 +147,7 @@ def _runs_root() -> Path:
     return _home() / "runs"
 
 
-def _usage_error(message: str) -> None:
+def _usage_error(message: str) -> NoReturn:
     typer.echo(f"Error: {message}", err=True)
     raise typer.Exit(2)
 
@@ -361,13 +360,18 @@ def backend_add(
         _usage_error(
             "--provider must be one of: " + ", ".join(sorted(CANONICAL_PROVIDERS))
         )
-    if provider in {"local", "openai-compatible"} and not str(base_url or "").strip():
-        _usage_error(f"--provider {provider} requires --base-url")
-    if not re.fullmatch(r"[A-Za-z]{3}", currency):
-        _usage_error("--currency must be a three-letter ISO-style code")
+    missing_requirements: list[str] = []
     roles = list(dict.fromkeys(role or ["coding"]))
     if "coding" in roles and capability_score is None:
-        _usage_error("--capability-score is required for a coding backend")
+        missing_requirements.append(
+            "--capability-score is required for a coding backend"
+        )
+    if provider in {"local", "openai-compatible"} and not str(base_url or "").strip():
+        missing_requirements.append(f"--provider {provider} requires --base-url")
+    if missing_requirements:
+        _usage_error("; ".join(missing_requirements))
+    if not re.fullmatch(r"[A-Za-z]{3}", currency):
+        _usage_error("--currency must be a three-letter ISO-style code")
     if not capability_score_source.strip():
         _usage_error("--capability-score-source must not be empty")
     if api_key_env and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", api_key_env):

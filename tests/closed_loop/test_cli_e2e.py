@@ -38,6 +38,16 @@ def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return completed
 
 
+def _installed_entry_point(name: str) -> str:
+    suffix = ".exe" if os.name == "nt" else ""
+    adjacent = Path(sys.executable).resolve().parent / f"{name}{suffix}"
+    if adjacent.is_file():
+        return str(adjacent)
+    resolved = shutil.which(name)
+    assert resolved is not None, f"the installed {name} entry point is required"
+    return resolved
+
+
 def _tiny_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "target"
     repo.mkdir()
@@ -45,9 +55,13 @@ def _tiny_repo(tmp_path: Path) -> Path:
         "def add(a, b):\n    return a - b\n", encoding="utf-8"
     )
     (repo / "test_calculator.py").write_text(
+        "import unittest\n\n"
         "from calculator import add\n\n"
-        "def test_add():\n"
-        "    assert add(2, 3) == 5\n",
+        "class CalculatorTests(unittest.TestCase):\n"
+        "    def test_add(self):\n"
+        "        self.assertEqual(add(2, 3), 5)\n\n"
+        "if __name__ == '__main__':\n"
+        "    unittest.main()\n",
         encoding="utf-8",
     )
     _run(["git", "init"], repo)
@@ -56,12 +70,12 @@ def _tiny_repo(tmp_path: Path) -> Path:
     _run(["git", "add", "-A"], repo)
     _run(["git", "commit", "-m", "failing baseline"], repo)
     failing = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q"],
+        [sys.executable, "-m", "unittest", "-q"],
         cwd=repo,
         text=True,
         capture_output=True,
     )
-    assert failing.returncode != 0
+    assert failing.returncode != 0, "the target fixture must start with a failing test"
     return repo
 
 
@@ -94,7 +108,7 @@ stamp = "2026-07-10T00:00:01Z" if not accepted else "2026-07-10T00:00:02Z"
 }), encoding="utf-8")
 (trace / "commands.jsonl").write_text(json.dumps({
     "event_id": f"command-{attempt}", "ts": stamp,
-    "command": "python -m pytest -q", "cwd": str(repo),
+    "command": "python -m unittest -q", "cwd": str(repo),
     "exit_code": 0 if accepted else 1,
     "stdout": "1 passed" if accepted else "1 failed", "stderr": "",
 }) + "\n", encoding="utf-8")
@@ -269,7 +283,7 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     assert manifest["total_duration_ms"] == 50
     assert manifest["total_cost_usd"] == 0.60
     assert (repo / "calculator.py").read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
-    _run([sys.executable, "-m", "pytest", "-q"], repo)
+    _run([sys.executable, "-m", "unittest", "-q"], repo)
 
     node = shutil.which("node")
     assert node and FLIGHT_RECORDER.is_file()
@@ -341,7 +355,7 @@ class _DeterministicOpenAIHandler(BaseHTTPRequestHandler):
                     "type": "function",
                     "function": {
                         "name": "Bash",
-                        "arguments": json.dumps({"command": "python -m pytest -q"}),
+                        "arguments": json.dumps({"command": "python -m unittest -q"}),
                     },
                 }
                 response = {"choices": [{"message": {"role": "assistant", "tool_calls": [tool]}}]}
@@ -359,22 +373,48 @@ class _DeterministicOpenAIHandler(BaseHTTPRequestHandler):
 
 
 @pytest.mark.e2e
+@pytest.mark.parametrize("proxy_mode", ["loopback_no_proxy", "no_proxy_variables"])
 def test_public_local_stub_quickstart_uses_real_villani_code_cli(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, proxy_mode: str
 ) -> None:
-    """Exercise the README command shape against a real Villani Code process."""
+    """Exercise installed public entry points and every canonical release stage."""
 
-    if shutil.which("villani-code") is None:
-        pytest.skip("villani-code is not installed; package smoke test installs it")
+    villani = _installed_entry_point("villani")
+    villani_code = _installed_entry_point("villani-code")
     repo = _tiny_repo(tmp_path)
     home = tmp_path / "home"
+    _DeterministicOpenAIHandler.calls = 0
     server = ThreadingHTTPServer(("127.0.0.1", 0), _DeterministicOpenAIHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        monkeypatch.setenv("VILLANI_HOME", str(home))
-        runner = CliRunner()
-        assert runner.invoke(unified.app, ["init"]).exit_code == 0
+        environment = os.environ.copy()
+        environment["VILLANI_HOME"] = str(home)
+        environment["VILLANI_CODE_INLINE_PROMPT_LIMIT"] = "1"
+        proxy_names = (
+            "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+            "http_proxy", "https_proxy", "all_proxy",
+            "NO_PROXY", "no_proxy",
+        )
+        for name in proxy_names:
+            environment.pop(name, None)
+        if proxy_mode == "loopback_no_proxy":
+            environment.update(
+                {
+                    "HTTP_PROXY": "http://127.0.0.1:9",
+                    "HTTPS_PROXY": "http://127.0.0.1:9",
+                    "ALL_PROXY": "http://127.0.0.1:9",
+                    "NO_PROXY": "127.0.0.1,localhost",
+                }
+            )
+        initialized = subprocess.run(
+            [villani, "init"],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+        )
+        assert initialized.returncode == 0, initialized.stdout + initialized.stderr
         config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
         config["budgets"]["max_attempts"] = 1
         config["backends"] = {
@@ -385,13 +425,14 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
                 "roles": ["classification", "coding"],
                 "capability_score": 100,
                 "billing_mode": "unknown",
+                "command_name": villani_code,
                 "metadata": {"allow_dummy_api_key": True},
             }
         }
         unified._write_config(home / "config.yaml", config)
-        result = runner.invoke(
-            unified.app,
+        result = subprocess.run(
             [
+                villani,
                 "run",
                 "Fix calculator addition",
                 "--repo",
@@ -399,9 +440,71 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
                 "--success-criteria",
                 "The test suite passes",
             ],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
         )
-        assert result.exit_code == 0, result.output
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, output
         assert (repo / "calculator.py").read_text(encoding="utf-8").endswith("return a + b\n")
+        _run([sys.executable, "-m", "unittest", "-q"], repo)
+        run_id = next(
+            line.split(":", 1)[1].strip()
+            for line in output.splitlines()
+            if line.startswith("Run ID:")
+        )
+        run_dir = home / "runs" / run_id
+        state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+        assert state["state"] == "COMPLETED"
+        event_types = {
+            json.loads(line)["event_type"]
+            for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        }
+        assert {
+            "classification_completed",
+            "attempt_completed",
+            "verification_completed",
+            "candidate_selected",
+            "materialization_completed",
+            "run_completed",
+        } <= event_types
+        selection = json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))
+        assert selection["selected_candidate_ids"] == ["attempt_001"]
+        attempt_dir = run_dir / "attempts" / "attempt_001"
+        assert (attempt_dir / "patch.diff").is_file()
+        assert (attempt_dir / "worktree.json").is_file()
+        assert not (attempt_dir / "worktree").exists()
+
+        node = shutil.which("node")
+        assert node is not None and FLIGHT_RECORDER.is_file()
+        rendered = tmp_path / "flight-recorder"
+        _run(
+            [
+                node,
+                str(FLIGHT_RECORDER),
+                "launch",
+                "--provider",
+                "villani",
+                "--root",
+                str(home / "runs"),
+                "--run-id",
+                run_id,
+                "--no-open",
+                "--out",
+                str(rendered),
+            ],
+            ROOT,
+        )
+        html = "\n".join(
+            path.read_text(encoding="utf-8") for path in rendered.rglob("*.html")
+        )
+        assert run_id in html and "attempt_001" in html
+        secret_scan = _run(
+            [sys.executable, str(ROOT / "scripts" / "check-secrets.py"), str(run_dir)],
+            ROOT,
+        )
+        assert "0 findings" in secret_scan.stdout
     finally:
         server.shutdown()
         thread.join(timeout=5)

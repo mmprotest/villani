@@ -85,9 +85,14 @@ class InjectedVillaniCodeRunner:
     def __init__(self, steps: list[dict[str, Any]]) -> None:
         self.steps = deque(steps)
         self.calls: list[RunnerContext] = []
+        self.worktree_observations: list[bool] = []
 
     def run(self, context: RunnerContext) -> RunnerResult:
         self.calls.append(context)
+        self.worktree_observations.append(
+            Path(context.repo_path).is_dir()
+            and (Path(context.repo_path) / ".git").is_dir()
+        )
         step = self.steps.popleft()
         value = step.get("value")
         if value is not None:
@@ -370,7 +375,14 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
     attempt_dir = result.run_directory / "attempts" / "attempt_001"
     for name in ("worktree.json", "attempt.json", "patch.diff", "stdout.log", "stderr.log"):
         assert (attempt_dir / name).is_file()
-    assert (attempt_dir / "worktree" / ".git").is_dir()
+    assert runner.worktree_observations == [True]
+    assert not (attempt_dir / "worktree").exists()
+    worktree_metadata = json.loads(
+        (attempt_dir / "worktree.json").read_text(encoding="utf-8")
+    )
+    assert worktree_metadata["retained"] is False
+    assert worktree_metadata["cleanup_status"] == "removed"
+    assert (attempt_dir / "patch.diff").read_text(encoding="utf-8").strip()
     assert runner.calls[0].env["VILLANI_RUN_ID"] == result.run_id
     assert runner.calls[0].env["VILLANI_TRACE_ID"].startswith("trace_")
     assert runner.calls[0].env["VILLANI_ATTEMPT_ID"] == "attempt_001"

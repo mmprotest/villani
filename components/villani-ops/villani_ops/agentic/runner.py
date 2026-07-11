@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import secrets, json
 import httpx
+import subprocess
 from pydantic import BaseModel, ConfigDict
 from villani_ops.core.decision import Decision
 from .state import OpsRunState
@@ -19,6 +20,8 @@ from villani_ops.execution_policies import policy_for_mode
 from villani_ops.core.policy import DEFAULT_TIMEOUT_SECONDS
 from villani_ops.orchestration.nodes import OrchestrationNode
 from villani_ops.orchestration.context import TaskContext
+from villani_ops.closed_loop.failure_classification import classify_runner_failure
+from villani_ops.providers import ProviderConfigurationError
 
 
 def _backend_label(backend):
@@ -32,7 +35,18 @@ def _provider_failure(exc: Exception, backend) -> tuple[str, str, bool]:
         return 'backend_timeout', f'Backend timed out: {label}', True
     if isinstance(exc, httpx.HTTPStatusError):
         code = getattr(getattr(exc, 'response', None), 'status_code', 'unknown')
-        return 'backend_http_error', f'Backend returned HTTP {code}: {label}', True
+        response_text = str(getattr(getattr(exc, 'response', None), 'text', '') or '')
+        kind = classify_runner_failure(1, '', f'{code} {response_text}')
+        if kind == 'runner_nonzero_exit':
+            kind = 'provider_config_error'
+        return kind, f'Backend returned HTTP {code}: {label}', kind in {'backend_connection_error', 'backend_rate_limited'}
+    if isinstance(exc, ProviderConfigurationError):
+        return 'provider_config_error', str(exc) or f'Invalid provider configuration: {label}', False
+    if isinstance(exc, FileNotFoundError):
+        return 'executable_not_found', str(exc) or 'Runner executable was not found', False
+    if isinstance(exc, subprocess.CalledProcessError):
+        kind = classify_runner_failure(exc.returncode, str(exc.stdout or ''), str(exc.stderr or ''))
+        return kind, str(exc) or f'Runner exited {exc.returncode}', kind in {'backend_connection_error', 'backend_rate_limited'}
     if isinstance(exc, httpx.HTTPError):
         return 'backend_response_error', f'Backend request failed: {label}', True
     if isinstance(exc, (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError)):

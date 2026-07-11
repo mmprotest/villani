@@ -482,12 +482,14 @@ def test_controller_persists_classification_before_coding_routing_and_retries_ve
         "backends": {
             "classifier": {
                 "provider": "local",
+                "base_url": "http://127.0.0.1:8000/v1",
                 "model": "classify-model",
                 "roles": ["classification"],
                 "capability_score": 90,
             },
             "coder": {
                 "provider": "local",
+                "base_url": "http://127.0.0.1:8000/v1",
                 "model": "code-model",
                 "roles": ["coding"],
                 "capability_score": 25,

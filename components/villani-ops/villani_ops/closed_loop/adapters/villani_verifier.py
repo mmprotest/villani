@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import time
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping
 
 from villani_ops.verifier.service import execute_verifier
 from villani_ops.closed_loop.costs import actual_attempt_cost
@@ -61,7 +61,9 @@ def _requirements(raw: Mapping[str, Any]) -> tuple[Requirement, ...]:
         if not isinstance(item, dict):
             continue
         status = str(item.get("status") or "").lower()
-        outcome = "passed" if status in {"satisfied", "passed"} else "failed"
+        outcome: Literal["passed", "failed"] = (
+            "passed" if status in {"satisfied", "passed"} else "failed"
+        )
         evidence = item.get("evidence")
         evidence_ids_list: list[str] = []
         for evidence_index, value in enumerate(_list(evidence), 1):
@@ -178,7 +180,8 @@ class VillaniVerifierAdapter:
             )
         usages: list[dict[str, Any]] = []
         for record in records:
-            usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
+            raw_usage = record.get("usage")
+            usage: Mapping[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
             has_usage = bool(usage)
             input_tokens = (
                 int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
@@ -210,7 +213,11 @@ class VillaniVerifierAdapter:
                     "model": str(record.get("model") or (backend.model if backend else self._model) or "") or None,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
-                    "total_tokens": input_tokens + output_tokens if has_usage else None,
+                    "total_tokens": (
+                        input_tokens + output_tokens
+                        if input_tokens is not None and output_tokens is not None
+                        else None
+                    ),
                     "token_accounting_status": "complete" if has_usage else "unknown",
                     "model_calls": 1,
                     "model_call_accounting_status": "complete",

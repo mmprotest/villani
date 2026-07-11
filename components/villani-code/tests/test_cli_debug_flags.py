@@ -8,7 +8,11 @@ from villani_code.cli import app
 
 
 class DummyRunner:
-    def run(self, _instruction: str):
+    def __init__(self) -> None:
+        self.instructions: list[str] = []
+
+    def run(self, instruction: str):
+        self.instructions.append(instruction)
         return {"response": {"content": [{"type": "text", "text": "ok"}]}}
 
 
@@ -41,6 +45,31 @@ def test_cli_run_accepts_debug_flags(monkeypatch, tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert str(captured.get("debug_mode")) == "trace"
     assert captured.get("debug_dir") == tmp_path / "debug"
+
+
+def test_cli_run_reads_instruction_from_task_file(monkeypatch, tmp_path: Path) -> None:
+    dummy = DummyRunner()
+    monkeypatch.setattr("villani_code.cli._build_runner", lambda *args, **kwargs: dummy)
+    task_file = tmp_path / "task.txt"
+    task_file.write_text("long controller prompt\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "--task-file",
+            str(task_file),
+            "--base-url",
+            "http://localhost:8000",
+            "--model",
+            "demo-model",
+            "--repo",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert dummy.instructions == ["long controller prompt\n"]
 
 
 def test_cli_trace_rebuild_summary(tmp_path: Path) -> None:

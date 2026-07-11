@@ -239,3 +239,12 @@ These rules are mandatory in every milestone:
 16. Legacy orchestration paths may remain for compatibility, but `villani run` must not call them.
 17. Root JSON Schemas are normative. Python and TypeScript contract tests must validate the same fixtures.
 18. Existing unrelated behavior and user changes must be preserved.
+
+The public `villani run` path requires a Git repository and retains the
+tracked-files-only isolation default. Legacy compatibility orchestrators may
+accept a non-Git source through a bounded snapshot: symlinks are preserved,
+oversized files and snapshots are rejected, and environment files, virtual
+environments, dependency trees, caches, build output, Villani state, and known
+secret files are excluded. The snapshot is initialized as an isolated Git
+baseline before execution; this compatibility path does not relax the public
+CLI requirement.

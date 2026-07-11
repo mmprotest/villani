@@ -14,6 +14,33 @@ from villani_code.repo_rules import (
 )
 
 
+def repository_has_git_scope(repo: Path) -> bool:
+    """Return whether Git evidence belongs to this repository path."""
+
+    source = repo.resolve()
+    root_result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=source,
+        capture_output=True,
+        text=True,
+    )
+    if root_result.returncode != 0 or not root_result.stdout.strip():
+        return False
+    git_root = Path(root_result.stdout.strip()).resolve()
+    if source == git_root or (source / ".git").exists():
+        return True
+    try:
+        relative = source.relative_to(git_root).as_posix()
+    except ValueError:
+        return False
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", relative],
+        cwd=git_root,
+        capture_output=True,
+    )
+    return tracked.returncode == 0 and bool(tracked.stdout)
+
+
 class FindingCategory(str, Enum):
     REGRESSION = "regression"
     INCOMPLETE_EDIT = "incomplete_edit"
@@ -166,10 +193,15 @@ class VerificationEngine:
                     )
                 )
 
-        git_stat = subprocess.run(
-            ["git", "diff", "--stat"], cwd=self.repo, capture_output=True, text=True
-        )
-        stat_text = git_stat.stdout.strip()
+        stat_text = ""
+        if repository_has_git_scope(self.repo):
+            git_stat = subprocess.run(
+                ["git", "diff", "--stat", "--relative"],
+                cwd=self.repo,
+                capture_output=True,
+                text=True,
+            )
+            stat_text = git_stat.stdout.strip()
         if stat_text:
             last = stat_text.splitlines()[-1]
             if " files changed" in last:
@@ -246,8 +278,10 @@ class VerificationEngine:
         )
 
     def _git_diff_name_only(self) -> list[str]:
+        if not repository_has_git_scope(self.repo):
+            return []
         proc = subprocess.run(
-            ["git", "diff", "--name-only"],
+            ["git", "diff", "--name-only", "--relative"],
             cwd=self.repo,
             capture_output=True,
             text=True,

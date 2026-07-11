@@ -91,7 +91,11 @@ def _calculate(
         fixed_cost = backend.fixed_cost_per_attempt if started else None
         values["fixed_cost"] = fixed_cost
 
-    known = [values[name] for name in expected if values.get(name) is not None]
+    known: list[float] = []
+    for name in expected:
+        value = values.get(name)
+        if value is not None:
+            known.append(value)
     if expected and len(known) == len(expected):
         status: CostAccountingStatus = "complete"
     elif known:

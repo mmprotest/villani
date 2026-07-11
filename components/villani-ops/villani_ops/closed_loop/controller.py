@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping, cast
 
 from villani_ops.core.backend import Backend
 from villani_ops.materialize import inspect_patch_application
@@ -48,11 +48,13 @@ from .interfaces import (
     Verifier,
 )
 from .protocol import (
+    AccountingStatus,
     AttemptSnapshot,
     BackendConsideration,
     BudgetSnapshot,
     CandidateRanking,
     ClassificationSnapshot,
+    ControllerState,
     EventEnvelope,
     Evidence,
     FailureDetail,
@@ -140,7 +142,7 @@ class _Runtime:
     wall_clock_offset_ms: int = 0
     machine: ClosedLoopStateMachine = field(default_factory=ClosedLoopStateMachine)
     last_event: EventEnvelope | None = None
-    previous_state: str | None = None
+    previous_state: ControllerState | None = None
     active_attempt_id: str | None = None
     classification: ClassificationSnapshot | None = None
     classification_backend: Backend | None = None
@@ -419,7 +421,7 @@ class ClosedLoopController:
         store.open_existing(last_sequence=events[-1].sequence)
 
         machine = ClosedLoopStateMachine()
-        previous_state: str | None = None
+        previous_state: ControllerState | None = None
         state_at_sequence: dict[int, str] = {}
         for event in events:
             from_state = event.payload.get("from_state")
@@ -639,7 +641,7 @@ class ClosedLoopController:
                 telemetry = loaded if isinstance(loaded, dict) else {}
         return AttemptResult(
             runner_name=attempt.runner_name,
-            status=attempt.status,
+            status=cast(Literal["completed", "failed", "cancelled"], attempt.status),
             worktree_path=attempt.worktree_path,
             patch=patch,
             exit_code=attempt.exit_code,
@@ -1333,7 +1335,7 @@ class ClosedLoopController:
                 },
             )
         else:
-            started = next(
+            recovered_started = next(
                 (
                     event
                     for event in reversed(runtime.committed_events)
@@ -1341,6 +1343,9 @@ class ClosedLoopController:
                 ),
                 runtime.last_event,
             )
+            if recovered_started is None:
+                raise RunStoreError("materialization recovery lacks a start event")
+            started = recovered_started
         returned_selection = self._selection_interface(selection)
         context = MaterializationContext(
             run_id=runtime.run_id,
@@ -1795,6 +1800,8 @@ class ClosedLoopController:
         attempt_id: str | None,
         budget_before: BudgetContext,
     ) -> PolicyDecisionSnapshot:
+        if runtime.classification is None:
+            raise RunStoreError("policy snapshot requires classification")
         metadata = _mapping_copy(decision.metadata)
         metadata.update(
             {
@@ -2285,6 +2292,7 @@ class ClosedLoopController:
         final_error: Exception | None = None
         failure_category: str | None = None
         verification_usage: list[StageUsage] = []
+        normalized: VerificationSnapshot | None = None
         while True:
             verification_started = self._monotonic()
             try:
@@ -2357,6 +2365,8 @@ class ClosedLoopController:
                 continue
             break
 
+        if normalized is None:
+            raise RunStoreError("verification loop produced no normalized result")
         metadata = _mapping_copy(normalized.metadata)
         metadata.update(
             {
@@ -2913,6 +2923,11 @@ class ClosedLoopController:
             runtime.request.max_attempts - len(runtime.attempts), 0
         )
         known_cost, actual_cost_status = self._actual_cost(runtime)
+        stages = self._stage_metrics(runtime)
+        no_spend_bearing_stage = all(
+            stages[name].cost_accounting_status == "not_applicable"
+            for name in ("classification", "coding", "verification")
+        )
         elapsed = max(
             runtime.wall_clock_offset_ms
             + int((self._monotonic() - runtime.started_monotonic) * 1000),
@@ -2929,7 +2944,13 @@ class ClosedLoopController:
             remaining_cost = runtime.request.max_cost
             cost_status = "complete"
         else:
-            if actual_cost_status == "complete" and known_cost is not None:
+            if no_spend_bearing_stage:
+                # No spend-bearing stage has run. Keep the observable monetary
+                # total unknown/not-applicable, but do not poison a cost cap
+                # before a known-price coding attempt can start.
+                remaining_cost = runtime.request.max_cost
+                cost_status = "complete"
+            elif actual_cost_status == "complete" and known_cost is not None:
                 remaining_cost = max(runtime.request.max_cost - known_cost, 0.0)
                 cost_status = "complete"
             else:
@@ -2947,12 +2968,14 @@ class ClosedLoopController:
         return BudgetContext(
             remaining_attempts=remaining_attempts,
             remaining_cost_usd=remaining_cost,
-            cost_accounting_status=cost_status,
+            cost_accounting_status=cast(AccountingStatus, cost_status),
             remaining_wall_time_ms=remaining_wall_time_ms,
-            duration_accounting_status=duration_status,
+            duration_accounting_status=cast(AccountingStatus, duration_status),
             actual_attempts_used=len(runtime.attempts),
             actual_cost_consumed_usd=known_cost,
-            actual_cost_accounting_status=actual_cost_status,
+            actual_cost_accounting_status=cast(
+                AccountingStatus, actual_cost_status
+            ),
             actual_wall_time_ms=elapsed,
         )
 
@@ -3116,6 +3139,8 @@ class ClosedLoopController:
             return None, "unknown"
         total = self._stage_metrics(runtime).get("total")
         if total is None:
+            return None, "unknown"
+        if total.cost_accounting_status == "not_applicable":
             return None, "unknown"
         return total.cost, total.cost_accounting_status
 

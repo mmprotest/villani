@@ -24,6 +24,10 @@ jobs:
       - run: python -m pip install -e "components/villani-code[dev]"
       - run: python -m pytest -q
         working-directory: components/villani-code
+      - run: ruff check --select E9,F villani_code/cli.py villani_code/execution.py villani_code/command_environment.py
+        working-directory: components/villani-code
+      - run: mypy villani_code/cli.py villani_code/execution.py villani_code/command_environment.py
+        working-directory: components/villani-code
 
   villani-ops:
     strategy:
@@ -40,6 +44,10 @@ jobs:
           cache-dependency-path: components/villani-ops/pyproject.toml
       - run: python -m pip install -e "components/villani-ops[test]"
       - run: python -m pytest -q
+        working-directory: components/villani-ops
+      - run: ruff check --select E9,F villani_ops/closed_loop villani_ops/cli/unified.py villani_ops/providers.py
+        working-directory: components/villani-ops
+      - run: mypy --follow-imports=skip --ignore-missing-imports villani_ops/closed_loop villani_ops/cli/unified.py villani_ops/providers.py
         working-directory: components/villani-ops
 
   flight-recorder:
@@ -111,6 +119,7 @@ jobs:
       - run: "$RUNNER_TEMP/villani-smoke/bin/python" -m pip install pytest
       - run: "$RUNNER_TEMP/villani-smoke/bin/python" -m pip install "$RUNNER_TEMP/villani-wheels"/*.whl
       - run: "$RUNNER_TEMP/villani-smoke/bin/villani" --help
+      - run: "$RUNNER_TEMP/villani-smoke/bin/villani-code" --help
       - run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/villani-home/runs"

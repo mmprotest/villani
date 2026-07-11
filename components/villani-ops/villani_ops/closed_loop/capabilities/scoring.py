@@ -123,7 +123,7 @@ def resolve_empirical_score(
         selected_profile_key=None,
         selected_profile_digest=None,
         selected_sample_count=max(
-            (int(item["sample_count"]) for item in evidence), default=0
+            (int(str(item["sample_count"])) for item in evidence), default=0
         ),
         minimum_empirical_samples=minimum_empirical_samples,
         backoff_evidence=evidence,

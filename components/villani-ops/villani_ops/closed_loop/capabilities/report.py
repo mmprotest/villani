@@ -113,10 +113,9 @@ def explain_routing(
     values = capabilities if isinstance(capabilities, Mapping) else {}
     minimum = int(values.get("minimum_empirical_samples", 20))
     target = float(values.get("target_success_probability", 0.80))
-    wilson_threshold = float(
-        values.get("minimum_empirical_wilson_lower_bound")
-        if values.get("minimum_empirical_wilson_lower_bound") is not None
-        else target
+    configured_threshold = values.get("minimum_empirical_wilson_lower_bound")
+    wilson_threshold = (
+        float(configured_threshold) if configured_threshold is not None else target
     )
     resolutions = []
     optimizer_inputs = []

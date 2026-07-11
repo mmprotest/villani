@@ -177,7 +177,10 @@ def main(
 
 @app.command()
 def run(
-    instruction: str = typer.Argument(..., help="User instruction"),
+    instruction: Optional[str] = typer.Argument(None, help="User instruction"),
+    task_file: Optional[Path] = typer.Option(
+        None, "--task-file", help="Read the user instruction from a UTF-8 file"
+    ),
     base_url: str = typer.Option(..., "--base-url", help="Base URL for compatible messages API server"),
     model: str = typer.Option(..., "--model", help="Model name"),
     repo: Path = typer.Option(Path("."), "--repo", help="Repository path"),
@@ -202,6 +205,17 @@ def run(
     memory_enabled: bool = typer.Option(False, "--memory-enabled/--no-memory-enabled", envvar="VILLANI_MEMORY_ENABLED"),
     memory_update_interval_tool_calls: int = typer.Option(5, "--memory-update-interval-tool-calls", min=1, envvar="VILLANI_MEMORY_UPDATE_INTERVAL_TOOL_CALLS"),
 ) -> None:
+    if task_file is not None:
+        if instruction is not None:
+            raise typer.BadParameter(
+                "provide either an instruction or --task-file, not both"
+            )
+        try:
+            instruction = task_file.read_text(encoding="utf-8")
+        except OSError as error:
+            raise typer.BadParameter(f"cannot read --task-file: {error}") from error
+    if instruction is None:
+        raise typer.BadParameter("an instruction or --task-file is required")
     debug_mode = DebugMode(build_debug_config(debug).mode.value)
     runner = _build_runner(base_url, model, repo, max_tokens, stream, thinking, unsafe, verbose, extra_json, redact, dangerously_skip_permissions, auto_accept_edits, auto_approve, plan_mode, max_repair_attempts, small_model, provider, api_key, benchmark_runtime_json=benchmark_runtime_json, debug_mode=debug_mode, debug_dir=debug_dir, memory_enabled=memory_enabled, memory_update_interval_tool_calls=memory_update_interval_tool_calls)
     if auto_approve:

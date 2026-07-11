@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timezone
-import json, subprocess
+import json, shutil, subprocess
 from typing import Any
 
 
@@ -218,13 +218,29 @@ def apply_patch_safely(repo: Path, patch: Path) -> dict[str, Any]:
     text = patch.read_text(encoding='utf-8', errors='replace')
     if not text.strip():
         return {'attempted': True, 'exit_code': 0, 'empty_patch': True, 'stdout': '', 'stderr': '', 'changed_files': []}
-    chk = _git(repo, ['apply', '--check', str(patch)])
-    if chk.returncode != 0:
-        raise RuntimeError('git apply --check failed: ' + (chk.stderr.strip() or chk.stdout.strip()))
-    ap = _git(repo, ['apply', str(patch)])
-    if ap.returncode != 0:
-        raise RuntimeError('git apply failed: ' + (ap.stderr.strip() or ap.stdout.strip()))
-    return {'attempted': True, 'exit_code': 0, 'empty_patch': False, 'stdout': ap.stdout, 'stderr': ap.stderr, 'changed_files': _changed_files_from_patch(patch)}
+    temporary_git = not (repo / '.git').exists()
+    if temporary_git:
+        initialized = _git(repo, ['init', '-q'])
+        if initialized.returncode != 0:
+            raise RuntimeError(
+                'temporary git baseline failed: '
+                + (initialized.stderr.strip() or initialized.stdout.strip())
+            )
+    try:
+        chk = _git(repo, ['apply', '--check', str(patch)])
+        if chk.returncode != 0:
+            raise RuntimeError('git apply --check failed: ' + (chk.stderr.strip() or chk.stdout.strip()))
+        ap = _git(repo, ['apply', str(patch)])
+        if ap.returncode != 0:
+            raise RuntimeError('git apply failed: ' + (ap.stderr.strip() or ap.stdout.strip()))
+        return {'attempted': True, 'exit_code': 0, 'empty_patch': False, 'stdout': ap.stdout, 'stderr': ap.stderr, 'changed_files': _changed_files_from_patch(patch)}
+    finally:
+        if temporary_git:
+            git_dir = repo / '.git'
+            if git_dir.is_dir():
+                shutil.rmtree(git_dir)
+            elif git_dir.exists():
+                git_dir.unlink()
 
 
 def inspect_patch_application(repo: Path, patch: Path) -> dict[str, Any]:

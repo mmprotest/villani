@@ -19,6 +19,7 @@ from villani_code.autonomy import (
     TaskContract,
     VerificationEngine,
     VerificationStatus,
+    repository_has_git_scope,
 )
 from villani_code.autonomous_stop import DoneReason, StopDecision
 from villani_code.shells import (
@@ -1171,8 +1172,10 @@ class VillaniModeController:
         return reason
 
     def _git_changed_files(self) -> list[str]:
+        if not repository_has_git_scope(self.repo):
+            return []
         proc = subprocess.run(
-            ["git", "status", "--short", "--untracked-files=all"],
+            ["git", "status", "--short", "--untracked-files=all", "--", "."],
             cwd=self.repo,
             capture_output=True,
             text=True,

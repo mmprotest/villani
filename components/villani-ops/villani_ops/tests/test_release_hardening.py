@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from villani_ops.closed_loop.failure_classification import classify_runner_failure
+from villani_ops.agentic.runner import _provider_failure
 from villani_ops.closed_loop.costs import actual_attempt_cost
 from villani_ops.closed_loop.interfaces import ClassificationContext
 from villani_ops.cli.unified import _ClassifierAdapter
@@ -119,6 +120,38 @@ def test_runner_failure_categories(exit_code: int | None, stderr: str, expected:
     assert classify_runner_failure(exit_code, "", stderr) == expected
 
 
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (FileNotFoundError("missing executable"), "executable_not_found"),
+        (ProviderConfigurationError("invalid provider configuration"), "provider_config_error"),
+        (
+            subprocess.CalledProcessError(1, ["runner"], stderr="connection refused"),
+            "backend_connection_error",
+        ),
+        (
+            subprocess.CalledProcessError(1, ["runner"], stderr="401 unauthorized"),
+            "backend_auth_error",
+        ),
+        (
+            subprocess.CalledProcessError(1, ["runner"], stderr="429 rate limited"),
+            "backend_rate_limited",
+        ),
+        (
+            subprocess.CalledProcessError(2, ["runner"], stderr="invalid provider"),
+            "provider_config_error",
+        ),
+        (
+            subprocess.CalledProcessError(9, ["runner"], stderr="unexpected exit"),
+            "runner_nonzero_exit",
+        ),
+    ],
+)
+def test_legacy_runner_failure_categories(error: Exception, expected: str) -> None:
+    kind, _message, _recoverable = _provider_failure(error, object())
+    assert kind == expected
+
+
 def test_attempt_export_excludes_ignored_files_and_preserves_external_symlink(
     tmp_path: Path,
 ) -> None:
@@ -145,6 +178,62 @@ def test_attempt_export_enforces_file_and_total_limits(tmp_path: Path) -> None:
         copy_worktree(repo, tmp_path / "too-small", max_file_size_bytes=1)
     with pytest.raises(AttemptIsolationError, match="max_total_size_bytes"):
         copy_worktree(repo, tmp_path / "too-small-total", max_total_size_bytes=1)
+
+
+def test_legacy_non_git_snapshot_is_bounded_and_excludes_private_state(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "source.py").write_text("print('safe')\n", encoding="utf-8")
+    for directory in (
+        ".villani",
+        ".villani-ops",
+        ".venv",
+        "node_modules",
+        "__pycache__",
+        "build",
+        "dist",
+    ):
+        private = source / directory
+        private.mkdir()
+        (private / "private.txt").write_text("do-not-copy", encoding="utf-8")
+    for filename in (".env.local", ".npmrc", "id_rsa", "service-account.json"):
+        (source / filename).write_text("secret", encoding="utf-8")
+    external = tmp_path / "external"
+    external.write_text("outside", encoding="utf-8")
+    link = source / "external-link"
+    try:
+        link.symlink_to(external)
+    except (OSError, NotImplementedError):
+        link = None
+
+    destination = tmp_path / "snapshot"
+    copied, total = copy_worktree(source, destination)
+
+    assert copied >= 1 and total == (source / "source.py").stat().st_size
+    assert (destination / "source.py").is_file()
+    assert not any((destination / name).exists() for name in (
+        ".villani", ".villani-ops", ".venv", "node_modules", "build", "dist"
+    ))
+    assert not any((destination / name).exists() for name in (
+        ".env.local", ".npmrc", "id_rsa", "service-account.json"
+    ))
+    if link is not None:
+        assert (destination / link.name).is_symlink()
+        assert os.readlink(destination / link.name) == os.readlink(link)
+
+
+def test_legacy_non_git_snapshot_rejects_oversized_content(tmp_path: Path) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "large.bin").write_bytes(b"1234")
+    with pytest.raises(AttemptIsolationError, match="max_file_size_bytes"):
+        copy_worktree(source, tmp_path / "file-limit", max_file_size_bytes=3)
+    (source / "large.bin").write_bytes(b"12")
+    (source / "second.bin").write_bytes(b"34")
+    with pytest.raises(AttemptIsolationError, match="max_total_size_bytes"):
+        copy_worktree(source, tmp_path / "total-limit", max_total_size_bytes=3)
 
 
 def test_baselined_attempt_worktree_can_be_removed_after_capture(tmp_path: Path) -> None:

@@ -31,6 +31,8 @@ class AttemptIsolationError(RuntimeError):
 DEFAULT_ATTEMPT_EXCLUDES = frozenset(
     {
         ".git",
+        ".villani",
+        ".villani-ops",
         ".env",
         ".venv",
         "venv",
@@ -44,6 +46,25 @@ DEFAULT_ATTEMPT_EXCLUDES = frozenset(
         ".cache",
     }
 )
+KNOWN_SECRET_FILENAMES = frozenset(
+    {
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
+        "credentials",
+        "credentials.json",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        "id_rsa",
+        "secrets.json",
+        "secrets.yaml",
+        "secrets.yml",
+        "service-account.json",
+        "service_account.json",
+    }
+)
+KNOWN_SECRET_SUFFIXES = (".key", ".pem", ".p12", ".pfx")
 DEFAULT_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 DEFAULT_MAX_TOTAL_SIZE_BYTES = 500 * 1024 * 1024
 
@@ -70,7 +91,30 @@ def source_is_git_repo(path: Path) -> bool:
         text=True,
         capture_output=True,
     )
-    return proc.returncode == 0 and proc.stdout.strip() == "true"
+    if proc.returncode != 0 or proc.stdout.strip() != "true":
+        return False
+    root = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=Path(path),
+        text=True,
+        capture_output=True,
+    )
+    if root.returncode != 0 or not root.stdout.strip():
+        return False
+    source = Path(path).resolve()
+    git_root = Path(root.stdout.strip()).resolve()
+    if source == git_root or (source / ".git").exists():
+        return True
+    try:
+        relative = source.relative_to(git_root).as_posix()
+    except ValueError:
+        return False
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", relative],
+        cwd=git_root,
+        capture_output=True,
+    )
+    return tracked.returncode == 0 and bool(tracked.stdout)
 
 
 def _git_paths(source: Path, *, include_untracked: bool) -> list[str]:
@@ -93,9 +137,16 @@ def _git_paths(source: Path, *, include_untracked: bool) -> list[str]:
 def _excluded(relative: str, extra: list[str] | None) -> bool:
     parts = Path(relative).parts
     name = Path(relative).name
-    if any(part in DEFAULT_ATTEMPT_EXCLUDES for part in parts):
+    lowered_parts = tuple(part.lower() for part in parts)
+    lowered_name = name.lower()
+    if any(part in DEFAULT_ATTEMPT_EXCLUDES for part in lowered_parts):
         return True
-    if name == ".env" or name.startswith(".env."):
+    if lowered_name == ".env" or lowered_name.startswith(".env."):
+        return True
+    if (
+        lowered_name in KNOWN_SECRET_FILENAMES
+        or lowered_name.endswith(KNOWN_SECRET_SUFFIXES)
+    ):
         return True
     for pattern in extra or []:
         normalized = pattern.replace("\\", "/").lstrip("./")
@@ -103,6 +154,31 @@ def _excluded(relative: str, extra: list[str] | None) -> bool:
         if fnmatch(candidate, normalized) or fnmatch(name, normalized):
             return True
     return False
+
+
+def _snapshot_paths(source: Path) -> list[str]:
+    """Enumerate a legacy non-Git tree without following directory symlinks."""
+
+    paths: list[str] = []
+    for root, directories, filenames in os.walk(source, followlinks=False):
+        root_path = Path(root)
+        relative_root = root_path.relative_to(source)
+        kept_directories: list[str] = []
+        for name in sorted(directories):
+            relative = (relative_root / name).as_posix()
+            if _excluded(relative, None):
+                continue
+            candidate = root_path / name
+            if candidate.is_symlink():
+                paths.append(relative)
+            else:
+                kept_directories.append(name)
+        directories[:] = kept_directories
+        for name in sorted(filenames):
+            relative = (relative_root / name).as_posix()
+            if not _excluded(relative, None):
+                paths.append(relative)
+    return sorted(paths)
 
 
 def _safe_relative_path(relative: str) -> Path:
@@ -171,7 +247,11 @@ def copy_worktree(
     max_file_size_bytes: int = DEFAULT_MAX_FILE_SIZE_BYTES,
     max_total_size_bytes: int = DEFAULT_MAX_TOTAL_SIZE_BYTES,
 ) -> tuple[int, int]:
-    """Export tracked files without dereferencing symlinks or copying ignored data."""
+    """Export a bounded attempt tree while preserving the canonical Git default.
+
+    Git sources export tracked files (plus explicitly requested untracked files).
+    Legacy non-Git sources use a bounded snapshot with the same safety exclusions.
+    """
 
     if max_file_size_bytes < 1 or max_total_size_bytes < 1:
         raise AttemptIsolationError("attempt worktree size limits must be positive")
@@ -179,18 +259,22 @@ def copy_worktree(
     destination = Path(dst)
     if destination.exists():
         remove_tree(destination)
-    root_result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        cwd=source,
-        text=True,
-        capture_output=True,
-    )
-    export_source = (
-        Path(root_result.stdout.strip()).resolve()
-        if root_result.returncode == 0 and root_result.stdout.strip()
-        else source
-    )
-    paths = _git_paths(export_source, include_untracked=include_untracked_attempt_files)
+    if source_is_git_repo(source):
+        root_result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=source,
+            text=True,
+            capture_output=True,
+        )
+        if root_result.returncode != 0 or not root_result.stdout.strip():
+            raise AttemptIsolationError("cannot resolve the Git worktree root")
+        export_source = Path(root_result.stdout.strip()).resolve()
+        paths = _git_paths(
+            export_source, include_untracked=include_untracked_attempt_files
+        )
+    else:
+        export_source = source
+        paths = _snapshot_paths(export_source)
     try:
         return _export_paths(
             export_source,

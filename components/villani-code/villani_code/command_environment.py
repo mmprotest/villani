@@ -238,6 +238,12 @@ def build_agent_command_environment(
         if normalized not in roots:
             roots.append(normalized)
     root_tuple = tuple(roots)
+    workspace_root = _normalized(workspace)
+
+    def is_private(path: Path) -> bool:
+        return _is_within(path, root_tuple) and not _is_within(
+            path, (workspace_root,)
+        )
     path_variables = set(path_list_variables)
     runner_variables = {
         name
@@ -257,7 +263,7 @@ def build_agent_command_environment(
             for entry in value.split(os.pathsep):
                 if not entry:
                     continue
-                if _is_absolute_like(Path(entry)) and _is_within(Path(entry), root_tuple):
+                if _is_absolute_like(Path(entry)) and is_private(Path(entry)):
                     path_entries_removed += 1
                     continue
                 kept.append(entry)
@@ -265,10 +271,10 @@ def build_agent_command_environment(
             continue
 
         value_path = Path(value)
-        if _is_absolute_like(value_path) and _is_within(value_path, root_tuple):
+        if _is_absolute_like(value_path) and is_private(value_path):
             environment.pop(name)
             direct_removed.append(name)
-        elif _contains_private_absolute_path(value, root_tuple):
+        elif any(is_private(path) for path in _absolute_path_tokens(value)):
             flagged.append(name)
 
     return AgentCommandEnvironment(

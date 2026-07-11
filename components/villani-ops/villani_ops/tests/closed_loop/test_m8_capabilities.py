@@ -703,7 +703,7 @@ def test_same_source_data_produces_same_digest_and_optimizer_decision(tmp_path: 
     assert optimize_sequence(inputs, max_attempts=2) == optimize_sequence(inputs, max_attempts=2)
 
 
-def test_policy_uses_empirical_order_only_after_static_eligibility() -> None:
+def test_sufficient_empirical_evidence_can_qualify_below_static_threshold() -> None:
     classification = ClassificationSnapshot(
         schema_version="villani.classification.v1",
         classification_id="classification_001",
@@ -726,7 +726,7 @@ def test_policy_uses_empirical_order_only_after_static_eligibility() -> None:
         provider="local",
         model="cheap-model",
         roles=["coding"],
-        capability_score=25,
+        capability_score=10,
         billing_mode="fixed",
         fixed_cost_per_attempt=0.1,
     )
@@ -743,8 +743,8 @@ def test_policy_uses_empirical_order_only_after_static_eligibility() -> None:
         _profile(
             _key(backend="cheap", model="cheap-model", difficulty="easy"),
             20,
-            2,
-            mean_cost=2.0,
+            20,
+            mean_cost=0.1,
         ),
         _profile(
             _key(backend="strong", model="strong-model", difficulty="easy"),
@@ -785,11 +785,14 @@ def test_policy_uses_empirical_order_only_after_static_eligibility() -> None:
         configuration,
         capability_snapshot=snapshot,
     ).decide(context)
-    assert decision.chosen_backend == "strong"
+    assert decision.chosen_backend == "cheap"
     assert decision.policy_version == "empirical_sequence_v1"
     assert {item.backend_name: item.capability_score for item in decision.considered_backends} == {
-        "cheap": 25.0,
+        "cheap": 10.0,
         "strong": 90.0,
     }
-    assert decision.metadata["capability_scores"]["cheap"]["static_capability_score"] == 25
+    assert decision.metadata["capability_scores"]["cheap"]["static_capability_score"] == 10
+    eligibility = decision.metadata["eligibility_by_backend"]["cheap"]
+    assert eligibility["static_eligible"] is False
+    assert eligibility["empirical_eligible"] is True
     assert decision.metadata["policy_path_used"] == "empirical_sequence_v1"

@@ -13,7 +13,11 @@ def _exact_path_match(command: str) -> str | None:
         if not entry:
             continue
         candidate = Path(entry) / command
-        if candidate.is_file():
+        try:
+            is_file = candidate.is_file()
+        except OSError:
+            continue
+        if is_file:
             return str(candidate)
     return None
 
@@ -32,7 +36,9 @@ def resolve_command_prefix(command: str) -> list[str] | None:
 
     suffix = Path(resolved).suffix.lower()
     if os.name == "nt" and suffix in {".cmd", ".bat"}:
-        return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", resolved]
+        # ``call`` keeps a quoted batch path with spaces from being parsed as
+        # the command itself by cmd.exe when more arguments follow it.
+        return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "call", resolved]
     if os.name == "nt" and suffix not in {".exe", ".com"}:
         try:
             first_line = Path(resolved).read_text(encoding="utf-8", errors="ignore").splitlines()[0]

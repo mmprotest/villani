@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from itertools import permutations
 from math import prod
+from typing import cast
 from typing import Iterable
 
 from .models import (
@@ -126,9 +127,10 @@ def optimize_sequence(
         for backend_names in permutations(sorted(by_name), length):
             total_enumerated += 1
             sequence_inputs = [by_name[name] for name in backend_names]
-            costs = [float(item.mean_actual_attempt_cost) for item in sequence_inputs]
+            costs = [cast(float, item.mean_actual_attempt_cost) for item in sequence_inputs]
             probabilities = [
-                float(item.conservative_success_probability) for item in sequence_inputs
+                cast(float, item.conservative_success_probability)
+                for item in sequence_inputs
             ]
             worst_case_cost = sum(costs)
             if known_cost_budget is not None and worst_case_cost > known_cost_budget:

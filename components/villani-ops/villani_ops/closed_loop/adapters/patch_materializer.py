@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from villani_ops.materialize import apply_patch_safely
 
@@ -49,6 +49,7 @@ class PatchMaterializerAdapter:
         final_patch: str | None = None
         final_report = ""
         apply_artifact = None
+        status: Literal["succeeded", "failed"]
         try:
             if selection.selected_attempt_id != attempt_id:
                 raise ValueError("materialization context is not the selected attempt")
@@ -61,8 +62,8 @@ class PatchMaterializerAdapter:
             patch_text = source_patch.read_text(encoding="utf-8", errors="replace")
             if not patch_text.strip():
                 raise ValueError("selected recorded patch is empty")
-            patch_hash = hashlib.sha256(patch_text.encode("utf-8")).hexdigest()
-            if selected.attempt.patch_sha256 != patch_hash:
+            selected_patch_hash = hashlib.sha256(patch_text.encode("utf-8")).hexdigest()
+            if selected.attempt.patch_sha256 != selected_patch_hash:
                 raise ValueError("selected patch hash does not match attempt snapshot")
             if patch_text != selected.patch:
                 raise ValueError("selected patch bytes differ from controller candidate")

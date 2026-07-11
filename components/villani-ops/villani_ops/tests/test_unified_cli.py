@@ -126,6 +126,7 @@ def test_backend_add_validates_capability_and_billing_fields() -> None:
     )
     assert missing_capability.exit_code == 2
     assert "--capability-score is required" in missing_capability.output
+    assert "--provider local requires --base-url" in missing_capability.output
 
     incomplete_token = runner.invoke(
         unified.app,
@@ -137,6 +138,8 @@ def test_backend_add_validates_capability_and_billing_fields() -> None:
             "local",
             "--model",
             "m",
+            "--base-url",
+            "http://127.0.0.1:8000/v1",
             "--capability-score",
             "25",
             "--billing-mode",
@@ -158,6 +161,8 @@ def test_backend_add_validates_capability_and_billing_fields() -> None:
             "local",
             "--model",
             "m",
+            "--base-url",
+            "http://127.0.0.1:8000/v1",
             "--role",
             "coding",
             "--role",
@@ -270,6 +275,7 @@ def test_capability_commands_rebuild_list_and_explain_without_attempt(
     configuration["backends"] = {
         "fixture": {
             "provider": "local",
+            "base_url": "http://127.0.0.1:8000/v1",
             "model": "fixture-model",
             "roles": ["classification", "coding"],
             "capability_score": 55,

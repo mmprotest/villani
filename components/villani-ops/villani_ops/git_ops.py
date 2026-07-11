@@ -48,6 +48,22 @@ def safe_apply(run_dir: Path, *, branch: str|None=None, commit: bool=False, mess
         is_repo=source_is_git_repo(repo)
         if dirty(repo) and not force: raise ValueError('Source repo is dirty; use --force')
         if branch and not is_repo: raise ValueError('Branch integration requires a Git source repository')
+        if not is_repo:
+            from villani_ops.materialize import apply_patch_safely
+            if not patch.read_text(encoding='utf-8', errors='replace').strip():
+                raise RuntimeError('selected legacy patch is empty')
+            applied = apply_patch_safely(repo, patch)
+            art={
+                'attempted':True,'run_id':run_id,'pre_mutation':pre,
+                'patch_path':str(patch),'branch':None,'commit':False,
+                'commit_sha':None,'exit_code':applied['exit_code'],
+                'stdout':applied.get('stdout',''),'stderr':applied.get('stderr',''),
+                'rollback_attempted':False,'rollback_succeeded':False,
+                'recovery_instructions':[],
+                'created_at':datetime.now(timezone.utc).isoformat(),
+            }
+            (run_dir/artifact_name).write_text(json.dumps(art,indent=2))
+            return art
         chk=run_git(repo,['apply','--check',str(patch)])
         stdout.append(chk.stdout); stderr.append(chk.stderr)
         if chk.returncode!=0: raise RuntimeError('git apply --check failed; repository was not mutated: '+(chk.stderr.strip() or chk.stdout.strip()))
