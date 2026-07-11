@@ -70,6 +70,9 @@ from .protocol import (
     VerificationSnapshot,
 )
 from .run_store import RunStore, RunStoreError, json_safe_copy
+from villani_ops.execution_environment import preflight_report
+from villani_ops.execution_environment import ExecutionPolicyDenied
+from .protocol_v2 import ResourceV2
 from .durable_io import (
     read_jsonl_tolerant,
     repair_truncated_final_jsonl,
@@ -1512,6 +1515,27 @@ class ClosedLoopController:
             metadata={},
         )
         runtime.store.write_protocol("task.json", task)
+        preflight = preflight_report(
+            Path(runtime.request.repository_path), runtime.request.policy_configuration
+        )
+        runtime.store.write_json("preflight.json", preflight)
+        fingerprint = str(preflight["execution_environment_fingerprint"])
+        runtime.store.write_protocol(
+            "resource.json",
+            ResourceV2(
+                schema_version="villani.resource.v2",
+                service_name="villani",
+                service_version=None,
+                deployment_environment="local",
+                host_id=None,
+                process_id=None,
+                attributes={
+                    "villani.execution_environment.provider": preflight["provider"]["provider"],
+                    "villani.execution_environment.fingerprint": fingerprint,
+                    "villani.execution_environment.preflight": "preflight.json",
+                },
+            ),
+        )
         self._persist_state(runtime)
         self._persist_manifest(runtime)
 
@@ -1962,6 +1986,15 @@ class ClosedLoopController:
                     material_progress(returned),
                 )
         except Exception as error:
+            if isinstance(error, ExecutionPolicyDenied):
+                policy_event = runtime.events.emit(
+                    "execution_policy_denied",
+                    error.event,
+                    attempt_id=attempt_id,
+                    parent_event_id=started.event_id,
+                )
+                runtime.last_event = policy_event
+                runtime.committed_events.append(policy_event)
             snapshot = self._persist_synthetic_failed_attempt(
                 runtime, context, started.timestamp, error
             )

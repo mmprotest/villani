@@ -10,6 +10,7 @@ from typing import Any
 
 from .protocol import EventEnvelope
 from .run_store import RunStore
+from villani_ops.execution_environment.secrets import registered_secret_values
 
 
 _SECRET_PATTERNS = (
@@ -21,6 +22,8 @@ _SECRET_PATTERNS = (
 
 def redact_message(message: str, *, limit: int = 500) -> str:
     redacted = message.replace("\r", " ").replace("\n", " ")
+    for secret in registered_secret_values():
+        redacted = redacted.replace(secret, "[REDACTED]")
     for pattern in _SECRET_PATTERNS:
         if pattern.pattern.lower().startswith("(?i)(api"):
             redacted = pattern.sub(r"\1\2[REDACTED]", redacted)
@@ -47,7 +50,7 @@ def redact_data(value: Any, *, secrets: tuple[str, ...] = ()) -> Any:
         return str(value)
     if isinstance(value, str):
         redacted = value
-        for secret in secrets:
+        for secret in (*registered_secret_values(), *secrets):
             if secret:
                 redacted = redacted.replace(secret, "[REDACTED]")
         if not redacted:

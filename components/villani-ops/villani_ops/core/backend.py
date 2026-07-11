@@ -33,6 +33,7 @@ class Backend(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)  # backward compatible
     command_name: str | None = None
+    execution_environment: str | None = None
 
     @model_validator(mode="after")
     def normalize_provider_defaults(self) -> "Backend":

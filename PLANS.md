@@ -1548,3 +1548,115 @@ Known remaining issues:
 
 Next permitted milestone:
 - A later publication or hosted-services pass only after the user explicitly starts it. No package was published, and no hosted service, account, or cloud feature was added.
+
+#### 2026-07-11: Execution-environment discovery, inherit/setup-command, and doctor pass
+
+Status: complete
+
+Changed files:
+- New typed execution-environment package under `components/villani-ops/villani_ops/execution_environment/` with provider contract, configuration/limit models, repository inspection, fingerprinting, inherited-environment sanitization, bounded explicit setup execution, and keyed cache evidence.
+- Public configuration and `villani doctor --repo PATH [--json]` in `components/villani-ops/villani_ops/cli/unified.py`.
+- Canonical attempt integration, exact child-environment handoff, bundle preflight/resource persistence, and v2 resource propagation in Villani Ops closed-loop/controller/runner files.
+- Windows canonical runner Job Object cleanup in `villani_ops/runners/villani_code.py` so timeout terminates the process tree without pipe-reader deadlock.
+- Provider unit coverage in `components/villani-ops/villani_ops/tests/test_execution_environment.py` and production-path assertions in `tests/closed_loop/test_cli_e2e.py`.
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- `ExecutionEnvironmentProvider` owns `prepare`, `command_environment`, `execute`, `collect`, `cleanup`, `capability_report`, and `fingerprint`. Only `inherit` and `setup-command` exist in this pass.
+- `inherit` starts from the caller environment and removes exact configured denied names, an explicit sensitive-name set, Villani/runner-private variables, and path entries or direct path values contained in explicit Villani-private roots. Repository/worktree-local paths and all other user PATH entries remain available. Durable removal evidence stores names/reasons and never removed values.
+- `setup-command` runs only after Git isolation exists. Shell-free argv is the default; shell execution requires both `shell: true` and a separately configured string. Timeout, stdout, stderr, disk growth, and process count are bounded; Windows uses a Job Object and POSIX monitors the process tree. Setup output content is not persisted.
+- Setup cache identity is SHA-256 over repository HEAD, detected lockfile digests, provider version, platform, setup command, and shell mode. A hit reuses only the keyed dependency-cache directory and success evidence; the explicit setup command still runs in each fresh worktree. Neither worktrees nor secrets are cached.
+- Inspection recognizes Python/requirements, npm/pnpm/yarn, Cargo, Go, Maven, Gradle, devcontainer, Nix, and explicit Villani configuration. Recommendations are structured argv only and are never executed by inspection or preflight.
+- Doctor JSON is versioned as `villani.doctor.v1`. Required Git, disk, configured execution provider, coding command, credentials, and backend capability determine exit 0. Daemon and observation-adapter status are reported but optional unless separately configured. OpenAI-compatible/local backends use model-free models/health GET probes; providers/endpoints without such a surface are explicitly `unsupported`, and every probe records zero model tokens.
+- Every canonical run writes `preflight.json` and v2 `resource.json` at creation. Real attempts add `execution_environment.json`, persist the actual fingerprint in attempt metadata, and propagate resource attributes into v2 translation.
+
+Verification:
+- Villani Ops final full suite: `python -m pytest -q --basetemp .test-temp/execution-full-final-cache`: exit code 0; 751 passed, 114 deselected, and one non-failing pytest-cache ACL warning in 102.09s.
+- Execution-provider focused suite: exit code 0; 5 passed in 5.88s. Focused adapter/protocol/CLI suite after scoped reconstruction: exit code 0; 49 passed in 15.79s.
+- Real production local-stub E2E in both proxy modes: exit code 0; 2 passed in 15.07s. It ran doctor first, then the real Villani Code provider path, persisted fingerprint/preflight/v2 resource evidence, materialized the selected patch, replayed it in Flight Recorder, and passed the generated-bundle secret scan.
+- Villani Agentd full suite: exit code 0; 36 passed and one non-failing pytest-cache ACL warning in 6.38s.
+- Villani Code final full suite with Git discovery bounded at the component root: exit code 0; 671 passed, 1 skipped, and 28 warnings in 39.82s. The first unconstrained invocation saw two test-environment failures because it treated this milestone's root dirty tree as candidate state and used a protected TEMP location; neither remained under the repository's documented component isolation.
+- Root closed-loop suite: exit code 0; 6 passed in 18.14s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files and 102 tests passed; `npm.cmd run typecheck`, `npm.cmd run build`, and `npm.cmd run format:check` all exited 0, with every Prettier file matching.
+- New execution-environment Ruff check: exit code 0; all checks passed. Targeted mypy with skipped imports: exit code 0; no issues in 3 source files. Changed-source compileall: exit code 0.
+- Changed-scope secret scan: exit code 0; 4 roots and 0 findings. `git diff --check`: exit code 0 (line-ending notices only).
+
+Acceptance criteria:
+- PASS: repository-local and activated caller toolchains remain usable in inherit mode; tests preserve repository `.venv`, user PATH entries, and `VIRTUAL_ENV`.
+- PASS: Villani-private entries, explicit sensitive variables, and configured denied variables are absent from prepared child environments, with name/reason-only removal evidence.
+- PASS: changing a lockfile changes the setup cache key and forces a cache miss; a hit never substitutes a prior worktree for fresh setup.
+- PASS: inferred setup and test commands are advisory and never execute automatically.
+- PASS: doctor exits 0 only when configured required capabilities are usable, emits versioned stable JSON, and records zero-token or explicitly unsupported backend probes.
+- PASS: execution fingerprint and preflight evidence persist in canonical bundles, attempts, and translated v2 resources.
+- PASS: existing Ops, daemon, root integration, and real local-stub E2E suites pass.
+- PASS: no container provider, inferred setup execution, additional runner, or later milestone was started.
+
+Assumptions:
+- An endpoint returning 404, 405, or 501 for every model-free models/health probe is treated as explicitly unsupported rather than unreachable; credential and local command checks still apply.
+- Setup commands that want a reusable dependency/download location may consume `VILLANI_SETUP_CACHE`; setup is always rerun because Villani cannot safely infer which effects are worktree-local.
+- Doctor's bootstrap disk requirement is 100 MiB free; setup's actual disk-growth bound remains separately configurable.
+
+Known risks:
+- POSIX process-count enforcement uses `/proc` when available; Windows is enforced with a Job Object. Non-Linux POSIX hosts retain timeout/tree cancellation and other limits but need platform CI evidence for an equivalent hard process-count primitive.
+- Explicit `shell: true` intentionally restores shell parsing and therefore carries the normal quoting/expansion risk; it is never inferred or enabled by default.
+- Repository-wide mypy remains non-clean from pre-existing annotations outside this milestone; the new execution-environment package passes its targeted mypy check.
+- The Windows host continues to emit non-failing pytest-cache warnings because protected `.pytest_cache` ACLs prevent cache writes.
+
+Known remaining issues:
+- None within inherit/setup-command, doctor, persistence, or the production execution-provider path.
+
+Next permitted milestone:
+- A container or other execution provider only after the user explicitly starts it. Containers were not started in this pass.
+
+#### 2026-07-11: Hardened container/devcontainer and secret-brokering pass
+
+Status: complete
+
+Changed files:
+- Extended `components/villani-ops/villani_ops/execution_environment/` with strict container/devcontainer configuration, Docker/Podman and Dev Container CLI providers, action/workspace/archive policy enforcement, and ephemeral secret brokering.
+- Updated the public CLI/configuration, canonical attempt adapter/controller/event redaction, backend model, runner context/wrapper, and persisted execution evidence in `components/villani-ops/villani_ops/`.
+- Added hardened provider, hostile-workspace, policy, cleanup, concurrency, secret-canary, doctor-shape, and canonical failed-run tests under `components/villani-ops/villani_ops/tests/`.
+- Preserved the production-provider local-stub E2E in `tests/closed_loop/test_cli_e2e.py` and updated this progress section only.
+
+Architectural decisions:
+- `container` selects Docker or Podman explicitly or by capability detection, probes both CLI and daemon plus the configured local image, and runs one named container per isolated worktree. Runtime arguments enforce CPU, memory, pids, read-only root, bounded tmpfs, optional user, workspace bind, timeout, output, and workspace growth limits.
+- `devcontainer` uses the documented `devcontainer up` and `devcontainer exec` CLI boundary. Villani emits a temporary hardened config and refuses Compose, lifecycle commands, repository mounts/run arguments, Features, privilege/capability escalation, security options, and port forwarding with key-specific diagnostics. See `https://code.visualstudio.com/docs/devcontainers/devcontainer-cli` and `https://github.com/devcontainers/spec/blob/main/docs/specs/devcontainer-reference.md`.
+- Local mode defaults network to `inherit`; controlled/remote mode defaults to `deny`. Deny uses the engine's `none` network. Allowlist mode requires an explicitly verified proxy URL and isolated proxy network; containers receive only proxy variable names and the report stores policy mode/counts, not traffic contents.
+- `SecretBroker` and `LocalSecretBroker` support current-environment and shell-free command sources. Leases inject named environment variables or read-only `/run/secrets` files only into the selected container process, register exact values with the persistence redactor, cap provider output, reject target traversal, zero/delete temporary files, and scavenge dead-owner directories after a daemon crash.
+- Backend API credentials use exact child-process environment injection rather than command arguments. Hardened devcontainer execution fails closed for credentials because the documented CLI cannot provide a selected-exec-only secret boundary without exposing values in argv/config; credential-bearing runs must use `container` until a safe library/API boundary is added.
+- Command/path/domain decisions fail with `villani.execution_policy_event.v1`. Commands are checked before process creation; hostile worktrees reject traversal, symlinks, sockets, device/FIFO entries, oversized files, excessive archive expansion/entries, and compression bombs.
+- Provider selection is strict and may be named per backend. Fingerprints include provider/config/runtime identity and remain persisted in attempt evidence, preflight, bundle resource, and v2 resource. Parallel preparations use instance-specific container labels, secret leases, and temporary configs.
+
+Verification:
+- Villani Ops final full suite: exit code 0; 774 passed, 1 Windows platform skip, 114 deselected in 109.16s.
+- Hardened/discovery focused suite: exit code 0; 27 passed, 1 Windows platform skip in 8.92s. The skip is the Unix-only real socket/FIFO fixture; portable synthetic device-mode coverage passed on Windows.
+- Root closed-loop integration after final cleanup changes: exit code 0; 6 passed in 18.16s.
+- Villani Agentd full suite: exit code 0; 36 passed in 6.50s.
+- Villani Code full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 63.96s. The sole failure is the existing dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`: it patches `runner._git_changed_files`, while production calls the module-level Git function and sees this milestone's legitimate root changes.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; `npm.cmd run typecheck`, `npm.cmd run build`, and `npm.cmd run format:check` all exited 0.
+- Scoped Ruff: exit code 0 for the execution package and edited structured sources/tests. Targeted mypy with skipped imports: exit code 0, no issues in 6 execution-environment modules. Changed-source compileall and `git diff --check`: exit code 0.
+- Complete- and failed-run exact canary scans passed; production-source canary scan reported no findings outside test fixtures.
+
+Acceptance criteria:
+- PASS: container and devcontainer production-boundary fixtures execute unit tests and leave a captured Git patch.
+- PASS: deny network maps to an engine-level `none` network, allowlist requires a verified proxy boundary, and denied commands fail before any subprocess spawn.
+- PASS: exact secret canaries are absent from complete and failed run trees; temporary files are removed idempotently and dead-process files are scavenged after crash/restart.
+- PASS: CPU/memory/pids/tmpfs/read-only/user/network arguments are enforced by the engine; timeout/output/workspace growth are monitored and classified, and pids/memory exits receive resource classifications.
+- PASS: command/path/domain denials are structured and fail closed; hostile filesystem/archive fixtures are rejected.
+- PASS: backend-selected providers and fingerprints persist through the canonical bundle and v2 resource path.
+
+Assumptions:
+- `proxy_boundary_verified: true` means the configured proxy network is externally administered to reject direct egress and enforce the declared host/domain allowlist; Villani does not inspect or persist proxy traffic.
+- The configured container image is already present locally. Doctor marks a missing image unavailable rather than pulling it implicitly.
+- Engine storage quotas are optional because support varies by Docker/Podman storage driver; the always-on workspace growth monitor, read-only root, and bounded tmpfs provide the portable disk boundary.
+
+Known risks:
+- Real Docker/Podman and Dev Container daemons were unavailable on this Windows host, so engine invocation is covered by deterministic CLI-boundary fixtures rather than a live daemon integration run.
+- Devcontainer secret injection is intentionally unsupported until a boundary can inject into only the selected exec without placing values in argv or generated configuration.
+- Domain allowlisting depends on the configured verified proxy boundary. A malicious or misconfigured proxy is outside Villani's local enforcement surface.
+
+Known remaining issues:
+- The unrelated Villani Code dirty-root-sensitive test described above remains failing in a repository with this milestone's uncommitted changes; Villani Ops, daemon, recorder, and closed-loop integration suites are green.
+
+Next permitted milestone:
+- Remote workers or enterprise policy administration only after an explicit user request. Neither was started in this pass.

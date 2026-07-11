@@ -8,6 +8,10 @@ import re
 import shlex
 import subprocess
 import time
+import shutil
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import asdict
 from datetime import datetime, timezone
 from collections.abc import Callable, Mapping
@@ -56,6 +60,12 @@ from villani_ops.providers import (
 )
 from villani_ops.core.task import Task
 from villani_ops.subprocess_utils import resolve_command_prefix
+from villani_ops.execution_environment import (
+    ExecutionEnvironmentConfig,
+    inspect_repository,
+    preflight_report,
+    provider_from_configuration,
+)
 
 
 console = Console()
@@ -125,6 +135,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "keep_attempt_worktrees": False,
         "max_file_size_bytes": 52428800,
         "max_total_size_bytes": 524288000,
+    },
+    "execution_environment": {
+        "provider": "inherit",
+        "denied_variables": [],
+        "sensitive_variables": [],
+        "private_paths": [],
+        "required": True,
     },
     "backends": {},
 }
@@ -258,6 +275,291 @@ def initialize(
     console.print(f"Runs: {runs}")
 
 
+def _probe_backend(backend: Backend) -> dict[str, Any]:
+    """Probe a documented non-generation endpoint; never submit a model request."""
+
+    provider = str(backend.provider)
+    supported = provider in {"openai", "openai-compatible", "local"} and bool(
+        backend.base_url
+    )
+    credential = backend.api_key_status()
+    if provider == "local" or bool(backend.metadata.get("allow_dummy_api_key")):
+        credential = "not_required"
+    result: dict[str, Any] = {
+        "name": backend.name,
+        "provider": provider,
+        "enabled": backend.enabled,
+        "credential_status": credential,
+        "probe": "models" if supported else "unsupported",
+        "probe_status": "unsupported" if not supported else "unreachable",
+        "usable": False,
+        "model_tokens_spent": 0,
+    }
+    credential_ok = credential in {
+        "direct_key_configured",
+        "env_var_present",
+        "not_required",
+    }
+    if not supported:
+        result["usable"] = credential_ok
+        result["reason"] = "provider exposes no configured health/models probe"
+        return result
+    base = str(backend.base_url).rstrip("/")
+    parsed = urllib.parse.urlsplit(base)
+    origin_health = urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, "/health", "", "")
+    )
+    endpoints = [("models", base + "/models"), ("health", base + "/health")]
+    if origin_health != base + "/health":
+        endpoints.append(("health", origin_health))
+    headers = {"Accept": "application/json"}
+    key = backend.resolved_api_key()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    unsupported_status: int | None = None
+    for probe_name, endpoint in endpoints:
+        request = urllib.request.Request(endpoint, headers=headers, method="GET")
+        try:
+            with opener.open(request, timeout=3) as response:
+                response.read(65_536)
+                result["probe"] = probe_name
+                result["probe_status"] = (
+                    "ok" if 200 <= response.status < 300 else "error"
+                )
+                break
+        except urllib.error.HTTPError as error:
+            if error.code in {404, 405, 501}:
+                unsupported_status = error.code
+                continue
+            result["probe_status"] = (
+                "authentication_failed" if error.code in {401, 403} else "error"
+            )
+            result["http_status"] = error.code
+            break
+        except (OSError, urllib.error.URLError) as error:
+            result["reason"] = error.__class__.__name__
+            break
+    else:
+        result["probe"] = "unsupported"
+        result["probe_status"] = "unsupported"
+        result["reason"] = (
+            "configured endpoint exposes no model-free health/models probe"
+        )
+        result["http_status"] = unsupported_status
+    result["usable"] = credential_ok and result["probe_status"] in {"ok", "unsupported"}
+    return result
+
+
+def _daemon_diagnostic() -> dict[str, Any]:
+    try:
+        from villani_agentd.client import LocalClient
+
+        health = LocalClient.from_files().health()
+        return {
+            "installed": True,
+            "running": health.get("status") == "ok",
+            "status": health.get("status"),
+        }
+    except ImportError:
+        return {"installed": False, "running": False, "status": "unavailable"}
+    except Exception as error:
+        return {
+            "installed": True,
+            "running": False,
+            "status": "not_running",
+            "reason": error.__class__.__name__,
+        }
+
+
+def _adapter_diagnostics() -> list[dict[str, Any]]:
+    try:
+        from villani_agentd.adapters import ADAPTERS
+
+        reports: list[dict[str, Any]] = []
+        for name, adapter in sorted(ADAPTERS.items()):
+            if name == "generic":
+                continue
+            try:
+                reports.append(adapter.detect().as_dict())
+            except Exception as error:
+                reports.append(
+                    {
+                        "name": name,
+                        "available": False,
+                        "detected_version": None,
+                        "capabilities": [],
+                        "missing_capabilities": [
+                            f"probe_error:{error.__class__.__name__}"
+                        ],
+                    }
+                )
+        return reports
+    except ImportError:
+        return [
+            {
+                "name": "villani-agentd",
+                "available": False,
+                "missing_capabilities": ["package_not_installed"],
+            }
+        ]
+
+
+def _doctor_report(
+    repository: Path, configuration: Mapping[str, Any]
+) -> tuple[bool, dict[str, Any]]:
+    git = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--branch"],
+        cwd=repository,
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    usage = shutil.disk_usage(repository)
+    provider = provider_from_configuration(configuration)
+    provider_entries: list[tuple[str | None, Any]] = [(None, provider)]
+    named = configuration.get("execution_environments")
+    if isinstance(named, Mapping):
+        for name in sorted(named):
+            provider_entries.append(
+                (str(name), provider_from_configuration(configuration, selection=str(name)))
+            )
+    provider_reports = []
+    provider_available: dict[str | None, bool] = {}
+    for name, configured_provider in provider_entries:
+        item = configured_provider.capability_report()
+        try:
+            item["fingerprint"] = configured_provider.fingerprint(repository)
+            item["fingerprint_error"] = None
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            item["fingerprint"] = None
+            item["fingerprint_error"] = error.__class__.__name__
+            item["available"] = False
+        item["selection"] = name or "default"
+        provider_reports.append(item)
+        provider_available[name] = bool(item.get("available"))
+    inspection = inspect_repository(repository)
+    backends = _load_backends(configuration)
+    backend_reports = [
+        _probe_backend(item)
+        for item in sorted(backends.values(), key=lambda item: item.name)
+    ]
+    coding_commands = []
+    for backend in sorted(backends.values(), key=lambda item: item.name):
+        if backend.enabled and "coding" in backend.roles:
+            command = backend.command_name or "villani-code"
+            execution = ExecutionEnvironmentConfig.from_configuration(
+                configuration, backend.execution_environment
+            )
+            coding_commands.append(
+                {
+                    "backend": backend.name,
+                    "command": command,
+                    "execution_environment": backend.execution_environment
+                    or "default",
+                    "available": (
+                        provider_available.get(backend.execution_environment, False)
+                        if execution.provider in {"container", "devcontainer"}
+                        else resolve_command_prefix(command) is not None
+                    ),
+                }
+            )
+    preflight = preflight_report(repository, configuration)
+    required_checks = {
+        "git": git.returncode == 0,
+        "disk": usage.free >= 100 * 1024 * 1024,
+        "execution_provider": bool(provider.capability_report().get("available"))
+        and bool(preflight.get("execution_environment_fingerprint")),
+        "coding_adapter": bool(coding_commands)
+        and all(item["available"] for item in coding_commands),
+        "backends": bool(backend_reports)
+        and all((not item["enabled"]) or item["usable"] for item in backend_reports),
+    }
+    if not bool(provider.config.required):
+        required_checks["execution_provider"] = True
+    healthy = all(required_checks.values())
+    return healthy, {
+        "schema_version": "villani.doctor.v1",
+        "repository": str(repository),
+        "ok": healthy,
+        "required_capabilities": required_checks,
+        "git": {
+            "usable": git.returncode == 0,
+            "status_porcelain_branch": git.stdout,
+            "error": git.stderr,
+        },
+        "disk": {
+            "total_bytes": usage.total,
+            "used_bytes": usage.used,
+            "free_bytes": usage.free,
+            "usable": required_checks["disk"],
+        },
+        "daemon": _daemon_diagnostic(),
+        "adapters": _adapter_diagnostics(),
+        "coding_commands": coding_commands,
+        "backend_connectivity": backend_reports,
+        "credentials": [
+            {"backend": item["name"], "status": item["credential_status"]}
+            for item in backend_reports
+        ],
+        "execution_providers": provider_reports,
+        "execution_environment_fingerprint": preflight[
+            "execution_environment_fingerprint"
+        ],
+        "repository_inspection": inspection,
+        "detected_test_tools": inspection["detected_test_tools"],
+        "likely_test_commands": inspection["likely_test_commands"],
+        "inferred_commands_executed": False,
+    }
+
+
+@app.command("doctor")
+def doctor_command(
+    repo: Path = typer.Option(
+        ..., "--repo", help="Repository to inspect without mutation."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit stable machine-readable JSON."
+    ),
+) -> None:
+    """Check configured local capabilities without spending model tokens."""
+
+    repository = repo.expanduser().resolve()
+    if not repository.is_dir():
+        _usage_error(f"repository does not exist or is not a directory: {repository}")
+    configuration = _load_config()
+    try:
+        healthy, report = _doctor_report(repository, configuration)
+    except (OSError, ValueError, ValidationError, subprocess.SubprocessError) as error:
+        _usage_error(f"doctor could not inspect configuration: {error}")
+    if json_output:
+        typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"Villani doctor: {'ready' if healthy else 'not ready'}")
+        console.print(f"Repository: {repository}")
+        for name, usable in report["required_capabilities"].items():
+            console.print(f"- {name}: {'ok' if usable else 'unavailable'}")
+        console.print("Execution providers:")
+        for item in report["execution_providers"]:
+            console.print(
+                f"- {item['provider']}: {'available' if item['available'] else 'unavailable'}"
+            )
+        console.print("Backend connectivity:")
+        for item in report["backend_connectivity"]:
+            console.print(f"- {item['name']}: {item['probe_status']} (tokens spent: 0)")
+        commands = report["likely_test_commands"]
+        console.print(
+            "Likely tests: "
+            + (
+                ", ".join(" ".join(command) for command in commands)
+                if commands
+                else "none detected"
+            )
+        )
+    if not healthy:
+        raise typer.Exit(1)
+
+
 def _validate_billing(
     *,
     billing_mode: str,
@@ -352,6 +654,9 @@ def backend_add(
     timeout_seconds: int | None = typer.Option(None, "--timeout-seconds"),
     max_parallel: int = typer.Option(1, "--max-parallel"),
     currency: str = typer.Option("USD", "--currency"),
+    execution_environment: str | None = typer.Option(
+        None, "--execution-environment"
+    ),
 ) -> None:
     """Add or replace one backend without resolving its secret."""
 
@@ -415,6 +720,7 @@ def backend_add(
         "max_parallel": max_parallel,
         "enabled": True,
         "metadata": {"allow_dummy_api_key": True} if provider == "local" else {},
+        "execution_environment": execution_environment,
     }
     try:
         backend = Backend.model_validate({"name": name, **payload})
@@ -449,6 +755,7 @@ def backend_list() -> None:
             f"roles={','.join(backend.roles)}; capability={backend.capability_score:g} "
             f"({backend.capability_score_source}); billing={backend.billing_mode}; "
             f"currency={backend.currency}; "
+            f"execution_environment={backend.execution_environment or 'default'}; "
             f"credential={credential}; "
             f"state={'enabled' if backend.enabled else 'disabled'}",
             soft_wrap=True,
@@ -832,6 +1139,11 @@ def build_controller(
     _validate_run_backends(backends)
     for backend in backends.values():
         if backend.enabled and "coding" in backend.roles:
+            execution = ExecutionEnvironmentConfig.from_configuration(
+                configuration, backend.execution_environment
+            )
+            if execution.provider in {"container", "devcontainer"}:
+                continue
             command = backend.command_name or "villani-code"
             if resolve_command_prefix(command) is None:
                 _usage_error(

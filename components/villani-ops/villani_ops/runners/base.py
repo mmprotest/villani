@@ -13,6 +13,11 @@ class RunnerContext(BaseModel):
     timeout_seconds: int
     run_dir: str
     env: dict[str, str] = Field(default_factory=dict)
+    inherit_parent_environment: bool = True
+    execution_prefix: list[str] = Field(default_factory=list)
+    workspace_limit_bytes: int | None = None
+    cleanup_command: list[str] = Field(default_factory=list)
+    secure_secret_injection: bool = False
     command: str | None = None
 
 class RunnerResult(BaseModel):

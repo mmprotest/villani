@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from .durable_io import read_jsonl_tolerant
 from .protocol import EventEnvelope
@@ -14,7 +14,9 @@ from .schema_validation import validate_event_stream
 
 
 def _digest(namespace: str, value: str, length: int) -> str:
-    return hashlib.sha256(f"villani:v2:{namespace}:{value}".encode()).hexdigest()[:length]
+    return hashlib.sha256(f"villani:v2:{namespace}:{value}".encode()).hexdigest()[
+        :length
+    ]
 
 
 def legacy_trace_id_to_w3c(legacy_trace_id: str) -> str:
@@ -51,14 +53,19 @@ def _kind(event_type: str) -> str:
 def _status(event_type: str) -> str:
     if event_type.endswith(("_failed", "_error")) or event_type == "run_failed":
         return "error"
-    if event_type.endswith(("_completed", "_selected")) or event_type == "run_completed":
+    if (
+        event_type.endswith(("_completed", "_selected"))
+        or event_type == "run_completed"
+    ):
         return "ok"
     if event_type.endswith("_started"):
         return "running"
     return "unset"
 
 
-def translate_v1_event(event: EventEnvelope) -> TelemetryEnvelopeV2:
+def translate_v1_event(
+    event: EventEnvelope, *, resource_attributes: Mapping[str, Any] | None = None
+) -> TelemetryEnvelopeV2:
     legacy_trace_id = event.trace_id
     event_key = _digest("event", f"{event.run_id}:{event.event_id}", 32)
     return TelemetryEnvelopeV2(
@@ -93,7 +100,7 @@ def translate_v1_event(event: EventEnvelope) -> TelemetryEnvelopeV2:
             deployment_environment="local",
             host_id=None,
             process_id=None,
-            attributes={},
+            attributes=dict(resource_attributes or {}),
         ),
         attributes={
             "villani.legacy.schema_version": event.schema_version,
@@ -105,17 +112,35 @@ def translate_v1_event(event: EventEnvelope) -> TelemetryEnvelopeV2:
     )
 
 
-def translate_v1_events(events: list[Mapping[str, Any]]) -> list[TelemetryEnvelopeV2]:
-    return [translate_v1_event(event) for event in validate_event_stream(events)]
+def translate_v1_events(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    resource_attributes: Mapping[str, Any] | None = None,
+) -> list[TelemetryEnvelopeV2]:
+    return [
+        translate_v1_event(event, resource_attributes=resource_attributes)
+        for event in validate_event_stream(events)
+    ]
 
 
 def translate_v1_run(run_directory: str | Path) -> list[TelemetryEnvelopeV2]:
-    return translate_v1_events(read_jsonl_tolerant(Path(run_directory) / "events.jsonl"))
+    root = Path(run_directory)
+    attributes: Mapping[str, Any] | None = None
+    resource_path = root / "resource.json"
+    if resource_path.is_file():
+        document = json.loads(resource_path.read_text(encoding="utf-8"))
+        resource = ResourceV2.model_validate(document)
+        attributes = resource.attributes
+    return translate_v1_events(
+        read_jsonl_tolerant(root / "events.jsonl"), resource_attributes=attributes
+    )
 
 
 def normalized_v2_jsonl(records: list[TelemetryEnvelopeV2]) -> bytes:
     lines = [
-        json.dumps(record.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            record.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        )
         for record in records
     ]
     return (("\n".join(lines) + "\n") if lines else "").encode("utf-8")

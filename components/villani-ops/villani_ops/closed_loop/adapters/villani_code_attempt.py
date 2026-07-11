@@ -3,22 +3,28 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, Mapping
+from typing import Any, Literal, Mapping
 
 from villani_ops.core.backend import Backend
 from villani_ops.runners.base import RunnerAdapter, RunnerContext, RunnerResult
-from villani_ops.runners.villani_code import VillaniCodeAdapter
+from villani_ops.runners.villani_code import (
+    VillaniCodeAdapter,
+    provider_for_villani_code_cli,
+)
 from villani_ops.verifier.service import resolve_verifier_debug_dir
+from villani_ops.execution_environment import provider_from_configuration
 
 from ..durable_io import write_json_atomic
 from ..costs import actual_attempt_cost
 from ..event_writer import redact_data
 from ..interfaces import AttemptContext, AttemptResult, DependencyFailure, RuntimeEvent
 from ..protocol import AccountingStatus, AttemptSnapshot, FailureDetail
+from ..protocol_v2 import ResourceV2
 from .git_isolation import GitIsolationAdapter
 from .runtime_event_translation import (
     preserve_raw_trace,
@@ -34,7 +40,10 @@ def _failure_from_runner_output(
     """Classify invocation failures without confusing unavailable backends with code failures."""
 
     code = classify_runner_failure(exit_code, stdout, stderr)
-    return code, "infrastructure_failure" if code != "runner_nonzero_exit" else "runner_failure"
+    return (
+        code,
+        "infrastructure_failure" if code != "runner_nonzero_exit" else "runner_failure",
+    )
 
 
 def _failure_snippets(stdout: str, stderr: str) -> dict[str, str]:
@@ -56,7 +65,10 @@ def _secret_values(backend: Backend, env: Mapping[str, str]) -> tuple[str, ...]:
         values.append(key)
     for name, value in env.items():
         normalized = name.lower()
-        if any(word in normalized for word in ("key", "token", "secret", "password", "authorization")):
+        if any(
+            word in normalized
+            for word in ("key", "token", "secret", "password", "authorization")
+        ):
             if value:
                 values.append(str(value))
     return tuple(dict.fromkeys(values))
@@ -93,7 +105,9 @@ class VillaniCodeAttemptAdapter:
         if isinstance(configured, Mapping):
             raw = configured.get(context.backend_name)
             if isinstance(raw, Mapping):
-                return Backend.model_validate({"name": context.backend_name, **dict(raw)})
+                return Backend.model_validate(
+                    {"name": context.backend_name, **dict(raw)}
+                )
         raise ValueError(f"no Villani Code backend config for {context.backend_name}")
 
     def run(self, attempt_context: AttemptContext) -> AttemptResult:
@@ -104,9 +118,24 @@ class VillaniCodeAttemptAdapter:
         isolated = self._isolation.create(attempt_context)
 
         configured_env = attempt_context.policy_configuration.get("runner_env")
-        runner_env = dict(backend.env)
+        source_environment = {**dict(os.environ), **dict(backend.env)}
         if isinstance(configured_env, Mapping):
-            runner_env.update({str(key): str(value) for key, value in configured_env.items()})
+            source_environment.update(
+                {str(key): str(value) for key, value in configured_env.items()}
+            )
+        environment_provider = provider_from_configuration(
+            attempt_context.policy_configuration,
+            source_environment=source_environment,
+            cache_root=Path(attempt_context.run_directory).parent.parent
+            / "cache"
+            / "execution-environments",
+            selection=backend.execution_environment,
+        )
+        prepared_environment = environment_provider.prepare(
+            repository=Path(attempt_context.repository_path),
+            worktree=isolated.copied.worktree_path,
+        )
+        runner_env = environment_provider.command_environment(prepared_environment)
         runner_env.update(
             {
                 "VILLANI_RUN_ID": attempt_context.run_id,
@@ -114,6 +143,39 @@ class VillaniCodeAttemptAdapter:
                 "VILLANI_ATTEMPT_ID": attempt_context.attempt_id,
             }
         )
+        api_key = backend.resolved_api_key()
+        injected_environment_names: list[str] = []
+        if api_key:
+            secret_name = (
+                "ANTHROPIC_API_KEY"
+                if provider_for_villani_code_cli(backend.provider) == "anthropic"
+                else "OPENAI_API_KEY"
+            )
+            if prepared_environment.provider == "devcontainer":
+                environment_provider.cleanup(prepared_environment)
+                raise RuntimeError(
+                    "devcontainer cannot inject backend credentials through a selected-process-only boundary; use container or a credential-free local backend"
+                )
+            runner_env[secret_name] = api_key
+            injected_environment_names.append(secret_name)
+        prepared_environment.runtime_state["injected_environment_names"] = (
+            injected_environment_names
+        )
+        controls: Mapping[str, Any] = {}
+        try:
+            validate_command = getattr(environment_provider, "validate_command", None)
+            if callable(validate_command):
+                validate_command(
+                    prepared_environment, [backend.command_name or "villani-code"]
+                )
+            runner_controls = getattr(environment_provider, "runner_controls", None)
+            if callable(runner_controls):
+                returned_controls = runner_controls(prepared_environment)
+                if isinstance(returned_controls, Mapping):
+                    controls = returned_controls
+        except BaseException:
+            environment_provider.cleanup(prepared_environment)
+            raise
         secrets = _secret_values(backend, runner_env)
         timeout = int(
             attempt_context.policy_configuration.get("attempt_timeout_seconds")
@@ -129,6 +191,43 @@ class VillaniCodeAttemptAdapter:
             timeout_seconds=timeout,
             run_dir=str(attempt_dir),
             env=runner_env,
+            inherit_parent_environment=False,
+            execution_prefix=list(controls.get("execution_prefix") or []),
+            workspace_limit_bytes=controls.get("workspace_limit_bytes"),
+            cleanup_command=list(controls.get("cleanup_command") or []),
+            secure_secret_injection=True,
+        )
+
+        environment_report = prepared_environment.durable_report()
+        write_json_atomic(
+            attempt_dir / "execution_environment.json", environment_report
+        )
+        write_json_atomic(run_dir / "execution_environment.json", environment_report)
+        write_json_atomic(
+            run_dir / "preflight.json",
+            {
+                "schema_version": "villani.execution_preflight.v1",
+                "repository": prepared_environment.inspection,
+                "provider": environment_provider.capability_report(),
+                "execution_environment_fingerprint": prepared_environment.fingerprint,
+                "inferred_setup_executed": False,
+            },
+        )
+        write_json_atomic(
+            run_dir / "resource.json",
+            ResourceV2(
+                schema_version="villani.resource.v2",
+                service_name="villani",
+                service_version=None,
+                deployment_environment="local",
+                host_id=None,
+                process_id=None,
+                attributes={
+                    "villani.execution_environment.provider": prepared_environment.provider,
+                    "villani.execution_environment.fingerprint": prepared_environment.fingerprint,
+                    "villani.execution_environment.preflight": "preflight.json",
+                },
+            ).model_dump(mode="json"),
         )
 
         started_at = datetime.now(timezone.utc)
@@ -139,6 +238,20 @@ class VillaniCodeAttemptAdapter:
         except Exception as error:
             runner_exception = error
             runner_result = RunnerResult(exit_code=1, stderr=str(error))
+        finally:
+            collection: dict[str, Any] = {}
+            try:
+                collection = environment_provider.collect(prepared_environment)
+            finally:
+                environment_provider.cleanup(prepared_environment)
+            environment_report = prepared_environment.durable_report()
+            environment_report["collection"] = collection
+            write_json_atomic(
+                attempt_dir / "execution_environment.json", environment_report
+            )
+            write_json_atomic(
+                run_dir / "execution_environment.json", environment_report
+            )
         measured_duration = max(int((time.monotonic() - started_monotonic) * 1000), 0)
         completed_at = datetime.now(timezone.utc)
 
@@ -162,9 +275,7 @@ class VillaniCodeAttemptAdapter:
                 attempt_dir / "trace" / "raw",
                 secrets=secrets,
             )
-            runtime_events = translate_runtime_events(
-                raw_trace_path, secrets=secrets
-            )
+            runtime_events = translate_runtime_events(raw_trace_path, secrets=secrets)
         if (
             debug_root is not None
             and debug_root.exists()
@@ -263,6 +374,7 @@ class VillaniCodeAttemptAdapter:
                 "provider_reported_total_cost": runner_result.total_cost,
                 "cost_breakdown": cost_breakdown.as_dict(),
                 "translated_runtime_event_count": len(runtime_events),
+                "execution_environment": environment_report,
             },
             secrets=secrets,
         )
@@ -293,6 +405,8 @@ class VillaniCodeAttemptAdapter:
                 "commands_executed": runner_result.commands_executed,
                 "commands_failed": runner_result.commands_failed,
             },
+            "execution_environment_fingerprint": prepared_environment.fingerprint,
+            "execution_environment_preflight": "preflight.json",
         }
 
         encoded_patch = patch.encode("utf-8")

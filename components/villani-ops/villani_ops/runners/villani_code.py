@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, subprocess, shutil, json, signal, time
+import os, subprocess, shutil, json, signal, time, threading
 from pathlib import Path
 from .base import RunnerContext, RunnerResult
 from .villani_code_debug import write_runner_telemetry
@@ -15,7 +15,7 @@ class VillaniCodeRunner:
         return f"""Objective:\n{c.task_instruction}\n\nSuccess criteria:\n{c.success_criteria or 'Not provided'}\n\nAttempt: {c.attempt_id}\nWork only in repo: {c.repo_path}\n"""
     def run(self, context: RunnerContext) -> RunnerResult:
         command_name=context.backend.command_name or 'villani-code'
-        command_prefix=resolve_command_prefix(command_name)
+        command_prefix=([command_name] if context.execution_prefix else resolve_command_prefix(command_name))
         if command_prefix is None:
             return RunnerResult(exit_code=127, stderr=f"Villani Code command '{command_name}' was not found.")
         api_key=context.backend.resolved_api_key() or ''
@@ -30,10 +30,11 @@ class VillaniCodeRunner:
         prompt_path = Path(context.run_dir) / 'villani_code_prompt.txt'
         prompt_path.write_text(prompt, encoding='utf-8')
         safe_inline_limit = int(os.environ.get('VILLANI_CODE_INLINE_PROMPT_LIMIT', '12000'))
+        api_key_args=[] if context.secure_secret_injection else ['--api-key',api_key]
         if len(prompt) > safe_inline_limit:
-            cmd=[command_name,'run','--task-file',str(prompt_path),'--base-url',context.backend.base_url or '', '--model',context.backend.model,'--repo',context.repo_path,'--provider',cli_provider,'--api-key',api_key,'--auto-approve','--no-stream','--max-tokens',max_tokens,'--debug','trace','--debug-dir',str(debug_dir)]
+            cmd=[command_name,'run','--task-file',str(prompt_path),'--base-url',context.backend.base_url or '', '--model',context.backend.model,'--repo',context.repo_path,'--provider',cli_provider,*api_key_args,'--auto-approve','--no-stream','--max-tokens',max_tokens,'--debug','trace','--debug-dir',str(debug_dir)]
         else:
-            cmd=[command_name,'run',prompt,'--base-url',context.backend.base_url or '', '--model',context.backend.model,'--repo',context.repo_path,'--provider',cli_provider,'--api-key',api_key,'--auto-approve','--no-stream','--max-tokens',max_tokens,'--debug','trace','--debug-dir',str(debug_dir)]
+            cmd=[command_name,'run',prompt,'--base-url',context.backend.base_url or '', '--model',context.backend.model,'--repo',context.repo_path,'--provider',cli_provider,*api_key_args,'--auto-approve','--no-stream','--max-tokens',max_tokens,'--debug','trace','--debug-dir',str(debug_dir)]
         red=[('***REDACTED***' if x==api_key else x) for x in cmd]
         Path(context.run_dir,'villani_code_command.json').write_text(json.dumps(red, indent=2))
         def _result(exit_code:int, stdout='', stderr=''):
@@ -53,6 +54,33 @@ class VillaniCodeRunner:
                 try:
                     if stream: stream.close()
                 except Exception: pass
+        def _windows_job(p):
+            if os.name != 'nt': return None
+            try:
+                import ctypes
+                from ctypes import wintypes
+                class BasicLimits(ctypes.Structure):
+                    _fields_=[('process_time',ctypes.c_longlong),('job_time',ctypes.c_longlong),('flags',wintypes.DWORD),('min_ws',ctypes.c_size_t),('max_ws',ctypes.c_size_t),('active',wintypes.DWORD),('affinity',ctypes.c_size_t),('priority',wintypes.DWORD),('scheduling',wintypes.DWORD)]
+                class IoCounters(ctypes.Structure):
+                    _fields_=[(name,ctypes.c_ulonglong) for name in ('read_ops','write_ops','other_ops','read_bytes','write_bytes','other_bytes')]
+                class ExtendedLimits(ctypes.Structure):
+                    _fields_=[('basic',BasicLimits),('io',IoCounters),('process_memory',ctypes.c_size_t),('job_memory',ctypes.c_size_t),('peak_process',ctypes.c_size_t),('peak_job',ctypes.c_size_t)]
+                kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+                job=kernel.CreateJobObjectW(None,None)
+                limits=ExtendedLimits(); limits.basic.flags=0x00002000
+                if not job or not kernel.SetInformationJobObject(job,9,ctypes.byref(limits),ctypes.sizeof(limits)) or not kernel.AssignProcessToJobObject(job,wintypes.HANDLE(int(p._handle))):
+                    if job: kernel.CloseHandle(job)
+                    return None
+                return job
+            except Exception:
+                return None
+        def _close_windows_job(job, *, terminate=False):
+            if not job: return False
+            import ctypes
+            kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+            if terminate: kernel.TerminateJobObject(job,1)
+            kernel.CloseHandle(job)
+            return True
         def _terminate_timed_out_process(p):
             if not p: return
             if os.name == 'posix':
@@ -69,6 +97,11 @@ class VillaniCodeRunner:
                         time.sleep(0.05)
                     if p.poll() is not None: break
             else:
+                job=getattr(p,'_villani_job',None)
+                if _close_windows_job(job,terminate=True):
+                    try: p.wait(timeout=2)
+                    except Exception: pass
+                    return
                 try:
                     subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F'], text=True, capture_output=True, timeout=5)
                 except Exception:
@@ -85,11 +118,38 @@ class VillaniCodeRunner:
             except Exception: pass
         proc=None
         try:
-            popen_kwargs={'cwd':context.repo_path,'text':True,'stdout':subprocess.PIPE,'stderr':subprocess.PIPE,'env':{**os.environ, **context.env}}
+            environment = ({**os.environ, **context.env} if context.inherit_parent_environment else dict(context.env))
+            if context.secure_secret_injection and api_key:
+                environment['ANTHROPIC_API_KEY' if cli_provider == 'anthropic' else 'OPENAI_API_KEY']=api_key
+            popen_kwargs={'cwd':context.repo_path,'text':True,'stdout':subprocess.PIPE,'stderr':subprocess.PIPE,'env':environment}
             if os.name == 'posix': popen_kwargs['start_new_session']=True
             elif hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'): popen_kwargs['creationflags']=subprocess.CREATE_NEW_PROCESS_GROUP
-            proc=subprocess.Popen([*command_prefix, *cmd[1:]], **popen_kwargs)
-            stdout, stderr = proc.communicate(timeout=context.timeout_seconds)
+            proc=subprocess.Popen([*context.execution_prefix, *command_prefix, *cmd[1:]], **popen_kwargs)
+            if os.name == 'nt': proc._villani_job=_windows_job(proc)
+            monitor_stop=threading.Event(); disk_exceeded=threading.Event()
+            def _monitor_workspace():
+                if context.workspace_limit_bytes is None: return
+                while not monitor_stop.wait(0.05):
+                    total=0
+                    for base,_dirs,files in os.walk(context.repo_path):
+                        for name in files:
+                            try: total += os.path.getsize(os.path.join(base,name))
+                            except OSError: pass
+                            if total > context.workspace_limit_bytes: break
+                        if total > context.workspace_limit_bytes: break
+                    if total > context.workspace_limit_bytes:
+                        disk_exceeded.set()
+                        if context.cleanup_command:
+                            try: subprocess.run(context.cleanup_command,text=True,capture_output=True,timeout=10,check=False)
+                            except Exception: pass
+                        _terminate_timed_out_process(proc)
+                        return
+            monitor=threading.Thread(target=_monitor_workspace,daemon=True); monitor.start()
+            try: stdout, stderr = proc.communicate(timeout=context.timeout_seconds)
+            finally:
+                monitor_stop.set(); monitor.join(timeout=2)
+            if os.name == 'nt': _close_windows_job(getattr(proc,'_villani_job',None))
+            if disk_exceeded.is_set(): return _result(125, stdout, (stderr or '')+'\nWorkspace disk limit exceeded')
             return _result(proc.returncode, stdout, stderr)
         except subprocess.TimeoutExpired as e:
             _terminate_timed_out_process(proc)

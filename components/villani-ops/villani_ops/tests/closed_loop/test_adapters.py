@@ -719,3 +719,24 @@ def test_runner_configuration_secret_never_appears_under_run_directory(
     for path in result.run_directory.rglob("*"):
         if path.is_file():
             assert secret.encode() not in path.read_bytes(), path
+
+
+def test_runner_secret_never_appears_after_failed_run(tmp_path: Path) -> None:
+    repo = _tiny_repo(tmp_path)
+    secret = "opaque-canary-failed-run-71c4"
+    runner = InjectedVillaniCodeRunner(
+        [{"value": "changed\n", "secret": secret, "exit_code": 127}]
+    )
+    controller = _controller(
+        [_attempt_policy(), policy("exhaust")],
+        runner,
+        _accepted_raw,
+        secret=secret,
+    )
+
+    result = controller.run(_request(tmp_path, repo))
+
+    assert result.terminal_state == "EXHAUSTED"
+    for path in result.run_directory.rglob("*"):
+        if path.is_file():
+            assert secret.encode() not in path.read_bytes(), path

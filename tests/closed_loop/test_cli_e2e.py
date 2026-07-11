@@ -430,6 +430,19 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
             }
         }
         unified._write_config(home / "config.yaml", config)
+        doctor = subprocess.run(
+            [villani, "doctor", "--repo", str(repo), "--json"],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+        )
+        assert doctor.returncode == 0, doctor.stdout + doctor.stderr
+        doctor_report = json.loads(doctor.stdout)
+        assert doctor_report["schema_version"] == "villani.doctor.v1"
+        assert doctor_report["ok"] is True
+        assert doctor_report["backend_connectivity"][0]["model_tokens_spent"] == 0
+        assert doctor_report["inferred_commands_executed"] is False
         result = subprocess.run(
             [
                 villani,
@@ -474,6 +487,16 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
         attempt_dir = run_dir / "attempts" / "attempt_001"
         assert (attempt_dir / "patch.diff").is_file()
         assert (attempt_dir / "worktree.json").is_file()
+        execution_environment = json.loads(
+            (run_dir / "execution_environment.json").read_text(encoding="utf-8")
+        )
+        assert execution_environment["provider"] == "inherit"
+        assert execution_environment["fingerprint"]
+        preflight = json.loads((run_dir / "preflight.json").read_text(encoding="utf-8"))
+        assert preflight["execution_environment_fingerprint"] == execution_environment["fingerprint"]
+        assert preflight["inferred_setup_executed"] is False
+        resource = json.loads((run_dir / "resource.json").read_text(encoding="utf-8"))
+        assert resource["attributes"]["villani.execution_environment.fingerprint"] == execution_environment["fingerprint"]
         assert not (attempt_dir / "worktree").exists()
 
         node = shutil.which("node")
