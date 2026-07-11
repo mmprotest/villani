@@ -13,6 +13,7 @@ import type {
   VillaniEventEnvelope,
   VillaniProtocolDocument,
 } from "./villaniProtocol.js";
+import type { VillaniProtocolDocumentV2 } from "./villaniProtocolV2.js";
 
 export const VILLANI_SCHEMA_FILE_BY_VERSION = {
   "villani.task.v1": "task.schema.json",
@@ -27,7 +28,23 @@ export const VILLANI_SCHEMA_FILE_BY_VERSION = {
   "villani.materialization.v1": "materialization.schema.json",
 } as const;
 
-export type VillaniSchemaVersion = keyof typeof VILLANI_SCHEMA_FILE_BY_VERSION;
+export const VILLANI_V2_SCHEMA_FILE_BY_VERSION = {
+  "villani.telemetry_envelope.v2": "telemetry-envelope.schema.json",
+  "villani.resource.v2": "resource.schema.json",
+  "villani.span.v2": "span.schema.json",
+  "villani.artifact_descriptor.v2": "artifact-descriptor.schema.json",
+  "villani.outcome.v2": "outcome.schema.json",
+  "villani.agent_capability.v2": "agent-capability.schema.json",
+  "villani.verifier_capability.v2": "verifier-capability.schema.json",
+  "villani.policy_publication.v2": "policy-publication.schema.json",
+} as const;
+
+const ALL_SCHEMA_FILE_BY_VERSION = {
+  ...VILLANI_SCHEMA_FILE_BY_VERSION,
+  ...VILLANI_V2_SCHEMA_FILE_BY_VERSION,
+} as const;
+
+export type VillaniSchemaVersion = keyof typeof ALL_SCHEMA_FILE_BY_VERSION;
 
 export interface VillaniValidationError {
   instancePath: string;
@@ -35,7 +52,9 @@ export interface VillaniValidationError {
   message: string;
 }
 
-export type VillaniValidationResult<T = VillaniProtocolDocument> =
+export type VillaniValidationResult<
+  T = VillaniProtocolDocument | VillaniProtocolDocumentV2,
+> =
   | { valid: true; value: T; errors: [] }
   | { valid: false; errors: VillaniValidationError[] };
 
@@ -243,6 +262,31 @@ function semanticErrors(
     });
   }
 
+  if (version === "villani.outcome.v2") {
+    errors.push(
+      ...accountingIssues(document, ["cost"], "cost_accounting_status"),
+      ...accountingIssues(
+        document,
+        ["latency_ms"],
+        "latency_accounting_status",
+      ),
+    );
+    if (document.cost === null && document.currency !== null) {
+      errors.push({
+        instancePath: "/currency",
+        keyword: "accounting_status",
+        message: "currency must be null when cost is null",
+      });
+    }
+    if (document.cost !== null && document.currency === null) {
+      errors.push({
+        instancePath: "/currency",
+        keyword: "accounting_status",
+        message: "currency is required when cost is known",
+      });
+    }
+  }
+
   return errors;
 }
 
@@ -253,7 +297,6 @@ export class VillaniSchemaValidator {
   >();
 
   constructor(repositoryRoot = resolveVillaniRepositoryRoot()) {
-    const schemaRoot = join(repositoryRoot, "schemas", "v1");
     const ajv = new Ajv2020({ allErrors: true, strict: false });
     ajv.addFormat("date-time", {
       type: "string",
@@ -263,8 +306,13 @@ export class VillaniSchemaValidator {
     });
 
     for (const [version, filename] of Object.entries(
-      VILLANI_SCHEMA_FILE_BY_VERSION,
+      ALL_SCHEMA_FILE_BY_VERSION,
     ) as [VillaniSchemaVersion, string][]) {
+      const schemaRoot = join(
+        repositoryRoot,
+        "schemas",
+        version.endsWith(".v2") ? "v2" : "v1",
+      );
       const schema = JSON.parse(
         readFileSync(join(schemaRoot, filename), "utf8"),
       ) as AnySchemaObject;
@@ -289,7 +337,7 @@ export class VillaniSchemaValidator {
     const schemaVersion = value.schema_version;
     if (
       typeof schemaVersion !== "string" ||
-      !(schemaVersion in VILLANI_SCHEMA_FILE_BY_VERSION)
+      !(schemaVersion in ALL_SCHEMA_FILE_BY_VERSION)
     ) {
       return {
         valid: false,
@@ -321,7 +369,8 @@ export class VillaniSchemaValidator {
       ? { valid: false, errors }
       : {
           valid: true,
-          value: value as unknown as VillaniProtocolDocument,
+          value: value as unknown as
+            VillaniProtocolDocument | VillaniProtocolDocumentV2,
           errors: [],
         };
   }
@@ -385,4 +434,25 @@ export function validateVillaniEventStream(
 ): VillaniValidationResult<VillaniEventEnvelope[]> {
   defaultValidator ??= new VillaniSchemaValidator();
   return defaultValidator.validateEventStream(events);
+}
+
+export function readVillaniV2Document(
+  path: string,
+  validator = new VillaniSchemaValidator(),
+): VillaniProtocolDocumentV2 {
+  const value = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  const result = validator.validate(value);
+  if (!result.valid) {
+    const detail = result.errors
+      .map(
+        (error) =>
+          `${error.instancePath || "/"} [${error.keyword}] ${error.message}`,
+      )
+      .join("; ");
+    throw new Error(`Invalid Villani v2 document: ${detail}`);
+  }
+  if (!(result.value.schema_version in VILLANI_V2_SCHEMA_FILE_BY_VERSION)) {
+    throw new Error("Expected a Villani v2 protocol document");
+  }
+  return result.value as VillaniProtocolDocumentV2;
 }

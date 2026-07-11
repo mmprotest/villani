@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/resource.schema.json",
+  "title": "Villani Resource v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "service_name",
+    "service_version",
+    "deployment_environment",
+    "host_id",
+    "process_id",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.resource.v2" },
+    "service_name": { "type": "string", "minLength": 1 },
+    "service_version": { "type": ["string", "null"], "minLength": 1 },
+    "deployment_environment": { "type": ["string", "null"], "minLength": 1 },
+    "host_id": { "type": ["string", "null"], "minLength": 1 },
+    "process_id": { "type": ["string", "null"], "minLength": 1 },
+    "attributes": { "type": "object", "additionalProperties": true }
+  }
+}

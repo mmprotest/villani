@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "packaging>=23"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "villani"
+version = "0.3.0rc1"
+description = "Local-first Villani coding-agent product distribution"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "villani-ops==0.2.0",
+  "villani-code==0.1.0rc1",
+  "villani-agentd==0.1.0",
+  "PyYAML>=6",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "ruff>=0.6", "mypy>=1.10"]
+
+[project.scripts]
+villani = "villani_distribution.cli:main"
+villani-code = "villani_code.cli:app"
+villani-agentd = "villani_agentd.cli:main"
+vfr = "villani_distribution.vfr:main"
+
+[tool.setuptools.packages.find]
+include = ["villani_distribution*"]
+
+[tool.setuptools.package-data]
+villani_distribution = ["bin/*", "release-signing-placeholder.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+no_implicit_optional = true

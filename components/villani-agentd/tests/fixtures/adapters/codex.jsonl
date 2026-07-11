@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"thread-1"}
+{"type":"item.started","item":{"id":"item-1","type":"command_execution","command":"python -V"}}
+{"type":"item.completed","item":{"id":"item-1","type":"command_execution","exit_code":0,"aggregated_output":"Python fixture"}}
+{"type":"turn.completed","usage":{"input_tokens":8,"output_tokens":3,"cached_input_tokens":1}}

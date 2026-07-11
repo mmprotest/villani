@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/agent-capability.schema.json",
+  "title": "Villani Agent Capability v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capability_id",
+    "agent_name",
+    "agent_version",
+    "runner_protocols",
+    "models",
+    "features",
+    "limits",
+    "published_at",
+    "provenance_status",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.agent_capability.v2" },
+    "capability_id": { "type": "string", "minLength": 1 },
+    "agent_name": { "type": "string", "minLength": 1 },
+    "agent_version": { "type": ["string", "null"], "minLength": 1 },
+    "runner_protocols": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "models": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "features": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "limits": { "type": "object", "additionalProperties": true },
+    "published_at": { "type": "string", "format": "date-time" },
+    "provenance_status": { "enum": ["recorded", "derived", "unknown"] },
+    "attributes": { "type": "object", "additionalProperties": true }
+  }
+}

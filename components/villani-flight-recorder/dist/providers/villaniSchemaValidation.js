@@ -14,6 +14,20 @@ export const VILLANI_SCHEMA_FILE_BY_VERSION = {
     "villani.selection.v1": "selection.schema.json",
     "villani.materialization.v1": "materialization.schema.json",
 };
+export const VILLANI_V2_SCHEMA_FILE_BY_VERSION = {
+    "villani.telemetry_envelope.v2": "telemetry-envelope.schema.json",
+    "villani.resource.v2": "resource.schema.json",
+    "villani.span.v2": "span.schema.json",
+    "villani.artifact_descriptor.v2": "artifact-descriptor.schema.json",
+    "villani.outcome.v2": "outcome.schema.json",
+    "villani.agent_capability.v2": "agent-capability.schema.json",
+    "villani.verifier_capability.v2": "verifier-capability.schema.json",
+    "villani.policy_publication.v2": "policy-publication.schema.json",
+};
+const ALL_SCHEMA_FILE_BY_VERSION = {
+    ...VILLANI_SCHEMA_FILE_BY_VERSION,
+    ...VILLANI_V2_SCHEMA_FILE_BY_VERSION,
+};
 function isRecord(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -141,19 +155,36 @@ function semanticErrors(document) {
             }
         });
     }
+    if (version === "villani.outcome.v2") {
+        errors.push(...accountingIssues(document, ["cost"], "cost_accounting_status"), ...accountingIssues(document, ["latency_ms"], "latency_accounting_status"));
+        if (document.cost === null && document.currency !== null) {
+            errors.push({
+                instancePath: "/currency",
+                keyword: "accounting_status",
+                message: "currency must be null when cost is null",
+            });
+        }
+        if (document.cost !== null && document.currency === null) {
+            errors.push({
+                instancePath: "/currency",
+                keyword: "accounting_status",
+                message: "currency is required when cost is known",
+            });
+        }
+    }
     return errors;
 }
 export class VillaniSchemaValidator {
     validators = new Map();
     constructor(repositoryRoot = resolveVillaniRepositoryRoot()) {
-        const schemaRoot = join(repositoryRoot, "schemas", "v1");
         const ajv = new Ajv2020({ allErrors: true, strict: false });
         ajv.addFormat("date-time", {
             type: "string",
             validate: (value) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) &&
                 Number.isFinite(Date.parse(value)),
         });
-        for (const [version, filename] of Object.entries(VILLANI_SCHEMA_FILE_BY_VERSION)) {
+        for (const [version, filename] of Object.entries(ALL_SCHEMA_FILE_BY_VERSION)) {
+            const schemaRoot = join(repositoryRoot, "schemas", version.endsWith(".v2") ? "v2" : "v1");
             const schema = JSON.parse(readFileSync(join(schemaRoot, filename), "utf8"));
             this.validators.set(version, ajv.compile(schema));
         }
@@ -173,7 +204,7 @@ export class VillaniSchemaValidator {
         }
         const schemaVersion = value.schema_version;
         if (typeof schemaVersion !== "string" ||
-            !(schemaVersion in VILLANI_SCHEMA_FILE_BY_VERSION)) {
+            !(schemaVersion in ALL_SCHEMA_FILE_BY_VERSION)) {
             return {
                 valid: false,
                 errors: [
@@ -251,4 +282,18 @@ export function validateVillaniProtocol(value) {
 export function validateVillaniEventStream(events) {
     defaultValidator ??= new VillaniSchemaValidator();
     return defaultValidator.validateEventStream(events);
+}
+export function readVillaniV2Document(path, validator = new VillaniSchemaValidator()) {
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    const result = validator.validate(value);
+    if (!result.valid) {
+        const detail = result.errors
+            .map((error) => `${error.instancePath || "/"} [${error.keyword}] ${error.message}`)
+            .join("; ");
+        throw new Error(`Invalid Villani v2 document: ${detail}`);
+    }
+    if (!(result.value.schema_version in VILLANI_V2_SCHEMA_FILE_BY_VERSION)) {
+        throw new Error("Expected a Villani v2 protocol document");
+    }
+    return result.value;
 }

@@ -13,17 +13,25 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from .durable_io import read_jsonl_tolerant
 from .protocol import PROTOCOL_MODEL_BY_VERSION, EventEnvelope, ProtocolDocument
+from .protocol_v2 import PROTOCOL_V2_MODEL_BY_VERSION, ProtocolDocumentV2
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 ROOT_SCHEMA_ROOT = REPOSITORY_ROOT / "schemas" / "v1"
 PACKAGED_SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "schemas" / "v1"
+ROOT_SCHEMA_ROOT_V2 = REPOSITORY_ROOT / "schemas" / "v2"
+PACKAGED_SCHEMA_ROOT_V2 = Path(__file__).resolve().parents[1] / "schemas" / "v2"
 # The repository copy is normative during development; built wheels carry a
 # semantically identical package-data copy so protocol validation remains local.
 SCHEMA_ROOT = (
     ROOT_SCHEMA_ROOT
     if (ROOT_SCHEMA_ROOT / "event.schema.json").is_file()
     else PACKAGED_SCHEMA_ROOT
+)
+SCHEMA_ROOT_V2 = (
+    ROOT_SCHEMA_ROOT_V2
+    if (ROOT_SCHEMA_ROOT_V2 / "telemetry-envelope.schema.json").is_file()
+    else PACKAGED_SCHEMA_ROOT_V2
 )
 
 # This is the sole schema-version-to-path registry used by the Python protocol.
@@ -39,6 +47,19 @@ SCHEMA_VERSION_TO_PATH: dict[str, Path] = {
     "villani.selection.v1": SCHEMA_ROOT / "selection.schema.json",
     "villani.materialization.v1": SCHEMA_ROOT / "materialization.schema.json",
 }
+SCHEMA_V2_VERSION_TO_PATH: dict[str, Path] = {
+    "villani.telemetry_envelope.v2": SCHEMA_ROOT_V2 / "telemetry-envelope.schema.json",
+    "villani.resource.v2": SCHEMA_ROOT_V2 / "resource.schema.json",
+    "villani.span.v2": SCHEMA_ROOT_V2 / "span.schema.json",
+    "villani.artifact_descriptor.v2": SCHEMA_ROOT_V2 / "artifact-descriptor.schema.json",
+    "villani.outcome.v2": SCHEMA_ROOT_V2 / "outcome.schema.json",
+    "villani.agent_capability.v2": SCHEMA_ROOT_V2 / "agent-capability.schema.json",
+    "villani.verifier_capability.v2": SCHEMA_ROOT_V2 / "verifier-capability.schema.json",
+    "villani.policy_publication.v2": SCHEMA_ROOT_V2 / "policy-publication.schema.json",
+}
+
+ALL_SCHEMA_VERSION_TO_PATH = {**SCHEMA_VERSION_TO_PATH, **SCHEMA_V2_VERSION_TO_PATH}
+ALL_PROTOCOL_MODELS = {**PROTOCOL_MODEL_BY_VERSION, **PROTOCOL_V2_MODEL_BY_VERSION}
 
 
 def _pointer(parts: Iterable[object]) -> str:
@@ -65,7 +86,7 @@ class ProtocolValidationError(ValueError):
 
 @lru_cache(maxsize=None)
 def _validator(schema_version: str) -> Draft202012Validator:
-    schema_path = SCHEMA_VERSION_TO_PATH[schema_version]
+    schema_path = ALL_SCHEMA_VERSION_TO_PATH[schema_version]
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema, format_checker=FormatChecker())
@@ -234,6 +255,25 @@ def _semantic_issues(document: Mapping[str, Any]) -> list[ProtocolValidationIssu
         )
 
     issues.extend(_validate_accounting(document))
+    if version == "villani.outcome.v2":
+        issues.extend(
+            _accounting_issues(document, ("cost",), "cost_accounting_status")
+        )
+        issues.extend(
+            _accounting_issues(document, ("latency_ms",), "latency_accounting_status")
+        )
+        if document.get("cost") is None and document.get("currency") is not None:
+            issues.append(
+                ProtocolValidationIssue(
+                    "/currency", "accounting_status", "currency must be null when cost is null"
+                )
+            )
+        if document.get("cost") is not None and document.get("currency") is None:
+            issues.append(
+                ProtocolValidationIssue(
+                    "/currency", "accounting_status", "currency is required when cost is known"
+                )
+            )
     return issues
 
 
@@ -250,7 +290,7 @@ def collect_protocol_validation_issues(value: Any) -> list[ProtocolValidationIss
                 "/schema_version", "required", "schema_version must be present"
             )
         ]
-    if schema_version not in SCHEMA_VERSION_TO_PATH:
+    if schema_version not in ALL_SCHEMA_VERSION_TO_PATH:
         return [
             ProtocolValidationIssue(
                 "/schema_version",
@@ -280,10 +320,10 @@ def validate_protocol_document(value: Any) -> None:
         raise ProtocolValidationError(issues)
 
 
-def parse_protocol_document(value: Any) -> ProtocolDocument:
+def parse_protocol_document(value: Any) -> ProtocolDocument | ProtocolDocumentV2:
     validate_protocol_document(value)
     schema_version = value["schema_version"]
-    return PROTOCOL_MODEL_BY_VERSION[schema_version].model_validate(value)
+    return ALL_PROTOCOL_MODELS[schema_version].model_validate(value)
 
 
 def validate_event_stream(events: Iterable[Mapping[str, Any]]) -> list[EventEnvelope]:

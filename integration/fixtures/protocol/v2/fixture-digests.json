@@ -1,0 +1,19 @@
+{
+  "invalid/agent_capability_duplicate_feature.json": "79b2132bbe0151debbaec7ece360d9c9c24cf61745726e5c31d9441633658625",
+  "invalid/artifact_embeds_bytes.json": "4869bb1171cb93fe1be2b497175acb7e0406843d3637ed5c3842a705dd360e68",
+  "invalid/outcome_unknown_cost_has_value.json": "964a53ef21a2ce47001e542327228b939a9b19e2259a5ea5890d70e3fee2ace1",
+  "invalid/policy_bad_digest.json": "8f45b8b2020953819f51444083e7c8b37efde97810d6df8ea8b29a47a98efa18",
+  "invalid/resource_unknown_property.json": "54036ee900ead1ac816b5fc1e70fad53f68fbbdc630db4a0581abf4d8bebf644",
+  "invalid/span_bad_kind.json": "ce55f7b77637351d857db0e75178f55e4c46beaa7bdf49305cbaa2f4b136d34b",
+  "invalid/telemetry_embeds_artifact_bytes.json": "af3481635d1d0c23b3f2f068f4da1169ecf706b28872aa2798e40bcfca757da0",
+  "invalid/telemetry_missing_idempotency.json": "8276cb7bdf31fbe75457d969b4c5fc344652ce910521c09539bb444d9521cca2",
+  "invalid/verifier_capability_missing_evidence.json": "15cc163d5633c26a35535c362b28c1283b437f751977f3ca2a2b8effa425fe79",
+  "valid/agent-capability.json": "42c1a4ad592b6ae9adde7185371750f103c2f9bc4666b88deef612560eac3582",
+  "valid/artifact-descriptor.json": "7ce1a9ab56a75524c883fa4228bb55ef29bf39c88f9f52db4c6cda7da5c72b49",
+  "valid/outcome.json": "0a7839a0e2706c7adf9a30159d6798cfe3274023d0c3d0795a688ab81a49f651",
+  "valid/policy-publication.json": "bc69b27b809d77ca22a50b1daf36611f47c08ab8486eb6ee48745616bbd5ba26",
+  "valid/resource.json": "f5dcb00ecfb6072812ee366621cef16c507659b1e1d4af0d6eb11554979cc040",
+  "valid/span.json": "0d3b33e4af5c66b14f53b0358f8505ae710a6a2766264544229fe533a8dcb4d4",
+  "valid/telemetry-envelope.json": "761649da1175b2be9468b7da9020b6401ce2d959009c097ad79283508ed2dac3",
+  "valid/verifier-capability.json": "25d3a304fb1ef3ccc76661ea299c3d486432fb9041d01d945fb76c9ce44265f4"
+}

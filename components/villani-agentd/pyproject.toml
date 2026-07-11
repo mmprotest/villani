@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "villani-agentd"
+version = "0.1.0"
+description = "Local-only Villani telemetry and artifact daemon"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["villani-ops>=0.2.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "ruff>=0.6", "mypy>=1.10"]
+
+[project.scripts]
+villani-agentd = "villani_agentd.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["villani_agentd*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+no_implicit_optional = true
+

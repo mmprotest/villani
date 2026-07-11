@@ -1,0 +1,1 @@
+{"schema_version":"villani.span.v2","trace_id":"0123456789abcdef0123456789abcdef","span_id":"0123456789abcdef","parent_span_id":null,"run_id":"run_1","attempt_id":null,"kind":"Agent Run","name":"attempt","status":"ok","started_at":null,"ended_at":null,"attributes":{}}

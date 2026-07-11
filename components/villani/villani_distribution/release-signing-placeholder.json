@@ -1,0 +1,6 @@
+{
+  "schema_version": "villani.release_signing.v1",
+  "status": "unsigned_release_candidate",
+  "required_for_publication": true,
+  "credential_reference": null
+}

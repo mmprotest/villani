@@ -1,0 +1,1 @@
+{"schema_version":"villani.policy_publication.v2","publication_id":"pub_1","policy_id":"policy","policy_version":"1","published_at":"2026-07-11T00:00:00Z","effective_at":"2026-07-11T00:00:00Z","expires_at":null,"digest":"bad","scope":{"organization_id":null,"workspace_id":null,"project_id":null,"repository_id":null},"rules":{},"provenance_status":"recorded","attributes":{}}

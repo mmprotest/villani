@@ -1,0 +1,2 @@
+{"id":"json-1","timestamp":"2026-07-11T00:00:00Z","type":"model_started","provider":"synthetic","model":"fixture-model"}
+{"id":"json-2","timestamp":"2026-07-11T00:00:01Z","type":"model_completed","parent_id":"json-1","usage":{"input_tokens":3,"output_tokens":2}}

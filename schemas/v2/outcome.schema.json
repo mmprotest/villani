@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/outcome.schema.json",
+  "title": "Villani Coding Outcome v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "attempt_id",
+    "verification_status",
+    "accepted",
+    "materialized",
+    "merged",
+    "reverted",
+    "ci_state",
+    "developer_disposition",
+    "defect_association",
+    "cost",
+    "currency",
+    "cost_accounting_status",
+    "latency_ms",
+    "latency_accounting_status",
+    "provenance_status",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.outcome.v2" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": ["string", "null"], "minLength": 1 },
+    "verification_status": {
+      "enum": ["accepted", "rejected", "unclear", "error", "not_run", null]
+    },
+    "accepted": { "type": ["boolean", "null"] },
+    "materialized": { "type": ["boolean", "null"] },
+    "merged": { "type": ["boolean", "null"] },
+    "reverted": { "type": ["boolean", "null"] },
+    "ci_state": {
+      "enum": ["pending", "passed", "failed", "cancelled", "not_run", null]
+    },
+    "developer_disposition": {
+      "enum": [
+        "approved",
+        "rejected",
+        "modified",
+        "pending",
+        "not_reviewed",
+        null
+      ]
+    },
+    "defect_association": { "type": ["string", "null"], "minLength": 1 },
+    "cost": { "type": ["number", "null"], "minimum": 0 },
+    "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+    "cost_accounting_status": {
+      "enum": ["complete", "partial", "unknown", "not_applicable"]
+    },
+    "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "latency_accounting_status": {
+      "enum": ["complete", "partial", "unknown", "not_applicable"]
+    },
+    "provenance_status": { "enum": ["recorded", "derived", "unknown"] },
+    "provenance": { "type": "object", "additionalProperties": true }
+  }
+}

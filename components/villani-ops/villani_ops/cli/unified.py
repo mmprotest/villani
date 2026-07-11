@@ -1482,9 +1482,12 @@ def _resolve_vfr_command() -> list[str] | None:
 
 
 VFR_UNAVAILABLE = (
-    "Flight Recorder is unavailable. Install it with "
-    "`npm install -g villani-flight-recorder`, or build this monorepo with "
-    "`cd components/villani-flight-recorder && npm install && npm run build`."
+    "Flight Recorder is unavailable. Install the supported platform Villani "
+    "distribution with `pipx install villani`. Monorepo developers may build "
+    "with `cd components/villani-flight-recorder && npm install && npm run build` "
+    "and set VILLANI_DEVELOPMENT_VFR=1. "
+    "The legacy `npm install -g villani-flight-recorder` path is not required "
+    "by the packaged product."
 )
 
 

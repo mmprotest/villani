@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/span.schema.json",
+  "title": "Villani Span v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
+    "run_id",
+    "attempt_id",
+    "kind",
+    "name",
+    "status",
+    "started_at",
+    "ended_at",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.span.v2" },
+    "trace_id": { "type": "string", "pattern": "^(?!0{32}$)[a-f0-9]{32}$" },
+    "span_id": { "type": "string", "pattern": "^(?!0{16}$)[a-f0-9]{16}$" },
+    "parent_span_id": {
+      "anyOf": [
+        { "type": "string", "pattern": "^(?!0{16}$)[a-f0-9]{16}$" },
+        { "type": "null" }
+      ]
+    },
+    "run_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": ["string", "null"], "minLength": 1 },
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+    "started_at": { "type": ["string", "null"], "format": "date-time" },
+    "ended_at": { "type": ["string", "null"], "format": "date-time" },
+    "attributes": { "type": "object", "additionalProperties": true }
+  }
+}

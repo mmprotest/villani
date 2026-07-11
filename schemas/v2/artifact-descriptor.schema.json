@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/artifact-descriptor.schema.json",
+  "title": "Villani Artifact Descriptor v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "digest",
+    "size_bytes",
+    "media_type",
+    "logical_role",
+    "sensitivity",
+    "retention_class",
+    "encryption_status",
+    "storage_reference",
+    "provenance_status",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.artifact_descriptor.v2" },
+    "artifact_id": { "type": "string", "minLength": 1 },
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "size_bytes": { "type": "integer", "minimum": 0 },
+    "media_type": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" },
+    "logical_role": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+    "sensitivity": {
+      "enum": ["public", "internal", "confidential", "restricted", "secret"]
+    },
+    "retention_class": {
+      "enum": ["ephemeral", "run", "project", "compliance", "legal_hold"]
+    },
+    "encryption_status": { "enum": ["unencrypted", "encrypted", "unknown"] },
+    "storage_reference": { "type": ["string", "null"], "minLength": 1 },
+    "provenance_status": { "enum": ["recorded", "derived", "unknown"] },
+    "attributes": { "type": "object", "additionalProperties": true }
+  }
+}

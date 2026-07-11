@@ -5,11 +5,22 @@ Villani is a local-first coding-agent control loop that classifies work, routes 
 ## Prerequisites
 
 - Python 3.11 or newer.
-- Node.js 18 or newer and npm.
 - Git.
 - A local coding backend or an API credential supplied through an environment variable.
 
-## Install locally
+Node.js, npm, and Bun are release-build dependencies only. They are not required by an installed platform package or self-contained release archive.
+
+## Install
+
+The supported user path is one platform package:
+
+```console
+pipx install villani
+```
+
+It installs `villani`, `villani-code`, `villani-agentd`, and `vfr`. This repository currently builds local release candidates and does not publish them; install a CI-produced platform wheel with `pipx install ./villani-*.whl` while the release is unpublished.
+
+## Monorepo development
 
 From the repository root, run the same cross-platform installer on Windows, macOS, or Linux:
 
@@ -17,7 +28,7 @@ From the repository root, run the same cross-platform installer on Windows, macO
 python scripts/install-local.py
 ```
 
-The installer prints the exact activation command that makes `villani` and `vfr` discoverable. It is safe to run twice and does not collect telemetry or download a model.
+The development installer requires Node.js 18 and npm to rebuild Flight Recorder. It prints the activation command for all four executables, is safe to run twice, installs but does not start the local daemon, and does not collect telemetry or download a model. See [distribution and user-service details](docs/DISTRIBUTION.md).
 
 The canonical closed-loop provider names are `local`, `openai-compatible`, and
 `openai`. The first two require an explicit `--base-url`; `openai` uses

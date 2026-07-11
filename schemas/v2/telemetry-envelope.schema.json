@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/telemetry-envelope.schema.json",
+  "title": "Villani Telemetry Envelope v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "idempotency_key",
+    "occurred_at",
+    "observed_at",
+    "sequence",
+    "sequence_scope",
+    "organization_id",
+    "workspace_id",
+    "project_id",
+    "repository_id",
+    "run_id",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
+    "attempt_id",
+    "source",
+    "kind",
+    "name",
+    "status",
+    "resource",
+    "attributes",
+    "body"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.telemetry_envelope.v2" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "sequence_scope": { "type": "string", "minLength": 1 },
+    "organization_id": { "type": ["string", "null"], "minLength": 1 },
+    "workspace_id": { "type": ["string", "null"], "minLength": 1 },
+    "project_id": { "type": ["string", "null"], "minLength": 1 },
+    "repository_id": { "type": ["string", "null"], "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "pattern": "^(?!0{32}$)[a-f0-9]{32}$" },
+    "span_id": { "type": "string", "pattern": "^(?!0{16}$)[a-f0-9]{16}$" },
+    "parent_span_id": {
+      "anyOf": [
+        { "type": "string", "pattern": "^(?!0{16}$)[a-f0-9]{16}$" },
+        { "type": "null" }
+      ]
+    },
+    "attempt_id": { "type": ["string", "null"], "minLength": 1 },
+    "source": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "service_name",
+        "service_version",
+        "deployment_environment",
+        "host_id",
+        "process_id",
+        "attributes"
+      ],
+      "properties": {
+        "schema_version": { "const": "villani.resource.v2" },
+        "service_name": { "type": "string", "minLength": 1 },
+        "service_version": { "type": ["string", "null"], "minLength": 1 },
+        "deployment_environment": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "host_id": { "type": ["string", "null"], "minLength": 1 },
+        "process_id": { "type": ["string", "null"], "minLength": 1 },
+        "attributes": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "attributes": { "type": "object", "additionalProperties": true },
+    "body": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": ["artifact_bytes", "artifact_content", "artifact_base64"]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

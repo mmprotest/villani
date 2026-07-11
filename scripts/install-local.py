@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the local Villani product without telemetry or implicit model downloads."""
+"""Install an editable monorepo development environment without starting services."""
 
 from __future__ import annotations
 
@@ -75,8 +75,11 @@ def main() -> int:
     _run(
         [
             str(python), "-m", "pip", "install",
+            "--no-build-isolation",
             "-e", str(ROOT / "components" / "villani-code"),
             "-e", str(ROOT / "components" / "villani-ops"),
+            "-e", str(ROOT / "components" / "villani-agentd"),
+            "-e", str(ROOT / "components" / "villani"),
         ]
     )
     flight = ROOT / "components" / "villani-flight-recorder"
@@ -88,9 +91,18 @@ def main() -> int:
         if os.name == "nt"
         else f"source '{scripts / 'activate'}'"
     )
-    print("Villani local installation complete. No telemetry or model download was performed.")
+    print(
+        "Villani local installation complete. The local daemon was installed but not "
+        "started. No telemetry or model download was performed."
+    )
     print(f"Activate this installation with:\n  {activation}")
-    print(f"Executables after activation:\n  {scripts / 'villani'}\n  {scripts / ('vfr.cmd' if os.name == 'nt' else 'vfr')}")
+    print(
+        "Executables after activation:\n"
+        f"  {scripts / 'villani'}\n"
+        f"  {scripts / 'villani-code'}\n"
+        f"  {scripts / 'villani-agentd'}\n"
+        f"  {scripts / ('vfr.cmd' if os.name == 'nt' else 'vfr')}"
+    )
     return 0
 
 

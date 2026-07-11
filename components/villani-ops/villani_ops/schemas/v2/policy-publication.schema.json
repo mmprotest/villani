@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/policy-publication.schema.json",
+  "title": "Villani Policy Publication v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "publication_id",
+    "policy_id",
+    "policy_version",
+    "published_at",
+    "effective_at",
+    "expires_at",
+    "digest",
+    "scope",
+    "rules",
+    "provenance_status",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.policy_publication.v2" },
+    "publication_id": { "type": "string", "minLength": 1 },
+    "policy_id": { "type": "string", "minLength": 1 },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "published_at": { "type": "string", "format": "date-time" },
+    "effective_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time" },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "workspace_id",
+        "project_id",
+        "repository_id"
+      ],
+      "properties": {
+        "organization_id": { "type": ["string", "null"], "minLength": 1 },
+        "workspace_id": { "type": ["string", "null"], "minLength": 1 },
+        "project_id": { "type": ["string", "null"], "minLength": 1 },
+        "repository_id": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "rules": { "type": "object", "additionalProperties": true },
+    "provenance_status": { "enum": ["recorded", "derived", "unknown"] },
+    "attributes": { "type": "object", "additionalProperties": true }
+  }
+}

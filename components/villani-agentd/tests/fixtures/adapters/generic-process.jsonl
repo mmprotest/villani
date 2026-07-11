@@ -1,0 +1,2 @@
+{"event_id":"proc-1","timestamp":"2026-07-11T00:00:00Z","type":"command_started","command":["python","-V"]}
+{"event_id":"proc-2","timestamp":"2026-07-11T00:00:01Z","type":"command_completed","parent_id":"proc-1","exit_code":0}

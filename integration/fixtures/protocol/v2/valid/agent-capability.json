@@ -1,0 +1,1 @@
+{"schema_version":"villani.agent_capability.v2","capability_id":"agent_cap_001","agent_name":"villani-code","agent_version":"0.1.0rc1","runner_protocols":["villani-code-local-v1"],"models":["local-stub"],"features":["isolated_worktree","patch_capture"],"limits":{"max_concurrency":1},"published_at":"2026-07-11T00:00:00Z","provenance_status":"recorded","attributes":{}}

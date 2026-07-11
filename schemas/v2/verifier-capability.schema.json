@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/verifier-capability.schema.json",
+  "title": "Villani Verifier Capability v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capability_id",
+    "verifier_name",
+    "verifier_version",
+    "evidence_kinds",
+    "task_categories",
+    "supports_acceptance_grade",
+    "limits",
+    "published_at",
+    "provenance_status",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.verifier_capability.v2" },
+    "capability_id": { "type": "string", "minLength": 1 },
+    "verifier_name": { "type": "string", "minLength": 1 },
+    "verifier_version": { "type": ["string", "null"], "minLength": 1 },
+    "evidence_kinds": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "task_categories": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "supports_acceptance_grade": { "type": "boolean" },
+    "limits": { "type": "object", "additionalProperties": true },
+    "published_at": { "type": "string", "format": "date-time" },
+    "provenance_status": { "enum": ["recorded", "derived", "unknown"] },
+    "attributes": { "type": "object", "additionalProperties": true }
+  }
+}

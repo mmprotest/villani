@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`Release-audit repair pass: complete`
+`First Villani local-daemon core pass: complete`
 
 ### Milestone status
 
@@ -1317,3 +1317,234 @@ Known remaining issues:
 
 Next permitted milestone:
 - none. Prompt 01 and all later roadmap work were not started.
+
+#### 2026-07-11: Prompt 01 versioned shared contracts pass
+
+Status: complete
+
+Changed files:
+- Normative and packaged contracts: `schemas/v2/*.schema.json`, `components/villani-ops/villani_ops/schemas/v2/*.schema.json`, and the Ops package-data declaration. All eight v1 schemas and fixtures remain semantically unchanged.
+- Python models, validation, translation, and tests: `components/villani-ops/villani_ops/closed_loop/protocol_v2.py`, `translate_v2.py`, `schema_validation.py`, `__init__.py`, and `components/villani-ops/villani_ops/tests/closed_loop/test_protocol_v2.py`.
+- TypeScript models, strict reader, validation, generated distribution files, and tests: `components/villani-flight-recorder/src/providers/villaniProtocolV2.ts`, `villaniSchemaValidation.ts`, their `dist/providers` outputs, and `test/villaniProtocolV2.test.ts`.
+- Shared valid, invalid, byte-digest, and translation-golden fixtures: `integration/fixtures/protocol/v2/**`.
+- Compatibility and migration records: `docs/PROTOCOL_V2_COMPATIBILITY.md` and `docs/decisions/ADR-001-v2-transport-contract.md`.
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- v1 remains the durable local run-bundle contract; v2 is a separate transport and platform contract for runners, future process/control-plane boundaries, and observability. No v1 schema or fixture was changed.
+- Telemetry carries an explicit idempotency key and causal run/trace/span identity. Namespaced SHA-256 deterministically maps legacy trace and event IDs to non-zero W3C-shaped IDs, while preserving original IDs in attributes.
+- Translation preserves v1 sequence and known parent links only. Because v1 has one recorded clock, that timestamp is projected to both required clock fields with `villani.clock.status: legacy_single_timestamp`; cost, tokens, outcomes, distinct observation times, tenancy, and missing parents are never inferred.
+- Known span kinds are documented, while lower-case future kinds remain readable. Strict top-level documents and open attributes/body maps form the forward-compatibility boundary.
+- Artifact descriptors contain metadata and opaque storage references only. Artifact-byte-shaped telemetry body properties are schema-invalid. Outcomes use nullable facts plus explicit accounting and provenance status; unknown cost is never zero.
+- Root v2 schemas are normative and Ops packages a semantically identical copy. Python and TypeScript validate the same fixture bytes and reason categories.
+
+Verification:
+- Shared Python v1/v2 contracts, invalid reason categories, cross-language byte manifest, schema duplication, and translation goldens: `python -m pytest -q components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py components/villani-ops/villani_ops/tests/closed_loop/test_protocol_v2.py tests/closed_loop/test_protocol_contract.py --basetemp .test-temp-v2-final-targeted`: exit code 0; 35 passed in 0.57s.
+- Shared TypeScript v1/v2 targeted contracts: `npm test -- --run test/villaniProtocol.test.ts test/villaniProtocolV2.test.ts`: exit code 0; 2 files and 24 tests passed.
+- Villani Ops full suite: `python -m pytest -q`: exit code 0; 746 passed and 114 deselected in 88.66s.
+- Villani Code full suite, with `GIT_CEILING_DIRECTORIES` bounded at the component root so the dirty parent contract pass is not attributed to non-Git temp tasks: `python -m pytest -q --basetemp final-temp-v2-code-final`: exit code 0; 671 passed, 1 skipped, and 28 warnings in 39.25s.
+- Root closed-loop suite after final contract changes: `python -m pytest tests/closed_loop -q --basetemp final-temp-v2-root-last`: exit code 0; 6 passed in 15.25s.
+- Flight Recorder full suite: `npm test`: exit code 0; 20 files and 102 tests passed. `npm run typecheck`, `npm run build`, and `npm run format:check`: exit code 0.
+- v2 schema formatting: repository Prettier `--check` over root and packaged `schemas/v2`: exit code 0; all matched files use Prettier code style.
+- Python focused Ruff check over v2 models, translation, validators, exports, and tests: exit code 0; all checks passed.
+- Root and packaged v2 semantic duplicate assertion: included in the 35-test shared Python contract run and the 746-test full Ops run; passed.
+- `git diff --check`: exit code 0; no whitespace errors before the progress update and repeated after it.
+
+Acceptance criteria:
+- PASS: Existing v1 Python and TypeScript readers and fixtures remain green and v1 semantics are unchanged.
+- PASS: Python and TypeScript accept all eight valid v2 fixture documents and reject all nine invalid documents for identical reason categories.
+- PASS: Repeated translation of both the one-attempt failed run and two-attempt completed run is normalized-byte stable and matches checked-in SHA-256 goldens.
+- PASS: Every telemetry event requires an idempotency key, run identity, W3C-shaped trace identity, and span identity; missing causal identity is schema-invalid.
+- PASS: Artifact bytes are excluded, unknown accounting is explicit, future span kinds remain readable, and root/package schemas are semantically identical.
+- PASS: No server, network uploader, database, daemon, or UI was introduced.
+
+Assumptions:
+- Copying v1's sole recorded timestamp into both required v2 time fields is a lossless single-clock projection, not a claim that a distinct observer clock was measured; the clock-status attribute makes that limitation explicit.
+- Stable legacy parent-event relationships are safe to project to parent-span IDs; null legacy parents remain null.
+
+Known risks:
+- Hash-based legacy ID mapping is deterministic and W3C-shaped but is not intended to reconstruct the original identifier without the preserved legacy attribute.
+- The initial unbounded Code run observed the known dirty-parent test artifact; the bounded final full run passed. The sandboxed Ops run could not terminate its Windows child-process test, so the final exact Ops gate ran outside that process restriction and passed.
+
+Known remaining issues:
+- none within Prompt 01
+
+Next permitted milestone:
+- Prompt 02 only after the user starts a new task. Prompt 02 was not started.
+
+#### 2026-07-11: First Villani local-daemon core pass
+
+Status: complete
+
+Changed files:
+- New Python 3.11+ package and entry point: `components/villani-agentd/pyproject.toml`, `README.md`, `.gitignore`, `villani_agentd/*.py`, and `tests/test_agentd_core.py`.
+- Installation and release automation: `scripts/install-local.py`, root `README.md`, and `.github/workflows/ci.yml`.
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- `villani-agentd` depends on the packaged `villani-ops` v2 protocol models and validators. It does not copy schemas or protocol definitions.
+- The local API uses the Python standard-library threaded HTTP server and client. Normal operation binds and connects only to loopback; both server lifecycle and client reject non-loopback use unless the server receives the explicit insecure-development flag. No uploader or other network client exists.
+- Endpoint discovery is written atomically to `~/.villani/agentd/endpoint.json`. A separately generated URL-safe bearer token is never passed on a process command line; POSIX mode is `0600`, and Windows inheritance is removed with a user-only full-control ACL so lifecycle cleanup remains possible.
+- SQLite owns committed local state with WAL, full synchronous commits, busy timeouts, one transaction per event batch, unique `event_id`, and unique `(run_id, sequence_scope, sequence)`. Same-content replay is idempotent; identity or sequence reuse with different content is a conflict.
+- Events remain normalized `TelemetryEnvelopeV2` bytes in deterministic JSON with `upload_state='offline'`, zero retries, and no upload destination. Run registration and finalization are local metadata only.
+- Artifact content is SHA-256 and size verified, atomically materialized into a content-addressed `sha256/<prefix>/<digest>` tree, and represented in SQLite by validated descriptors and storage references.
+- Generic wrapping uses `subprocess.Popen` with an argument vector and `shell=False`, dedicated process groups/sessions, concurrent pipe draining, explicit stdout/stderr and body truncation metadata, and child exit-code propagation. Ctrl-C cancellation terminates the process tree; Windows group behavior is covered through mocks and real Windows execution.
+- Limits cover stdout, stderr, event body, individual artifact, per-run artifacts, and serialized event spool size. Structured logs are JSON lines and redact authorization, token, secret, and artifact-content fields.
+- Start/status/stop/doctor are lifecycle-only commands. The root installer installs the daemon entry point but does not create an endpoint, token, process, or spool automatically.
+
+Verification:
+- From `components/villani-agentd`, `python -m pytest -q --basetemp .test-temp/final2`: exit code 0; 21 passed in 5.92s.
+- Agentd Ruff formatting check: exit code 0; 12 files already formatted. Ruff lint: exit code 0; all checks passed. Mypy with skipped external imports: exit code 0; no issues in 11 source files.
+- Agentd secret scan, `python scripts/check-secrets.py components/villani-agentd`: exit code 0; 1 root and 0 findings.
+- Villani Ops full suite: `python -m pytest -q`: exit code 0; 746 passed and 114 deselected in 90.27s.
+- Villani Code full suite with Git discovery bounded at the component root: `python -m pytest -q --basetemp final-temp-agentd-code`: exit code 0; 671 passed, 1 skipped, and 28 warnings in 40.82s.
+- Root closed-loop suite: `python -m pytest tests/closed_loop -q --basetemp final-temp-agentd-root`: exit code 0; 6 passed in 15.95s.
+- Flight Recorder: `npm test`: exit code 0; 20 files and 102 tests passed. `npm run typecheck`, `npm run build`, and `npm run format:check`: exit code 0.
+- Final non-isolated wheel builds: exit code 0; `villani_agentd-0.1.0-py3-none-any.whl` (19,213 bytes) and dependency wheel `villani_ops-0.2.0-py3-none-any.whl` (644,975 bytes).
+- Fresh Python 3.12 wheel installation and installed-entry-point smoke: exit code 0. Installed `start`, `status`, `doctor`, generic wrap, and `stop` succeeded; the shell-free wrapped Python process returned 13 and `villani-agentd` returned the same exit code.
+- Root installer repeatability: `python scripts/install-local.py --venv .venv`: exit code 0. `villani-agentd --help` succeeded and `INSTALLER_AGENTD_NOT_STARTED=1` confirmed no endpoint or daemon was created.
+- CI YAML parse: exit code 0; jobs are `villani-code`, `villani-ops`, `villani-agentd`, `flight-recorder`, `cross-component`, and `package-smoke`. Agentd has Python 3.11/3.12 tests plus Ruff/mypy, and package smoke builds and installs the wheel before lifecycle checks.
+- `git diff --check`: exit code 0 before the progress update and repeated after it.
+
+Acceptance criteria:
+- PASS: Replaying an identical event batch stores one copy and reports duplicates without consuming spool capacity.
+- PASS: Reusing a sequence or event identity with different normalized content is rejected and the transaction rolls back.
+- PASS: A real daemon termination and restart retains two committed offline events.
+- PASS: Generic wrapping never requests a shell, bounds both streams, propagates cancellation, and preserves real and mocked nonzero child exit codes.
+- PASS: Health is public; status, run, batch, artifact, and finalize endpoints all reject missing authentication.
+- PASS: Default endpoint and every runtime client destination are loopback. No cloud synchronization occurs.
+- PASS: Artifact digest/size mismatch and file/per-run limits are rejected. Concurrent writers, WAL restart, structured-log redaction, and Windows process flags are covered.
+- PASS: Existing Ops, Code, root closed-loop, and Flight Recorder suites remain green.
+- PASS: No Codex/Claude adapter, cloud synchronization, remote worker, or web UI was introduced.
+
+Assumptions:
+- `villani-ops` remains the packaged owner of the shared Python v2 protocol implementation for this pass; a later dedicated protocol distribution may replace that dependency without changing wire bytes.
+- The spool limit is enforced against normalized serialized event payload bytes; SQLite page/WAL bookkeeping is implementation overhead rather than accepted telemetry capacity.
+
+Known risks:
+- The standard-library HTTP surface is intentionally local and minimal. The insecure-development bind override is not suitable for production or untrusted networks.
+- Linux process-group and token-mode behavior is exercised by the Python 3.11/3.12 CI matrix; the complete local run was Windows Python 3.12 with Linux-specific branches represented by portable code and mocks.
+
+Known remaining issues:
+- none within this local-daemon core pass
+
+Next permitted milestone:
+- A later daemon/adapters/cloud pass only after the user explicitly starts it. Codex/Claude adapters, cloud synchronization, remote workers, and web UI were not started.
+
+#### 2026-07-11: Local observation adapters and normalization pass
+
+Status: complete
+
+Changed files:
+- Adapter contract, implementations, normalization, OTLP ingestion, trace propagation, diagnostics, wrapping, process callbacks, and limits under `components/villani-agentd/villani_agentd/`.
+- Synthetic fixtures and contract coverage in `components/villani-agentd/tests/fixtures/adapters/`, `test_adapters.py`, and the extended daemon-core tests.
+- Adapter documentation in `components/villani-agentd/README.md` and `docs/OBSERVATION_ADAPTERS.md`.
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- `AgentAdapter` is a typed observation contract covering identity/version, capability detection, argument-vector construction, incremental parsing, final outcome parsing, process-tree cancellation, and sensitive-field policy. Adapters share the packaged v2 models from Villani Ops; no protocol definition is copied.
+- `generic-process` retains bounded shell-free lifecycle capture. `generic-jsonl` accepts validated v2 envelopes or explicit dotted-field mappings. Villani Code consumes its native runtime/debug JSONL shape. Codex requires `codex exec --json`; Claude Code requires `--output-format stream-json`. Provider CLI feature detection uses only executable version/help output and reports exact version plus named missing capability. There is no decorated-terminal fallback or private-session-directory discovery.
+- Incremental JSONL parsing buffers partial lines, emits deterministic redacted parse-error records for malformed middle/truncated final records, ignores byte-equivalent native duplicates, and assigns deterministic revisions to changed records that reuse a native ID. Native IDs, provider names, event types, and revision numbers remain queryable attributes.
+- Model, tool, command, file, error, and terminal records normalize to schema-valid v2 causal spans. Parent IDs are correlated when present, token revisions remain numeric, and secret-shaped values plus sensitive fields are redacted before spooling.
+- Wrapped children receive W3C `traceparent` and Villani run identity without a shell. A valid inherited context is preserved as the causal parent; an invalid context is replaced. Existing process-group cancellation and child exit propagation remain unchanged.
+- Authenticated OTLP/HTTP JSON traces are accepted at `/v1/traces` and `/v1/otlp/v1/traces`. GenAI semantic attributes are projected into normalized fields, all unknown attribute keys remain queryable (subject to value redaction), and malformed or oversized payloads are rejected atomically under a configurable limit.
+- This pass adds observation only. It adds no backend routing, cloud synchronization, remote execution, database beyond the existing local spool, or UI.
+
+Verification:
+- Final agentd suite: `python -m pytest -q --basetemp .test-temp/adapters-final4`: exit code 0; 35 passed in 6.49s (one non-failing pytest cache warning caused by host ACLs).
+- Agentd Ruff formatting and lint: exit code 0; all 19 files formatted and all checks passed. Mypy with skipped external imports: exit code 0; no issues in 17 source files.
+- Agentd secret scan: `python scripts/check-secrets.py components/villani-agentd`: exit code 0; 1 root and 0 findings.
+- Villani Ops full suite: `python -m pytest -q`: exit code 0; 746 passed and 114 deselected in 99.10s.
+- Villani Code full suite with workspace-local temp storage: exit code 0; 671 passed, 1 skipped, and 28 warnings in 44.04s.
+- Root closed-loop suite with workspace-local temp storage: exit code 0; 6 passed in 17.90s.
+- Flight Recorder `npm.cmd test`: exit code 0; 20 files and 102 tests passed in 5.01s. `npm.cmd run typecheck`, `npm.cmd run build`, and `npm.cmd run format:check`: exit code 0; TypeScript compiled and all Prettier files matched.
+- Agentd wheel build without isolation: exit code 0; `villani_agentd-0.1.0-py3-none-any.whl` built and inspected successfully, including the adapter contract/implementations and OTLP module.
+- Workspace-local `villani-agentd doctor`: exit code 0; all five adapters were listed with exact capabilities, detected versions, and named missing capabilities without requiring provider authentication.
+- `git diff --check`: exit code 0 (line-ending notices only).
+
+Acceptance criteria:
+- PASS: Every synthetic adapter fixture normalizes to schema-valid v2 events and replay is byte-stable.
+- PASS: Native IDs and raw provider names remain queryable; duplicate native IDs and token revisions do not create identity collisions.
+- PASS: Missing or incapable Codex/Claude CLIs are isolated to their own doctor entries with exact detected version and missing capability. Generic and Villani adapters remain independently usable.
+- PASS: Partial lines, malformed middle records, truncated final records, tool nesting, interruption, shell-free execution, and secret-shaped output are covered without terminal scraping or implicit provider-session reads.
+- PASS: Authenticated OTLP ingestion maps GenAI attributes, preserves unknown attributes, rejects malformed/oversized requests deterministically, and replays idempotently.
+- PASS: Existing daemon persistence, uniqueness, limits, authentication, loopback, cancellation, Windows process mocks, and child exit behavior remain green.
+- PASS: Existing Ops, Code, root closed-loop, and Flight Recorder suites remain green.
+
+Assumptions:
+- Provider CLI help/version output is the authoritative local feature-discovery surface. Actual provider authentication is intentionally neither required nor tested.
+- User-configured best-effort session-file observation remains a possible future explicit feature; this pass performs no provider directory discovery and adds no such configuration surface.
+
+Known risks:
+- Provider vendors may revise documented JSON event variants. Unknown record fields remain in redacted bodies and open v2 kinds remain readable, but new correlation shapes may require a future adapter-version update.
+- OTLP integer values arrive as JSON strings by specification and are normalized to Python integers; very large values remain bounded later by v2/SQLite validation.
+
+Known remaining issues:
+- None within the observation-adapter and normalization pass. Initial Windows runs that used the protected global pytest temp root failed at fixture setup only; the required suites passed with workspace-local `--basetemp` paths.
+
+Next permitted milestone:
+- A later cloud-sync, routing, remote-worker, or UI pass only after the user explicitly starts it. None was started here.
+
+#### 2026-07-11: Local distribution and lifecycle management pass
+
+Status: complete
+
+Changed files:
+- New end-user Python distribution under `components/villani/` with platform wheel metadata, four console entry points, native Flight Recorder launcher, user-service management, upgrade checks, frozen entry point, signing placeholder, and distribution tests.
+- Release tooling: `scripts/build-vfr-standalone.py`, `scripts/build-release.py`, and `scripts/ci-package-smoke.py`.
+- Daemon lifecycle and spool migration support in `components/villani-agentd/villani_agentd/cli.py`, `lifecycle.py`, and `spool.py`, with expanded daemon tests.
+- Public Flight Recorder install guidance in `components/villani-ops/villani_ops/cli/unified.py`.
+- Root development installer, distribution CI matrix, root README, `docs/DISTRIBUTION.md`, and `docs/release-signing/README.md`.
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- The supported user artifact is one platform-specific Python distribution named `villani` at version `0.3.0rc1`. It pins and depends on the independently installable internal Python distributions and owns the installed `villani`, `villani-code`, `villani-agentd`, and `vfr` entry points. `pipx install villani` is the intended publication path; this pass publishes nothing.
+- Flight Recorder remains TypeScript-owned. Release builds compile its existing `dist/cli.js` and npm dependencies with pinned Bun 1.2.20 into a native per-platform executable embedded in the `villani` wheel and release ZIP. Node.js, npm, and Bun are build-time dependencies only. The monorepo installer retains an explicit Node-based development launcher.
+- Platform wheels are deliberately non-pure and tagged for the CI host platform. PyInstaller creates a shared frozen Python runtime that is exposed under the three Python command names; the native Flight Recorder is the fourth executable in the self-contained archive.
+- User services never require administrator privileges by default: systemd user unit on Linux, launchd user agent on macOS, and per-user Task Scheduler task on Windows. `villani-agentd service-run` is the foreground service target. CI redirects definitions and dry-runs platform commands as a documented VM approximation.
+- `villani uninstall-service` removes only the service definition. Local configuration, runs, artifacts, and spool remain unless both `--delete-data` and `--confirm-delete-data` are supplied, and unsafe deletion roots are refused.
+- Upgrade checks preserve legacy configuration and run bytes, validate supported config/protocol majors, migrate a known SQLite spool from `user_version=0` to 1, and refuse newer or structurally unknown spools. Direct daemon initialization performs the same spool-version/layout guard.
+- Release archives use fixed member ordering, timestamp, permissions, and compression. CI verifies deterministic archive assembly and generated `SHA256SUMS`. Signing records are explicit unsigned-release placeholders; no credential or fabricated signature exists.
+- Windows, macOS, and Linux release jobs build and smoke their own artifacts. A platform is not documented as supported merely because build code exists; support requires that platform's CI artifact to pass.
+
+Verification:
+- Distribution tests: `python -m pytest -q --basetemp .test-temp/distribution-final`: exit code 0; 9 passed in 0.60s.
+- Distribution Ruff and mypy: exit code 0; all checks passed and no issues in 6 source files. Root packaging-script Ruff: exit code 0.
+- Agentd final suite: exit code 0; 36 passed in 6.37s. Agentd Ruff: all checks passed. Earlier final mypy: no issues in 17 source files.
+- Villani Ops final full suite: exit code 0; 746 passed and 114 deselected in 92.64s.
+- Villani Code full suite: exit code 0; 671 passed, 1 skipped, and 28 warnings in 44.69s.
+- Root closed-loop suite: exit code 0; 6 passed in 17.95s.
+- Flight Recorder: `npm.cmd test`: exit code 0; 20 files and 102 tests passed in 4.90s. Typecheck, build, and format check: exit code 0.
+- Root development installer repeatability after adding the umbrella distribution and `--no-build-isolation`: exit code 0; all four development commands installed, daemon not started.
+- Fresh isolated Windows wheel install from four locally built wheels: exit code 0; `villani==0.3.0rc1` and pinned internal distributions installed with third-party dependencies. All four commands passed; `vfr --help` passed with Node removed from `PATH`.
+- Isolated wheel user-service smoke: exit code 0; install, status, and uninstall passed through the redirected Windows per-user Task Scheduler strategy; preserved run data remained.
+- Final self-contained Windows RC: `villani-0.3.0rc1-windows-amd64.zip`, 240,084,891 bytes. Extracted `villani`, `villani-code`, `villani-agentd`, and `vfr` all passed with Node absent from `PATH`; service lifecycle approximation and data preservation passed.
+- Final archive checksum verification: exit code 0; SHA-256 `eb3c7bd68f366b1bb1d1f33ab8d2592317af78401b71bb5dfa45458c9e94d52c` matched `SHA256SUMS`.
+- Upgrade fixture: legacy config and run manifest remained byte-identical, the existing event row survived, and SQLite migrated from version 0 to 1. Newer versions and unknown legacy table layouts were rejected.
+- CI YAML parse: exit code 0; `distribution-smoke` is a Windows/macOS/Linux matrix that builds native vfr, platform wheels, fresh installs, service approximations, PyInstaller archives, checksums, and uploaded RC artifacts.
+- Secret scan across `components/villani`, docs, and scripts: exit code 0; 3 roots and 0 findings. `git diff --check`: exit code 0 with line-ending notices only.
+
+Acceptance criteria:
+- PASS locally on Windows: one platform wheel provides all four commands from a fresh isolated install without Node.js at runtime.
+- PASS locally on Windows: the self-contained release ZIP provides all four commands, verifies its checksum, and contains an explicit unsigned signing placeholder.
+- PASS by implementation and test: systemd user, launchd user-agent, and Windows per-user Task Scheduler definitions require no administrator path; cross-platform definition generation is covered by synthetic platform tests.
+- PASS: service uninstall preserves run data by default and destructive removal requires two explicit flags.
+- PASS: previous-package fixtures preserve config, canonical runs, and SQLite events while applying the supported version migration.
+- PASS: internal Python package installs and the root monorepo development installer remain available.
+- PASS: existing Ops, Code, daemon, root closed-loop, and Flight Recorder suites remain green.
+- PENDING EXTERNAL CI EVIDENCE: macOS and Linux support is not claimed until the new matrix jobs complete and upload their platform smoke artifacts. This Windows workspace cannot produce those platform binaries.
+
+Assumptions:
+- Internal distributions will be published at their pinned versions before a future public `villani` wheel is published; local RC installation uses the colocated wheel directory.
+- Bun's compiled executable is the Flight Recorder runtime boundary. Node-compatible APIs used by the current Flight Recorder are covered by each platform's `vfr --help` and existing Flight Recorder suite before artifact upload.
+
+Known risks:
+- The Windows self-contained ZIP is large because it contains three command-named copies of the shared one-file Python runtime plus the native Flight Recorder. Size optimization is deferred; functionality and isolation were prioritized in this packaging pass.
+- PyInstaller and Bun output bytes can change with toolchain versions. Bun is pinned; CI must pin PyInstaller before public release provenance is considered reproducible across time.
+- Hosted CI execution is required before macOS or Linux can be promoted from configured build targets to supported release platforms.
+
+Known remaining issues:
+- No local functional failures. macOS/Linux artifact status is awaiting external CI execution and is deliberately not represented as completed support.
+
+Next permitted milestone:
+- A later publication or hosted-services pass only after the user explicitly starts it. No package was published, and no hosted service, account, or cloud feature was added.

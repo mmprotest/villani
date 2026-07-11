@@ -1,0 +1,334 @@
+"""Crash-safe SQLite event spool and content-addressed artifact storage."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sqlite3
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+from villani_ops.closed_loop.protocol_v2 import ArtifactDescriptorV2, OutcomeV2, TelemetryEnvelopeV2
+from villani_ops.closed_loop.schema_validation import parse_protocol_document
+
+from .config import AgentdPaths, Limits
+
+
+class SpoolError(RuntimeError):
+    status_code = 400
+
+
+class CollisionError(SpoolError):
+    status_code = 409
+
+
+class LimitError(SpoolError):
+    status_code = 413
+
+
+@dataclass(frozen=True, slots=True)
+class BatchResult:
+    inserted: int
+    duplicates: int
+
+
+def _normalized_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+class SQLiteSpool:
+    def __init__(self, paths: AgentdPaths, limits: Limits) -> None:
+        self.paths = paths
+        self.limits = limits
+        paths.root.mkdir(parents=True, exist_ok=True)
+        paths.artifacts.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.paths.database, timeout=30, isolation_level=None)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA busy_timeout=30000")
+        return connection
+
+    def _initialize(self) -> None:
+        with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if version > 1:
+                raise SpoolError(
+                    f"spool schema version {version} is newer than supported version 1"
+                )
+            existing_tables = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if (
+                version == 0
+                and existing_tables
+                and not {
+                    "runs",
+                    "events",
+                    "artifacts",
+                }.issubset(existing_tables)
+            ):
+                raise SpoolError("legacy spool has an unsupported table layout")
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS runs (
+                    run_id TEXT PRIMARY KEY,
+                    trace_id TEXT,
+                    created_at TEXT NOT NULL,
+                    finalized_at TEXT,
+                    final_payload_json TEXT
+                );
+                CREATE TABLE IF NOT EXISTS events (
+                    event_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    sequence_scope TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    payload_sha256 TEXT NOT NULL,
+                    upload_state TEXT NOT NULL DEFAULT 'offline',
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at TEXT,
+                    UNIQUE(run_id, sequence_scope, sequence)
+                );
+                CREATE INDEX IF NOT EXISTS events_upload_state ON events(upload_state, next_retry_at);
+                CREATE TABLE IF NOT EXISTS artifacts (
+                    artifact_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    digest TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    descriptor_json TEXT NOT NULL,
+                    storage_reference TEXT NOT NULL,
+                    upload_state TEXT NOT NULL DEFAULT 'offline',
+                    UNIQUE(run_id, digest)
+                );
+                """
+            )
+            if version == 0:
+                connection.execute("PRAGMA user_version=1")
+
+    def register_run(self, run_id: str, trace_id: str | None, created_at: str) -> bool:
+        if not run_id:
+            raise SpoolError("run_id is required")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO runs(run_id, trace_id, created_at) VALUES(?,?,?)",
+                (run_id, trace_id, created_at),
+            )
+            return cursor.rowcount == 1
+
+    def ingest_events(self, documents: Iterable[Mapping[str, Any]]) -> BatchResult:
+        prepared: list[tuple[TelemetryEnvelopeV2, str, str]] = []
+        for document in documents:
+            parsed = parse_protocol_document(dict(document))
+            if not isinstance(parsed, TelemetryEnvelopeV2):
+                raise SpoolError("event batches accept only villani.telemetry_envelope.v2")
+            body_size = len(_normalized_json(parsed.body).encode("utf-8"))
+            if body_size > self.limits.event_body_bytes:
+                raise LimitError(f"event body exceeds {self.limits.event_body_bytes} bytes")
+            payload = _normalized_json(parsed.model_dump(mode="json"))
+            prepared.append((parsed, payload, hashlib.sha256(payload.encode("utf-8")).hexdigest()))
+
+        inserted = 0
+        duplicates = 0
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                current_size = int(
+                    connection.execute(
+                        "SELECT COALESCE(SUM(length(CAST(payload_json AS BLOB))), 0) FROM events"
+                    ).fetchone()[0]
+                )
+                new_size = 0
+                for event, payload, payload_digest in prepared:
+                    existing = connection.execute(
+                        "SELECT payload_sha256 FROM events WHERE event_id=?", (event.event_id,)
+                    ).fetchone()
+                    if existing is not None:
+                        if existing["payload_sha256"] != payload_digest:
+                            raise CollisionError(
+                                f"event_id {event.event_id!r} already has different content"
+                            )
+                        duplicates += 1
+                        continue
+                    sequence = connection.execute(
+                        """SELECT event_id, payload_sha256 FROM events
+                           WHERE run_id=? AND sequence_scope=? AND sequence=?""",
+                        (event.run_id, event.sequence_scope, event.sequence),
+                    ).fetchone()
+                    if sequence is not None:
+                        raise CollisionError(
+                            "sequence already belongs to a different event: "
+                            f"{event.run_id}/{event.sequence_scope}/{event.sequence}"
+                        )
+                    payload_size = len(payload.encode("utf-8"))
+                    if current_size + new_size + payload_size > self.limits.spool_bytes:
+                        raise LimitError(f"event spool exceeds {self.limits.spool_bytes} bytes")
+                    connection.execute(
+                        """INSERT INTO events(
+                            event_id, run_id, sequence_scope, sequence, occurred_at,
+                            observed_at, payload_json, payload_sha256, upload_state,
+                            retry_count, next_retry_at
+                        ) VALUES(?,?,?,?,?,?,?,?, 'offline', 0, NULL)""",
+                        (
+                            event.event_id,
+                            event.run_id,
+                            event.sequence_scope,
+                            event.sequence,
+                            event.occurred_at.isoformat().replace("+00:00", "Z"),
+                            event.observed_at.isoformat().replace("+00:00", "Z"),
+                            payload,
+                            payload_digest,
+                        ),
+                    )
+                    new_size += payload_size
+                    connection.execute(
+                        "INSERT OR IGNORE INTO runs(run_id, trace_id, created_at) VALUES(?,?,?)",
+                        (
+                            event.run_id,
+                            event.trace_id,
+                            event.observed_at.isoformat().replace("+00:00", "Z"),
+                        ),
+                    )
+                    inserted += 1
+                connection.execute("COMMIT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+        return BatchResult(inserted=inserted, duplicates=duplicates)
+
+    def register_artifact(
+        self, run_id: str, descriptor_document: Mapping[str, Any], content: bytes
+    ) -> ArtifactDescriptorV2:
+        parsed = parse_protocol_document(dict(descriptor_document))
+        if not isinstance(parsed, ArtifactDescriptorV2):
+            raise SpoolError("artifact registration requires villani.artifact_descriptor.v2")
+        if len(content) > self.limits.artifact_file_bytes:
+            raise LimitError(f"artifact exceeds {self.limits.artifact_file_bytes} bytes")
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != parsed.digest.value:
+            raise SpoolError("artifact SHA-256 digest mismatch")
+        if len(content) != parsed.size_bytes:
+            raise SpoolError("artifact size mismatch")
+
+        reference = f"sha256/{digest[:2]}/{digest}"
+        destination = self.paths.artifacts / digest[:2] / digest
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                total = int(
+                    connection.execute(
+                        "SELECT COALESCE(SUM(size_bytes), 0) FROM artifacts WHERE run_id=?",
+                        (run_id,),
+                    ).fetchone()[0]
+                )
+                existing = connection.execute(
+                    "SELECT descriptor_json FROM artifacts WHERE artifact_id=?",
+                    (parsed.artifact_id,),
+                ).fetchone()
+                stored = parsed.model_copy(update={"storage_reference": reference})
+                descriptor_json = _normalized_json(stored.model_dump(mode="json"))
+                if existing is not None:
+                    if existing["descriptor_json"] != descriptor_json:
+                        raise CollisionError(
+                            f"artifact_id {parsed.artifact_id!r} already has different content"
+                        )
+                    connection.execute("COMMIT")
+                    return stored
+                if total + len(content) > self.limits.total_run_artifact_bytes:
+                    raise LimitError(
+                        f"run artifact total exceeds {self.limits.total_run_artifact_bytes} bytes"
+                    )
+
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if not destination.exists():
+                    descriptor, temporary_name = tempfile.mkstemp(
+                        prefix=f".{digest}.", suffix=".tmp", dir=destination.parent
+                    )
+                    temporary = Path(temporary_name)
+                    try:
+                        with os.fdopen(descriptor, "wb") as handle:
+                            handle.write(content)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+                        os.replace(temporary, destination)
+                    except BaseException:
+                        temporary.unlink(missing_ok=True)
+                        raise
+                connection.execute(
+                    """INSERT INTO artifacts(
+                        artifact_id, run_id, digest, size_bytes, descriptor_json,
+                        storage_reference, upload_state
+                    ) VALUES(?,?,?,?,?,?, 'offline')""",
+                    (
+                        parsed.artifact_id,
+                        run_id,
+                        digest,
+                        len(content),
+                        descriptor_json,
+                        reference,
+                    ),
+                )
+                connection.execute("COMMIT")
+                return stored
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+
+    def finalize_run(self, run_id: str, payload: Mapping[str, Any], finalized_at: str) -> None:
+        outcome = payload.get("outcome")
+        if outcome is not None:
+            parsed = parse_protocol_document(outcome)
+            if not isinstance(parsed, OutcomeV2):
+                raise SpoolError("final outcome must use villani.outcome.v2")
+            if parsed.run_id != run_id:
+                raise SpoolError("outcome run_id does not match path run_id")
+        normalized = _normalized_json(dict(payload))
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    "INSERT OR IGNORE INTO runs(run_id, trace_id, created_at) VALUES(?,?,?)",
+                    (run_id, None, finalized_at),
+                )
+                connection.execute(
+                    "UPDATE runs SET finalized_at=?, final_payload_json=? WHERE run_id=?",
+                    (finalized_at, normalized, run_id),
+                )
+                connection.execute("COMMIT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+
+    def status(self) -> dict[str, Any]:
+        with self._connect() as connection:
+            event_count = int(connection.execute("SELECT COUNT(*) FROM events").fetchone()[0])
+            artifact_count = int(connection.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0])
+            run_count = int(connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0])
+            pending = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM events WHERE upload_state='offline'"
+                ).fetchone()[0]
+            )
+        return {
+            "runs": run_count,
+            "events": event_count,
+            "artifacts": artifact_count,
+            "pending_events": pending,
+            "upload_mode": "offline",
+        }
+
+    def integrity_check(self) -> str:
+        with self._connect() as connection:
+            return str(connection.execute("PRAGMA integrity_check").fetchone()[0])

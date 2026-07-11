@@ -27,4 +27,4 @@ markers = [
 ]
 
 [tool.setuptools.package-data]
-villani_ops = ["viewer/static/index.html", "schemas/v1/*.json"]
+villani_ops = ["viewer/static/index.html", "schemas/v1/*.json", "schemas/v2/*.json"]
