@@ -4,6 +4,7 @@ from typing import Protocol, Any
 from pydantic import BaseModel, Field
 from villani_ops.core.backend import Backend
 
+
 class RunnerContext(BaseModel):
     attempt_id: str
     repo_path: str
@@ -19,6 +20,8 @@ class RunnerContext(BaseModel):
     cleanup_command: list[str] = Field(default_factory=list)
     secure_secret_injection: bool = False
     command: str | None = None
+    cancellation_event: Any | None = Field(default=None, exclude=True)
+
 
 class RunnerResult(BaseModel):
     exit_code: int
@@ -52,16 +55,38 @@ class RunnerResult(BaseModel):
     token_accounting_warnings: list[str] = Field(default_factory=list)
     telemetry: dict[str, Any] = Field(default_factory=dict)
 
+
 class RunnerAdapter(Protocol):
     name: str
-    def run_task(self, *, repo_path: Path, task: str, success_criteria: str | None, backend_name: str, backend_config: Backend, timeout_seconds: int | None, context: dict[str, Any], artifacts_dir: Path) -> RunnerResult: ...
+
+    def run_task(
+        self,
+        *,
+        repo_path: Path,
+        task: str,
+        success_criteria: str | None,
+        backend_name: str,
+        backend_config: Backend,
+        timeout_seconds: int | None,
+        context: dict[str, Any],
+        artifacts_dir: Path,
+    ) -> RunnerResult: ...
     def run(self, context: RunnerContext) -> RunnerResult: ...
 
+
 class UnsupportedRunnerAdapter:
-    def __init__(self, name: str): self.name=name
+    def __init__(self, name: str):
+        self.name = name
+
     def run_task(self, **kwargs) -> RunnerResult:
-        raise NotImplementedError(f"Runner '{self.name}' is registered but not implemented yet.")
+        raise NotImplementedError(
+            f"Runner '{self.name}' is registered but not implemented yet."
+        )
+
     def run(self, context: RunnerContext) -> RunnerResult:
-        raise NotImplementedError(f"Runner '{self.name}' is registered but not implemented yet.")
+        raise NotImplementedError(
+            f"Runner '{self.name}' is registered but not implemented yet."
+        )
+
 
 Runner = RunnerAdapter

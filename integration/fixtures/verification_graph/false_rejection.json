@@ -1,0 +1,7 @@
+{
+  "suite": "false_rejection",
+  "cases": [
+    {"id": "authoritative_pass_optional_llm_fail", "expected_eligible": true, "reason": "optional model disagreement does not erase authoritative evidence"},
+    {"id": "authoritative_pass_optional_scan_missing", "expected_eligible": true, "reason": "explicitly optional missing evidence is recorded but is not required"}
+  ]
+}

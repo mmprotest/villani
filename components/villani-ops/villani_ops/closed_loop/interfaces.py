@@ -258,6 +258,12 @@ class AttemptContext:
     attempt_directory: Path
     execution_provider: str | None = None
     guarded_task_route: Mapping[str, Any] = field(default_factory=dict)
+    candidate_dimensions: Mapping[str, Any] = field(default_factory=dict)
+    baseline_sha256: str | None = None
+    repair_source_attempt_id: str | None = None
+    cancellation_event: Any | None = field(
+        default=None, repr=False, compare=False, metadata={"plugin_exclude": True}
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,6 +292,7 @@ class MaterializationContext:
     selected_candidate: EligibleCandidate
     policy_configuration: Mapping[str, Any]
     run_directory: Path
+    risk: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,9 +337,7 @@ class ClosedLoopRunResult:
 
 
 class Classifier(Protocol):
-    def classify(
-        self, task: str, context: ClassificationContext
-    ) -> Classification: ...
+    def classify(self, task: str, context: ClassificationContext) -> Classification: ...
 
 
 class PolicyEngine(Protocol):

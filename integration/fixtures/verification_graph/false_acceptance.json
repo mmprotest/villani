@@ -1,0 +1,8 @@
+{
+  "suite": "false_acceptance",
+  "cases": [
+    {"id": "llm_only", "expected_eligible": false, "reason": "model evidence is capped below authoritative"},
+    {"id": "required_failure_with_approval", "expected_eligible": false, "reason": "approval cannot override the snapshotted requirement"},
+    {"id": "flaky_required_command", "expected_eligible": false, "reason": "disagreement is conflicting evidence"}
+  ]
+}

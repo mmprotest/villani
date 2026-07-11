@@ -19,9 +19,11 @@ from ..interfaces import (
 )
 from ..protocol import FailureDetail, MaterializationSnapshot
 from .git_isolation import validate_target_identity
+from ..plugins.builtins import MATERIALIZER_MANIFEST
 
 
 class PatchMaterializerAdapter:
+    plugin_manifest = MATERIALIZER_MANIFEST
     def __init__(
         self,
         *,

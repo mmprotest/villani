@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -101,6 +102,19 @@ from .shadow_routing import (
     extract_task_features,
 )
 from .guarded_routing import GuardedTaskRouter
+from .candidate_strategies import (
+    CandidateDimensions,
+    CandidateObservation,
+    CandidatePlan,
+    CandidateScheduler,
+    ReliabilityAccounting,
+    ReliabilityStrategyConfiguration,
+    adaptive_stop,
+    build_candidate_plans,
+    configuration_from_policy,
+    diversity_summary,
+    immutable_baseline_digest,
+)
 
 
 def _utc_now() -> datetime:
@@ -177,6 +191,10 @@ class _Runtime:
     loaded_state_terminal: bool = False
     failure: FailureDetail | None = None
     terminal_reason: str | None = None
+    reliability_configuration: ReliabilityStrategyConfiguration | None = None
+    reliability_baseline_sha256: str | None = None
+    candidate_plans: dict[str, CandidatePlan] = field(default_factory=dict)
+    reliability_explicit: bool = False
 
 
 class ClosedLoopController:
@@ -208,6 +226,13 @@ class ClosedLoopController:
         self._id_factory = id_factory or _default_id
         self._on_event = on_event
         self._failure_injector = failure_injector
+        manifests: list[Any] = []
+        for dependency in (attempt_runner, verifier, selector, materializer):
+            manifest = getattr(dependency, "plugin_manifest", None)
+            if manifest is not None:
+                manifests.append(manifest)
+            manifests.extend(getattr(dependency, "additional_plugin_manifests", ()))
+        self._plugin_identities = tuple(manifest.identity() for manifest in manifests)
 
     def _checkpoint(self, boundary: str) -> None:
         if self._failure_injector is not None:
@@ -332,7 +357,19 @@ class ClosedLoopController:
                 else:
                     self._exhaust(runtime, budget_reason)
                 break
+            reliability = runtime.reliability_configuration
+            if (
+                reliability is not None
+                and not runtime.attempts
+                and reliability.strategy
+                in {"parallel_diverse_candidates", "adaptive_candidates"}
+                and reliability.maximum_parallelism > 1
+            ):
+                self._run_parallel_strategy(runtime, action, attempt_id)
+                break
             self._run_attempt(runtime, action, attempt_id)
+            if self._apply_reliability_stop(runtime):
+                break
 
     def resume(self, run_id: str, runs_root: str | Path) -> ClosedLoopRunResult:
         """Reconcile and continue one interrupted canonical run idempotently."""
@@ -496,6 +533,18 @@ class ClosedLoopController:
             committed_events=list(events),
             loaded_state_terminal=state.terminal,
         )
+        runtime.reliability_configuration = configuration_from_policy(
+            request.policy_configuration, maximum_attempts=request.max_attempts
+        )
+        runtime.reliability_explicit = isinstance(
+            request.policy_configuration.get("candidate_reliability"), Mapping
+        )
+        strategy_path = run_dir / "candidate_strategy.json"
+        if strategy_path.is_file():
+            strategy_document = json.loads(strategy_path.read_text(encoding="utf-8"))
+            baseline_value = strategy_document.get("baseline_sha256")
+            if isinstance(baseline_value, str):
+                runtime.reliability_baseline_sha256 = baseline_value
 
         classification_path = run_dir / "classification.json"
         if classification_path.is_file():
@@ -560,6 +609,35 @@ class ClosedLoopController:
             if attempt.run_id != runtime.run_id or attempt.attempt_id != attempt_id:
                 raise RunStoreError("attempt snapshot identity is invalid")
             runtime.attempts.append(attempt)
+            dimensions_value = attempt.metadata.get("candidate_dimensions")
+            if isinstance(dimensions_value, Mapping):
+                dimensions = CandidateDimensions.model_validate(dimensions_value)
+                fingerprint = str(
+                    attempt.metadata.get("effective_configuration_sha256")
+                    or dimensions.effective_fingerprint
+                )
+                baseline = str(
+                    attempt.metadata.get("baseline_sha256")
+                    or runtime.reliability_baseline_sha256
+                    or ""
+                )
+                if baseline:
+                    runtime.candidate_plans[attempt_id] = CandidatePlan(
+                        candidate_id=attempt_id,
+                        ordinal=attempt.ordinal,
+                        dimensions=dimensions,
+                        effective_configuration_sha256=fingerprint,
+                        baseline_sha256=baseline,
+                        sandbox_id=str(
+                            attempt.metadata.get("sandbox_id")
+                            or f"sandbox_{attempt_id}"
+                        ),
+                        repair_source_attempt_id=(
+                            str(attempt.metadata["repair_source_attempt_id"])
+                            if attempt.metadata.get("repair_source_attempt_id")
+                            else None
+                        ),
+                    )
             context = self._attempt_context_from_snapshot(runtime, attempt)
             runtime.attempt_contexts[attempt_id] = context
             result = self._attempt_result_from_snapshot(runtime, attempt)
@@ -629,6 +707,22 @@ class ClosedLoopController:
             attempt_directory=(
                 runtime.store.run_directory / "attempts" / attempt.attempt_id
             ),
+            candidate_dimensions=(
+                _read_only_mapping(attempt.metadata["candidate_dimensions"])
+                if isinstance(attempt.metadata.get("candidate_dimensions"), Mapping)
+                else MappingProxyType({})
+            ),
+            baseline_sha256=(
+                str(attempt.metadata["baseline_sha256"])
+                if attempt.metadata.get("baseline_sha256")
+                else runtime.reliability_baseline_sha256
+            ),
+            repair_source_attempt_id=(
+                str(attempt.metadata["repair_source_attempt_id"])
+                if attempt.metadata.get("repair_source_attempt_id")
+                else None
+            ),
+            cancellation_event=threading.Event(),
         )
 
     def _artifact_text(self, runtime: _Runtime, value: str | None) -> str:
@@ -1358,6 +1452,7 @@ class ClosedLoopController:
                 runtime.request.policy_configuration
             ),
             run_directory=runtime.store.run_directory,
+            risk=runtime.classification.risk if runtime.classification else None,
         )
         returned = self._materializer.materialize(returned_selection, context)
         if not isinstance(returned, Materialization):
@@ -1514,8 +1609,39 @@ class ClosedLoopController:
             metadata={},
         )
         runtime.store.write_protocol("task.json", task)
-        preflight = preflight_report(
-            Path(runtime.request.repository_path), runtime.request.policy_configuration
+        runtime.reliability_configuration = configuration_from_policy(
+            runtime.request.policy_configuration,
+            maximum_attempts=runtime.request.max_attempts,
+        )
+        runtime.reliability_explicit = isinstance(
+            runtime.request.policy_configuration.get("candidate_reliability"), Mapping
+        )
+        runtime.reliability_baseline_sha256 = immutable_baseline_digest(
+            runtime.request.repository_path,
+            runtime.request.task,
+            runtime.request.success_criteria,
+        )
+        runtime.store.write_json(
+            "candidate_strategy.json",
+            {
+                **runtime.reliability_configuration.model_dump(mode="json"),
+                "baseline_sha256": runtime.reliability_baseline_sha256,
+                "task_id": runtime.task_id,
+                "run_id": runtime.run_id,
+            },
+        )
+        repository_path = Path(runtime.request.repository_path)
+        preflight = (
+            preflight_report(repository_path, runtime.request.policy_configuration)
+            if repository_path.exists()
+            else {
+                "schema_version": "villani.execution_preflight.v1",
+                "repository": {"path": str(repository_path), "available": False},
+                "provider": {"provider": "unavailable", "available": False},
+                "execution_environment_fingerprint": None,
+                "fingerprint_error": "repository_unavailable",
+                "inferred_setup_executed": False,
+            }
         )
         runtime.store.write_json("preflight.json", preflight)
         fingerprint = str(preflight["execution_environment_fingerprint"])
@@ -2048,11 +2174,393 @@ class ClosedLoopController:
             )
         self._transition(runtime, "POLICY_SELECTED", "policy_selected", payload)
 
+    def _candidate_plan(
+        self,
+        runtime: _Runtime,
+        decision: PolicyDecision,
+        attempt_id: str,
+        ordinal: int,
+    ) -> tuple[CandidateDimensions, CandidatePlan]:
+        configuration = runtime.reliability_configuration or configuration_from_policy(
+            runtime.request.policy_configuration,
+            maximum_attempts=runtime.request.max_attempts,
+        )
+        requested = (
+            configuration.candidates[ordinal - 1]
+            if ordinal <= len(configuration.candidates)
+            else CandidateDimensions()
+        )
+        # Reliability strategy cannot bypass guarded routing. Agent/model dimensions
+        # are effective only after the production policy selected that route.
+        dimensions = requested.model_copy(
+            update={
+                "backend_name": decision.chosen_backend,
+                "model": decision.chosen_model,
+                "seed": (
+                    requested.seed
+                    if requested.seed is not None
+                    else ordinal
+                    if configuration.strategy
+                    in {"parallel_diverse_candidates", "adaptive_candidates"}
+                    else None
+                ),
+            }
+        )
+        baseline = runtime.reliability_baseline_sha256 or immutable_baseline_digest(
+            runtime.request.repository_path,
+            runtime.request.task,
+            runtime.request.success_criteria,
+        )
+        repair_source = (
+            runtime.attempts[-1].attempt_id
+            if configuration.repair_strategy and runtime.attempts
+            else None
+        )
+        plan = CandidatePlan(
+            candidate_id=attempt_id,
+            ordinal=ordinal,
+            dimensions=dimensions,
+            effective_configuration_sha256=dimensions.effective_fingerprint,
+            baseline_sha256=baseline,
+            sandbox_id=f"sandbox_{attempt_id}",
+            expected_success=(
+                configuration.expected_success_by_ordinal[ordinal - 1]
+                if ordinal <= len(configuration.expected_success_by_ordinal)
+                else None
+            ),
+            estimated_cost_usd=(
+                configuration.estimated_cost_usd_by_ordinal[ordinal - 1]
+                if ordinal <= len(configuration.estimated_cost_usd_by_ordinal)
+                else next(
+                    (
+                        item.estimated_cost_usd
+                        for item in decision.considered_backends
+                        if item.backend_name == decision.chosen_backend
+                    ),
+                    None,
+                )
+            ),
+            repair_source_attempt_id=repair_source,
+        )
+        return dimensions, plan
+
+    @staticmethod
+    def _evidence_grade(verification: VerificationSnapshot) -> str:
+        if not verification.acceptance_eligible:
+            return "none"
+        requirements_proven = bool(verification.requirement_results) and all(
+            item.outcome in {"passed", "not_applicable"}
+            for item in verification.requirement_results
+        )
+        if requirements_proven and verification.success_evidence:
+            return "strong"
+        if verification.success_evidence:
+            return "moderate"
+        return "weak"
+
+    def _apply_reliability_stop(self, runtime: _Runtime) -> bool:
+        configuration = runtime.reliability_configuration
+        if (
+            configuration is None
+            or not runtime.reliability_explicit
+            or runtime.machine.terminal
+        ):
+            return runtime.machine.terminal
+        observations = tuple(
+            CandidateObservation(
+                candidate_id=item.attempt_id,
+                acceptance_eligible=item.acceptance_eligible,
+                verifier_confidence=item.confidence,
+                evidence_grade=self._evidence_grade(item),  # type: ignore[arg-type]
+                actual_cost_usd=next(
+                    (
+                        attempt.cost_usd
+                        for attempt in runtime.attempts
+                        if attempt.attempt_id == item.attempt_id
+                    ),
+                    None,
+                ),
+            )
+            for item in runtime.verifications
+        )
+        if not runtime.candidate_plans:
+            return False
+        last = runtime.candidate_plans[next(reversed(runtime.candidate_plans))]
+        default = last.dimensions
+        all_plans = build_candidate_plans(
+            configuration,
+            baseline_sha256=last.baseline_sha256,
+            default_dimensions=default,
+        )
+        # Preserve actual attempt identities and effective configurations for the
+        # completed prefix; future plans remain estimates only.
+        merged = list(all_plans)
+        for index, plan in enumerate(runtime.candidate_plans.values()):
+            if index < len(merged):
+                merged[index] = plan
+        budget = self._budget_context(runtime)
+        decision = adaptive_stop(
+            configuration,
+            tuple(merged),
+            observations,
+            remaining_attempt_budget=budget.remaining_attempts,
+            remaining_cost_budget_usd=budget.remaining_cost_usd,
+        )
+        diversity_claimed, distinct = diversity_summary(tuple(merged))
+        accounting = ReliabilityAccounting(
+            strategy=configuration.strategy,
+            planned_attempts=len(merged),
+            started_attempts=len(runtime.attempts),
+            completed_attempts=len(runtime.verifications),
+            cancelled_attempts=sum(
+                item.status == "cancelled" for item in runtime.attempts
+            ),
+            avoided_attempts=decision.avoided_attempts if decision.stop else 0,
+            estimated_avoided_spend_usd=(
+                decision.estimated_avoided_spend_usd if decision.stop else None
+            ),
+            diversity_claimed=diversity_claimed,
+            distinct_effective_configurations=distinct,
+            maximum_observed_concurrency=1,
+            stop_reason=decision.reason if decision.stop else None,
+        )
+        runtime.store.write_json(
+            "reliability_accounting.json", accounting.model_dump(mode="json")
+        )
+        self._checkpoint("after_reliability_stop_decision")
+        if not decision.stop:
+            return False
+        self._emit_state_event(
+            runtime,
+            "candidate_strategy_stopped",
+            {
+                **decision.model_dump(mode="json"),
+                "strategy": configuration.strategy,
+            },
+            attempt_id=runtime.active_attempt_id,
+        )
+        if runtime.eligible_candidate_ids:
+            self._select_and_materialize(runtime)
+        else:
+            self._exhaust(runtime, decision.reason)
+        return True
+
+    def _run_parallel_strategy(
+        self, runtime: _Runtime, decision: PolicyDecision, first_attempt_id: str
+    ) -> None:
+        configuration = runtime.reliability_configuration
+        assert configuration is not None
+        budget = self._budget_context(runtime)
+        maximum = min(
+            configuration.maximum_candidates,
+            budget.remaining_attempts,
+            runtime.request.max_attempts - len(runtime.attempts),
+        )
+        if maximum <= 0:
+            self._exhaust(
+                runtime, "attempt budget exhausted before candidate scheduling"
+            )
+            return
+        default_dimensions = CandidateDimensions(
+            backend_name=decision.chosen_backend,
+            model=decision.chosen_model,
+        )
+        planned = build_candidate_plans(
+            configuration,
+            baseline_sha256=(runtime.reliability_baseline_sha256 or "0" * 64),
+            default_dimensions=default_dimensions,
+        )[:maximum]
+        attempt_ids = [first_attempt_id]
+        for _ in range(1, len(planned)):
+            allocated = self._next_attempt_id(runtime)
+            runtime.allocated_attempt_ids.add(allocated)
+            attempt_ids.append(allocated)
+        plans: list[CandidatePlan] = []
+        contexts: dict[str, AttemptContext] = {}
+        cancellation_events: dict[str, threading.Event] = {}
+        route = decision.metadata.get("guarded_task_route")
+        route_values = route if isinstance(route, Mapping) else {}
+        for source, attempt_id in zip(planned, attempt_ids, strict=True):
+            dimensions = source.dimensions.model_copy(
+                update={
+                    "backend_name": decision.chosen_backend,
+                    "model": decision.chosen_model,
+                }
+            )
+            plan = source.model_copy(
+                update={
+                    "candidate_id": attempt_id,
+                    "dimensions": dimensions,
+                    "effective_configuration_sha256": dimensions.effective_fingerprint,
+                    "sandbox_id": f"sandbox_{attempt_id}",
+                }
+            )
+            plans.append(plan)
+            cancellation = threading.Event()
+            cancellation_events[attempt_id] = cancellation
+            runtime.candidate_plans[attempt_id] = plan
+            contexts[attempt_id] = AttemptContext(
+                run_id=runtime.run_id,
+                trace_id=runtime.trace_id,
+                task_id=runtime.task_id,
+                attempt_id=attempt_id,
+                ordinal=source.ordinal,
+                task=runtime.request.task,
+                repository_path=str(runtime.request.repository_path),
+                success_criteria=runtime.request.success_criteria,
+                requires_file_changes=runtime.request.requires_file_changes,
+                backend_name=decision.chosen_backend or "",
+                model=decision.chosen_model,
+                policy_configuration=_read_only_mapping(
+                    runtime.request.policy_configuration
+                ),
+                run_directory=runtime.store.run_directory,
+                attempt_directory=(
+                    runtime.store.run_directory / "attempts" / attempt_id
+                ),
+                execution_provider=(
+                    str(route_values["execution_provider"])
+                    if route_values.get("execution_provider")
+                    else None
+                ),
+                guarded_task_route=(
+                    _read_only_mapping(route_values)
+                    if route_values
+                    else MappingProxyType({})
+                ),
+                candidate_dimensions=_read_only_mapping(
+                    dimensions.model_dump(mode="json")
+                ),
+                baseline_sha256=plan.baseline_sha256,
+                repair_source_attempt_id=plan.repair_source_attempt_id,
+                cancellation_event=cancellation,
+            )
+        preverified: dict[str, Verification] = {}
+
+        def generate(
+            plan: CandidatePlan, cancellation: threading.Event
+        ) -> AttemptResult:
+            context = contexts[plan.candidate_id]
+            if cancellation.is_set():
+                return AttemptResult(
+                    runner_name="cancelled_before_start",
+                    status="cancelled",
+                    worktree_path="unavailable",
+                    patch=None,
+                    exit_code=None,
+                )
+            return self._attempt_runner.run(context)
+
+        def verify(plan: CandidatePlan, result: AttemptResult) -> CandidateObservation:
+            returned = self._verifier.verify(contexts[plan.candidate_id], result)
+            if not isinstance(returned, Verification):
+                raise TypeError("verifier returned an invalid Verification")
+            preverified[plan.candidate_id] = returned
+            requirements_proven = bool(returned.requirement_results) and all(
+                item.outcome in {"passed", "not_applicable"}
+                for item in returned.requirement_results
+            )
+            grade = (
+                "strong"
+                if returned.acceptance_eligible
+                and requirements_proven
+                and returned.success_evidence
+                else "moderate"
+                if returned.acceptance_eligible and returned.success_evidence
+                else "weak"
+                if returned.acceptance_eligible
+                else "none"
+            )
+            return CandidateObservation(
+                candidate_id=plan.candidate_id,
+                acceptance_eligible=returned.acceptance_eligible,
+                verifier_confidence=returned.confidence,
+                evidence_grade=grade,  # type: ignore[arg-type]
+                actual_cost_usd=result.cost_usd,
+            )
+
+        scheduler = CandidateScheduler(
+            configuration,
+            journal_path=runtime.store.run_directory / "candidate_schedule.jsonl",
+            checkpoint=lambda boundary: self._checkpoint(f"candidate_{boundary}"),
+        )
+        executions, accounting = scheduler.execute(
+            tuple(plans),
+            generate=generate,
+            verify=verify,
+            remaining_attempt_budget=maximum,
+            remaining_cost_budget_usd=budget.remaining_cost_usd,
+        )
+        runtime.store.write_json(
+            "reliability_accounting.json", accounting.model_dump(mode="json")
+        )
+        for execution in executions:
+            attempt_id = execution.plan.candidate_id
+            context = contexts[attempt_id]
+            if execution.cancelled:
+                self._cleanup_attempt_worktree(runtime, context)
+                continue
+            if runtime.machine.state == "VERIFIED":
+                self._transition(
+                    runtime,
+                    "REJECTED",
+                    "candidate_collection_continued",
+                    {"strategy": configuration.strategy},
+                    attempt_id=runtime.active_attempt_id,
+                )
+            if runtime.machine.state == "REJECTED":
+                self._transition(
+                    runtime,
+                    "POLICY_SELECTED",
+                    "candidate_batch_continued",
+                    {"strategy": configuration.strategy},
+                )
+            if runtime.machine.terminal:
+                break
+            result = execution.result
+            if not isinstance(result, AttemptResult):
+                result = AttemptResult(
+                    runner_name="candidate_scheduler",
+                    status="failed",
+                    worktree_path="unavailable",
+                    patch=None,
+                    exit_code=None,
+                    error=DependencyFailure(
+                        code="candidate_execution_failed",
+                        message=redact_message(execution.error or "candidate failed"),
+                    ),
+                )
+            self._run_attempt(
+                runtime,
+                decision,
+                attempt_id,
+                context_override=context,
+                precomputed_result=result,
+                precomputed_verification=preverified.get(attempt_id),
+            )
+        if runtime.machine.terminal:
+            return
+        self._checkpoint("after_candidate_batch")
+        if runtime.eligible_candidate_ids:
+            self._select_and_materialize(runtime)
+        else:
+            self._exhaust(
+                runtime, accounting.stop_reason or "candidate strategy exhausted"
+            )
+
     def _run_attempt(
-        self, runtime: _Runtime, decision: PolicyDecision, attempt_id: str
+        self,
+        runtime: _Runtime,
+        decision: PolicyDecision,
+        attempt_id: str,
+        *,
+        context_override: AttemptContext | None = None,
+        precomputed_result: AttemptResult | None = None,
+        precomputed_verification: Verification | None = None,
     ) -> None:
         ordinal = len(runtime.attempts) + 1
-        context = AttemptContext(
+        dimensions, plan = self._candidate_plan(runtime, decision, attempt_id, ordinal)
+        context = context_override or AttemptContext(
             run_id=runtime.run_id,
             trace_id=runtime.trace_id,
             task_id=runtime.task_id,
@@ -2070,9 +2578,15 @@ class ClosedLoopController:
             run_directory=runtime.store.run_directory,
             attempt_directory=(runtime.store.run_directory / "attempts" / attempt_id),
             execution_provider=(
-                str(decision.metadata.get("guarded_task_route", {}).get("execution_provider"))
+                str(
+                    decision.metadata.get("guarded_task_route", {}).get(
+                        "execution_provider"
+                    )
+                )
                 if isinstance(decision.metadata.get("guarded_task_route"), Mapping)
-                and decision.metadata.get("guarded_task_route", {}).get("execution_provider")
+                and decision.metadata.get("guarded_task_route", {}).get(
+                    "execution_provider"
+                )
                 else None
             ),
             guarded_task_route=(
@@ -2080,7 +2594,15 @@ class ClosedLoopController:
                 if isinstance(decision.metadata.get("guarded_task_route"), Mapping)
                 else MappingProxyType({})
             ),
+            candidate_dimensions=_read_only_mapping(dimensions.model_dump(mode="json")),
+            baseline_sha256=plan.baseline_sha256,
+            repair_source_attempt_id=plan.repair_source_attempt_id,
+            cancellation_event=threading.Event(),
         )
+        if context_override is not None and attempt_id in runtime.candidate_plans:
+            plan = runtime.candidate_plans[attempt_id]
+            dimensions = plan.dimensions
+        runtime.candidate_plans[attempt_id] = plan
         runtime.active_attempt_id = attempt_id
         runtime.attempt_contexts[attempt_id] = context
         started = self._transition(
@@ -2091,6 +2613,10 @@ class ClosedLoopController:
                 "ordinal": ordinal,
                 "backend_name": context.backend_name,
                 "model": context.model,
+                "candidate_dimensions": dimensions.model_dump(mode="json"),
+                "effective_configuration_sha256": plan.effective_configuration_sha256,
+                "baseline_sha256": plan.baseline_sha256,
+                "sandbox_id": plan.sandbox_id,
             },
             attempt_id=attempt_id,
         )
@@ -2098,7 +2624,11 @@ class ClosedLoopController:
         runtime.allocated_attempt_ids.add(attempt_id)
         self._checkpoint("after_attempt_start")
         try:
-            returned = self._attempt_runner.run(context)
+            returned = (
+                precomputed_result
+                if precomputed_result is not None
+                else self._attempt_runner.run(context)
+            )
             self._checkpoint("after_runner_return")
             if not isinstance(returned, AttemptResult):
                 raise TypeError("attempt runner returned an invalid AttemptResult")
@@ -2212,7 +2742,13 @@ class ClosedLoopController:
             return
 
         try:
-            self._verify_attempt(runtime, context, returned, started.event_id)
+            self._verify_attempt(
+                runtime,
+                context,
+                returned,
+                started.event_id,
+                returned_override=precomputed_verification,
+            )
         finally:
             # Verification failures, including malformed dependency output,
             # must not leave an attempt export behind by accident.
@@ -2323,6 +2859,23 @@ class ClosedLoopController:
             runtime.attempt_patches[context.attempt_id] = result.patch
 
         attempt_metadata = _mapping_copy(result.metadata)
+        attempt_metadata.update(
+            {
+                "candidate_dimensions": _mapping_copy(context.candidate_dimensions),
+                "effective_configuration_sha256": runtime.candidate_plans.get(
+                    context.attempt_id
+                ).effective_configuration_sha256
+                if context.attempt_id in runtime.candidate_plans
+                else None,
+                "baseline_sha256": context.baseline_sha256,
+                "repair_source_attempt_id": context.repair_source_attempt_id,
+                "sandbox_id": (
+                    runtime.candidate_plans[context.attempt_id].sandbox_id
+                    if context.attempt_id in runtime.candidate_plans
+                    else context.attempt_id
+                ),
+            }
+        )
         configured_backend = configured_backends(
             runtime.request.policy_configuration
         ).get(context.backend_name)
@@ -2428,6 +2981,7 @@ class ClosedLoopController:
         *,
         already_started: bool = False,
         initial_retry_count: int = 0,
+        returned_override: Verification | None = None,
     ) -> None:
         if not already_started:
             self._transition(
@@ -2457,7 +3011,12 @@ class ClosedLoopController:
         while True:
             verification_started = self._monotonic()
             try:
-                returned = self._verifier.verify(context, result)
+                returned = (
+                    returned_override
+                    if returned_override is not None
+                    else self._verifier.verify(context, result)
+                )
+                returned_override = None
                 if not isinstance(returned, Verification):
                     raise TypeError("verifier returned an invalid Verification")
                 verification_usage.extend(
@@ -2814,6 +3373,7 @@ class ClosedLoopController:
                 runtime.request.policy_configuration
             ),
             run_directory=runtime.store.run_directory,
+            risk=runtime.classification.risk if runtime.classification else None,
         )
         try:
             returned_materialization = self._materializer.materialize(
@@ -3125,7 +3685,11 @@ class ClosedLoopController:
             actual_wall_time_ms=elapsed,
             actual_stage_attempts_used=(
                 len(runtime.attempts)
-                + (len(runtime.classification.llm_usage) if runtime.classification else 0)
+                + (
+                    len(runtime.classification.llm_usage)
+                    if runtime.classification
+                    else 0
+                )
                 + sum(len(item.llm_usage) for item in runtime.verifications)
             ),
         )
@@ -3546,6 +4110,7 @@ class ClosedLoopController:
                     _mapping_copy(runtime.request.policy_configuration)
                 ),
                 "terminal_reason": runtime.terminal_reason,
+                "plugins": list(self._plugin_identities),
             },
             currency=total.currency,
             stage_metrics=stage_metrics,

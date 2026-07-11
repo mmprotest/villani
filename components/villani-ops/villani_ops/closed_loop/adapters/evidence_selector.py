@@ -25,6 +25,7 @@ from ..interfaces import (
     SelectionRanking,
 )
 from ..protocol import CandidateRanking, SelectionSnapshot
+from ..plugins.builtins import SELECTOR_MANIFEST
 
 
 @dataclass(slots=True)
@@ -71,6 +72,7 @@ def _legacy_verifier(candidate: EligibleCandidate) -> dict[str, Any]:
 
 
 class EvidenceSelectorAdapter:
+    plugin_manifest = SELECTOR_MANIFEST
     def __init__(
         self,
         *,

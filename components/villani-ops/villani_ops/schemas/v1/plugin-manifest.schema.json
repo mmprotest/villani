@@ -1,0 +1,9 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://villani.dev/schemas/v1/plugin-manifest.schema.json","title":"Villani Plugin Manifest v1","type":"object","additionalProperties":false,
+  "required":["schema_version","kind","name","version","protocol_versions","capabilities","configuration_schema","required_secrets","supported_platforms","resource_requirements","trust_level","enabled","transport","digest","builtin"],
+  "properties":{
+    "schema_version":{"const":"villani.plugin_manifest.v1"},"kind":{"enum":["agent_runner","verifier","selector","materializer","execution_provider"]},"name":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"protocol_versions":{"type":"array","minItems":1,"items":{"type":"string"}},"capabilities":{"type":"array","items":{"type":"string"}},"configuration_schema":{"type":"object"},"required_secrets":{"type":"array","uniqueItems":true,"items":{"type":"string"}},"supported_platforms":{"type":"array","minItems":1,"items":{"type":"string"}},
+    "resource_requirements":{"type":"object","additionalProperties":false,"required":["cpu_count","memory_bytes","disk_bytes","network","process_count"],"properties":{"cpu_count":{"type":["number","null"],"exclusiveMinimum":0},"memory_bytes":{"type":["integer","null"],"minimum":1},"disk_bytes":{"type":["integer","null"],"minimum":1},"network":{"enum":["none","optional","required"]},"process_count":{"type":["integer","null"],"minimum":1}}},
+    "trust_level":{"enum":["built_in_trusted","local_untrusted","signed"]},"enabled":{"type":"boolean"},"transport":{"enum":["length-prefixed-json","jsonl","in-process"]},"entrypoint":{"type":["array","null"],"items":{"type":"string"}},"artifact_path":{"type":["string","null"]},"digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"builtin":{"type":"boolean"}
+  }
+}

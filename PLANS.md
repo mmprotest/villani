@@ -1981,3 +1981,147 @@ Known remaining issues:
 
 Next permitted milestone:
 - Step-level routing, additional runners, learned online routing, or later control-plane work only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Versioned plugin contracts and canonical adapter migration pass
+
+Status: complete
+
+Changed files:
+- Added `villani_ops.closed_loop.plugins` with v1 manifests for agent runners, verifiers, selectors, materializers, and execution providers; common RPC envelopes; trusted built-in and out-of-process adapters; bounded subprocess transport; inert discovery; and a conformance kit.
+- Migrated the Villani Code attempt runner, Villani verifier, deterministic evidence selector, recorded-patch materializer, and inherit/setup/container/devcontainer execution-provider path behind those contracts without changing their canonical algorithms.
+- Extended canonical run-manifest metadata with the kind, name, version, protocol versions, content digest, trust level, and transport for every used canonical plugin.
+- Added the normative and packaged plugin-manifest JSON Schema, five enabled fake manifests plus one dependency-free fake executable, and focused contract/conformance/security tests. Updated this progress section only.
+
+Architectural decisions:
+- The shared RPC envelope is `villani.plugin.rpc.v1`; each plugin kind also declares one kind-specific v1 protocol. Both trusted in-process wrappers and subprocess adapters serialize the same request and response models.
+- External plugins default to four-byte big-endian length-prefixed JSON, with JSONL as an explicit alternative. stdout is protocol-only and stderr is bounded diagnostic data. Crash, timeout, cancellation, oversized messages, malformed output, and protocol mismatch raise classified fail-closed errors.
+- Only manifests marked `builtin=true` and `trust_level=built_in_trusted` may select in-process transport. Built-in digests hash their canonical implementation source. External execution rechecks an enabled manifest, an independently supplied digest allowlist, a directory-contained artifact, its SHA-256 digest, and that the entrypoint references that artifact.
+- Discovery reads JSON only from explicitly configured directories. It never imports or invokes an entrypoint, ignores disabled manifests, validates platform compatibility, and rejects absent allowlists, digest mismatch, duplicate identities, directory escape, and invalid manifests.
+- A plugin receives only secret names declared by its manifest and available from the explicit caller map. Ambient environment is not inherited by subprocess plugins, known secret values are redacted from diagnostics, and configuration is checked against the manifest's reference-free JSON Schema before execution.
+- No marketplace, remote discovery, remote code download, task decomposition, additional canonical runner, or later milestone was added.
+
+Verification:
+- Villani Ops required full suite: exit code 0; 808 passed, 1 skipped, 114 deselected in 121.00s. Final focused plugin suite: 11 passed in 0.96s. Focused plugin/protocol/execution-environment coverage passed 54 tests with 1 skipped.
+- Root closed-loop integration after the final adapter/transport changes: exit code 0; 6 passed in 19.61s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 72.56s. The sole failure remains the documented dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which observes legitimate uncommitted milestone files instead of its mocked task-local delta.
+- Ruff lint/format checks, compileall, both plugin JSON Schema checks, changed-fixture secret scan, and `git diff --check` exited 0. Pytest emitted only the sandbox cache-write warning.
+
+Acceptance criteria:
+- PASS: the existing closed-loop integration completes through contract-bearing canonical adapters, and public controller construction uses the shared trusted in-process request/response boundary.
+- PASS: crash, timeout, cancellation, oversized output, malformed response, and protocol mismatch are deterministically classified and fail closed.
+- PASS: unknown secrets are not forwarded; missing declared secrets fail before process launch; diagnostic secret values are redacted.
+- PASS: listing and validation execute no plugin code, and execution requires both an enabled manifest and an independent digest allowlist.
+- PASS: canonical run manifests record version and content digest for the runner, verifier, selector, materializer, and execution-provider contracts.
+
+Assumptions:
+- Explicit plugin directories and digest allowlists are local operator configuration. Distribution, signing infrastructure, and remote acquisition are outside this pass.
+- JSONL and length-prefixed JSON plugins perform one request/one response per process invocation; long-lived multiplexed plugin daemons are not required by this milestone.
+
+Known risks:
+- Out-of-process plugins have bounded protocol I/O and process lifetime, but their operating-system sandbox is supplied by the selected execution environment; this pass does not invent a new cross-platform sandbox.
+- Plugin protocol v1 is intentionally request/response oriented. Streaming progress and multiplexing would require a later protocol version.
+- The unrelated Villani Code dirty-root-sensitive test remains failing while legitimate milestone changes are uncommitted.
+
+Known remaining issues:
+- None within versioned plugin manifests, canonical adapter migration, subprocess framing, failure classification, allowlisted discovery, secret-name filtering, run identity recording, or conformance fixtures. The Villani Code baseline failure remains as documented above.
+
+Next permitted milestone:
+- Marketplace/distribution, remote plugin acquisition, protocol streaming, or later closed-loop work only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: One-task candidate reliability strategies pass
+
+Status: complete
+
+Changed files:
+- Added `villani_ops.closed_loop.candidate_strategies` with versioned contracts and deterministic implementations for `single_attempt`, `sequential_escalation`, `parallel_diverse_candidates`, and `adaptive_candidates`; immutable baseline identity; diversity fingerprints; adaptive stopping; bounded scheduling; durable recovery journals; cancellation; and reliability accounting.
+- Integrated explicit candidate reliability configuration into the canonical controller, attempt contexts/snapshots, run artifacts, recovery loading, parallel runner execution, serial canonical verification/selection/materialization commits, and stop-on-sufficient/comparison behavior.
+- Extended the Villani Code runner boundary and subprocess plugin adapter with candidate-scoped cancellation, and passed persisted candidate dimensions/baseline identity to the canonical runner environment.
+- Added `test_candidate_strategies.py` covering all four strategies, concurrency bounds, sufficient-candidate stopping, comparison quotas, diversity truthfulness, adaptive evidence/budget gates, cancellation isolation, controller integration, and recovery boundaries. Updated this progress section only.
+
+Architectural decisions:
+- Reliability strategies operate on one immutable task and one repository-baseline digest. Every independent candidate records agent, effective backend/model, prompt strategy ID, seed, planning mode, tool budget, effective-configuration digest, sandbox ID, and baseline digest. A prior candidate may be named only when `repair_strategy=true`.
+- Candidate scheduling never routes around guarded routing: the production policy/guarded route supplies the effective backend and model. Reliability configuration may diversify the remaining dimensions but cannot select an otherwise unapproved route.
+- Parallel generation uses a bounded thread pool only around isolated attempt-runner calls. Each attempt receives its own cancellation event and attempt directory/worktree. Verifier results are collected as futures complete, while canonical attempt, verification, selection, and materialization records are committed serially through the deterministic controller state machine.
+- Stop-on-sufficient may speculate up to configured parallelism and cancels independent in-flight candidates after the first confidence/evidence-qualified eligible result. Comparison mode limits in-flight work to the remaining eligible-candidate requirement and collects exactly the configured quota when available.
+- Adaptive stopping evaluates the accepted-candidate requirement, next marginal expected success, remaining attempt and known-cost budgets, verifier confidence, evidence grade, and maximum parallelism. Unknown expected success cannot justify another adaptive attempt above a positive threshold.
+- Diversity is claimed only when effective-configuration digests differ. Avoided attempts and estimated avoided spend are recorded separately; `actual_savings_usd` remains null because the controller does not claim counterfactual savings.
+- The append-only scheduling journal treats an interrupted, non-terminal candidate identity as cancelled and never invokes that identity again. Existing selected-patch-only materialization and terminal-run recovery remain unchanged.
+
+Verification:
+- Villani Ops required full suite: exit code 0; 820 passed, 1 skipped, 114 deselected in 115.08s. Final focused strategy/controller/recovery suite: 44 passed in 6.38s; focused candidate strategies alone passed 12 tests.
+- Root closed-loop integration: exit code 0; 6 passed in 19.75s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 71.43s. The sole failure remains the documented dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which observes legitimate uncommitted milestone files instead of its mocked task-local delta.
+- Ruff checks for the new/formatted reliability, controller, interface, adapter, and plugin changes; compileall; changed-file secret scan; and `git diff --check` exited 0. The legacy compact runner module retains its pre-existing Ruff style debt; its behavior is covered by the full Villani Ops suite.
+
+Acceptance criteria:
+- PASS: observed candidate concurrency never exceeded configured maximum parallelism, including the canonical controller integration test.
+- PASS: stop-on-sufficient retained the first qualified eligible candidate, cancelled the independent in-flight candidate cleanly, and avoided unscheduled work.
+- PASS: comparison mode collected the configured two eligible candidates and selection received exactly those acceptance-eligible candidates.
+- PASS: candidates used distinct sandbox identities and cancellation events; cancellation did not mutate or corrupt another candidate result.
+- PASS: identical effective configurations produced `diversity_claimed=false`; persisted differing prompt strategies produced distinct effective configuration digests.
+- PASS: scheduling, candidate-start/completion, verification, selection-ready, and cancellation-request recovery cases never duplicated a candidate identity. Existing recovery tests continue to prove no duplicate attempt or materialization.
+- PASS: avoided attempts and estimated avoided spend are separate from null actual savings.
+
+Assumptions:
+- Candidate `seed`, planning mode, prompt strategy ID, and tool budget are effective runner configuration identifiers supplied to the runner; individual coding agents decide how supported dimensions affect their internal behavior.
+- Comparison quotas count only normalized acceptance-eligible candidates that also satisfy configured verifier confidence and evidence-grade thresholds for stopping.
+
+Known risks:
+- A candidate that completed externally but was interrupted before its terminal journal record is deliberately abandoned during recovery rather than re-used; this favors no duplicate execution over salvaging uncertain artifacts.
+- Python threads bound host scheduling, while hard CPU/memory/process isolation remains the responsibility of each selected execution provider and candidate sandbox.
+- The unrelated Villani Code dirty-root-sensitive test remains failing while legitimate milestone changes are uncommitted.
+
+Known remaining issues:
+- None within the four one-task reliability strategies, immutable baseline/diversity persistence, adaptive stopping, bounded concurrency, independent cancellation, deterministic eligible-only selection, avoided-work accounting, or scheduling recovery. The Villani Code baseline failure remains as documented above.
+
+Next permitted milestone:
+- Multi-task decomposition, general scheduling, marketplace/distribution, or later reliability work only after an explicit user request. None was started in this pass.
+
+#### 2026-07-11: Verification graphs, approvals, and delivery materialization pass
+
+Status: complete
+
+Changed files:
+- Added `villani_ops.closed_loop.verification_graph` with versioned graph/node/resource/evidence contracts, eight built-in node kinds, deterministic execution, dependency/condition handling, bounded command reruns, flaky/disagreement accounting, and the canonical verifier adapter.
+- Added `villani_ops.closed_loop.approvals` with versioned risk/repository/path/tool/evidence-gap/cost/materialization policy rules, scoped expiring approval records, validation, persisted decisions, and a pre-side-effect materialization guard.
+- Added `villani_ops.closed_loop.delivery` with exact-digest local apply, branch/commit, byte-exact patch export, provider-neutral pull-request delivery with a fake provider, idempotency receipts/recovery, and HMAC-SHA256 final provenance.
+- Added normative and packaged JSON Schemas for verification graphs, approval policies/records, and final provenance; integrated opt-in graph verification and guarded delivery into the public CLI; carried classification risk into materialization context.
+- Added false-acceptance and false-rejection fixtures plus `test_verification_delivery.py`. Updated this progress section only.
+
+Architectural decisions:
+- Evidence eligibility rule `villani.evidence_eligibility.v1` requires every required node to pass with no required missing or conflicting evidence and at least one passing, required, non-LLM authoritative output. Strong, weak, missing, conflicting, or model-only evidence cannot authorize acceptance; LLM outputs are capped at strong.
+- Graphs are immutable, versioned DAG snapshots. Nodes declare dependencies, conditions, required/optional status, evidence outputs, timeout/output/rerun limits, and optional CPU/memory requirements. Commands receive shell-free argv and bounded reruns; differing outcomes are conflicting/flaky evidence with explicit execution accounting.
+- Approval policy is evaluated against the selected attempt immediately before delivery. Expiry, policy version, run/attempt, repository, changed paths, tool action, materialization type, and cost scope must match. Approval records never modify verification eligibility and cannot override a failed required authoritative node; requirements must be changed in the graph snapshot before the run.
+- Delivery validates the selected snapshot SHA-256 before any side effect. Exports compare/write bytes; local apply detects an already-applied exact patch; branch commits carry a patch-digest trailer; pull requests use provider idempotency keys. The receipt is written last as the recovery commit marker.
+- Graph-configured delivery requires a signing key named by an environment variable. Final provenance signs run ID, selected attempt, exact patch digest, graph ID/version, sorted evidence and approval-record digests, materializer name/version/type, issue time, and key ID; key material is never persisted.
+
+Verification:
+- Villani Ops required full suite: exit code 0; 830 passed, 1 skipped, 114 deselected in 121.12s. Focused verification/delivery, controller, and recovery suite: 42 passed in 6.59s. Adapter/default CLI regression suite: 26 passed in 21.70s.
+- Root closed-loop integration: exit code 0; 6 passed in 20.04s.
+- Flight Recorder: `npm.cmd test` exit code 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 72.75s. The sole failure remains the documented dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which observes legitimate uncommitted milestone files instead of its mocked task-local delta.
+- Ruff lint/format, compileall, root schema JSON parsing, packaged/root schema parity, and `git diff --check` exited 0. Pytest emitted only sandbox cache-write warnings.
+
+Acceptance criteria:
+- PASS: required verifier failures, required missing evidence, conflicts, flaky disagreement, and absence of non-model authoritative evidence block selection and materialization.
+- PASS: weak or LLM-only evidence cannot become authoritative; independent LLM review is optional and its grade is capped at strong.
+- PASS: expired, denied, wrong-policy, wrong-run/attempt, wrong-repository, wrong-path, wrong-tool, wrong-materialization, and insufficient-cost approvals are rejected; approvals cannot override required authoritative failure.
+- PASS: exact verified patch bytes/digest are delivered, delivery retries are idempotent across all four materialization types, and the final provenance covers the delivered digest.
+- PASS: false-acceptance fixtures report three blocked cases; false-rejection fixtures report two eligible cases.
+
+Assumptions:
+- CPU and memory requirements are declared for execution-provider enforcement; the built-in local executor directly enforces timeout, output, and rerun bounds without adding an OS-specific resource sandbox.
+- The Git-provider-neutral interface owns branch publication outside this local milestone; its fake implementation proves deterministic idempotent request behavior without remote side effects.
+
+Known risks:
+- HMAC provenance provides integrity and authenticity to holders of the configured shared key; deployments needing public third-party verification should introduce an asymmetric algorithm in a later provenance version.
+- Local apply recovery recognizes the exact reverse-applicable patch state. Concurrent external repository mutation remains outside the controller's single-run ownership model.
+- The unrelated Villani Code dirty-root-sensitive test remains failing while legitimate milestone changes are uncommitted.
+
+Known remaining issues:
+- None within verification graphs, built-in verifier nodes, evidence grading, disagreement/flaky accounting, approval enforcement, the four delivery materializers, idempotent recovery, or signed provenance. The Villani Code baseline failure remains as documented above.
+
+Next permitted milestone:
+- Later closed-loop work only after an explicit user request. Marketplace, remote code download, task decomposition, and subsequent milestones were not started in this pass.

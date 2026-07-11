@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import time
@@ -32,6 +33,7 @@ from .runtime_event_translation import (
     translate_runtime_events,
 )
 from ..failure_classification import classify_runner_failure
+from ..plugins.builtins import AGENT_RUNNER_MANIFEST, EXECUTION_PROVIDER_MANIFEST
 
 
 def _failure_from_runner_output(
@@ -87,6 +89,9 @@ def _token_accounting(
 class VillaniCodeAttemptAdapter:
     """Run one Villani Code protocol adapter inside a Git-baselined copy."""
 
+    plugin_manifest = AGENT_RUNNER_MANIFEST
+    additional_plugin_manifests = (EXECUTION_PROVIDER_MANIFEST,)
+
     def __init__(
         self,
         *,
@@ -129,7 +134,9 @@ class VillaniCodeAttemptAdapter:
             cache_root=Path(attempt_context.run_directory).parent.parent
             / "cache"
             / "execution-environments",
-            selection=attempt_context.execution_provider or backend.execution_environment,
+            selection=attempt_context.execution_provider
+            or backend.execution_environment,
+            pluginized=True,
         )
         prepared_environment = environment_provider.prepare(
             repository=Path(attempt_context.repository_path),
@@ -141,6 +148,13 @@ class VillaniCodeAttemptAdapter:
                 "VILLANI_RUN_ID": attempt_context.run_id,
                 "VILLANI_TRACE_ID": attempt_context.trace_id,
                 "VILLANI_ATTEMPT_ID": attempt_context.attempt_id,
+                "VILLANI_CANDIDATE_BASELINE_SHA256": attempt_context.baseline_sha256
+                or "",
+                "VILLANI_CANDIDATE_DIMENSIONS": json.dumps(
+                    dict(attempt_context.candidate_dimensions),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
             }
         )
         api_key = backend.resolved_api_key()
@@ -196,6 +210,7 @@ class VillaniCodeAttemptAdapter:
             workspace_limit_bytes=controls.get("workspace_limit_bytes"),
             cleanup_command=list(controls.get("cleanup_command") or []),
             secure_secret_injection=True,
+            cancellation_event=attempt_context.cancellation_event,
         )
 
         environment_report = prepared_environment.durable_report()

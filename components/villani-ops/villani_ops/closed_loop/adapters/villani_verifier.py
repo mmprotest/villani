@@ -19,6 +19,7 @@ from ..interfaces import (
     Requirement,
     Verification,
 )
+from ..plugins.builtins import VERIFIER_MANIFEST
 
 
 def _list(value: Any) -> list[Any]:
@@ -107,6 +108,7 @@ def _has_acceptance_blocker(risks: tuple[str, ...]) -> bool:
 
 
 class VillaniVerifierAdapter:
+    plugin_manifest = VERIFIER_MANIFEST
     def __init__(
         self,
         *,

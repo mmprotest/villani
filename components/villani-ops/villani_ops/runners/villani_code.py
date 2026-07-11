@@ -126,6 +126,14 @@ class VillaniCodeRunner:
             elif hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'): popen_kwargs['creationflags']=subprocess.CREATE_NEW_PROCESS_GROUP
             proc=subprocess.Popen([*context.execution_prefix, *command_prefix, *cmd[1:]], **popen_kwargs)
             if os.name == 'nt': proc._villani_job=_windows_job(proc)
+            cancellation_stop=threading.Event(); cancelled=threading.Event()
+            def _monitor_cancellation():
+                event=context.cancellation_event
+                if event is None: return
+                while not cancellation_stop.wait(0.05):
+                    if event.is_set():
+                        cancelled.set(); _terminate_timed_out_process(proc); return
+            cancellation_monitor=threading.Thread(target=_monitor_cancellation,daemon=True); cancellation_monitor.start()
             monitor_stop=threading.Event(); disk_exceeded=threading.Event()
             def _monitor_workspace():
                 if context.workspace_limit_bytes is None: return
@@ -147,8 +155,9 @@ class VillaniCodeRunner:
             monitor=threading.Thread(target=_monitor_workspace,daemon=True); monitor.start()
             try: stdout, stderr = proc.communicate(timeout=context.timeout_seconds)
             finally:
-                monitor_stop.set(); monitor.join(timeout=2)
+                monitor_stop.set(); monitor.join(timeout=2); cancellation_stop.set(); cancellation_monitor.join(timeout=2)
             if os.name == 'nt': _close_windows_job(getattr(proc,'_villani_job',None))
+            if cancelled.is_set(): return _result(130, stdout, (stderr or '')+'\nCandidate execution cancelled')
             if disk_exceeded.is_set(): return _result(125, stdout, (stderr or '')+'\nWorkspace disk limit exceeded')
             return _result(proc.returncode, stdout, stderr)
         except subprocess.TimeoutExpired as e:

@@ -223,14 +223,19 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "backends": {},
 }
 
-_controller_builder: Callable[
-    [Mapping[str, Any], Callable[[Any], None] | None], ClosedLoopController
-] | None = None
+_controller_builder: (
+    Callable[[Mapping[str, Any], Callable[[Any], None] | None], ClosedLoopController]
+    | None
+) = None
 
 
 def _home() -> Path:
     configured = os.environ.get("VILLANI_HOME")
-    return Path(configured).expanduser().resolve() if configured else Path.home() / ".villani"
+    return (
+        Path(configured).expanduser().resolve()
+        if configured
+        else Path.home() / ".villani"
+    )
 
 
 def _config_path() -> Path:
@@ -303,8 +308,7 @@ def _validate_run_backends(backends: Mapping[str, Backend]) -> None:
     ):
         _usage_error("an enabled backend with role 'classification' is required")
     if not any(
-        backend.enabled and "coding" in backend.roles
-        for backend in backends.values()
+        backend.enabled and "coding" in backend.roles for backend in backends.values()
     ):
         _usage_error("an enabled backend with role 'coding' is required")
     active = [
@@ -499,7 +503,10 @@ def _doctor_report(
     if isinstance(named, Mapping):
         for name in sorted(named):
             provider_entries.append(
-                (str(name), provider_from_configuration(configuration, selection=str(name)))
+                (
+                    str(name),
+                    provider_from_configuration(configuration, selection=str(name)),
+                )
             )
     provider_reports = []
     provider_available: dict[str | None, bool] = {}
@@ -532,8 +539,7 @@ def _doctor_report(
                 {
                     "backend": backend.name,
                     "command": command,
-                    "execution_environment": backend.execution_environment
-                    or "default",
+                    "execution_environment": backend.execution_environment or "default",
                     "available": (
                         provider_available.get(backend.execution_environment, False)
                         if execution.provider in {"container", "devcontainer"}
@@ -650,7 +656,9 @@ def _validate_billing(
 ) -> None:
     allowed = {"token", "compute_time", "fixed", "hybrid", "unknown"}
     if billing_mode not in allowed:
-        _usage_error("--billing-mode must be token, compute_time, fixed, hybrid, or unknown")
+        _usage_error(
+            "--billing-mode must be token, compute_time, fixed, hybrid, or unknown"
+        )
     has_input = input_price is not None
     has_output = output_price is not None
     if has_input != has_output:
@@ -663,32 +671,32 @@ def _validate_billing(
     fixed_component = fixed_cost is not None
     if billing_mode == "token":
         if not token_component:
-            _usage_error(
-                "--billing-mode token requires both token price options"
-            )
+            _usage_error("--billing-mode token requires both token price options")
         if compute_component or fixed_component:
             _usage_error("token billing cannot include compute-time or fixed costs")
     elif billing_mode == "compute_time":
         if not compute_component:
-            _usage_error(
-                "--billing-mode compute_time requires --compute-cost-per-hour"
-            )
+            _usage_error("--billing-mode compute_time requires --compute-cost-per-hour")
         if token_component or fixed_component:
             _usage_error("compute_time billing cannot include token or fixed costs")
     elif billing_mode == "fixed":
         if not fixed_component:
-            _usage_error(
-                "--billing-mode fixed requires --fixed-cost-per-attempt"
-            )
+            _usage_error("--billing-mode fixed requires --fixed-cost-per-attempt")
         if token_component or compute_component:
             _usage_error("fixed billing cannot include token or compute-time costs")
     elif billing_mode == "hybrid":
         component_count = sum((token_component, compute_component, fixed_component))
         if component_count < 2:
-            _usage_error("hybrid billing requires at least two configured cost components")
+            _usage_error(
+                "hybrid billing requires at least two configured cost components"
+            )
     elif any((token_component, compute_component, fixed_component)):
-        _usage_error("unknown billing cannot include token, compute-time, or fixed costs")
-    if (estimated_input is not None or estimated_output is not None) and not token_component:
+        _usage_error(
+            "unknown billing cannot include token, compute-time, or fixed costs"
+        )
+    if (
+        estimated_input is not None or estimated_output is not None
+    ) and not token_component:
         _usage_error("estimated token counts require configured token prices")
     if estimated_duration is not None and not compute_component:
         _usage_error("--estimated-duration-seconds requires compute-time accounting")
@@ -712,15 +720,11 @@ def backend_add(
     output_cost_per_million: float | None = typer.Option(
         None, "--output-cost-per-million"
     ),
-    compute_cost_per_hour: float | None = typer.Option(
-        None, "--compute-cost-per-hour"
-    ),
+    compute_cost_per_hour: float | None = typer.Option(None, "--compute-cost-per-hour"),
     fixed_cost_per_attempt: float | None = typer.Option(
         None, "--fixed-cost-per-attempt"
     ),
-    estimated_input_tokens: int | None = typer.Option(
-        None, "--estimated-input-tokens"
-    ),
+    estimated_input_tokens: int | None = typer.Option(None, "--estimated-input-tokens"),
     estimated_output_tokens: int | None = typer.Option(
         None, "--estimated-output-tokens"
     ),
@@ -731,9 +735,7 @@ def backend_add(
     timeout_seconds: int | None = typer.Option(None, "--timeout-seconds"),
     max_parallel: int = typer.Option(1, "--max-parallel"),
     currency: str = typer.Option("USD", "--currency"),
-    execution_environment: str | None = typer.Option(
-        None, "--execution-environment"
-    ),
+    execution_environment: str | None = typer.Option(None, "--execution-environment"),
 ) -> None:
     """Add or replace one backend without resolving its secret."""
 
@@ -803,9 +805,7 @@ def backend_add(
         backend = Backend.model_validate({"name": name, **payload})
     except ValidationError as error:
         _usage_error(f"backend configuration is invalid: {_validation_message(error)}")
-    raw_backends[name] = backend.model_dump(
-        mode="json", exclude={"name", "api_key"}
-    )
+    raw_backends[name] = backend.model_dump(mode="json", exclude={"name", "api_key"})
     _write_config(_config_path(), configuration)
     console.print(f"Added backend {name}")
 
@@ -854,9 +854,7 @@ def capability_rebuild() -> None:
         or "empirical_wilson_v1"
     )
     try:
-        result = CapabilityStore().rebuild(
-            _runs_root(), scorer_version=scorer_version
-        )
+        result = CapabilityStore().rebuild(_runs_root(), scorer_version=scorer_version)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         _usage_error(f"capability rebuild failed: {error}")
     snapshot = result.snapshot
@@ -1025,8 +1023,18 @@ def capability_explain(
                 policy_configuration=configuration,
             )
         )
-    except (OSError, TypeError, ValueError, ValidationError, json.JSONDecodeError) as error:
-        message = _validation_message(error) if isinstance(error, ValidationError) else str(error)
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
         _usage_error(f"capability explain failed: {message}")
     explanation = {
         "classification": classification.model_dump(mode="json"),
@@ -1073,9 +1081,13 @@ class _ClassifierAdapter:
         failure_state: str,
         error: Exception | None = None,
     ) -> dict[str, Any]:
-        has_usage = bool(result and (result.usage or result.input_tokens or result.output_tokens))
+        has_usage = bool(
+            result and (result.usage or result.input_tokens or result.output_tokens)
+        )
         input_tokens = result.input_tokens if result is not None and has_usage else None
-        output_tokens = result.output_tokens if result is not None and has_usage else None
+        output_tokens = (
+            result.output_tokens if result is not None and has_usage else None
+        )
         cost = actual_attempt_cost(
             backend,
             input_tokens=input_tokens,
@@ -1121,9 +1133,7 @@ class _ClassifierAdapter:
             and "classification" in self._backends[str(name)].roles
         ]
 
-    def classify(
-        self, task: str, context: ClassificationContext
-    ) -> Classification:
+    def classify(self, task: str, context: ClassificationContext) -> Classification:
         backend_name = context.classification_backend_name
         if not backend_name or backend_name not in self._backends:
             raise ValueError("classification backend was not resolved")
@@ -1153,7 +1163,9 @@ class _ClassifierAdapter:
                     elapsed = max(int((time.monotonic() - started) * 1000), 0)
                     if result.error:
                         error = RuntimeError(result.error)
-                        attempts.append(self._usage(backend, result, elapsed, "failed", error))
+                        attempts.append(
+                            self._usage(backend, result, elapsed, "failed", error)
+                        )
                         continue
                     attempts.append(self._usage(backend, result, elapsed, "succeeded"))
                     return Classification(
@@ -1184,7 +1196,9 @@ class _ClassifierAdapter:
                 except Exception as error:
                     elapsed = max(int((time.monotonic() - started) * 1000), 0)
                     partial = error.result if isinstance(error, LLMCallError) else None
-                    attempts.append(self._usage(backend, partial, elapsed, "failed", error))
+                    attempts.append(
+                        self._usage(backend, partial, elapsed, "failed", error)
+                    )
         # No opaque classifier failure can choose a cheap backend. This route is
         # deliberately conservative and retains every failed model invocation.
         return Classification(
@@ -1210,6 +1224,11 @@ def build_controller(
     configuration: Mapping[str, Any],
     on_event: Callable[[Any], None] | None = None,
 ) -> ClosedLoopController:
+    # Discovery is deliberately inert: this parses and digest-validates explicitly
+    # configured manifests but does not import or execute any discovered entrypoint.
+    from villani_ops.closed_loop.plugins import discover_plugins_from_configuration
+
+    discover_plugins_from_configuration(configuration)
     """Construct only the canonical controller and its M4/M5 dependencies."""
 
     backends = _load_backends(configuration)
@@ -1249,7 +1268,8 @@ def build_controller(
             run_currencies = {
                 backend.currency
                 for backend in backends.values()
-                if backend.enabled and ("classification" in backend.roles or "coding" in backend.roles)
+                if backend.enabled
+                and ("classification" in backend.roles or "coding" in backend.roles)
             }
             if run_currencies and verifier_backend.currency not in run_currencies:
                 _usage_error(
@@ -1262,34 +1282,76 @@ def build_controller(
         configuration,
         capability_snapshot=capability_snapshot,
     )
+    from villani_ops.closed_loop.plugins import (
+        BuiltinAgentRunnerPlugin,
+        BuiltinMaterializerPlugin,
+        BuiltinSelectorPlugin,
+        BuiltinVerifierPlugin,
+    )
+
+    verifier_impl: Any = VillaniVerifierAdapter(
+        invocation=invocation,
+        no_llm=bool(verifier_config.get("no_llm", True)),
+        backend=str(verifier_backend_name) if verifier_backend_name else None,
+        timeout_seconds=int(verifier_config.get("timeout_seconds") or 180),
+        max_tool_calls=int(verifier_config.get("max_tool_calls") or 12),
+        base_url=(
+            str(verifier_config.get("base_url"))
+            if verifier_config.get("base_url")
+            else verifier_backend.base_url
+            if verifier_backend
+            else None
+        ),
+        model=(
+            str(verifier_config.get("model"))
+            if verifier_config.get("model")
+            else verifier_backend.model
+            if verifier_backend
+            else None
+        ),
+        backend_config=verifier_backend,
+    )
+    graph_value = configuration.get("verification_graph")
+    signer = None
+    if isinstance(graph_value, Mapping):
+        from villani_ops.closed_loop.delivery import ProvenanceSigner
+        from villani_ops.closed_loop.verification_graph import (
+            VerificationGraph,
+            VerificationGraphVerifierAdapter,
+        )
+
+        verifier_impl = VerificationGraphVerifierAdapter(
+            VerificationGraph.model_validate(graph_value)
+        )
+        provenance = configuration.get("provenance", {})
+        provenance = provenance if isinstance(provenance, Mapping) else {}
+        key_env = str(provenance.get("signing_key_env") or "")
+        key = os.environ.get(key_env) if key_env else None
+        if not key:
+            _usage_error(
+                "verification graph delivery requires provenance.signing_key_env"
+            )
+        signer = ProvenanceSigner(
+            key.encode(), key_id=str(provenance.get("key_id") or key_env)
+        )
+    from villani_ops.closed_loop.approvals import ApprovalGuardedMaterializer
+    from villani_ops.closed_loop.delivery import DeliveryMaterializerAdapter
+
+    materializer_impl = ApprovalGuardedMaterializer(
+        DeliveryMaterializerAdapter(
+            local_apply=PatchMaterializerAdapter(), provenance_signer=signer
+        )
+    )
+
     return ClosedLoopController(
         classifier=_ClassifierAdapter(backends, configuration),
         policy_engine=policy,
-        attempt_runner=VillaniCodeAttemptAdapter(backends=backends),
-        verifier=VillaniVerifierAdapter(
-            invocation=invocation,
-            no_llm=bool(verifier_config.get("no_llm", True)),
-            backend=str(verifier_backend_name) if verifier_backend_name else None,
-            timeout_seconds=int(verifier_config.get("timeout_seconds") or 180),
-            max_tool_calls=int(verifier_config.get("max_tool_calls") or 12),
-            base_url=(
-                str(verifier_config.get("base_url"))
-                if verifier_config.get("base_url")
-                else verifier_backend.base_url
-                if verifier_backend
-                else None
-            ),
-            model=(
-                str(verifier_config.get("model"))
-                if verifier_config.get("model")
-                else verifier_backend.model
-                if verifier_backend
-                else None
-            ),
-            backend_config=verifier_backend,
+        attempt_runner=BuiltinAgentRunnerPlugin(
+            VillaniCodeAttemptAdapter(backends=backends)
         ),
-        selector=EvidenceSelectorAdapter(),
-        materializer=PatchMaterializerAdapter(),
+        verifier=BuiltinVerifierPlugin(verifier_impl),
+        selector=BuiltinSelectorPlugin(EvidenceSelectorAdapter()),
+        materializer=BuiltinMaterializerPlugin(materializer_impl),
         on_event=on_event,
     )
 
@@ -1386,8 +1448,7 @@ def _print_terminal_summary(
     )
     console.print(f"Attempts: {sequence or 'none'}")
     verifier_text = ", ".join(
-        f"{item.get('attempt_id')}={item.get('outcome')}"
-        for item in verifications
+        f"{item.get('attempt_id')}={item.get('outcome')}" for item in verifications
     )
     console.print(f"Verifier outcomes: {verifier_text or 'none'}")
     console.print(f"Selected attempt: {result.selected_attempt_id or 'none'}")
@@ -1436,7 +1497,9 @@ def run_command(
         None, "--accepted-candidates-required"
     ),
     open_after: bool = typer.Option(False, "--open"),
-    mode: str | None = typer.Option(None, "--mode", help="observe, recommend, or enforce"),
+    mode: str | None = typer.Option(
+        None, "--mode", help="observe, recommend, or enforce"
+    ),
 ) -> None:
     """Run one canonical deterministic closed loop."""
 
@@ -1456,12 +1519,12 @@ def run_command(
     budgets = configuration.get("budgets")
     if not isinstance(budgets, Mapping):
         budgets = {}
-    attempts_budget = max_attempts if max_attempts is not None else budgets.get("max_attempts", 3)
+    attempts_budget = (
+        max_attempts if max_attempts is not None else budgets.get("max_attempts", 3)
+    )
     cost_budget = max_cost if max_cost is not None else budgets.get("max_cost")
     wall_budget = (
-        max_wall_time
-        if max_wall_time is not None
-        else budgets.get("max_wall_time")
+        max_wall_time if max_wall_time is not None else budgets.get("max_wall_time")
     )
     try:
         attempts_budget = int(attempts_budget)
@@ -1528,7 +1591,11 @@ def _latest_interrupted_run(root: Path) -> str | None:
         state = _read_json(directory / "state.json")
         if state and not bool(state.get("terminal")):
             candidates.append(directory)
-    return max(candidates, key=lambda item: item.stat().st_mtime).name if candidates else None
+    return (
+        max(candidates, key=lambda item: item.stat().st_mtime).name
+        if candidates
+        else None
+    )
 
 
 def _resume_materialization_is_safe(run_dir: Path, state: Mapping[str, Any]) -> None:
@@ -1539,7 +1606,9 @@ def _resume_materialization_is_safe(run_dir: Path, state: Mapping[str, Any]) -> 
     task = _read_json(run_dir / "task.json") or {}
     repository = Path(str(task.get("repository_path") or ""))
     if not repository.is_dir() or not _is_git_repository(repository):
-        _usage_error("recovery error: target repository is missing or is no longer a Git work tree")
+        _usage_error(
+            "recovery error: target repository is missing or is no longer a Git work tree"
+        )
     result = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
         cwd=repository,
@@ -1592,7 +1661,9 @@ def _resume_configuration(persisted: Mapping[str, Any]) -> dict[str, Any]:
 @app.command("resume")
 def resume_command(
     run_id: str | None = typer.Argument(None, help="Interrupted canonical run ID."),
-    latest: bool = typer.Option(False, "--latest", help="Resume the newest interrupted run."),
+    latest: bool = typer.Option(
+        False, "--latest", help="Resume the newest interrupted run."
+    ),
 ) -> None:
     """Safely reconcile and continue an interrupted canonical closed-loop run."""
 
@@ -1630,7 +1701,11 @@ def resume_command(
     try:
         controller = builder(dict(configuration), _run_progress_listener(root))
     except (TypeError, ValueError, ValidationError) as error:
-        message = _validation_message(error) if isinstance(error, ValidationError) else str(error)
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
         _usage_error(f"recovery error: invalid persisted configuration: {message}")
     try:
         result = controller.resume(selected, root)
@@ -1657,7 +1732,9 @@ def _protocol_document(path: Path) -> dict[str, Any]:
             f"{issue.instance_path or '/'} [{issue.keyword}]"
             for issue in error.issues[:3]
         )
-        raise ValueError(f"{path.name}: invalid canonical document at {details}") from error
+        raise ValueError(
+            f"{path.name}: invalid canonical document at {details}"
+        ) from error
     return document
 
 
@@ -1738,12 +1815,12 @@ def _inspect_bundle(run_id: str) -> dict[str, Any]:
         ]
         verifications = [
             _protocol_document(
-                directory
-                / "verification"
-                / f"{attempt.get('attempt_id')}.json"
+                directory / "verification" / f"{attempt.get('attempt_id')}.json"
             )
             for attempt in attempts
-            if (directory / "verification" / f"{attempt.get('attempt_id')}.json").is_file()
+            if (
+                directory / "verification" / f"{attempt.get('attempt_id')}.json"
+            ).is_file()
         ]
         selection = (
             _protocol_document(directory / "selection.json")
@@ -1755,8 +1832,15 @@ def _inspect_bundle(run_id: str) -> dict[str, Any]:
             if (directory / "materialization.json").is_file()
             else None
         )
-    except (OSError, ValueError, json.JSONDecodeError, ProtocolValidationError) as error:
-        _usage_error(f"cannot inspect canonical run {run_id}: {redact_data(str(error))}")
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        ProtocolValidationError,
+    ) as error:
+        _usage_error(
+            f"cannot inspect canonical run {run_id}: {redact_data(str(error))}"
+        )
     artifacts = sorted(
         path.relative_to(directory).as_posix()
         for path in directory.rglob("*")
@@ -1851,7 +1935,13 @@ def _repository_root() -> Path:
 
 
 def _monorepo_vfr_path() -> Path:
-    return _repository_root() / "components" / "villani-flight-recorder" / "dist" / "cli.js"
+    return (
+        _repository_root()
+        / "components"
+        / "villani-flight-recorder"
+        / "dist"
+        / "cli.js"
+    )
 
 
 def _resolved_prefix(command: str) -> list[str] | None:

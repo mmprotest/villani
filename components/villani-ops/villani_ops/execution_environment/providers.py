@@ -569,27 +569,34 @@ def provider_from_configuration(
     source_environment: Mapping[str, str] | None = None,
     cache_root: Path | None = None,
     selection: str | None = None,
+    pluginized: bool = False,
 ) -> ExecutionEnvironmentProvider:
     config = ExecutionEnvironmentConfig.from_configuration(configuration, selection)
     if config.provider == "inherit":
-        return InheritProvider(
+        provider: ExecutionEnvironmentProvider = InheritProvider(
             config, source_environment=source_environment, cache_root=cache_root
         )
-    if config.provider == "setup-command":
-        return SetupCommandProvider(
+    elif config.provider == "setup-command":
+        provider = SetupCommandProvider(
             config, source_environment=source_environment, cache_root=cache_root
         )
-    if config.provider == "container":
+    elif config.provider == "container":
         from .container import ContainerProvider
 
-        return ContainerProvider(
+        provider = ContainerProvider(
             config, source_environment=source_environment, cache_root=cache_root
         )
-    from .devcontainer import DevcontainerProvider
+    else:
+        from .devcontainer import DevcontainerProvider
 
-    return DevcontainerProvider(
-        config, source_environment=source_environment, cache_root=cache_root
-    )
+        provider = DevcontainerProvider(
+            config, source_environment=source_environment, cache_root=cache_root
+        )
+    if pluginized:
+        from villani_ops.closed_loop.plugins import BuiltinExecutionProviderPlugin
+
+        return BuiltinExecutionProviderPlugin(provider)
+    return provider
 
 
 def preflight_report(
