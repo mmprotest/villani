@@ -1,9 +1,8 @@
 import json
 
-import httpx
-
 from villani_ops.core.backend import Backend
 from villani_ops.storage.files import FileStorage
+from villani_ops.tests._http_transport import patch_backend_post
 from villani_ops.verifier.deterministic import build_packet, deterministic_result
 from villani_ops.verifier.llm import calibrate, llm_result
 from villani_ops.verifier.load_debug_run import load_debug_run
@@ -142,7 +141,7 @@ def test_file_output_no_commands_llm_success_not_flipped(monkeypatch, tmp_path):
                 ]
             }
 
-    monkeypatch.setattr(httpx, "post", lambda *a, **k: Resp())
+    patch_backend_post(monkeypatch, lambda *a, **k: Resp())
     res = llm_result(run, det, workspace=str(tmp_path / "ws"))
     assert res["result"] == 1 and res["verdict"] == "success"
     assert res["confidence"] == 0.7

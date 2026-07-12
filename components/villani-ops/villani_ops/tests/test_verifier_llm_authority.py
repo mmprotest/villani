@@ -1,9 +1,8 @@
 import json
 
-import httpx
-
 from villani_ops.core.backend import Backend
 from villani_ops.storage.files import FileStorage
+from villani_ops.tests._http_transport import patch_backend_post
 from villani_ops.verifier.deterministic import build_packet, deterministic_result
 from villani_ops.verifier.llm import (
     SYSTEM,
@@ -204,7 +203,7 @@ def test_llm_result_contains_raw_source_and_trace(monkeypatch, tmp_path):
                 ]
             }
 
-    monkeypatch.setattr(httpx, "post", lambda *a, **k: Resp())
+    patch_backend_post(monkeypatch, lambda *a, **k: Resp())
     res = llm_result(run, det, workspace=str(tmp_path / "ws"))
     assert res["resultSource"] == "llm_verifier"
     assert res["llmRawVerdict"]["result"] == 1

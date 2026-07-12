@@ -1,7 +1,7 @@
 import json
-import httpx
 from villani_ops.core.backend import Backend
 from villani_ops.storage.files import FileStorage
+from villani_ops.tests._http_transport import patch_backend_post
 from villani_ops.verifier.load_debug_run import load_debug_run
 from villani_ops.verifier.deterministic import build_packet, deterministic_result
 from villani_ops.verifier.llm import llm_result, calibrate
@@ -65,7 +65,7 @@ def mock_success(monkeypatch):
                 ]
             }
 
-    monkeypatch.setattr(httpx, "post", lambda *a, **k: Resp())
+    patch_backend_post(monkeypatch, lambda *a, **k: Resp())
 
 
 def ws(tmp_path):

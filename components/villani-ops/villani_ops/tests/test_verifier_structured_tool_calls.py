@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 from villani_ops.core.backend import Backend
 from villani_ops.storage.files import FileStorage
+from villani_ops.tests._http_transport import patch_backend_post
 from villani_ops.verifier.deterministic import deterministic_result
 from villani_ops.verifier.load_debug_run import load_debug_run
 from villani_ops.verifier.llm import llm_result
@@ -73,9 +74,8 @@ def test_native_final_tool_call_wins_over_content_and_no_repair(monkeypatch, tmp
     _ws(tmp_path)
     run = load_debug_run(FIX)
     det = deterministic_result(run, mode="llm_tool_loop")
-    monkeypatch.setattr(
-        httpx,
-        "post",
+    patch_backend_post(
+        monkeypatch,
         lambda *a, **k: type(
             "R",
             (),
@@ -130,7 +130,7 @@ def test_native_read_tool_then_final_records_outer_and_inner(monkeypatch, tmp_pa
                 ),
             )
 
-    monkeypatch.setattr(httpx, "post", lambda *a, **k: R(k["json"]))
+    patch_backend_post(monkeypatch, lambda *a, **k: R(k["json"]))
     res = llm_result(run, det, workspace=str(tmp_path / "ws"), trace=trace)
     trace.finish(res)
     rows = [
@@ -154,9 +154,8 @@ def test_unknown_native_tool_no_hallucinated_verdict(monkeypatch, tmp_path):
     _ws(tmp_path)
     run = load_debug_run(FIX)
     det = deterministic_result(run, mode="llm_tool_loop")
-    monkeypatch.setattr(
-        httpx,
-        "post",
+    patch_backend_post(
+        monkeypatch,
         lambda *a, **k: type(
             "R",
             (),
@@ -172,9 +171,8 @@ def test_native_result_verdict_mismatch_rejected(monkeypatch, tmp_path):
     _ws(tmp_path)
     run = load_debug_run(FIX)
     det = deterministic_result(run, mode="llm_tool_loop")
-    monkeypatch.setattr(
-        httpx,
-        "post",
+    patch_backend_post(
+        monkeypatch,
         lambda *a, **k: type(
             "R",
             (),
@@ -195,9 +193,8 @@ def test_empty_content_no_repair(monkeypatch, tmp_path):
     _ws(tmp_path)
     run = load_debug_run(FIX)
     det = deterministic_result(run, mode="llm_tool_loop")
-    monkeypatch.setattr(
-        httpx,
-        "post",
+    patch_backend_post(
+        monkeypatch,
         lambda *a, **k: type(
             "R",
             (),
@@ -235,7 +232,7 @@ def test_reasoning_content_traced_and_retried(monkeypatch, tmp_path):
             "R", (), {"raise_for_status": lambda s: None, "json": lambda s: data}
         )()
 
-    monkeypatch.setattr(httpx, "post", post)
+    patch_backend_post(monkeypatch, post)
     res = llm_result(run, det, workspace=str(tmp_path / "ws"), trace=trace)
     assert res["result"] == 1
     assert (tmp_path / "trace" / "llm_reasoning_content.jsonl").exists()
@@ -270,7 +267,7 @@ def test_backend_rejects_tools_falls_back_to_legacy(monkeypatch, tmp_path):
             },
         )()
 
-    monkeypatch.setattr(httpx, "post", post)
+    patch_backend_post(monkeypatch, post)
     res = llm_result(run, det, workspace=str(tmp_path))
     assert res["llmProtocol"] == "legacy_json_fallback"
     assert res["llmProtocolWarnings"]
@@ -281,9 +278,8 @@ def test_legacy_prose_plus_json_extracted(monkeypatch, tmp_path):
     run = load_debug_run(FIX)
     det = deterministic_result(run, mode="llm_tool_loop")
     text = "Here is the result " + json.dumps({"type": "final_verdict", **_verdict()})
-    monkeypatch.setattr(
-        httpx,
-        "post",
+    patch_backend_post(
+        monkeypatch,
         lambda *a, **k: type(
             "R",
             (),

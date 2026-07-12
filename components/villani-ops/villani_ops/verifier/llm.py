@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import os
 import time
-import httpx
+from villani_ops.llm.transport import create_backend_http_client
 from urllib.parse import urlparse
 from villani_ops.storage.files import FileStorage
 from .deterministic import build_packet, PROMPT_VERSION
@@ -649,12 +649,9 @@ def _chat_message(cfg, messages, timeout, trace=None, use_tools=True, force_tool
         headers = {}
         if cfg.get("apiKey"):
             headers["Authorization"] = f"Bearer {cfg['apiKey']}"
-        r = httpx.post(
-            cfg["baseUrl"].rstrip("/") + "/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=timeout,
-        )
+        url = cfg["baseUrl"].rstrip("/") + "/chat/completions"
+        with create_backend_http_client(url, timeout=timeout) as client:
+            r = client.post(url, headers=headers, json=payload)
         http_status = getattr(r, "status_code", None)
         r.raise_for_status()
         raw = r.json()

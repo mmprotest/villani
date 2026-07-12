@@ -2496,3 +2496,95 @@ Remaining unsupported integrations and risks:
 Next permitted milestone:
 - None. This authorized cleanup stopped after the release blockers and did not start a later
   milestone.
+
+#### 2026-07-12: Corrective release-truth and loopback transport pass
+
+Status: complete. The prior Linux completion statement (`846 passed, zero skips`) was invalidated
+by execution under an inherited SOCKS proxy environment: the loopback backend call was intercepted
+before connection and became `runner_error` because the optional `socksio` package was absent. The
+corrected hostile-proxy regression and every required release gate below pass. No later milestone
+was started.
+
+Changed files:
+- Added the shared backend transport policy in
+  `components/villani-ops/villani_ops/llm/transport.py`; applied it to JSON LLM, agentic,
+  verifier, and backend-probe HTTP paths; and classified a genuine remote environment-proxy
+  construction failure as `provider_config_error`.
+- Added adversarial proxy, exact host parsing, real loopback success, public artifact/category,
+  and explicit-client regression coverage under `components/villani-ops/villani_ops/tests/`.
+  Existing verifier HTTP test doubles now mock the explicit client boundary.
+- Aligned Flight Recorder, run-model, web, the development installer, and public documentation on
+  Node.js 20 minimum support. Regenerated the Flight Recorder lockfile with npm.
+- Added `scripts/check-node-engine-contract.py`; made it a prerequisite for every connected Node
+  CI job; changed the Flight Recorder matrix to `20.x` and `lts/*`; and retained all existing
+  release jobs in `release-green`.
+- Regenerated the requested `release-verification/supply-chain/` evidence and updated only this
+  progress section of `PLANS.md`.
+
+Architectural decisions:
+- URL classification uses `urllib.parse.urlsplit` and `ipaddress.ip_address` without DNS. Exact
+  `localhost` (case-insensitive, with at most one terminal DNS dot), every IPv4 address in
+  `127.0.0.0/8`, and exact IPv6 `::1` are loopback. Private, link-local, public, lookalike,
+  percent-encoded, malformed, and safely parsed user-information cases are not broadened into
+  loopback.
+- Model/provider calls construct an explicit `httpx.Client`: loopback uses `trust_env=False` and
+  every non-loopback backend, including `10/8`, uses `trust_env=True`. Backend health probing uses
+  the same decision. Control-plane, artifact, agentd, and unrelated external transports were not
+  changed. Production code does not mutate `os.environ` and no proxy dependency was added.
+- A remote environment-proxy dependency/configuration construction failure is a non-recoverable
+  `provider_config_error`; generic runner protocol failures remain `runner_error`, while target
+  connection refusal and `httpx.ConnectTimeout` remain recoverable `backend_connection_error`.
+- The canonical `ClosedLoopController`, public CLI/options, routing, verifier eligibility,
+  agentd backfill, selected-patch materialization, secret handling, and URL redaction are unchanged.
+
+Verification from a fresh Python 3.12 venv, fresh npm installs, isolated writable temp/cache roots,
+and no reused Node dependency trees:
+- Hostile proxy public regression with both `NO_PROXY` variants empty:
+  `python -m pytest villani_ops/tests/test_cli_orchestrator_default.py villani_ops/tests/test_release_hardening.py -q`:
+  58 passed in 11.95s. Loopback refusal, localhost, IPv6 capability, real local success, remote
+  trust, proxy configuration, parsing attacks, generic runner error, timeout, finalized artifacts,
+  matching provider event category, recoverability, actionable output, and proxy-secret absence pass;
+  no output or persisted artifact contains `socksio`.
+- Villani Ops: `python -m pytest -q -rs`: 869 passed, 2 permitted host-capability skips, and 114
+  marker deselections in 130.48s. The skips explicitly report that this Windows host Python lacks
+  Unix-domain socket and FIFO creation support. `ruff check villani_ops tests`: zero findings.
+  Required mypy: success, zero errors in 69 source files.
+- Villani Code: `python -m pytest -q`: 671 passed, 1 expected opt-in Claude smoke skip, and 27
+  warnings in 71.98s. Required Ruff: zero findings. Required mypy: zero errors in 3 source files.
+- Agentd: `python -m pytest -q`: 56 passed in 8.52s. Ruff: zero findings. Required mypy: zero
+  errors in 22 source files.
+- Control plane local: 73 passed, 9 expected PostgreSQL-gated skips, and 43 warnings in 12.44s.
+  PostgreSQL 16 live migration plus `python -m pytest -q --run-load-smoke`: 82 passed, zero skips,
+  and 46 warnings in 517.64s, including 100,000-event load. JUnit no-skip assertion passed. Offline
+  migration SQL passed. Dump/restore matched 54/54 public tables and 1/1 runs. Ruff: zero findings;
+  mypy: zero errors in 34 source files.
+- Run model clean install: 1 file/3 tests passed; typecheck and build passed; production audit
+  reported 0 vulnerabilities.
+- Flight Recorder standalone precondition confirmed both sibling and local `node_modules` absent.
+  Clean `npm ci`, 20 files/103 tests, typecheck, build, format check, 63-file pack dry-run, and
+  production audit (0 vulnerabilities) passed.
+- Web clean install: 3 files/5 unit tests, typecheck, production build, format check, production
+  audit (0 vulnerabilities), and all 10 Chromium Playwright scenarios passed.
+- Distribution/root: Villani distribution 9 passed; `tests/closed_loop tests/final_foundation`
+  23 passed with 1 third-party warning; public CLI E2E 2 passed and 1 marker-deselected test.
+- Release checks: fixture secret scan passed with 0 findings; supply-chain report has
+  `passed=true`, `pip check` passed, the retained container scan has 0 high/critical findings, and
+  its test-only signature verified.
+- CI YAML parsed successfully. The engine contract reports run-model, Flight Recorder, and web all
+  at `>=20`; no relevant user support statement or CI declaration retains Node 18. `release-green`
+  depends on all 12 real jobs, including the engine contract, PostgreSQL, Playwright, packaging,
+  distribution, cross-component, and foundation gates. Flight Recorder installs from a clean
+  checkout, and root E2E installs/builds it within its own jobs.
+- `git diff --check`: passed; line-ending notices only.
+
+Remaining unsupported integrations and risks:
+- Production cloud KMS/BYOK, production SAML, production SCIM, deployment-supplied production OIDC
+  verification, production SLO claims, and live cost-savings claims without qualifying locked
+  evaluation evidence remain unsupported. Deterministic fixtures are not economic evidence.
+- The clean release execution was local Windows plus PostgreSQL 16 in Linux Docker. It does not
+  replace CI's configured Ubuntu/macOS/Windows package matrix. Host-capability and explicit opt-in
+  skips are reported above and are not claimed as zero skips.
+
+Next permitted milestone:
+- None. This surgical pass fixed only the three named release-truth issues and did not start a
+  feature, unrelated cleanup, or later milestone.

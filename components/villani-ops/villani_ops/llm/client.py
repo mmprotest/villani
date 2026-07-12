@@ -1,9 +1,9 @@
 from __future__ import annotations
 from typing import Any
 from pydantic import BaseModel
-import httpx
 from villani_ops.core.backend import Backend
 from .json_extract import extract_json
+from .transport import create_backend_http_client
 
 
 class LLMCallError(RuntimeError):
@@ -70,12 +70,10 @@ class LLMClient:
             headers["Authorization"] = f"Bearer {key}"
         url = backend.base_url.rstrip("/") + "/chat/completions"
         try:
-            r = httpx.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=timeout_seconds or backend.timeout_seconds or 60,
-            )
+            with create_backend_http_client(
+                url, timeout=timeout_seconds or backend.timeout_seconds or 60
+            ) as client:
+                r = client.post(url, json=payload, headers=headers)
             r.raise_for_status()
             data = r.json()
             choice = data.get("choices", [{}])[0]

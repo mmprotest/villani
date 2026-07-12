@@ -1,1 +1,1 @@
-{"algorithm": "hmac-sha256", "artifact": "sbom.cdx.json", "key_id": "test-only", "signature": "5f1572847be9de0e341ec75db8dd1567c76c8f83228f48ce767ce22b492a295e"}
+{"algorithm": "hmac-sha256", "artifact": "sbom.cdx.json", "key_id": "test-only", "signature": "3f1a4438d04de9899cf8c089c65fcad3aeae54ee426367434d87cd98926333ad"}

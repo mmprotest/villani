@@ -25,6 +25,7 @@ from rich.console import Console
 
 from villani_ops.classification import TaskClassifier
 from villani_ops.llm.client import LLMCallError, LLMCallResult
+from villani_ops.llm.transport import trust_environment_for_backend
 from villani_ops.closed_loop import (
     BootstrapPolicyEngine,
     ClosedLoopController,
@@ -397,7 +398,11 @@ def _probe_backend(backend: Backend) -> dict[str, Any]:
     key = backend.resolved_api_key()
     if key:
         headers["Authorization"] = f"Bearer {key}"
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener = (
+        urllib.request.build_opener()
+        if trust_environment_for_backend(base)
+        else urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    )
     unsupported_status: int | None = None
     for probe_name, endpoint in endpoints:
         request = urllib.request.Request(endpoint, headers=headers, method="GET")

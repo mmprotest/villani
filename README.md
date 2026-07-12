@@ -28,7 +28,7 @@ From the repository root, run the same cross-platform installer on Windows, macO
 python scripts/install-local.py
 ```
 
-The development installer requires Node.js 18 and npm to rebuild Flight Recorder. It prints the activation command for all four executables, is safe to run twice, installs but does not start the local daemon, and does not collect telemetry or download a model. See [distribution and user-service details](docs/DISTRIBUTION.md).
+The development installer requires Node.js 20 and npm to rebuild Flight Recorder. It prints the activation command for all four executables, is safe to run twice, installs but does not start the local daemon, and does not collect telemetry or download a model. See [distribution and user-service details](docs/DISTRIBUTION.md).
 
 The canonical closed-loop provider names are `local`, `openai-compatible`, and
 `openai`. The first two require an explicit `--base-url`; `openai` uses

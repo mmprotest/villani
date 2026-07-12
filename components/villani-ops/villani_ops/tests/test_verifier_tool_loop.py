@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 from villani_ops.core.backend import Backend
 from villani_ops.storage.files import FileStorage
+from villani_ops.tests._http_transport import patch_backend_post
 from villani_ops.verifier.load_debug_run import load_debug_run
 from villani_ops.verifier.deterministic import deterministic_result
 from villani_ops.verifier.llm import llm_result, select_verifier_backend
@@ -130,7 +131,7 @@ def test_tool_loop_calls_search_commands(monkeypatch, tmp_path):
         r.payload = kwargs["json"]
         return r
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    patch_backend_post(monkeypatch, fake_post)
     res = llm_result(run, det, workspace=str(tmp_path))
     assert res["toolsUsed"][0]["tool"] == "search_commands"
     assert res["llmRawVerdict"]["verdict"] == "success" and res["result"] == 1
@@ -180,7 +181,7 @@ def test_llm_http_failure_is_error(monkeypatch, tmp_path):
     def boom(*a, **k):
         raise httpx.ConnectError("nope")
 
-    monkeypatch.setattr(httpx, "post", boom)
+    patch_backend_post(monkeypatch, boom)
     with pytest.raises(Exception) as ei:
         llm_result(run, det, workspace=str(tmp_path))
     assert "HTTP failure" in str(ei.value)
@@ -211,7 +212,7 @@ def test_llm_invalid_json_after_repair_is_error(monkeypatch, tmp_path):
         def json(self):
             return {"choices": [{"message": {"content": "not json"}}]}
 
-    monkeypatch.setattr(httpx, "post", lambda *a, **k: Resp())
+    patch_backend_post(monkeypatch, lambda *a, **k: Resp())
     with pytest.raises(Exception) as ei:
         llm_result(run, det, workspace=str(tmp_path))
     assert "invalid JSON after repair" in str(ei.value)

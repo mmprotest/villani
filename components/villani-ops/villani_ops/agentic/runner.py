@@ -24,6 +24,7 @@ from villani_ops.orchestration.nodes import OrchestrationNode
 from villani_ops.orchestration.context import TaskContext
 from villani_ops.closed_loop.failure_classification import classify_runner_failure
 from villani_ops.providers import ProviderConfigurationError
+from villani_ops.llm.transport import BackendProxyConfigurationError
 
 
 def _backend_label(backend):
@@ -97,6 +98,12 @@ def _provider_failure(exc: Exception, backend) -> tuple[str, str, bool]:
             return (
                 "provider_config_error",
                 str(current) or f"Invalid provider configuration: {label}",
+                False,
+            )
+        if isinstance(current, BackendProxyConfigurationError):
+            return (
+                "provider_config_error",
+                "Backend environment proxy configuration is unavailable",
                 False,
             )
         if isinstance(current, FileNotFoundError):

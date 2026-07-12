@@ -122,11 +122,18 @@ jobs:
             ${{ runner.temp }}/control-plane-postgres.xml
             ${{ runner.temp }}/control-plane-migrations.sql
 
+  node-engine-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/check-node-engine-contract.py
+
   flight-recorder:
+    needs: node-engine-contract
     strategy:
       fail-fast: false
       matrix:
-        node: [18.x, lts/*]
+        node: [20.x, lts/*]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -155,6 +162,7 @@ jobs:
         working-directory: components/villani-flight-recorder
 
   villani-run-model:
+    needs: node-engine-contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -177,6 +185,7 @@ jobs:
         run: git diff --exit-code -- components/villani-run-model/dist
 
   villani-web:
+    needs: node-engine-contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -211,6 +220,7 @@ jobs:
           if-no-files-found: ignore
 
   cross-component:
+    needs: node-engine-contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -236,6 +246,7 @@ jobs:
       - run: python scripts/check-secrets.py integration/fixtures
 
   package-smoke:
+    needs: node-engine-contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -285,6 +296,7 @@ jobs:
             "$RUNNER_TEMP/villani-smoke/bin/python" -m pytest tests/closed_loop/test_cli_e2e.py -m e2e -q
 
   distribution-smoke:
+    needs: node-engine-contract
     strategy:
       fail-fast: false
       matrix:
@@ -353,6 +365,7 @@ jobs:
       - villani-ops
       - villani-agentd
       - villani-control-plane
+      - node-engine-contract
       - flight-recorder
       - villani-run-model
       - villani-web

@@ -118,11 +118,21 @@ def test_llm_client_uses_direct_key(monkeypatch):
                 "usage": {"prompt_tokens": 1, "completion_tokens": 2},
             }
 
-    def fake_post(url, json, headers, timeout):
-        seen.update(headers=headers)
-        return Resp()
+    class Client:
+        def __init__(self, **kwargs):
+            seen.update(client=kwargs)
 
-    monkeypatch.setattr("httpx.post", fake_post)
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, json, headers):
+            seen.update(headers=headers)
+            return Resp()
+
+    monkeypatch.setattr("httpx.Client", Client)
     b = Backend(
         name="b",
         provider="openai-compatible",
@@ -132,6 +142,7 @@ def test_llm_client_uses_direct_key(monkeypatch):
     )
     LLMClient().complete_json(b, "s", "u", "S")
     assert seen["headers"]["Authorization"] == "Bearer secret"
+    assert seen["client"]["trust_env"] is True
 
 
 def test_villani_code_receives_key_and_saves_redacted_command(tmp_path, monkeypatch):

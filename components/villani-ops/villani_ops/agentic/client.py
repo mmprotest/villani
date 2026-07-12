@@ -1,8 +1,9 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field, ConfigDict
-import httpx
 import os
 import uuid
+
+from villani_ops.llm.transport import create_backend_http_client
 
 
 class ToolMessageResult(BaseModel):
@@ -59,12 +60,13 @@ class ToolCallingLLMClient:
         if not strict:
             for t in payload["tools"]:
                 t.get("function", {}).pop("strict", None)
-        r = httpx.post(
-            base.rstrip("/") + "/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json=payload,
-            timeout=60,
-        )
+        url = base.rstrip("/") + "/chat/completions"
+        with create_backend_http_client(url, timeout=60) as client:
+            r = client.post(
+                url,
+                headers={"Authorization": f"Bearer {key}"},
+                json=payload,
+            )
         if r.status_code >= 400 and strict:
             return self.create_message(
                 backend,

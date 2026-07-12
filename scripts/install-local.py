@@ -57,13 +57,13 @@ def main() -> int:
     node_command = shutil.which("node")
     npm_command = shutil.which("npm")
     if node_command is None:
-        raise SystemExit("Node.js 18 or newer is required; `node` was not found on PATH.")
+        raise SystemExit("Node.js 20 or newer is required; `node` was not found on PATH.")
     if npm_command is None:
         raise SystemExit("npm is required; `npm` was not found on PATH.")
     node_version = _version([node_command, "--version"], "Node.js")
-    if node_version < (18, 0):
+    if node_version < (20, 0):
         raise SystemExit(
-            "Node.js 18 or newer is required; found "
+            "Node.js 20 or newer is required; found "
             f"{'.'.join(map(str, node_version))}."
         )
     _version([npm_command, "--version"], "npm")

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import json
 import socket
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import httpx
@@ -15,7 +18,13 @@ from villani_ops.closed_loop.interfaces import ClassificationContext
 from villani_ops.cli.unified import _ClassifierAdapter
 from villani_ops.core.task import TaskClassification
 from villani_ops.core.backend import Backend
-from villani_ops.llm.client import LLMCallResult
+from villani_ops.llm.client import LLMCallResult, LLMClient
+from villani_ops.llm.transport import (
+    BackendProxyConfigurationError,
+    create_backend_http_client,
+    is_loopback_backend_url,
+    trust_environment_for_backend,
+)
 from villani_ops.isolation.copy_git import (
     AttemptIsolationError,
     copy_worktree,
@@ -155,6 +164,149 @@ def test_agentic_provider_failure_categories(error: Exception, expected: str) ->
     kind, _message, _recoverable = _provider_failure(error, backend)
 
     assert kind == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8000/v1",
+        "https://LOCALHOST.:8443/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://127.255.255.254:8000/v1",
+        "http://[::1]:8000/v1",
+    ],
+)
+def test_loopback_backend_url_recognition(url: str) -> None:
+    assert is_loopback_backend_url(url) is True
+    assert trust_environment_for_backend(url) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost.example.com/v1",
+        "http://notlocalhost/v1",
+        "http://127.0.0.1.example.com/v1",
+        "http://example.com@127.0.0.1.example.com/v1",
+        "http://127.0.0.1@example.com/v1",
+        "https://example.com/v1",
+        "http://10.0.0.5:1234/v1",
+        "http://172.16.0.1/v1",
+        "http://192.168.1.10/v1",
+        "http://169.254.1.1/v1",
+        "http://%6cocalhost/v1",
+        "localhost:8000/v1",
+        "http://[::1/v1",
+        "http://localhost:notaport/v1",
+        "http://localhost:70000/v1",
+    ],
+)
+def test_non_loopback_and_host_parsing_attack_cases(url: str) -> None:
+    assert is_loopback_backend_url(url) is False
+    assert trust_environment_for_backend(url) is True
+
+
+def test_remote_backend_clients_retain_environment_proxy_policy(monkeypatch) -> None:
+    seen: list[dict[str, object]] = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            seen.append(kwargs)
+
+    monkeypatch.setattr("villani_ops.llm.transport.httpx.Client", Client)
+    create_backend_http_client("https://example.com/v1", timeout=1)
+    create_backend_http_client("http://10.0.0.5:1234/v1", timeout=1)
+    assert [item["trust_env"] for item in seen] == [True, True]
+
+
+def test_remote_proxy_dependency_failure_is_provider_configuration_error(
+    monkeypatch,
+) -> None:
+    def fail_client(**kwargs):
+        assert kwargs["trust_env"] is True
+        raise ImportError("missing proxy transport dependency")
+
+    monkeypatch.setattr("villani_ops.llm.transport.httpx.Client", fail_client)
+    with pytest.raises(BackendProxyConfigurationError) as caught:
+        create_backend_http_client("https://example.com/v1", timeout=1)
+    backend = type(
+        "Backend",
+        (),
+        {"name": "remote", "base_url": "https://example.com/v1", "model": "m"},
+    )()
+    kind, message, recoverable = _provider_failure(caught.value, backend)
+    assert kind == "provider_config_error"
+    assert message == "Backend environment proxy configuration is unavailable"
+    assert recoverable is False
+
+
+def test_real_loopback_model_request_bypasses_hostile_proxy(monkeypatch) -> None:
+    received: list[dict[str, object]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            received.append(
+                {
+                    "path": self.path,
+                    "body": json.loads(self.rfile.read(length)),
+                }
+            )
+            body = json.dumps(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": '{"ok": true}'},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+                }
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    for name in ("ALL_PROXY", "all_proxy"):
+        monkeypatch.setenv(name, "socks5h://127.0.0.1:36363")
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:41295")
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "")
+    try:
+        backend = Backend(
+            name="local",
+            provider="local",
+            base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            model="stub",
+        )
+        result = LLMClient().complete_json(backend, "system", "user", "test")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert result.parsed_json == {"ok": True}
+    assert received == [
+        {
+            "path": "/v1/chat/completions",
+            "body": {
+                "model": "stub",
+                "messages": [
+                    {"role": "system", "content": "system"},
+                    {"role": "user", "content": "user"},
+                ],
+                "temperature": 0,
+            },
+        }
+    ]
 
 
 @pytest.mark.parametrize(

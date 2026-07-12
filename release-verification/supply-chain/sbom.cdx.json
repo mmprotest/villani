@@ -347,7 +347,7 @@
       "properties": [
         {
           "name": "lock_sha256",
-          "value": "07420b7205b5f2219c72883546f1d5eb2dcb911dfff7a93ccb24184267643011"
+          "value": "dc2676c0c675a9ca389761ab08f01ce0fdcc9ac92ff8de3fe01f00b54ef6b648"
         }
       ],
       "type": "application",
