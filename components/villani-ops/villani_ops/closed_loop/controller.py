@@ -17,6 +17,7 @@ from villani_ops.core.backend import Backend
 from villani_ops.materialize import inspect_patch_application
 
 from .event_writer import EventWriter, failure_payload, redact_data, redact_message
+from .event_sink import RunEventSink
 from .failure_classification import classify_failure, material_progress
 from .interfaces import (
     AttemptContext,
@@ -214,6 +215,7 @@ class ClosedLoopController:
         id_factory: Callable[[str], str] | None = None,
         on_event: Callable[[EventEnvelope], None] | None = None,
         failure_injector: Callable[[str], None] | None = None,
+        event_sink: RunEventSink | None = None,
     ) -> None:
         self._classifier = classifier
         self._policy_engine = policy_engine
@@ -226,6 +228,7 @@ class ClosedLoopController:
         self._id_factory = id_factory or _default_id
         self._on_event = on_event
         self._failure_injector = failure_injector
+        self._event_sink = event_sink
         manifests: list[Any] = []
         for dependency in (attempt_runner, verifier, selector, materializer):
             manifest = getattr(dependency, "plugin_manifest", None)
@@ -249,7 +252,9 @@ class ClosedLoopController:
         runtime: _Runtime | None = None
         try:
             store.create()
-            events = EventWriter(store, trace_id, self._now, self._on_event)
+            events = EventWriter(
+                store, trace_id, self._now, self._on_event, self._event_sink
+            )
             runtime = _Runtime(
                 request=request,
                 run_id=run_id,
@@ -264,8 +269,10 @@ class ClosedLoopController:
             self._validate_run_configuration(runtime.request.policy_configuration)
             self._checkpoint("after_run_creation")
             if not self._classify(runtime):
+                runtime.events.finalize_delivery()
                 return self._result(runtime)
             self._drive(runtime)
+            runtime.events.finalize_delivery()
             return self._result(runtime)
         except Exception as error:
             if runtime is not None and not runtime.machine.terminal:
@@ -284,6 +291,7 @@ class ClosedLoopController:
                     # impossible; no traceback or unredacted message escapes here.
                     runtime.terminal_reason = redact_message(str(error))
             if runtime is not None:
+                runtime.events.finalize_delivery()
                 return self._result(runtime, forced_state="FAILED")
             return ClosedLoopRunResult(
                 run_id=run_id,
@@ -382,6 +390,7 @@ class ClosedLoopController:
                 # A committed terminal state is read-only: no recovery event,
                 # dependency invocation, snapshot rewrite, or bundle mutation.
                 if runtime.loaded_state_terminal:
+                    runtime.events.finalize_delivery()
                     return self._result(runtime)
                 if runtime.machine.terminal:
                     self._recovery_event(
@@ -389,6 +398,7 @@ class ClosedLoopController:
                         "terminal_state_reconciled",
                         {"committed_terminal_state": runtime.machine.state},
                     )
+                    runtime.events.finalize_delivery()
                     return self._result(runtime)
                 repaired: list[str] = []
                 for name in ("events.jsonl", "policy_decisions.jsonl"):
@@ -403,6 +413,7 @@ class ClosedLoopController:
                         {"files": repaired},
                     )
                 self._reconcile_and_continue(runtime)
+                runtime.events.finalize_delivery()
                 return self._result(runtime)
         except Exception as error:
             if runtime is not None and not runtime.machine.terminal:
@@ -422,6 +433,7 @@ class ClosedLoopController:
                         redact_message(str(error)),
                         error=error,
                     )
+                    runtime.events.finalize_delivery()
                     return self._result(runtime)
                 except Exception:
                     pass
@@ -522,7 +534,13 @@ class ClosedLoopController:
             started_monotonic=self._monotonic(),
             wall_clock_offset_ms=max(int(manifest.run_wall_clock_duration_ms or 0), 0),
             store=store,
-            events=EventWriter(store, manifest.trace_id, self._now, self._on_event),
+            events=EventWriter(
+                store,
+                manifest.trace_id,
+                self._now,
+                self._on_event,
+                self._event_sink,
+            ),
             machine=machine,
             last_event=events[-1],
             previous_state=previous_state,
@@ -1645,6 +1663,12 @@ class ClosedLoopController:
         )
         runtime.store.write_json("preflight.json", preflight)
         fingerprint = str(preflight["execution_environment_fingerprint"])
+        provider_value = preflight.get("provider")
+        provider_name = (
+            str(provider_value.get("provider"))
+            if isinstance(provider_value, Mapping)
+            else "unknown"
+        )
         runtime.store.write_protocol(
             "resource.json",
             ResourceV2(
@@ -1655,9 +1679,7 @@ class ClosedLoopController:
                 host_id=None,
                 process_id=None,
                 attributes={
-                    "villani.execution_environment.provider": preflight["provider"][
-                        "provider"
-                    ],
+                    "villani.execution_environment.provider": provider_name,
                     "villani.execution_environment.fingerprint": fingerprint,
                     "villani.execution_environment.preflight": "preflight.json",
                 },
@@ -2859,19 +2881,20 @@ class ClosedLoopController:
             runtime.attempt_patches[context.attempt_id] = result.patch
 
         attempt_metadata = _mapping_copy(result.metadata)
+        candidate_plan = runtime.candidate_plans.get(context.attempt_id)
         attempt_metadata.update(
             {
                 "candidate_dimensions": _mapping_copy(context.candidate_dimensions),
-                "effective_configuration_sha256": runtime.candidate_plans.get(
-                    context.attempt_id
-                ).effective_configuration_sha256
-                if context.attempt_id in runtime.candidate_plans
-                else None,
+                "effective_configuration_sha256": (
+                    candidate_plan.effective_configuration_sha256
+                    if candidate_plan is not None
+                    else None
+                ),
                 "baseline_sha256": context.baseline_sha256,
                 "repair_source_attempt_id": context.repair_source_attempt_id,
                 "sandbox_id": (
-                    runtime.candidate_plans[context.attempt_id].sandbox_id
-                    if context.attempt_id in runtime.candidate_plans
+                    candidate_plan.sandbox_id
+                    if candidate_plan is not None
                     else context.attempt_id
                 ),
             }

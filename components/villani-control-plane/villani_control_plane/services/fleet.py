@@ -6,7 +6,7 @@ import io
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
@@ -634,7 +634,7 @@ class AlertService:
             "enabled": rule.enabled,
         }
 
-    def events(self, principal: Principal) -> list[dict[str, Any]]:
+    def events(self, principal: Principal) -> Sequence[dict[str, Any]]:
         rows = self.session.scalars(
             select(models.AlertEvent)
             .where(

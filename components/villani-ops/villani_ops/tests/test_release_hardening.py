@@ -4,6 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
+import httpx
 import pytest
 
 from villani_ops.closed_loop.failure_classification import classify_runner_failure
@@ -118,6 +119,33 @@ def test_local_compute_pricing_preserves_configured_currency() -> None:
 )
 def test_runner_failure_categories(exit_code: int | None, stderr: str, expected: str) -> None:
     assert classify_runner_failure(exit_code, "", stderr) == expected
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (httpx.ConnectError("connection refused"), "backend_connection_error"),
+        (
+            httpx.ConnectError("local model server is not running"),
+            "backend_connection_error",
+        ),
+        (
+            httpx.ConnectTimeout("timed out while establishing connection"),
+            "backend_connection_error",
+        ),
+        (RuntimeError("runner produced invalid local state"), "runner_error"),
+    ],
+)
+def test_agentic_provider_failure_categories(error: Exception, expected: str) -> None:
+    backend = type(
+        "Backend",
+        (),
+        {"name": "local", "base_url": "http://127.0.0.1:9/v1", "model": "m"},
+    )()
+
+    kind, _message, _recoverable = _provider_failure(error, backend)
+
+    assert kind == expected
 
 
 @pytest.mark.parametrize(

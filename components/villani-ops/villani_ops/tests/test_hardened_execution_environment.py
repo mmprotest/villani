@@ -578,19 +578,31 @@ def test_workspace_rejects_symlink_oversized_and_decompression_bomb(tmp_path: Pa
         inspect_workspace(tmp_path, ActionPolicy(max_archive_ratio=2.0))
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Unix socket/FIFO fixture")
-def test_workspace_rejects_socket_and_device_like_fifo(tmp_path: Path) -> None:
+def test_workspace_rejects_socket(tmp_path: Path) -> None:
+    if not hasattr(socket, "AF_UNIX"):
+        pytest.skip("host Python does not support Unix-domain sockets")
     socket_path = tmp_path / "fixture.sock"
-    server = socket.socket(socket.AF_UNIX)
-    server.bind(str(socket_path))
+    try:
+        server = socket.socket(socket.AF_UNIX)
+        server.bind(str(socket_path))
+    except OSError as error:
+        pytest.skip(f"host cannot create a Unix-domain socket: {error}")
     try:
         with pytest.raises(ExecutionPolicyDenied, match="socket"):
             inspect_workspace(tmp_path, ActionPolicy())
     finally:
         server.close()
     socket_path.unlink(missing_ok=True)
+
+
+def test_workspace_rejects_fifo(tmp_path: Path) -> None:
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("host Python does not support FIFO creation")
     fifo = tmp_path / "fixture.fifo"
-    os.mkfifo(fifo)
+    try:
+        os.mkfifo(fifo)
+    except OSError as error:
+        pytest.skip(f"host cannot create a FIFO: {error}")
     with pytest.raises(ExecutionPolicyDenied, match="device or fifo"):
         inspect_workspace(tmp_path, ActionPolicy())
 

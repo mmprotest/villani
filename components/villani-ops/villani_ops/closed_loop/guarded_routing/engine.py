@@ -178,8 +178,11 @@ class GuardedTaskRouter:
             item.failure_category == "verifier_disagreement" or item.disagreement
             for item in verifications
         )
-        durations = [getattr(item, "duration_ms", None) for item in attempts]
-        durations = [value for value in durations if isinstance(value, (int, float))]
+        durations: list[float] = [
+            float(value)
+            for item in attempts
+            if isinstance((value := getattr(item, "duration_ms", None)), (int, float))
+        ]
         failure_rate = failures / len(attempts) if attempts else 0.0
         reasons: list[str] = []
         minimum = int(limits.get("minimum_samples", 1))
@@ -348,6 +351,7 @@ class GuardedTaskRouter:
                 execution_route = None
                 reason = final.reason
             elif bootstrap.action in {"attempt", "retry", "escalate"}:
+                assert policy is not None
                 final = replace(
                     bootstrap,
                     chosen_backend=recommended.route.backend_name,

@@ -1,0 +1,22 @@
+{
+  "schema_version": "villani.live_evaluation_manifest.v1",
+  "manifest_version": "example-v1",
+  "environment_revision": "record-the-operator-environment-revision",
+  "policies": {
+    "strong-only": {"villani_home": "/absolute/path/to/strong-only-home"},
+    "cheap-only": {"villani_home": "/absolute/path/to/cheap-only-home"},
+    "cheap-first-escalation": {"villani_home": "/absolute/path/to/cheap-first-home"},
+    "strong-first": {"villani_home": "/absolute/path/to/strong-first-home"},
+    "adaptive": {"villani_home": "/absolute/path/to/adaptive-home"}
+  },
+  "tasks": [
+    {
+      "task_id": "replace-with-versioned-task-id",
+      "repository": "/absolute/path/to/pinned/repository",
+      "repository_revision": "full-git-commit",
+      "instruction": "Replace with the coding task",
+      "success_criteria": "Replace with acceptance-grade criteria",
+      "expected_success": true
+    }
+  ]
+}

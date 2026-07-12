@@ -75,6 +75,12 @@ villani-ops run \
 The canonical public CLI is `villani run`; interrupted runs can be resumed with
 `villani resume <run_id>` or `villani resume --latest`.
 
+At composition time the public CLI detects an installed, running `villani-agentd` and attaches the
+closed-loop event sink. Local canonical events are committed before daemon delivery, daemon
+absence or delivery degradation is diagnostic-only, and resume retains the original run ID and
+event sequence. The controller depends only on the closed-loop sink contract and does not import
+agentd.
+
 `--candidate-attempts 4` means Villani Ops will try to run four independent candidate attempts. Parallelism is bounded by the backend's `--max-parallel` value.
 
 ## Main command

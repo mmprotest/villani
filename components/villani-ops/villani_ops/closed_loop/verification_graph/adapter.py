@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from pathlib import Path
+from typing import Literal
 from ..durable_io import write_json_atomic
 from ..interfaces import (
     AttemptContext,
@@ -46,7 +47,7 @@ class VerificationGraphVerifierAdapter:
         requirements, success, failure, missing = [], [], [], []
         for node in result.node_results:
             if node.required:
-                outcome = (
+                outcome: Literal["passed", "failed", "missing", "not_applicable"] = (
                     "passed"
                     if node.status == "passed"
                     else "missing"

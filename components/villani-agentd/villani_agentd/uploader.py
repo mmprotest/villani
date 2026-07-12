@@ -170,12 +170,35 @@ class SynchronizationWorker:
                 self.spool.acknowledge_events(ids)
                 event_result = len(ids)
 
+        outcome_rows = self.spool.pending_finalizations(self.config.batch_size, now)
+        outcome_result = 0
+        for row in outcome_rows:
+            try:
+                self.client.request("POST", "/v1/outcomes", row["payload"]["outcome"])
+            except RemoteError as error:
+                if error.permanent:
+                    self.spool.dead_letter_finalization(row["run_id"], now, str(error))
+                else:
+                    delay = self._delay(int(row["retry_count"]) + 1, error.retry_after)
+                    self.spool.retry_finalization(
+                        row["run_id"],
+                        utc_text(datetime.now(timezone.utc) + timedelta(seconds=delay)),
+                        str(error),
+                    )
+            else:
+                self.spool.acknowledge_finalization(row["run_id"])
+                outcome_result += 1
+
         artifacts = self.spool.pending_artifacts(self.config.concurrency, now)
         artifact_result = 0
         if artifacts:
             with ThreadPoolExecutor(max_workers=self.config.concurrency) as executor:
                 artifact_result = sum(executor.map(self._sync_artifact, artifacts))
-        return {"events": event_result, "artifacts": artifact_result}
+        return {
+            "events": event_result,
+            "artifacts": artifact_result,
+            "outcomes": outcome_result,
+        }
 
     def _sync_artifact(self, row: dict[str, Any]) -> int:
         now = utc_text()

@@ -6,6 +6,7 @@ import io
 import json
 import os
 import signal
+import sqlite3
 import stat
 import sys
 import threading
@@ -30,6 +31,9 @@ from villani_agentd.server import AgentdHTTPServer, serve
 from villani_agentd.spool import CollisionError, LimitError, SQLiteSpool, SpoolError
 from villani_agentd.structured_log import StructuredLogger
 from villani_ops.closed_loop.protocol_v2 import ResourceV2, TelemetryEnvelopeV2
+from villani_ops.closed_loop.event_writer import EventWriter
+from villani_ops.closed_loop.run_store import RunStore
+from villani_ops.cli.agentd_sink import AgentdEventSink
 
 
 def _now() -> datetime:
@@ -206,6 +210,34 @@ def test_identical_event_batches_are_idempotent(paths: AgentdPaths) -> None:
     assert spool.status()["events"] == 2
 
 
+def test_canonical_event_writer_spools_same_run_identity(running_server, tmp_path) -> None:
+    _server, client, _endpoint, spool = running_server
+    store = RunStore(tmp_path / "runs", "run_canonical_1")
+    store.create()
+    writer = EventWriter(
+        store,
+        "trace_canonical_1",
+        _now,
+        event_sink=AgentdEventSink(client),
+    )
+
+    first = writer.emit("run_created", {"task_id": "task_1"})
+    second = writer.emit("classification_started")
+
+    assert [first.sequence, second.sequence] == [1, 2]
+    with sqlite3.connect(spool.paths.database) as connection:
+        run = connection.execute("SELECT run_id FROM runs").fetchone()
+        rows = connection.execute(
+            "SELECT run_id,sequence,payload_json FROM events ORDER BY sequence"
+        ).fetchall()
+    assert run[0] == "run_canonical_1"
+    assert [(row[0], row[1]) for row in rows] == [
+        ("run_canonical_1", 1),
+        ("run_canonical_1", 2),
+    ]
+    assert all(json.loads(row[2])["run_id"] == "run_canonical_1" for row in rows)
+
+
 def test_sequence_collision_with_different_content_is_rejected(paths: AgentdPaths) -> None:
     spool = SQLiteSpool(paths, Limits())
     spool.ingest_events([_event(1, event_id="evt_original")])
@@ -229,7 +261,7 @@ def test_committed_events_survive_spool_restart_and_wal_is_enabled(paths: Agentd
 
     with sqlite3.connect(paths.database) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
 
 
 def test_unknown_legacy_spool_layout_is_refused(paths: AgentdPaths) -> None:
@@ -371,7 +403,8 @@ def test_http_run_event_artifact_and_finalize_endpoints(running_server) -> None:
         "runs": 1,
         "events": 1,
         "artifacts": 1,
-        "pending_events": 1,
+            "pending_events": 1,
+            "pending_outcomes": 0,
         "dead_letters": 0,
         "upload_mode": "offline",
     }

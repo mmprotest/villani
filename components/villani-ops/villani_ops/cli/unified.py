@@ -1343,6 +1343,8 @@ def build_controller(
         )
     )
 
+    from villani_ops.cli.agentd_sink import build_agentd_event_sink
+
     return ClosedLoopController(
         classifier=_ClassifierAdapter(backends, configuration),
         policy_engine=policy,
@@ -1353,6 +1355,7 @@ def build_controller(
         selector=BuiltinSelectorPlugin(EvidenceSelectorAdapter()),
         materializer=BuiltinMaterializerPlugin(materializer_impl),
         on_event=on_event,
+        event_sink=build_agentd_event_sink(),
     )
 
 

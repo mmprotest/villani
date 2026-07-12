@@ -14,6 +14,13 @@ villani-agentd doctor
 
 The selected endpoint is written beneath `~/.villani/agentd`. Authentication material is stored separately with user-only permissions. The installer never starts the daemon automatically.
 
+If the daemon is already running, a normal public `villani run` automatically registers its
+canonical run, events, permitted artifact metadata, and final outcome in this spool. The daemon
+acknowledges events only after its SQLite transaction commits. It uses the public run's existing
+run ID and idempotent event/outcome keys; it does not create a telemetry-only run. Stopping agentd
+does not fail the coding run, and a later resume or run finalization replays locally committed
+events that remain pending.
+
 To opt into synchronization, exchange a one-time enrollment token and run a first sync:
 
 ```console

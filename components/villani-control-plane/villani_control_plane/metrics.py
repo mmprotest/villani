@@ -4,7 +4,7 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass
 from threading import Lock
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 
 class MetricsExporter(Protocol):
@@ -35,7 +35,7 @@ class OTLPHTTPMetricsExporter:
         self._reader = PeriodicExportingMetricReader(exporter)
         self._provider = MeterProvider(metric_readers=[self._reader])
         self._meter = self._provider.get_meter("villani-control-plane")
-        self._instruments: dict[str, object] = {}
+        self._instruments: dict[str, Any] = {}
         self._previous: dict[MetricKey, float] = {}
 
     def export(self, metrics: list[dict[str, object]]) -> None:
@@ -45,7 +45,7 @@ class OTLPHTTPMetricsExporter:
             if not isinstance(labels, dict):
                 labels = {}
             key = MetricKey(name, tuple(sorted((str(k), str(v)) for k, v in labels.items())))
-            value = float(metric["value"])
+            value = float(cast(float | int | str, metric["value"]))
             instrument = self._instruments.get(name)
             if instrument is None:
                 instrument = self._meter.create_up_down_counter(name)

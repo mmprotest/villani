@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ipaddress
+import base64
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Mapping
+from datetime import datetime
 
 from .config import AgentdPaths
 
@@ -81,3 +83,35 @@ class LocalClient:
 
     def status(self) -> dict[str, Any]:
         return self.request("GET", "/v1/status")
+
+    def open_run(self, run_id: str, trace_id: str, created_at: datetime) -> dict[str, Any]:
+        return self.request(
+            "POST",
+            "/v1/runs",
+            {
+                "run_id": run_id,
+                "trace_id": trace_id,
+                "created_at": created_at.isoformat().replace("+00:00", "Z"),
+            },
+        )
+
+    def submit_events(self, events: list[Mapping[str, Any]]) -> dict[str, Any]:
+        return self.request("POST", "/v1/events:batch", {"events": events})
+
+    def register_artifact(
+        self, run_id: str, descriptor: Mapping[str, Any], content: bytes
+    ) -> dict[str, Any]:
+        return self.request(
+            "POST",
+            "/v1/artifacts/register",
+            {
+                "run_id": run_id,
+                "descriptor": dict(descriptor),
+                "content_base64": base64.b64encode(content).decode("ascii"),
+            },
+        )
+
+    def finalize_run(self, run_id: str, outcome: Mapping[str, Any]) -> dict[str, Any]:
+        return self.request(
+            "POST", f"/v1/runs/{run_id}/finalize", {"outcome": dict(outcome)}
+        )

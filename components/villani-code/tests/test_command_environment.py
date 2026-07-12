@@ -147,9 +147,11 @@ def test_command_environment_diagnostics_are_artifact_only(tmp_path: Path, monke
                 tool_call_id=str(payload["tool_call_id"]),
             )
 
-    source_path = os.environ.get("PATH", "")
+    allowed_path = str(workspace / "system-tools")
     monkeypatch.setenv("RUNNER_RUNTIME_ROOT", str(private_root))
-    monkeypatch.setenv("PATH", os.pathsep.join((str(private_root / "bin"), source_path)))
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join((str(private_root / "bin"), allowed_path))
+    )
     monkeypatch.setenv("PRIVATE_STATE", str(private_root / "state"))
     result = execute_tool(
         "Bash",
@@ -169,6 +171,9 @@ def test_command_environment_diagnostics_are_artifact_only(tmp_path: Path, monke
         diagnostic["environment_variables_removed"]
     )
     assert diagnostic["path_entries_removed"] == 1
+    assert os.environ["PATH"] == os.pathsep.join(
+        (str(private_root / "bin"), allowed_path)
+    )
     assert diagnostic["runner_owned_variables_considered"] == ["RUNNER_RUNTIME_ROOT"]
     assert diagnostic["possible_private_path_variables_flagged"] == []
     assert diagnostic["cwd"] == str(workspace)

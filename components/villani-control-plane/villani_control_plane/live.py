@@ -40,7 +40,7 @@ class LiveBroker:
     def __init__(self, queue_size: int) -> None:
         self.queue_size = queue_size
         self.subscriptions: set[Subscription] = set()
-        self.delivered = deque(maxlen=10_000)
+        self.delivered: deque[str] = deque(maxlen=10_000)
         self.delivered_set: set[str] = set()
 
     def subscribe(

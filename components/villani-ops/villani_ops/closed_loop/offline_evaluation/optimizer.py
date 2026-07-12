@@ -39,7 +39,7 @@ class SegmentedPolicyOptimizer:
                 max_count = max(max_count, len(rows))
                 if len(rows) < self.minimum_samples:
                     continue
-                rate = fmean(float(row.success) for row in rows)
+                rate = fmean(1.0 if row.success is True else 0.0 for row in rows)
                 conservative = max(
                     0.0, rate - 1.96 * sqrt(rate * (1 - rate) / len(rows))
                 )

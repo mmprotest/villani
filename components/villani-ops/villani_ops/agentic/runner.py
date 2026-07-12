@@ -31,7 +31,9 @@ def _provider_failure(exc: Exception, backend) -> tuple[str, str, bool]:
     label = _backend_label(backend)
     if isinstance(exc, httpx.ConnectError):
         return 'backend_connection_error', f'Could not connect to backend: {label}', True
-    if isinstance(exc, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
+    if isinstance(exc, httpx.ConnectTimeout):
+        return 'backend_connection_error', f'Could not establish a backend connection before timeout: {label}', True
+    if isinstance(exc, (httpx.ReadTimeout, httpx.TimeoutException)):
         return 'backend_timeout', f'Backend timed out: {label}', True
     if isinstance(exc, httpx.HTTPStatusError):
         code = getattr(getattr(exc, 'response', None), 'status_code', 'unknown')

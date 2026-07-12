@@ -66,6 +66,19 @@ class OutcomeLedgerService:
             raise NotFoundError("run not found")
         return run
 
+    def _locked_run(self, principal: Principal, run_id: str) -> models.Run:
+        run = self.session.scalar(
+            select(models.Run)
+            .where(
+                models.Run.organization_id == principal.organization_id,
+                models.Run.id == run_id,
+            )
+            .with_for_update()
+        )
+        if run is None or run.workspace_id != principal.workspace_id:
+            raise NotFoundError("run not found")
+        return run
+
     def record_v2(
         self,
         document: dict[str, Any],
@@ -81,7 +94,7 @@ class OutcomeLedgerService:
             raise ServiceError(f"v2 schema validation failed: {error}") from error
         if not isinstance(parsed, OutcomeV2):
             raise ServiceError("outcome must use villani.outcome.v2")
-        run = self._run(principal, parsed.run_id)
+        run = self._locked_run(principal, parsed.run_id)
         if parsed.attempt_id:
             attempt = self.session.get(
                 models.Attempt, (principal.organization_id, parsed.attempt_id)
@@ -141,7 +154,7 @@ class OutcomeLedgerService:
         if parsed.latency_ms is not None:
             run.duration_ms = int(parsed.latency_ms)
         if parsed.accepted is True:
-            run.status = "accepted"
+            run.status = "COMPLETED" if parsed.materialized is True else "accepted"
         self.session.add(
             models.Outbox(
                 organization_id=principal.organization_id,

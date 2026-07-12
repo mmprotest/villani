@@ -115,7 +115,11 @@ class GovernanceService:
 
     def __init__(self, session: Session, hooks: dict[str, DLPHook] | None = None) -> None:
         self.session = session
-        self.hooks = {"builtin": BuiltinDLPHook(), "fake": FakeDLPHook(), **(hooks or {})}
+        self.hooks: dict[str, DLPHook] = {
+            "builtin": BuiltinDLPHook(),
+            "fake": FakeDLPHook(),
+            **(hooks or {}),
+        }
 
     def resolve(
         self, organization_id: str, workspace_id: str | None, project_id: str | None

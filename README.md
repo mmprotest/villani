@@ -80,6 +80,19 @@ villani resume RUN_ID
 villani resume --latest
 ```
 
+When `villani-agentd` is installed and already running, `villani run` automatically registers the
+same canonical run and sends each event to the daemon after the event is durably appended to the
+local run bundle. It does not start the daemon. If the daemon is absent, stopped, or temporarily
+unavailable, execution remains local-first and records the telemetry condition in
+`telemetry_diagnostics.jsonl` without changing the coding result. Enrollment and upload remain
+explicit opt-ins.
+
+The run ID printed by `villani run` is the identity used by the local run directory, daemon spool,
+control-plane run and outcome records, web run detail, and Flight Recorder replay. To verify a
+synchronized run, use `villani-agentd status`, run `villani-agentd sync-once` when enrolled, and
+look up that exact run ID in the control-plane/web run detail. Pending or degraded delivery remains
+inspectable in the local telemetry diagnostics and daemon status.
+
 `villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.
 
 The public execution path is `villani run`. `villani-ops run --orchestrator ...`, `villani-ops viewer ...`, and `villani-ops cost-run ...` remain compatibility-only interfaces and are not reachable from the public run command.

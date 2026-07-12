@@ -73,6 +73,55 @@ jobs:
       - run: mypy --follow-imports=skip --ignore-missing-imports villani_agentd
         working-directory: components/villani-agentd
 
+  villani-control-plane:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: villani
+          POSTGRES_PASSWORD: villani
+          POSTGRES_DB: villani_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U villani -d villani_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      VILLANI_TEST_POSTGRES_URL: postgresql+psycopg://villani:villani@127.0.0.1:5432/villani_test
+      VILLANI_CONTROL_PLANE_DATABASE_URL: postgresql+psycopg://villani:villani@127.0.0.1:5432/villani_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            components/villani-ops/pyproject.toml
+            components/villani-control-plane/pyproject.toml
+      - run: python -m pip install -e "components/villani-ops" -e "components/villani-control-plane[test]"
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: alembic upgrade head
+        working-directory: components/villani-control-plane
+      - run: alembic upgrade head --sql > "$RUNNER_TEMP/control-plane-migrations.sql"
+        working-directory: components/villani-control-plane
+      - run: python -m pytest -q --run-load-smoke --junitxml="$RUNNER_TEMP/control-plane-postgres.xml"
+        working-directory: components/villani-control-plane
+      - run: python scripts/assert-no-pytest-skips.py "$RUNNER_TEMP/control-plane-postgres.xml"
+      - run: python scripts/postgres-backup-restore-smoke.py
+      - run: ruff check villani_control_plane tests
+        working-directory: components/villani-control-plane
+      - run: mypy --follow-imports=skip --ignore-missing-imports villani_control_plane
+        working-directory: components/villani-control-plane
+      - uses: actions/upload-artifact@v4
+        with:
+          name: control-plane-postgres-evidence
+          path: |
+            ${{ runner.temp }}/control-plane-postgres.xml
+            ${{ runner.temp }}/control-plane-migrations.sql
+
   flight-recorder:
     strategy:
       fail-fast: false
@@ -101,6 +150,66 @@ jobs:
       - run: npm pack --dry-run
         working-directory: components/villani-flight-recorder
 
+  villani-run-model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: components/villani-run-model/package-lock.json
+      - run: npm ci
+        working-directory: components/villani-run-model
+      - run: npm audit --omit=dev
+        working-directory: components/villani-run-model
+      - run: npm test
+        working-directory: components/villani-run-model
+      - run: npm run typecheck
+        working-directory: components/villani-run-model
+      - run: npm run build
+        working-directory: components/villani-run-model
+
+  villani-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: |
+            components/villani-run-model/package-lock.json
+            components/villani-web/package-lock.json
+      - run: npm ci
+        working-directory: components/villani-run-model
+      - run: npm run build
+        working-directory: components/villani-run-model
+      - run: npm ci
+        working-directory: components/villani-web
+      - run: npx playwright install --with-deps chromium
+        working-directory: components/villani-web
+      - run: npm audit --omit=dev
+        working-directory: components/villani-web
+      - run: npm test
+        working-directory: components/villani-web
+      - run: npm run typecheck
+        working-directory: components/villani-web
+      - run: npm run build
+        working-directory: components/villani-web
+      - run: npm run format:check
+        working-directory: components/villani-web
+      - run: npm run e2e
+        working-directory: components/villani-web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: villani-web-playwright-failure
+          path: |
+            components/villani-web/playwright-report/
+            components/villani-web/test-results/
+          if-no-files-found: ignore
+
   cross-component:
     runs-on: ubuntu-latest
     steps:
@@ -118,7 +227,7 @@ jobs:
           node-version: lts/*
           cache: npm
           cache-dependency-path: components/villani-flight-recorder/package-lock.json
-      - run: python -m pip install -e "components/villani-code[dev]" -e "components/villani-ops[test]" -e "components/villani-agentd[test]"
+      - run: python -m pip install -e "components/villani-code[dev]" -e "components/villani-ops[test]" -e "components/villani-agentd[test]" -e "components/villani-control-plane[test]"
       - run: npm ci
         working-directory: components/villani-flight-recorder
       - run: npm run build

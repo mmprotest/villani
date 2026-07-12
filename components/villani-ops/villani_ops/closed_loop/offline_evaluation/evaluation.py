@@ -78,7 +78,7 @@ def evaluate_policy(
     if claim_causal_savings and (not provenance_complete or censored):
         refusal.append("invalid_causal_savings_claim")
     direct_success = _interval(
-        [float(row.success) for row in observed],
+        [1.0 if row.success is True else 0.0 for row in observed],
         minimum=minimum_sample_size,
         seed=bootstrap_seed,
     )
@@ -93,7 +93,9 @@ def evaluate_policy(
         seed=bootstrap_seed + 2,
     )
     ips_values = [
-        float(row.success) * row.target_probability / row.propensity
+        (1.0 if row.success is True else 0.0)
+        * row.target_probability
+        / row.propensity
         for row in observed
         if row.propensity is not None
     ]
@@ -114,13 +116,18 @@ def evaluate_policy(
         and row.target_outcome_prediction is not None
         and row.outcome_model_inputs
     ]
-    dr_values = [
-        row.target_outcome_prediction
-        + row.target_probability
-        / row.propensity
-        * (float(row.success) - row.logged_outcome_prediction)
-        for row in dr_rows
-    ]
+    dr_values: list[float] = []
+    for row in dr_rows:
+        assert row.propensity is not None
+        assert row.logged_outcome_prediction is not None
+        assert row.target_outcome_prediction is not None
+        success = 1.0 if row.success is True else 0.0
+        dr_values.append(
+            row.target_outcome_prediction
+            + row.target_probability
+            / row.propensity
+            * (success - row.logged_outcome_prediction)
+        )
     dr = _interval(dr_values, minimum=minimum_sample_size, seed=bootstrap_seed + 4)
     if len(dr_rows) != len(observed):
         refusal.append("doubly_robust_model_inputs_incomplete")
@@ -135,7 +142,7 @@ def evaluate_policy(
             if row.logged_outcome_prediction is not None
         ]
         predicted = fmean(predictions) if len(predictions) == len(values) else None
-        actual = fmean(float(row.success) for row in values)
+        actual = fmean(1.0 if row.success is True else 0.0 for row in values)
         calibration.append(
             SegmentCalibration(
                 segment=segment,

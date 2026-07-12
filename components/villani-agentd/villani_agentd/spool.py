@@ -59,9 +59,9 @@ class SQLiteSpool:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=FULL")
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if version > 2:
+            if version > 3:
                 raise SpoolError(
-                    f"spool schema version {version} is newer than supported version 2"
+                    f"spool schema version {version} is newer than supported version 3"
                 )
             existing_tables = {
                 str(row[0])
@@ -86,7 +86,12 @@ class SQLiteSpool:
                     trace_id TEXT,
                     created_at TEXT NOT NULL,
                     finalized_at TEXT,
-                    final_payload_json TEXT
+                    final_payload_json TEXT,
+                    upload_state TEXT NOT NULL DEFAULT 'offline',
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at TEXT,
+                    last_error TEXT,
+                    dead_lettered_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS events (
                     event_id TEXT PRIMARY KEY,
@@ -135,6 +140,20 @@ class SQLiteSpool:
                     if name not in artifact_columns:
                         connection.execute(f"ALTER TABLE artifacts ADD COLUMN {name} {definition}")
                 connection.execute("PRAGMA user_version=2")
+            if version < 3:
+                run_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(runs)")
+                }
+                for name, definition in (
+                    ("upload_state", "TEXT NOT NULL DEFAULT 'offline'"),
+                    ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
+                    ("next_retry_at", "TEXT"),
+                    ("last_error", "TEXT"),
+                    ("dead_lettered_at", "TEXT"),
+                ):
+                    if name not in run_columns:
+                        connection.execute(f"ALTER TABLE runs ADD COLUMN {name} {definition}")
+                connection.execute("PRAGMA user_version=3")
 
     def register_run(self, run_id: str, trace_id: str | None, created_at: str) -> bool:
         if not run_id:
@@ -320,10 +339,26 @@ class SQLiteSpool:
                     "INSERT OR IGNORE INTO runs(run_id, trace_id, created_at) VALUES(?,?,?)",
                     (run_id, None, finalized_at),
                 )
-                connection.execute(
-                    "UPDATE runs SET finalized_at=?, final_payload_json=? WHERE run_id=?",
-                    (finalized_at, normalized, run_id),
-                )
+                existing = connection.execute(
+                    "SELECT final_payload_json FROM runs WHERE run_id=?", (run_id,)
+                ).fetchone()
+                if existing is not None and existing["final_payload_json"] is not None:
+                    if existing["final_payload_json"] != normalized:
+                        raise CollisionError(
+                            f"run {run_id!r} already has a different final outcome"
+                        )
+                else:
+                    connection.execute(
+                        """UPDATE runs SET finalized_at=?, final_payload_json=?,
+                           upload_state=?,retry_count=0,next_retry_at=NULL,
+                           last_error=NULL,dead_lettered_at=NULL WHERE run_id=?""",
+                        (
+                            finalized_at,
+                            normalized,
+                            "offline" if outcome is not None else "acknowledged",
+                            run_id,
+                        ),
+                    )
                 connection.execute("COMMIT")
             except BaseException:
                 connection.execute("ROLLBACK")
@@ -337,6 +372,12 @@ class SQLiteSpool:
             pending = int(
                 connection.execute(
                     "SELECT COUNT(*) FROM events WHERE upload_state IN ('offline','retry')"
+                ).fetchone()[0]
+            )
+            pending_outcomes = int(
+                connection.execute(
+                    """SELECT COUNT(*) FROM runs WHERE final_payload_json IS NOT NULL
+                       AND upload_state IN ('offline','retry')"""
                 ).fetchone()[0]
             )
             dead_letters = int(
@@ -353,9 +394,53 @@ class SQLiteSpool:
             "events": event_count,
             "artifacts": artifact_count,
             "pending_events": pending,
+            "pending_outcomes": pending_outcomes,
             "dead_letters": dead_letters,
             "upload_mode": "offline",
         }
+
+    def pending_finalizations(self, limit: int, now: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT run_id,final_payload_json,retry_count FROM runs
+                   WHERE final_payload_json IS NOT NULL
+                     AND upload_state IN ('offline','retry')
+                     AND (next_retry_at IS NULL OR next_retry_at<=?)
+                   ORDER BY finalized_at,run_id LIMIT ?""",
+                (now, limit),
+            ).fetchall()
+        return [
+            {
+                "run_id": row["run_id"],
+                "payload": json.loads(row["final_payload_json"]),
+                "retry_count": row["retry_count"],
+            }
+            for row in rows
+        ]
+
+    def acknowledge_finalization(self, run_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE runs SET upload_state='acknowledged',next_retry_at=NULL,
+                   last_error=NULL WHERE run_id=?""",
+                (run_id,),
+            )
+
+    def retry_finalization(self, run_id: str, next_retry_at: str, error: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE runs SET upload_state='retry',retry_count=retry_count+1,
+                   next_retry_at=?,last_error=? WHERE run_id=?""",
+                (next_retry_at, error[:500], run_id),
+            )
+
+    def dead_letter_finalization(self, run_id: str, now: str, error: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE runs SET upload_state='dead_letter',dead_lettered_at=?,
+                   last_error=? WHERE run_id=?""",
+                (now, error[:500], run_id),
+            )
 
     def pending_events(self, limit: int, now: str) -> list[dict[str, Any]]:
         with self._connect() as connection:

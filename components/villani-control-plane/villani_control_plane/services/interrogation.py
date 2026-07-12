@@ -309,8 +309,10 @@ class QueryPlanValidator:
                     )
                 }
             )
-        start = plan.time_range.start
-        end = plan.time_range.end
+        time_range = plan.time_range
+        assert time_range is not None
+        start = time_range.start
+        end = time_range.end
         if (
             start.tzinfo is None
             or end.tzinfo is None
@@ -330,11 +332,14 @@ class QueryPlanCompiler:
 
     def compile(self, authorized: AuthorizedPlan) -> CompiledQuery:
         plan = authorized.plan
+        time_range = plan.time_range
+        if time_range is None:
+            raise ServiceError("validated QueryPlan is missing a time range")
         parameters: dict[str, Any] = {
             "scope_organization_id": authorized.scope.organization_id,
             "scope_workspace_id": authorized.scope.workspace_id,
-            "time_start": plan.time_range.start,
-            "time_end": plan.time_range.end,
+            "time_start": time_range.start,
+            "time_end": time_range.end,
         }
         predicates = [
             "organization_id = :scope_organization_id",
@@ -351,6 +356,8 @@ class QueryPlanCompiler:
                 continue
             operator = {"eq": "=", "ne": "!=", "gte": ">=", "lte": "<="}.get(item.operator)
             if item.operator == "in":
+                if not isinstance(item.value, list):
+                    raise ServiceError("validated IN filter is not a list")
                 names = []
                 for value_index, value in enumerate(item.value):
                     name = f"filter_{index}_{value_index}"
@@ -364,7 +371,11 @@ class QueryPlanCompiler:
         select_parts = [f"{column} AS {name}" for name, column in dimensions]
         select_parts.extend(f"{METRICS[name]['expression']} AS {name}" for name in plan.metrics)
         where = " AND ".join(predicates)
-        group = f" GROUP BY {','.join(column for _, column in dimensions)}" if dimensions else ""
+        group = (
+            f" GROUP BY {','.join(str(column) for _, column in dimensions)}"
+            if dimensions
+            else ""
+        )
         order = f" ORDER BY {','.join(name for name, _ in dimensions)}" if dimensions else ""
         parameters["result_limit"] = plan.limit
         sql = f"SELECT {','.join(select_parts)} FROM {self.TABLE} WHERE {where}{group}{order} LIMIT :result_limit"
@@ -593,6 +604,8 @@ class NaturalLanguageInterrogationService:
 
     @staticmethod
     def _interpret(plan: QueryPlan) -> str:
+        if plan.time_range is None:
+            raise ServiceError("validated QueryPlan is missing a time range")
         metrics = ", ".join(plan.metrics)
         grouping = f" grouped by {', '.join(plan.dimensions)}" if plan.dimensions else ""
         return f"Compute {metrics}{grouping} between {plan.time_range.start.isoformat()} and {plan.time_range.end.isoformat()} with {len(plan.filters)} structured filter(s)."

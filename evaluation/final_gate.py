@@ -112,8 +112,14 @@ def report() -> dict[str, object]:
             "raw_run_references": [row.run_reference for row in group],
         }
     return {
-        "schema_version": "villani.final_evaluation.v1",
-        "measurement": "deterministic_protocol_fixtures",
+        "schema_version": "villani.protocol_fixture_evaluation.v1",
+        "measurement": "protocol_and_schema_fixture_only",
+        "evidence_limitations": {
+            "model_invoked": False,
+            "coding_task_attempted": False,
+            "routing_quality_conclusion_supported": False,
+            "cost_savings_conclusion_supported": False,
+        },
         "lock": LOCK,
         "strategies": strategies,
         "uncertainty": {
@@ -128,17 +134,10 @@ def report() -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run deterministic final Villani evaluation"
+        description="Generate the deterministic protocol/schema fixture evaluation"
     )
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument(
-        "--live", action="store_true", help="opt in to configured live providers"
-    )
     args = parser.parse_args(argv)
-    if args.live:
-        raise SystemExit(
-            "live evaluation requires separately configured providers and is not an ordinary CI gate"
-        )
     result = report()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

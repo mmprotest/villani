@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import importlib
 import os
 import shutil
 import subprocess
 import sys
 import threading
+import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from collections import deque
 from pathlib import Path
@@ -26,6 +28,11 @@ from villani_ops.closed_loop import (
 from villani_ops.closed_loop.interfaces import Classification
 from villani_ops.closed_loop.interfaces import EvidenceItem, Requirement, Verification
 from villani_ops.closed_loop.policy import configured_backends
+from villani_ops.cli.agentd_sink import build_agentd_event_sink
+from villani_agentd.config import AgentdPaths, Limits, ServerConfig
+from villani_agentd.server import AgentdHTTPServer
+from villani_agentd.spool import SQLiteSpool
+from villani_agentd.structured_log import StructuredLogger
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,7 +59,8 @@ def _tiny_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "target"
     repo.mkdir()
     (repo / "calculator.py").write_text(
-        "def add(a, b):\n    return a - b\n", encoding="utf-8"
+        "def add(a, b):\n    # deliberately wrong baseline\n    return a - b\n",
+        encoding="utf-8",
     )
     (repo / "test_calculator.py").write_text(
         "import unittest\n\n"
@@ -76,6 +84,8 @@ def _tiny_repo(tmp_path: Path) -> Path:
         capture_output=True,
     )
     assert failing.returncode != 0, "the target fixture must start with a failing test"
+    shutil.rmtree(repo / "__pycache__", ignore_errors=True)
+    importlib.invalidate_caches()
     return repo
 
 
@@ -207,9 +217,33 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     repo = _tiny_repo(tmp_path)
     executable = _fake_executable(tmp_path)
     monkeypatch.setenv("VILLANI_HOME", str(home))
+    raw_secret = "complete-path-secret-canary-91bc"
+    monkeypatch.setenv("VILLANI_E2E_API_SECRET", raw_secret)
     # Force the prompt through --task-file so the fake executable receives one
     # deterministic argument vector on both Windows batch and POSIX shells.
     monkeypatch.setenv("VILLANI_CODE_INLINE_PROMPT_LIMIT", "1")
+    agentd_paths = AgentdPaths(home / "agentd")
+    agentd_token = "root-e2e-local-agentd-token"
+    spool = SQLiteSpool(agentd_paths, Limits())
+    agentd_server = AgentdHTTPServer(
+        ("127.0.0.1", 0),
+        agentd_token,
+        spool,
+        ServerConfig(),
+        StructuredLogger(agentd_paths.log),
+    )
+    agentd_thread = threading.Thread(target=agentd_server.serve_forever, daemon=True)
+    agentd_thread.start()
+    agentd_paths.endpoint.write_text(
+        json.dumps(
+            {
+                "schema_version": "villani.agentd_endpoint.v1",
+                "endpoint": f"http://127.0.0.1:{agentd_server.server_port}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    agentd_paths.token.write_text(agentd_token, encoding="utf-8")
     runner = CliRunner()
     initialized = runner.invoke(unified.app, ["init"])
     assert initialized.exit_code == 0, initialized.output
@@ -219,15 +253,17 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
         "economy": {
             "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-small",
             "roles": ["classification", "coding"], "capability_score": 25,
-            "billing_mode": "fixed", "fixed_cost_per_attempt": 0.10,
+            "billing_mode": "unknown",
             "command_name": str(executable),
+            "api_key_env": "VILLANI_E2E_API_SECRET",
             "metadata": {"allow_dummy_api_key": True},
         },
         "capable": {
             "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-large",
             "roles": ["coding"], "capability_score": 90,
-            "billing_mode": "fixed", "fixed_cost_per_attempt": 0.50,
+            "billing_mode": "unknown",
             "command_name": str(executable),
+            "api_key_env": "VILLANI_E2E_API_SECRET",
             "metadata": {"allow_dummy_api_key": True},
         },
     }
@@ -249,6 +285,7 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
             selector=EvidenceSelectorAdapter(),
             materializer=PatchMaterializerAdapter(),
             on_event=on_event,
+            event_sink=build_agentd_event_sink(),
         )
 
     monkeypatch.setattr(unified, "_controller_builder", builder)
@@ -281,7 +318,8 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     assert manifest["total_input_tokens"] == 22
     assert manifest["total_output_tokens"] == 10
     assert manifest["total_duration_ms"] == 50
-    assert manifest["total_cost_usd"] == 0.60
+    assert manifest["total_cost_usd"] is None
+    assert manifest["cost_accounting_status"] == "unknown"
     assert (repo / "calculator.py").read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
     _run([sys.executable, "-m", "unittest", "-q"], repo)
 
@@ -303,7 +341,116 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     assert "attempt_001" in html and "attempt_002" in html
     assert "attempt_002" in html and "fake-large" in html
     assert "32" in html and "total tokens" in html and "50ms" in html
-    assert "0.600000" in html or "0.60" in html
+    assert "Unknown" in html
+    assert raw_secret not in html
+
+    with sqlite3.connect(agentd_paths.database) as connection:
+        spooled_runs = connection.execute("SELECT run_id FROM runs").fetchall()
+        spooled_events = connection.execute(
+            "SELECT payload_json FROM events ORDER BY sequence"
+        ).fetchall()
+        final_payload = connection.execute(
+            "SELECT final_payload_json FROM runs WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+    assert spooled_runs == [(run_id,)]
+    assert len(spooled_events) == len(events)
+    remote_events = [json.loads(row[0]) for row in spooled_events]
+    assert {event["run_id"] for event in remote_events} == {run_id}
+    outcome = json.loads(final_payload)["outcome"]
+    assert outcome["run_id"] == run_id
+    assert outcome["attempt_id"] == "attempt_002"
+    assert outcome["cost"] is None
+    assert raw_secret.encode() not in agentd_paths.database.read_bytes()
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+    from villani_control_plane.database import Base, get_session
+    from villani_control_plane.main import create_app
+    from villani_control_plane.models import (
+        ApiToken,
+        Organization,
+        Project,
+        Repository,
+        Workspace,
+    )
+    from villani_control_plane.security import (
+        Principal,
+        hash_token,
+        token_lookup_digest,
+    )
+    from villani_control_plane.services import IngestionService
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    api_token = "root-e2e-control-plane-token-long-enough"
+    with Session(engine) as session:
+        session.add(Organization(id="org_e2e", name="E2E"))
+        session.flush()
+        session.add(Workspace(organization_id="org_e2e", id="workspace_e2e", name="E2E"))
+        session.flush()
+        session.add(
+            Project(
+                organization_id="org_e2e",
+                workspace_id="workspace_e2e",
+                id="project_e2e",
+                name="E2E",
+            )
+        )
+        session.flush()
+        session.add(
+            Repository(
+                organization_id="org_e2e",
+                workspace_id="workspace_e2e",
+                project_id="project_e2e",
+                id="repo_e2e",
+                name="E2E",
+            )
+        )
+        session.flush()
+        token_record = ApiToken(
+            organization_id="org_e2e",
+            workspace_id="workspace_e2e",
+            name="e2e",
+            lookup_digest=token_lookup_digest(api_token),
+            secret_hash=hash_token(api_token),
+        )
+        session.add(token_record)
+        session.commit()
+        principal = Principal(token_record.id, "org_e2e", "workspace_e2e")
+        service = IngestionService(session)
+        first_ingest = service.ingest_batch("root-e2e-batch", remote_events, principal)
+        retry_ingest = service.ingest_batch("root-e2e-batch", remote_events, principal)
+        assert first_ingest.inserted == len(remote_events)
+        assert retry_ingest.replayed is True
+        service.record_outcome(outcome, principal)
+        service.record_outcome(outcome, principal)
+        app = create_app()
+        app.dependency_overrides[get_session] = lambda: session
+        api = TestClient(app)
+        detail = api.get(
+            f"/v1/runs/{run_id}",
+            headers={"Authorization": f"Bearer {api_token}"},
+        )
+        assert detail.status_code == 200, detail.text
+        detail_body = detail.json()
+        assert detail_body["id"] == run_id
+        assert len(detail_body["outcomes"]) == 1
+        assert detail_body["outcomes"][0]["attempt_id"] == "attempt_002"
+        assert detail_body["outcomes"][0]["accepted"] is True
+        assert detail_body["outcomes"][0]["cost"] is None
+        assert detail_body["status"] == "COMPLETED"
+        assert raw_secret not in detail.text
+    engine.dispose()
+
+    agentd_server.shutdown()
+    agentd_server.server_close()
+    agentd_thread.join(timeout=5)
     secret_scan = _run(
         [sys.executable, str(ROOT / "scripts" / "check-secrets.py"), str(run_dir)],
         ROOT,
@@ -395,6 +542,9 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
             "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
             "http_proxy", "https_proxy", "all_proxy",
             "NO_PROXY", "no_proxy",
+            "GIT_ASKPASS", "SSH_ASKPASS",
+            "VSCODE_GIT_ASKPASS_NODE", "VSCODE_GIT_ASKPASS_EXTRA_ARGS",
+            "VSCODE_GIT_ASKPASS_MAIN", "VSCODE_GIT_IPC_HANDLE",
         )
         for name in proxy_names:
             environment.pop(name, None)

@@ -10,6 +10,7 @@ from typing import Any
 
 from .protocol import EventEnvelope
 from .run_store import RunStore
+from .event_sink import RunEventDelivery, RunEventSink
 from villani_ops.execution_environment.secrets import registered_secret_values
 
 
@@ -87,11 +88,15 @@ class EventWriter:
         trace_id: str,
         now: Callable[[], datetime],
         on_event: Callable[[EventEnvelope], None] | None = None,
+        event_sink: RunEventSink | None = None,
     ) -> None:
         self._store = store
         self._trace_id = trace_id
         self._now = now
         self._on_event = on_event
+        self._delivery = (
+            RunEventDelivery(store, event_sink, now) if event_sink is not None else None
+        )
 
     def emit(
         self,
@@ -110,6 +115,8 @@ class EventWriter:
             event_type=event_type,
             payload=payload or {},
         )
+        if self._delivery is not None:
+            self._delivery.event_persisted(event)
         if self._on_event is not None:
             try:
                 self._on_event(event)
@@ -117,3 +124,7 @@ class EventWriter:
                 # Console observers are advisory and run after durable persistence.
                 pass
         return event
+
+    def finalize_delivery(self) -> None:
+        if self._delivery is not None:
+            self._delivery.finalize()

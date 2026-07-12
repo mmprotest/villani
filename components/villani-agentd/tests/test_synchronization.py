@@ -34,6 +34,7 @@ class FakeClient:
     def __init__(self, failures: list[str] | None = None) -> None:
         self.failures = list(failures or [])
         self.batches: list[list[dict]] = []
+        self.outcomes: list[dict] = []
         self.uploaded = b""
 
     def _fail(self, boundary: str) -> None:
@@ -53,6 +54,10 @@ class FakeClient:
                 "upload_id": "upload",
                 "upload_instruction": {"method": "PUT", "url": "http://upload", "headers": {}},
             }
+        if path == "/v1/outcomes":
+            self._fail("outcome")
+            self.outcomes.append(body)
+            return {"outcome": {"created": True}}
         if path.endswith("/complete"):
             self._fail("complete")
             return {"status": "available"}
@@ -126,6 +131,27 @@ def test_artifact_disconnects_at_every_boundary_do_not_lose_bytes(tmp_path) -> N
         )
 
 
+def test_offline_finalization_retries_and_uploads_one_outcome(tmp_path) -> None:
+    paths = AgentdPaths(tmp_path / "agentd")
+    spool = SQLiteSpool(paths, Limits())
+    outcome = json.loads((FIXTURE / "outcome.json").read_text(encoding="utf-8"))
+    run_id = outcome["run_id"]
+    spool.finalize_run(run_id, {"outcome": outcome}, "2026-07-12T00:00:00Z")
+    spool.finalize_run(run_id, {"outcome": outcome}, "2026-07-12T00:00:00Z")
+    client = FakeClient(["outcome"])
+    sync = worker(paths, client)
+
+    assert sync.sync_once()["outcomes"] == 0
+    assert spool.status()["pending_outcomes"] == 1
+    assert sync.sync_once()["outcomes"] == 1
+    assert client.outcomes == [outcome]
+    assert sync.sync_once()["outcomes"] == 0
+    with sqlite3.connect(paths.database) as connection:
+        assert connection.execute(
+            "SELECT upload_state FROM runs WHERE run_id=?", (run_id,)
+        ).fetchone()[0] == "acknowledged"
+
+
 def test_backoff_is_exponential_with_full_jitter_and_retry_after_wins(tmp_path) -> None:
     sync = worker(AgentdPaths(tmp_path / "agentd"), FakeClient())
     assert 0 <= sync._delay(3, None) <= 8
@@ -186,7 +212,7 @@ def test_version_one_spool_upgrades_without_losing_pending_event(tmp_path) -> No
     spool = SQLiteSpool(paths, Limits())
     assert spool.status()["pending_events"] == 1
     with sqlite3.connect(paths.database) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
         assert "dead_lettered_at" in {
             row[1] for row in connection.execute("PRAGMA table_info(events)")
         }

@@ -1,4 +1,4 @@
-# Final deterministic evaluation
+# Protocol/schema fixture evaluation
 
 Command:
 
@@ -9,7 +9,8 @@ python evaluation/final_gate.py --output evaluation/results/final-foundation.jso
 The locked fixture environment uses `deterministic-fixture-agent@1`, cheap/strong fixture models
 at version 1, `closed-loop-system@v1`, `verification-graph@v1`, Python 3.11, and protocol v2.
 There are 20 deterministic observations per strategy. Results are fixture measurements, not live
-provider performance.
+provider performance. It invokes no model, attempts no coding task, and supports no routing-quality
+or cost-savings conclusion.
 
 | Strategy | Verified success (95% Wilson CI) | False accept / reject | Cost per accepted | Wall ms | Attempts / escalations | Verifier cost |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -24,11 +25,16 @@ fixture cost units. The locked minimum for a savings claim is 30 observations pe
 **no savings claim is supported**. Raw `fixture://` run references and all confidence intervals are
 in the JSON report. No benchmark-specific production routing logic was added.
 
-An opt-in live evaluation is intentionally separate:
+An opt-in live evaluation is intentionally separate. Copy and version the example manifest, then
+execute the real public path explicitly:
 
 ```console
-python evaluation/final_gate.py --live --output evaluation/results/live.json
+python evaluation/live_evaluation.py --manifest evaluation/live-task-manifest.example.json --output evaluation/results/live.json --execute
 ```
 
-It exits unless providers, credentials, immutable version locks, and an approved cost budget are
-configured. Live evaluation is not part of ordinary CI and no live/paid measurement is claimed.
+The live entry point supports `strong-only`, `cheap-only`, `cheap-first-escalation`,
+`strong-first`, and `adaptive`; records real run IDs plus model/provider/prompt/verifier,
+environment, and repository revisions; and computes verified success, false acceptance/rejection,
+costs, attempts, escalation value, wall time, and confidence intervals. It refuses to claim
+savings below the manifest's minimum sample size and never changes production routing. Live paid
+evaluation is not part of ordinary pull-request CI and no live/paid measurement is claimed here.

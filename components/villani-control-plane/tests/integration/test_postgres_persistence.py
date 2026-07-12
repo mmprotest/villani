@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -15,9 +16,10 @@ from alembic import command
 from villani_control_plane import models
 from villani_control_plane.errors import AuthorizationError, ConflictError, NotFoundError
 from villani_control_plane.models import Event, IngestBatch, Outbox
-from villani_control_plane.schemas import RemoteTaskRequest
+from villani_control_plane.schemas import RemoteTaskRequest, TaskCompletionRequest
 from villani_control_plane.security import Principal
 from villani_control_plane.services import (
+    GovernanceService,
     IngestionService,
     RemoteDispatchService,
     RunQueryService,
@@ -171,6 +173,83 @@ def test_concurrent_duplicate_batch_creates_one_event(postgres_engine) -> None:
         assert session.scalar(select(func.count()).select_from(Outbox)) == 1
 
 
+def test_concurrent_outcome_finalization_creates_one_version(postgres_engine) -> None:
+    with postgres_engine.begin() as connection:
+        connection.execute(text("TRUNCATE organizations CASCADE"))
+    with Session(postgres_engine) as session:
+        principal = seed_tenant(session)
+        IngestionService(session).ingest_batch("outcome-run", [make_event(1)], principal)
+    outcome = load_v2_fixture("outcome.json")
+    outcome.update(run_id="run_pg", attempt_id=None, cost=None, currency=None)
+
+    def finalize() -> int:
+        with Session(postgres_engine) as session:
+            IngestionService(session).record_outcome(outcome, principal)
+            return int(
+                session.scalar(select(func.count()).select_from(models.Outcome)) or 0
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        versions = list(executor.map(lambda _index: finalize(), range(2)))
+    assert versions == [1, 1]
+    with Session(postgres_engine) as session:
+        assert session.scalar(select(func.count()).select_from(models.Outcome)) == 1
+
+
+def test_outbox_skip_locked_claim_and_expired_lease_recovery(postgres_engine) -> None:
+    with postgres_engine.begin() as connection:
+        connection.execute(text("TRUNCATE organizations CASCADE"))
+    with Session(postgres_engine) as session:
+        principal = seed_tenant(session)
+        IngestionService(session).ingest_batch("outbox-run", [make_event(1)], principal)
+
+    def claim(owner: str) -> list[str]:
+        with Session(postgres_engine) as session:
+            now = models.utc_now()
+            rows = list(
+                session.scalars(
+                    select(models.Outbox)
+                    .where(
+                        models.Outbox.published_at.is_(None),
+                        (models.Outbox.leased_until.is_(None))
+                        | (models.Outbox.leased_until < now),
+                    )
+                    .with_for_update(skip_locked=True)
+                    .limit(1)
+                )
+            )
+            for row in rows:
+                row.lease_owner = owner
+                row.leased_until = now + timedelta(seconds=30)
+            session.commit()
+            return [row.id for row in rows]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        claims = list(executor.map(claim, ("one", "two")))
+    assert sum(bool(value) for value in claims) == 1
+    with Session(postgres_engine) as session:
+        row = session.scalar(select(models.Outbox))
+        assert row is not None
+        row.leased_until = models.utc_now() - timedelta(seconds=1)
+        session.commit()
+    assert claim("recovery")
+
+
+def test_postgres_deletion_workflow_respects_legal_hold(pg_session) -> None:
+    principal = seed_tenant(pg_session)
+    IngestionService(pg_session).ingest_batch("delete-run", [make_event(1)], principal)
+    service = GovernanceService(pg_session)
+    hold = service.place_hold(principal, "run", "run_pg", "litigation")
+    with pytest.raises(ConflictError, match="legal hold"):
+        service.request_deletion(principal, "run", "run_pg")
+    hold.active = False
+    pg_session.commit()
+    workflow = service.request_deletion(principal, "run", "run_pg")
+    completed = service.complete_deletion(principal, workflow.id)
+    assert completed.state == "completed"
+    assert completed.completion_evidence["tombstone_sha256"]
+
+
 def test_cursor_pagination_and_representative_query_plans_use_indexes(pg_session) -> None:
     principal = seed_tenant(pg_session)
     IngestionService(pg_session).ingest_batch(
@@ -264,6 +343,7 @@ def test_two_postgres_workers_racing_cannot_own_the_same_live_lease(postgres_eng
                     "platforms": ["linux"],
                     "data_residency_labels": ["au-sydney"],
                 },
+                "max_attempts": 2,
             }
         )
         service.submit(request, principal)
@@ -324,4 +404,52 @@ def test_two_postgres_workers_racing_cannot_own_the_same_live_lease(postgres_eng
                     'UPDATE remote_tasks SET task_input=\'{"goal":"mutated"}\'::jsonb '
                     "WHERE organization_id='org_1' AND id='race-task'"
                 )
+            )
+
+    winner = 1 if claims[0] is not None else 2
+    loser = 2 if winner == 1 else 1
+    first = claims[winner - 1]
+    assert first is not None
+    winner_principal = Principal(
+        f"worker-{winner}", "org_1", "workspace_1", f"installation-{winner}"
+    )
+    loser_principal = Principal(
+        f"worker-{loser}", "org_1", "workspace_1", f"installation-{loser}"
+    )
+    with Session(postgres_engine) as session:
+        renewed = RemoteDispatchService(session).renew(
+            "race-task", first["lease_id"], winner_principal
+        )
+        assert renewed["expires_at"]
+        lease = session.get(models.TaskLease, ("org_1", first["lease_id"]))
+        assert lease is not None
+        lease.expires_at = models.utc_now() - timedelta(seconds=1)
+        session.commit()
+    with Session(postgres_engine) as session:
+        first_retry = RemoteDispatchService(session).claim(
+            f"worker-{loser}", loser_principal
+        ).task
+        assert first_retry is None
+        task = session.get(models.RemoteTask, ("org_1", "race-task"))
+        assert task is not None
+        task.next_eligible_at = models.utc_now() - timedelta(seconds=1)
+        session.commit()
+    with Session(postgres_engine) as session:
+        reassigned = RemoteDispatchService(session).claim(
+            f"worker-{loser}", loser_principal
+        ).task
+        assert reassigned is not None
+        assert reassigned["lease_id"] != first["lease_id"]
+        with pytest.raises(ConflictError):
+            RemoteDispatchService(session).complete(
+                "race-task",
+                first["lease_id"],
+                TaskCompletionRequest(
+                    idempotency_key="stale-completion",
+                    finalization_idempotency_key=first["finalization_idempotency_key"],
+                    status="succeeded",
+                    materialized=True,
+                    finalized=True,
+                ),
+                winner_principal,
             )

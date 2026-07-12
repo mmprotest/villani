@@ -198,7 +198,6 @@ class IngestionService:
         quotas = QuotaService(self.session)
         governance = GovernanceService(self.session)
         project_hint = next((event.project_id for event in parsed if event.project_id), None)
-        quotas.consume(principal, "events", len(parsed), f"batch:{batch_id}", project_hint)
         if principal.installation_id:
             if len(parsed) > settings.max_installation_batch_events:
                 raise RateLimitError("installation batch event limit exceeded")
@@ -300,6 +299,10 @@ class IngestionService:
             if existing is None or existing.payload_sha256 != batch_digest:
                 raise ConflictError(f"batch_id {batch_id!r} collided")
             return BatchIngestionResult(batch_id, 0, len(parsed), True)
+
+        # Charge only the transaction that durably owns the batch identity.
+        # Concurrent replays return above after the unique batch row serializes them.
+        quotas.consume(principal, "events", len(parsed), f"batch:{batch_id}", project_hint)
 
         inserted = 0
         duplicates = 0

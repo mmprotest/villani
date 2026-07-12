@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`First Villani local-daemon core pass: complete`
+`Consolidation and release-truth pass: blocked on pre-existing full Villani Ops Ruff debt`
 
 ### Milestone status
 
@@ -2338,3 +2338,74 @@ Remaining risks and unsupported integrations:
 
 Next permitted milestone:
 - None. The requested final foundational enterprise pass stopped here; no unrelated product feature or later milestone was started.
+
+#### 2026-07-12: Consolidation and release-truth implementation pass
+
+Status: blocked; implementation and configured CI gates pass, but the explicitly requested
+unscoped `ruff check` for all Villani Ops sources still reports 5,012 pre-existing legacy findings
+(`E401`, `E402`, `E701`, `E702`, `E703`, `E731`, `E741`, `F401`, `F403`, `F405`, `F541`,
+`F601`, `F811`, and `F841`) outside the configured release scope. That debt was
+not hidden by changing Ruff configuration, and an unrelated broad legacy rewrite was not started.
+
+Changed files:
+- Added the closed-loop event-sink contract and delivery lifecycle in
+  `components/villani-ops/villani_ops/closed_loop/event_sink.py`, the CLI-owned agentd adapter in
+  `components/villani-ops/villani_ops/cli/agentd_sink.py`, and narrow controller/event-writer
+  composition. Extended agentd client, spool schema, finalization upload, retry, and idempotency.
+- Corrected backend connection classification, hermetic PATH and stale-bytecode fixtures,
+  special-file capability tests, the named Ops/control-plane typing errors, concurrent ingestion
+  quota ownership, and concurrent outcome finalization.
+- Expanded PostgreSQL integration/load coverage, added no-skip and backup/restore release scripts,
+  added architecture and full CLI-to-web integration tests, and added dedicated control-plane,
+  web, and run-model CI jobs.
+- Relabeled `evaluation/final_gate.py` as a protocol/schema fixture and added the opt-in manifest
+  driven `evaluation/live_evaluation.py`. Updated release limitations and component/root README
+  files with run-ID continuity, offline fallback, test evidence, and unsupported integrations.
+
+Architectural decisions:
+- One run ID is created by the existing public CLI/controller path. Local events are durably
+  appended before daemon delivery. Stable event IDs and finalization keys make retries idempotent;
+  resume retains the run ID and continues the local event sequence. The controller imports only
+  the sink interface; the CLI composition root owns the optional `LocalClient` dependency.
+- Agentd health states are `connected`, `not_installed`, `not_running`,
+  `temporarily_unavailable`, and `rejected_protocol`. Delivery degradation is persisted locally
+  and never changes the coding outcome. Artifact metadata is sensitivity/redaction screened before
+  spooling, and outcome upload follows local finalization.
+- PostgreSQL is an executable release dependency in CI, not inferred from SQLite or offline SQL.
+  Deterministic fixture evaluation remains non-economic; live evaluation is separate, explicit,
+  sample-size guarded, and cannot modify production routing.
+
+Verification:
+- Villani Code: `python -m pytest -q` 671 passed, 1 skipped; configured Ruff passed; mypy 3 files,
+  zero errors.
+- Villani Ops: `python -m pytest -q` 840 passed, 2 platform-capability skips, 114 deselected;
+  configured CI Ruff (`--select E9,F` over the closed-loop/public scope) passed; exact CI mypy 69
+  files, zero errors. Event-sink focus: 6 passed. The literal repository-wide `ruff check` remains
+  failing on unrelated legacy formatting/import debt and is the blocker for completion.
+- Agentd: 48 passed; `ruff check villani_agentd tests` passed; exact CI mypy 20 files, zero errors.
+- Control plane: SQLite/unit 73 passed, 9 deselected; PostgreSQL integration 8 passed, 74
+  deselected, zero skipped; PostgreSQL load 1 passed with 100,000 events; no-skip assertion passed;
+  live Alembic upgrade, offline SQL, and representative backup/restore passed; Ruff passed; exact
+  CI mypy 34 files, zero errors.
+- Distribution/integration: Villani distribution 9 passed; root closed loop 10 passed; packaged
+  CLI E2E 2 passed, 1 deselected; final-foundation 4 passed; clean Windows wheel/native package
+  smoke passed in 99.5 seconds; secret scan 0 findings; supply-chain gate passed.
+- Run model: 3 tests, typecheck, build, and production audit passed (0 vulnerabilities). Flight
+  Recorder: 102 tests in 20 files, typecheck, build, format, pack dry-run, and audit passed (0
+  vulnerabilities). Web: 5 unit tests in 3 files, typecheck, build, format, 10 Chromium Playwright
+  scenarios, and audit passed (0 vulnerabilities).
+- Workflow YAML parsing and `git diff --check` passed. PostgreSQL JUnit/migration evidence is
+  configured as `control-plane-postgres-evidence`; browser failure evidence is failure-only.
+
+Remaining risks and unsupported integrations:
+- Production cloud KMS/BYOK, SAML, and SCIM integrations remain unsupported; their development
+  fakes are not production evidence. Production OIDC requires a deployment-supplied verifier.
+- No live paid-provider evaluation was run, and the protocol fixture supports no model-quality or
+  cost-savings claim. Linux/macOS package jobs are configured but were not executed on this Windows
+  host. Production SLO windows and distributed rate limiting/metrics remain unproven.
+- The unscoped full Villani Ops Ruff gate is not green, so this pass is not marked complete.
+
+Next permitted milestone:
+- Resolve the existing repository-wide Villani Ops Ruff debt in an explicitly authorized cleanup
+  milestone, or adjust scope only through an intentional project decision. No later milestone was
+  started in this pass.

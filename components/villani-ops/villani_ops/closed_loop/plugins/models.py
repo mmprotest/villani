@@ -131,7 +131,7 @@ class ExecutionProviderPlugin(PluginManifest):
 
 
 class PluginCallRequest(StrictPluginModel):
-    schema_version: Literal["villani.plugin.rpc.v1"] = PLUGIN_RPC_VERSION
+    schema_version: Literal["villani.plugin.rpc.v1"] = "villani.plugin.rpc.v1"
     request_id: str = Field(min_length=1)
     protocol_version: str = Field(min_length=1)
     operation: str = Field(min_length=1)
@@ -155,7 +155,7 @@ class PluginFailure(StrictPluginModel):
 
 
 class PluginCallResponse(StrictPluginModel):
-    schema_version: Literal["villani.plugin.rpc.v1"] = PLUGIN_RPC_VERSION
+    schema_version: Literal["villani.plugin.rpc.v1"] = "villani.plugin.rpc.v1"
     request_id: str = Field(min_length=1)
     protocol_version: str = Field(min_length=1)
     status: Literal["ok", "error"]

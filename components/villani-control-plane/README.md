@@ -92,3 +92,9 @@ python -m pytest -q -m load --run-load-smoke
 
 The load smoke records measured throughput and relation size in its test output. It deliberately
 does not assert a production SLO.
+
+The release CI job provisions PostgreSQL 16, executes the full suite with `--run-load-smoke`,
+fails explicitly if a PostgreSQL test is skipped, upgrades the live database to Alembic head,
+renders offline SQL, and performs a representative `pg_dump`/`pg_restore` comparison. Its JUnit
+report and migration SQL are uploaded as the `control-plane-postgres-evidence` artifact. SQLite
+unit results are useful development evidence but are not presented as PostgreSQL evidence.
