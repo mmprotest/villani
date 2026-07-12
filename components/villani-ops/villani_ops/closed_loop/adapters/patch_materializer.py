@@ -24,6 +24,7 @@ from ..plugins.builtins import MATERIALIZER_MANIFEST
 
 class PatchMaterializerAdapter:
     plugin_manifest = MATERIALIZER_MANIFEST
+
     def __init__(
         self,
         *,
@@ -68,18 +69,24 @@ class PatchMaterializerAdapter:
             if selected.attempt.patch_sha256 != selected_patch_hash:
                 raise ValueError("selected patch hash does not match attempt snapshot")
             if patch_text != selected.patch:
-                raise ValueError("selected patch bytes differ from controller candidate")
+                raise ValueError(
+                    "selected patch bytes differ from controller candidate"
+                )
             worktree = selected.attempt.metadata.get("worktree")
             if not isinstance(worktree, dict):
                 raise ValueError("attempt is missing worktree baseline metadata")
             baseline = worktree.get("source_repository")
             if not isinstance(baseline, dict):
-                raise ValueError("attempt is missing target repository identity metadata")
+                raise ValueError(
+                    "attempt is missing target repository identity metadata"
+                )
             validate_target_identity(target_repo, baseline)
             apply_artifact = self._apply_service(target_repo, source_patch)
             if apply_artifact.get("exit_code") != 0:
                 raise RuntimeError("safe patch apply did not report success")
-            changed_files = tuple(str(item) for item in apply_artifact.get("changed_files") or [])
+            changed_files = tuple(
+                str(item) for item in apply_artifact.get("changed_files") or []
+            )
             final_patch = patch_text
             final_report = (
                 "# Materialization report\n\n"

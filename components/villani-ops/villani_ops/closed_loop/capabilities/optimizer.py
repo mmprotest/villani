@@ -54,7 +54,12 @@ def _fallback(
 
 def _rank(sequence: SequenceEvaluation) -> tuple[object, ...]:
     if sequence.reaches_target:
-        return (0, sequence.expected_cost, -sequence.success_probability, sequence.backends)
+        return (
+            0,
+            sequence.expected_cost,
+            -sequence.success_probability,
+            sequence.backends,
+        )
     return (1, -sequence.success_probability, sequence.expected_cost, sequence.backends)
 
 
@@ -127,7 +132,9 @@ def optimize_sequence(
         for backend_names in permutations(sorted(by_name), length):
             total_enumerated += 1
             sequence_inputs = [by_name[name] for name in backend_names]
-            costs = [cast(float, item.mean_actual_attempt_cost) for item in sequence_inputs]
+            costs = [
+                cast(float, item.mean_actual_attempt_cost) for item in sequence_inputs
+            ]
             probabilities = [
                 cast(float, item.conservative_success_probability)
                 for item in sequence_inputs
@@ -172,4 +179,3 @@ def optimize_sequence(
         pruned_backends=pruned,
         formulas=FORMULAS,
     )
-

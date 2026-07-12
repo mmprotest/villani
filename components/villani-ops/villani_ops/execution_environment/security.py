@@ -111,11 +111,15 @@ def _archive_totals(path: Path, policy: ActionPolicy) -> tuple[int, int, int]:
         )
     if expanded > policy.max_archive_uncompressed_bytes:
         raise ExecutionPolicyDenied(
-            policy="archive", action=path.name, reason="archive expanded-size limit exceeded"
+            policy="archive",
+            action=path.name,
+            reason="archive expanded-size limit exceeded",
         )
     if compressed and expanded / compressed > policy.max_archive_ratio:
         raise ExecutionPolicyDenied(
-            policy="archive", action=path.name, reason="archive compression-ratio limit exceeded"
+            policy="archive",
+            action=path.name,
+            reason="archive compression-ratio limit exceeded",
         )
     return entries, compressed, expanded
 

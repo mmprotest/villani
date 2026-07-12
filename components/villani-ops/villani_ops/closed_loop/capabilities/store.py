@@ -25,7 +25,9 @@ def capability_directory() -> Path:
 class CapabilityStore:
     def __init__(self, root: str | Path | None = None) -> None:
         self.root = (
-            Path(root).expanduser().resolve() if root is not None else capability_directory()
+            Path(root).expanduser().resolve()
+            if root is not None
+            else capability_directory()
         )
         self.snapshot_path = self.root / SNAPSHOT_FILENAME
         self.provenance_path = self.root / PROVENANCE_FILENAME
@@ -36,7 +38,9 @@ class CapabilityStore:
         value = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
         snapshot = CapabilitySnapshot.model_validate(value)
         if calculate_profile_digest(snapshot) != snapshot.profile_digest:
-            raise ValueError("capability snapshot profile digest does not match its content")
+            raise ValueError(
+                "capability snapshot profile digest does not match its content"
+            )
         return snapshot
 
     def rebuild(
@@ -55,7 +59,9 @@ class CapabilityStore:
             self.provenance_path,
             {
                 "schema_version": "villani.capability_provenance.v1",
-                "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "recorded_at": datetime.now(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
                 "snapshot_file": SNAPSHOT_FILENAME,
                 "scorer_version": snapshot.scorer_version,
                 "source_data_digest": snapshot.source_data_digest,

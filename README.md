@@ -87,11 +87,22 @@ unavailable, execution remains local-first and records the telemetry condition i
 `telemetry_diagnostics.jsonl` without changing the coding result. Enrollment and upload remain
 explicit opt-ins.
 
+If agentd was absent during execution, starting it later scans bounded batches beneath
+`VILLANI_HOME/runs` and imports each valid canonical run with its original run, trace, event,
+attempt, and sequence identities. `villani-agentd backfill` triggers the same scan explicitly.
+This is distinct from synchronization: backfill moves local canonical evidence into the durable
+agentd spool, while `villani-agentd sync-once` sends pending spool records to an enrolled control
+plane. If agentd was already running while the control plane was offline, only the latter step is
+needed.
+
 The run ID printed by `villani run` is the identity used by the local run directory, daemon spool,
 control-plane run and outcome records, web run detail, and Flight Recorder replay. To verify a
 synchronized run, use `villani-agentd status`, run `villani-agentd sync-once` when enrolled, and
 look up that exact run ID in the control-plane/web run detail. Pending or degraded delivery remains
 inspectable in the local telemetry diagnostics and daemon status.
+Backfill diagnostics are shown by `villani-agentd backfill` and under `local_run_imports` in
+`villani-agentd doctor`. Correct an incomplete/corrupt local bundle or remove prohibited sensitive
+content at its source, then rerun `backfill`; stable identities make that retry idempotent.
 
 `villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.
 

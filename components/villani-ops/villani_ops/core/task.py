@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 import secrets
 
+
 class TaskClassification(BaseModel):
-    difficulty: Literal["easy","medium","hard"] = "medium"
+    difficulty: Literal["easy", "medium", "hard"] = "medium"
     category: str = "unknown"
-    risk: Literal["low","medium","high"] = "medium"
+    risk: Literal["low", "medium", "high"] = "medium"
     estimated_attempts_needed: int = 1
     needs_tests: bool = True
     likely_files: list[str] = Field(default_factory=list)
@@ -20,8 +21,14 @@ class TaskClassification(BaseModel):
     original_difficulty: str | None = None
     original_risk: str | None = None
 
+
 class Task(BaseModel):
-    task_id: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime("task_%Y%m%dT%H%M%SZ_")+secrets.token_hex(3))
+    task_id: str = Field(
+        default_factory=lambda: (
+            datetime.now(timezone.utc).strftime("task_%Y%m%dT%H%M%SZ_")
+            + secrets.token_hex(3)
+        )
+    )
     repo_path: str
     objective: str | None = None
     instruction: str | None = None
@@ -33,6 +40,6 @@ class Task(BaseModel):
 
     def model_post_init(self, __context):
         if self.objective is None and self.instruction is not None:
-            self.objective=self.instruction
+            self.objective = self.instruction
         if self.instruction is None and self.objective is not None:
-            self.instruction=self.objective
+            self.instruction = self.objective

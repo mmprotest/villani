@@ -29,9 +29,9 @@ def _process_alive(pid: int) -> bool:
             return False
         exit_code = wintypes.DWORD()
         try:
-            return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and (
-                exit_code.value == 259
-            )
+            return bool(
+                kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            ) and (exit_code.value == 259)
         finally:
             kernel32.CloseHandle(handle)
     try:
@@ -129,7 +129,10 @@ class LocalSecretBroker:
             value = self.source_environment.get(
                 request.environment_variable or request.name
             )
-            if value is not None and len(value.encode("utf-8")) > self.command_output_bytes:
+            if (
+                value is not None
+                and len(value.encode("utf-8")) > self.command_output_bytes
+            ):
                 raise RuntimeError(f"secret value exceeded limit for {request.name}")
             return value
         try:

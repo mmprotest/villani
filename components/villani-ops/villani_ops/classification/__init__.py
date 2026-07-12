@@ -1,1 +1,1 @@
-from .classifier import TaskClassifier
+from .classifier import TaskClassifier as TaskClassifier

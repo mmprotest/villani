@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -110,9 +109,7 @@ def _dependencies() -> dict[str, Any]:
         "classifier": FakeClassifier(),
         "policy": RecoveryPolicy(),
         "runner": FakeAttemptRunner([attempt(), attempt()]),
-        "verifier": FakeVerifier(
-            [accepted_verification(), accepted_verification()]
-        ),
+        "verifier": FakeVerifier([accepted_verification(), accepted_verification()]),
         "selector": FakeSelector(),
         "materializer": FakeMaterializer(),
         "now": FixedNow(),
@@ -140,7 +137,9 @@ def _controller(
 
 def _bundle_hashes(run_dir: Path) -> dict[str, str]:
     return {
-        path.relative_to(run_dir).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        path.relative_to(run_dir).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
         for path in sorted(run_dir.rglob("*"))
         if path.is_file()
     }
@@ -217,27 +216,45 @@ def test_resume_repairs_one_truncated_final_event_line(tmp_path: Path) -> None:
     assert result.terminal_state == "COMPLETED"
     events = read_jsonl_tolerant(events_path)
     repairs = [
-        event for event in events if event["event_type"] == "recovery_truncated_jsonl_repaired"
+        event
+        for event in events
+        if event["event_type"] == "recovery_truncated_jsonl_repaired"
     ]
     assert len(repairs) == 1
     assert repairs[0]["payload"]["evidence"]["files"] == ["events.jsonl"]
 
 
-def test_terminal_resume_invokes_no_dependency_and_mutates_no_bundle(tmp_path: Path) -> None:
+def test_terminal_resume_invokes_no_dependency_and_mutates_no_bundle(
+    tmp_path: Path,
+) -> None:
     dependencies = _dependencies()
     completed = _controller(dependencies).run(_request(tmp_path))
     assert completed.terminal_state == "COMPLETED"
     before = _bundle_hashes(completed.run_directory)
     calls = {
         name: len(dependencies[name].calls)
-        for name in ("classifier", "policy", "runner", "verifier", "selector", "materializer")
+        for name in (
+            "classifier",
+            "policy",
+            "runner",
+            "verifier",
+            "selector",
+            "materializer",
+        )
     }
     result = _controller(dependencies).resume("run_test_001", tmp_path / "runs")
     assert result.terminal_state == "COMPLETED"
     assert _bundle_hashes(completed.run_directory) == before
     assert calls == {
         name: len(dependencies[name].calls)
-        for name in ("classifier", "policy", "runner", "verifier", "selector", "materializer")
+        for name in (
+            "classifier",
+            "policy",
+            "runner",
+            "verifier",
+            "selector",
+            "materializer",
+        )
     }
 
 
@@ -252,9 +269,7 @@ def test_recovery_lock_rejects_a_concurrent_resume(tmp_path: Path) -> None:
 
 
 def _git(repo: Path, *args: str) -> None:
-    completed = subprocess.run(
-        ["git", *args], cwd=repo, text=True, capture_output=True
-    )
+    completed = subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True)
     assert completed.returncode == 0, completed.stderr
 
 
@@ -294,7 +309,9 @@ def _materialization_request(tmp_path: Path, repo: Path) -> ClosedLoopRunRequest
     return replace(request, repository_path=repo, max_attempts=1)
 
 
-def test_resume_materialization_before_apply_runs_safe_apply_once(tmp_path: Path) -> None:
+def test_resume_materialization_before_apply_runs_safe_apply_once(
+    tmp_path: Path,
+) -> None:
     repo = _repository(tmp_path)
     dependencies = _materialization_dependencies(repo)
     applies: list[tuple[Path, Path]] = []
@@ -303,9 +320,7 @@ def test_resume_materialization_before_apply_runs_safe_apply_once(tmp_path: Path
         applies.append((target, patch))
         return apply_patch_safely(target, patch)
 
-    dependencies["materializer"] = PatchMaterializerAdapter(
-        apply_service=counted_apply
-    )
+    dependencies["materializer"] = PatchMaterializerAdapter(apply_service=counted_apply)
     with pytest.raises(InjectedCrash):
         _controller(dependencies, CrashOnce("after_materialization_start")).run(
             _materialization_request(tmp_path, repo)
@@ -336,7 +351,9 @@ class CrashAfterApplyMaterializer:
         raise InjectedCrash("after_patch_apply_before_snapshot")
 
 
-def test_resume_after_patch_apply_never_applies_selected_patch_twice(tmp_path: Path) -> None:
+def test_resume_after_patch_apply_never_applies_selected_patch_twice(
+    tmp_path: Path,
+) -> None:
     repo = _repository(tmp_path)
     dependencies = _materialization_dependencies(repo)
     crashing_materializer = CrashAfterApplyMaterializer()
@@ -361,7 +378,9 @@ def test_resume_after_patch_apply_never_applies_selected_patch_twice(tmp_path: P
     assert materialization["metadata"]["recovered_already_applied"] is True
 
 
-def test_resume_after_atomic_snapshot_replace_exception(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resume_after_atomic_snapshot_replace_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from villani_ops.closed_loop import durable_io
 
     dependencies = _dependencies()

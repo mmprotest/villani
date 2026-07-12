@@ -5,15 +5,24 @@ import yaml
 
 DEFAULT_TIMEOUT_SECONDS = 1500
 
+
 class ObjectiveConfig(BaseModel):
     primary: str = "maximize_valid_solutions_per_dollar"
-    secondary: list[str] = Field(default_factory=lambda: ["minimize_tokens", "minimize_attempts", "minimize_wall_time"])
+    secondary: list[str] = Field(
+        default_factory=lambda: [
+            "minimize_tokens",
+            "minimize_attempts",
+            "minimize_wall_time",
+        ]
+    )
+
 
 class AttemptPlan(BaseModel):
     backend: str
     max_attempts: int = 1
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     runner: str = "shell"
+
 
 class ValidationConfig(BaseModel):
     mode: str = "diff_review"
@@ -22,13 +31,16 @@ class ValidationConfig(BaseModel):
     require_test_evidence: bool = False
     allow_human_override: bool = True
 
+
 class StoppingConfig(BaseModel):
     stop_on_first_valid: bool = True
     stop_on_repeated_same_failure: bool = True
 
+
 class SelectionConfig(BaseModel):
     choose_lowest_cost_valid_attempt: bool = False
     choose_best_valid_attempt: bool = True
+
 
 class Policy(BaseModel):
     name: str
@@ -45,4 +57,6 @@ class Policy(BaseModel):
 
     def save(self, path: str | Path) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False))
+        Path(path).write_text(
+            yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False)
+        )

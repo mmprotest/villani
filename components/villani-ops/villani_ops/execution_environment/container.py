@@ -117,7 +117,8 @@ class ContainerProvider:
             "provider": self.name,
             "available": not missing,
             "engine": self.engine_name,
-            "detected_version": (version.stdout or version.stderr).strip()[:200] or None,
+            "detected_version": (version.stdout or version.stderr).strip()[:200]
+            or None,
             "missing_capabilities": missing,
             "provider_version": CONTAINER_PROVIDER_VERSION,
             "image_available": image_identity is not None,
@@ -436,16 +437,19 @@ class ContainerProvider:
             thread.join(timeout=10)
         stdout = bytes(captured["stdout"])
         stderr = bytes(captured["stderr"])
-        exit_code = 124 if timed_out else 125 if disk_exceeded else int(process.returncode or 0)
-        classification: Literal[
-            "timeout", "disk_limit", "process_limit", "memory_limit"
-        ] | None = (
+        exit_code = (
+            124 if timed_out else 125 if disk_exceeded else int(process.returncode or 0)
+        )
+        classification: (
+            Literal["timeout", "disk_limit", "process_limit", "memory_limit"] | None
+        ) = (
             "timeout"
             if timed_out
             else "disk_limit"
             if disk_exceeded
             else "process_limit"
-            if "resource temporarily unavailable" in stderr.decode(errors="ignore").lower()
+            if "resource temporarily unavailable"
+            in stderr.decode(errors="ignore").lower()
             or "fork" in stderr.decode(errors="ignore").lower()
             else "memory_limit"
             if exit_code in {137, -9}

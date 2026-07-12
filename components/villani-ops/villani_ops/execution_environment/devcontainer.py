@@ -73,7 +73,9 @@ def _jsonc(text: str) -> dict[str, Any]:
         if text[index : index + 2] == "/*":
             end = text.find("*/", index + 2)
             if end < 0:
-                raise ValueError("unterminated block comment in devcontainer configuration")
+                raise ValueError(
+                    "unterminated block comment in devcontainer configuration"
+                )
             index = end + 2
             continue
         output.append(char)
@@ -164,7 +166,8 @@ class DevcontainerProvider:
         return {
             "provider": self.name,
             "available": not missing,
-            "detected_version": (version.stdout or version.stderr).strip()[:200] or None,
+            "detected_version": (version.stdout or version.stderr).strip()[:200]
+            or None,
             "engine": Path(self._engine).stem if self._engine else None,
             "missing_capabilities": missing,
             "provider_version": DEVCONTAINER_PROVIDER_VERSION,
@@ -189,16 +192,26 @@ class DevcontainerProvider:
                 continue
             if resolved.is_file():
                 return resolved
-        raise RuntimeError("devcontainer configuration was not found inside the worktree")
+        raise RuntimeError(
+            "devcontainer configuration was not found inside the worktree"
+        )
 
     def _validated_config(self, worktree: Path) -> tuple[Path, dict[str, Any]]:
         path = self._config_path(worktree)
         value = _jsonc(path.read_text(encoding="utf-8"))
-        denied = [f"{key}: {_UNSUPPORTED_KEYS[key]}" for key in sorted(value) if key in _UNSUPPORTED_KEYS]
+        denied = [
+            f"{key}: {_UNSUPPORTED_KEYS[key]}"
+            for key in sorted(value)
+            if key in _UNSUPPORTED_KEYS
+        ]
         if denied:
-            raise RuntimeError("unsupported devcontainer features: " + "; ".join(denied))
+            raise RuntimeError(
+                "unsupported devcontainer features: " + "; ".join(denied)
+            )
         if not value.get("image") and not isinstance(value.get("build"), dict):
-            raise RuntimeError("devcontainer requires an image or single-container build")
+            raise RuntimeError(
+                "devcontainer requires an image or single-container build"
+            )
         return path, value
 
     def _hardened_config(
@@ -480,9 +493,7 @@ class DevcontainerProvider:
         )
         return CommandResult(
             exit_code=result.returncode,
-            duration_ms=max(
-                0, int((time.monotonic() - started) * 1000)
-            ),
+            duration_ms=max(0, int((time.monotonic() - started) * 1000)),
             stdout=stdout,
             stderr=stderr,
             stdout_bytes=stdout_bytes,

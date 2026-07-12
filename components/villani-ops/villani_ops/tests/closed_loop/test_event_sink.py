@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,10 @@ class RecordingSink:
         self.opened.append((run_id, trace_id, created_at))
 
     def submit_event(self, event: EventEnvelope) -> None:
-        if self.fail_after_sequence is not None and event.sequence > self.fail_after_sequence:
+        if (
+            self.fail_after_sequence is not None
+            and event.sequence > self.fail_after_sequence
+        ):
             self.stopped = True
             raise ConnectionError("agentd stopped")
         existing = self.events.get(event.event_id)
@@ -118,7 +121,10 @@ def test_connected_sink_uses_canonical_identity_and_finalizes_after_local_bundle
     assert sink.outcomes[result.run_id].attempt_id == "attempt_001"
     assert sink.outcomes[result.run_id].cost is None
     assert sink.outcomes[result.run_id].cost_accounting_status == "unknown"
-    assert json.loads((result.run_directory / "state.json").read_text())["terminal"] is True
+    assert (
+        json.loads((result.run_directory / "state.json").read_text())["terminal"]
+        is True
+    )
     assert json.loads((result.run_directory / "manifest.json").read_text())[
         "completed_at"
     ]
@@ -134,7 +140,9 @@ class CrashAfterCreation:
             raise InjectedCrash(boundary)
 
 
-def test_interrupted_run_resumes_same_identity_and_monotonic_sequence(tmp_path: Path) -> None:
+def test_interrupted_run_resumes_same_identity_and_monotonic_sequence(
+    tmp_path: Path,
+) -> None:
     sink = RecordingSink()
     controller = _controller(sink)
     controller._failure_injector = CrashAfterCreation()

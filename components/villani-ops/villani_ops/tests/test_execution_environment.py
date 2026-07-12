@@ -172,9 +172,7 @@ def test_setup_command_bounds_output_and_timeout(tmp_path: Path) -> None:
     provider = SetupCommandProvider(config, source_environment={})
     prepared = provider.prepare(repository=repo, worktree=worktree)
 
-    output = provider.execute(
-        prepared, [sys.executable, "-c", "print('x' * 1000)"]
-    )
+    output = provider.execute(prepared, [sys.executable, "-c", "print('x' * 1000)"])
     assert output.exit_code == 0
     assert output.stdout_truncated is True
     assert len(output.stdout.encode()) <= 32

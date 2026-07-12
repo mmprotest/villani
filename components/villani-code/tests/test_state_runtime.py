@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -520,7 +521,7 @@ def test_fail_first_localization_runs_without_strong_signal(tmp_path: Path, monk
     )
 
     def fake_run(cmd, **_kwargs):
-        assert cmd == ["bash", "-lc", "pytest -q"]
+        assert cmd == [sys.executable, "-m", "pytest", "-q"]
 
         class P:
             returncode = 1

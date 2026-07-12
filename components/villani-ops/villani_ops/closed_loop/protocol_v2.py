@@ -7,7 +7,12 @@ from typing import Any, Literal, TypeAlias
 
 from pydantic import Field, field_validator, model_validator
 
-from .protocol import AccountingStatus, StrictProtocolModel, UtcDateTime, _check_accounting
+from .protocol import (
+    AccountingStatus,
+    StrictProtocolModel,
+    UtcDateTime,
+    _check_accounting,
+)
 
 
 ProvenanceStatus: TypeAlias = Literal["recorded", "derived", "unknown"]
@@ -64,13 +69,17 @@ class OutcomeV2(StrictProtocolModel):
     schema_version: Literal["villani.outcome.v2"]
     run_id: str = Field(min_length=1)
     attempt_id: str | None = Field(min_length=1)
-    verification_status: Literal["accepted", "rejected", "unclear", "error", "not_run"] | None
+    verification_status: (
+        Literal["accepted", "rejected", "unclear", "error", "not_run"] | None
+    )
     accepted: bool | None
     materialized: bool | None
     merged: bool | None
     reverted: bool | None
     ci_state: Literal["pending", "passed", "failed", "cancelled", "not_run"] | None
-    developer_disposition: Literal["approved", "rejected", "modified", "pending", "not_reviewed"] | None
+    developer_disposition: (
+        Literal["approved", "rejected", "modified", "pending", "not_reviewed"] | None
+    )
     defect_association: str | None = Field(min_length=1)
     cost: float | None = Field(ge=0)
     currency: str | None = Field(pattern=r"^[A-Z]{3}$")
@@ -211,8 +220,14 @@ class TelemetryEnvelopeV2(StrictProtocolModel):
 
 
 ProtocolDocumentV2: TypeAlias = (
-    ResourceV2 | ArtifactDescriptorV2 | OutcomeV2 | SpanV2 | AgentCapabilityV2
-    | VerifierCapabilityV2 | PolicyPublicationV2 | TelemetryEnvelopeV2
+    ResourceV2
+    | ArtifactDescriptorV2
+    | OutcomeV2
+    | SpanV2
+    | AgentCapabilityV2
+    | VerifierCapabilityV2
+    | PolicyPublicationV2
+    | TelemetryEnvelopeV2
 )
 
 PROTOCOL_V2_MODEL_BY_VERSION: dict[str, type[StrictProtocolModel]] = {

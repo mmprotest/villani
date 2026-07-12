@@ -1,19 +1,27 @@
 {
-  "schema_version": "villani.live_evaluation_manifest.v1",
-  "manifest_version": "example-v1",
-  "environment_revision": "record-the-operator-environment-revision",
+  "schema_version": "villani.live_evaluation_manifest.v2",
+  "evaluation_version": "example-v2",
+  "environment_identity": {"image_digest": "record-an-immutable-environment-digest"},
+  "model_provider_identities": {"cheap": "provider/model/version", "strong": "provider/model/version"},
+  "verifier_identity": {"name": "verifier", "version": "record-a-version"},
+  "minimum_sample_size": 30,
+  "baseline_policy": "strong-only",
+  "success_non_inferiority_margin": 0.05,
+  "minimum_required_cost_improvement": 0.1,
+  "maximum_false_acceptance_rate": 0.01,
+  "confidence_level": 0.95,
   "policies": {
-    "strong-only": {"villani_home": "/absolute/path/to/strong-only-home"},
-    "cheap-only": {"villani_home": "/absolute/path/to/cheap-only-home"},
-    "cheap-first-escalation": {"villani_home": "/absolute/path/to/cheap-first-home"},
-    "strong-first": {"villani_home": "/absolute/path/to/strong-first-home"},
-    "adaptive": {"villani_home": "/absolute/path/to/adaptive-home"}
+    "strong-only": {"villani_home": "/absolute/path/to/strong-only-home", "configuration": {"policy": "strong-only"}},
+    "cheap-only": {"villani_home": "/absolute/path/to/cheap-only-home", "configuration": {"policy": "cheap-only"}},
+    "cheap-first-escalation": {"villani_home": "/absolute/path/to/cheap-first-home", "configuration": {"policy": "cheap-first-escalation"}},
+    "strong-first": {"villani_home": "/absolute/path/to/strong-first-home", "configuration": {"policy": "strong-first"}},
+    "adaptive": {"villani_home": "/absolute/path/to/adaptive-home", "configuration": {"policy": "adaptive"}}
   },
   "tasks": [
     {
       "task_id": "replace-with-versioned-task-id",
-      "repository": "/absolute/path/to/pinned/repository",
-      "repository_revision": "full-git-commit",
+      "repository_source": "/absolute/path/to/pinned/repository",
+      "exact_revision": "0000000000000000000000000000000000000000",
       "instruction": "Replace with the coding task",
       "success_criteria": "Replace with acceptance-grade criteria",
       "expected_success": true

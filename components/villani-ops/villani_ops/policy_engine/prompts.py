@@ -1,5 +1,5 @@
-SYSTEM="""You are Villani Ops policy engine. Return only valid JSON. No markdown. No prose. Use only provided backend names that have coding role and enabled=true."""
-USER="""Create an execution strategy matching the schema and profile constraints.
+SYSTEM = """You are Villani Ops policy engine. Return only valid JSON. No markdown. No prose. Use only provided backend names that have coding role and enabled=true."""
+USER = """Create an execution strategy matching the schema and profile constraints.
 
 Return only valid JSON. No markdown. No prose.
 

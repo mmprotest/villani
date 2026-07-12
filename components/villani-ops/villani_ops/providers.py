@@ -43,7 +43,10 @@ def validate_closed_loop_backend(backend: Backend) -> None:
             f"backend {backend.name!r} has unsupported provider {backend.provider!r}; "
             f"use one of: {values}"
         )
-    if provider in {"local", "openai-compatible"} and not str(backend.base_url or "").strip():
+    if (
+        provider in {"local", "openai-compatible"}
+        and not str(backend.base_url or "").strip()
+    ):
         raise ProviderConfigurationError(
             f"backend {backend.name!r} with provider {provider!r} requires an explicit base_url"
         )

@@ -23,10 +23,9 @@ from villani_ops.closed_loop.schema_validation import (
 
 def _repository_root() -> Path:
     for candidate in Path(__file__).resolve().parents:
-        if (
-            (candidate / "AGENTS.md").is_file()
-            and (candidate / "schemas" / "v1" / "event.schema.json").is_file()
-        ):
+        if (candidate / "AGENTS.md").is_file() and (
+            candidate / "schemas" / "v1" / "event.schema.json"
+        ).is_file():
             return candidate
     raise AssertionError("repository root not found")
 
@@ -63,9 +62,7 @@ def test_all_ten_versioned_root_schemas_are_valid_and_mapped() -> None:
         assert schema_path.is_file()
         schema = _load_json(schema_path)
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-        assert schema["$id"] == (
-            f"https://villani.dev/schemas/v1/{schema_path.name}"
-        )
+        assert schema["$id"] == (f"https://villani.dev/schemas/v1/{schema_path.name}")
         assert schema["additionalProperties"] is False
 
 
@@ -83,9 +80,9 @@ def test_packaged_schemas_are_semantically_identical_to_normative_root() -> None
         path.name for path in root_schemas.glob("*.json")
     )
     for root_schema in root_schemas.glob("*.json"):
-        assert json.loads((packaged / root_schema.name).read_text(encoding="utf-8")) == (
-            json.loads(root_schema.read_text(encoding="utf-8"))
-        )
+        assert json.loads(
+            (packaged / root_schema.name).read_text(encoding="utf-8")
+        ) == (json.loads(root_schema.read_text(encoding="utf-8")))
 
 
 def test_complete_valid_bundle_uses_every_protocol_version() -> None:
@@ -107,12 +104,18 @@ def test_complete_valid_bundle_uses_every_protocol_version() -> None:
         versions.add(decision["schema_version"])
 
     assert versions == set(SCHEMA_VERSION_TO_PATH)
-    assert _load_json(VALID_RUN / "verification" / "attempt_001.json")[
-        "acceptance_eligible"
-    ] is False
-    assert _load_json(VALID_RUN / "verification" / "attempt_002.json")[
-        "acceptance_eligible"
-    ] is True
+    assert (
+        _load_json(VALID_RUN / "verification" / "attempt_001.json")[
+            "acceptance_eligible"
+        ]
+        is False
+    )
+    assert (
+        _load_json(VALID_RUN / "verification" / "attempt_002.json")[
+            "acceptance_eligible"
+        ]
+        is True
+    )
     assert _load_json(VALID_RUN / "materialization.json")["status"] == "succeeded"
 
 

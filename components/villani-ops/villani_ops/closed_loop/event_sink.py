@@ -80,7 +80,7 @@ _SECRET_BYTES = re.compile(
     rb"(?i)(?:api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+|"
     rb"bearer\s+[^\s]+|\bsk-[A-Za-z0-9_-]{8,}\b"
 )
-_SAFE_ARTIFACTS = (
+SAFE_CANONICAL_ARTIFACTS = (
     "manifest.json",
     "state.json",
     "selection.json",
@@ -103,7 +103,11 @@ class RunEventDelivery:
         self._diagnostic = sink.availability()
         self._opened = False
         self._last_delivered_sequence = 0
-        self._record("availability", status=self._diagnostic.status, detail=self._diagnostic.detail)
+        self._record(
+            "availability",
+            status=self._diagnostic.status,
+            detail=self._diagnostic.detail,
+        )
 
     def _record(self, operation: str, **fields: Any) -> None:
         append_jsonl_durable(
@@ -154,15 +158,19 @@ class RunEventDelivery:
         state = _read_object(self._store.run_directory / "state.json")
         manifest = _read_object(self._store.run_directory / "manifest.json")
         if not bool(state.get("terminal")) or manifest.get("completed_at") is None:
-            self._record("finalization", status="rejected_protocol", detail="local_run_not_finalized")
+            self._record(
+                "finalization",
+                status="rejected_protocol",
+                detail="local_run_not_finalized",
+            )
             return
         try:
-            for relative in _SAFE_ARTIFACTS:
+            for relative in SAFE_CANONICAL_ARTIFACTS:
                 path = self._store.run_directory / relative
                 if not path.is_file():
                     continue
                 content = path.read_bytes()
-                if _contains_secret(content):
+                if contains_registered_secret(content):
                     self._record(
                         "artifact_registration",
                         status="rejected_protocol",
@@ -186,7 +194,9 @@ class RunEventDelivery:
                     attributes={"villani.local.relative_path": relative},
                 )
                 self._sink.register_artifact(self._store.run_id, descriptor, content)
-            self._sink.finalize_run(self._store.run_id, _outcome(self._store.run_directory))
+            self._sink.finalize_run(
+                self._store.run_id, build_canonical_outcome(self._store.run_directory)
+            )
         except Exception as error:
             self._record(
                 "finalization",
@@ -202,13 +212,15 @@ def _read_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _contains_secret(content: bytes) -> bool:
+def contains_registered_secret(content: bytes) -> bool:
     if _SECRET_BYTES.search(content):
         return True
-    return any(secret.encode() in content for secret in registered_secret_values() if secret)
+    return any(
+        secret.encode() in content for secret in registered_secret_values() if secret
+    )
 
 
-def _outcome(run_directory: Path) -> OutcomeV2:
+def build_canonical_outcome(run_directory: Path) -> OutcomeV2:
     manifest = _read_object(run_directory / "manifest.json")
     selected = manifest.get("selected_attempt_id")
     verification: Mapping[str, Any] = {}
@@ -224,15 +236,19 @@ def _outcome(run_directory: Path) -> OutcomeV2:
     if verification_status not in {"accepted", "rejected", "unclear", "error"}:
         verification_status = "not_run"
     cost = manifest.get("total_cost_usd")
-    currency = manifest.get("currency") if cost is not None else None
+    currency = (manifest.get("currency") or "USD") if cost is not None else None
     latency = manifest.get("run_wall_clock_duration_ms")
     return OutcomeV2(
         schema_version="villani.outcome.v2",
         run_id=str(manifest["run_id"]),
         attempt_id=selected if isinstance(selected, str) else None,
         verification_status=verification_status,
-        accepted=(bool(verification.get("acceptance_eligible")) if verification else None),
-        materialized=(materialization.get("status") == "succeeded" if materialization else None),
+        accepted=(
+            bool(verification.get("acceptance_eligible")) if verification else None
+        ),
+        materialized=(
+            materialization.get("status") == "succeeded" if materialization else None
+        ),
         merged=None,
         reverted=None,
         ci_state=None,
@@ -246,5 +262,8 @@ def _outcome(run_directory: Path) -> OutcomeV2:
             manifest.get("run_wall_clock_duration_accounting_status", "unknown")
         ),
         provenance_status="recorded",
-        provenance={"source": "canonical_local_run_bundle", "manifest": "manifest.json"},
+        provenance={
+            "source": "canonical_local_run_bundle",
+            "manifest": "manifest.json",
+        },
     )

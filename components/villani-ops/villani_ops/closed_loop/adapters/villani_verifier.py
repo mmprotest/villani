@@ -28,7 +28,9 @@ def _list(value: Any) -> list[Any]:
 
 def _text(value: Any) -> str:
     if isinstance(value, dict):
-        return str(value.get("text") or value.get("summary") or value.get("reason") or value)
+        return str(
+            value.get("text") or value.get("summary") or value.get("reason") or value
+        )
     return str(value)
 
 
@@ -109,6 +111,7 @@ def _has_acceptance_blocker(risks: tuple[str, ...]) -> bool:
 
 class VillaniVerifierAdapter:
     plugin_manifest = VERIFIER_MANIFEST
+
     def __init__(
         self,
         *,
@@ -163,9 +166,13 @@ class VillaniVerifierAdapter:
                     "input_tokens": None,
                     "output_tokens": None,
                     "total_tokens": None,
-                    "token_accounting_status": "not_applicable" if self._no_llm else "unknown",
+                    "token_accounting_status": "not_applicable"
+                    if self._no_llm
+                    else "unknown",
                     "model_calls": 0 if self._no_llm else None,
-                    "model_call_accounting_status": "complete" if self._no_llm else "unknown",
+                    "model_call_accounting_status": "complete"
+                    if self._no_llm
+                    else "unknown",
                     "cost": attempted_cost.total if attempted_cost else None,
                     "cost_accounting_status": (
                         "not_applicable"
@@ -212,7 +219,12 @@ class VillaniVerifierAdapter:
                 {
                     "stage": "verification",
                     "backend": backend.name if backend else self._backend,
-                    "model": str(record.get("model") or (backend.model if backend else self._model) or "") or None,
+                    "model": str(
+                        record.get("model")
+                        or (backend.model if backend else self._model)
+                        or ""
+                    )
+                    or None,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "total_tokens": (
@@ -224,7 +236,9 @@ class VillaniVerifierAdapter:
                     "model_calls": 1,
                     "model_call_accounting_status": "complete",
                     "cost": cost.total if cost else None,
-                    "cost_accounting_status": cost.accounting_status if cost else "unknown",
+                    "cost_accounting_status": cost.accounting_status
+                    if cost
+                    else "unknown",
                     "currency": backend.currency if backend else "USD",
                     "duration_ms": call_duration,
                     "duration_accounting_status": "complete",
@@ -252,9 +266,7 @@ class VillaniVerifierAdapter:
             trace_dir = raw_dir / f"{attempt_context.attempt_id}_trace_{suffix}"
             suffix += 1
         trace_value = attempt_result.metadata.get("debug_trace_path")
-        trace_path = (
-            (run_dir / str(trace_value)).resolve() if trace_value else None
-        )
+        trace_path = (run_dir / str(trace_value)).resolve() if trace_value else None
         started = time.monotonic()
         execution = execute_verifier(
             debug_root=trace_path,
@@ -271,7 +283,11 @@ class VillaniVerifierAdapter:
             no_llm=self._no_llm,
             base_url=self._base_url,
             model=self._model,
-            api_key=(self._backend_config.resolved_api_key() if self._backend_config else None),
+            api_key=(
+                self._backend_config.resolved_api_key()
+                if self._backend_config
+                else None
+            ),
         )
         duration_ms = max(int((time.monotonic() - started) * 1000), 0)
         raw = redact_data(execution.result)
@@ -366,7 +382,12 @@ class VillaniVerifierAdapter:
             recommended = "reject"
         reason = str(raw.get("reason") or execution.resolution_reason)
         if blockers:
-            reason = reason.rstrip(".") + ". Acceptance blockers: " + ", ".join(blockers) + "."
+            reason = (
+                reason.rstrip(".")
+                + ". Acceptance blockers: "
+                + ", ".join(blockers)
+                + "."
+            )
         return Verification(
             verifier="villani_ops_verifier_pipeline",
             outcome=outcome,  # type: ignore[arg-type]

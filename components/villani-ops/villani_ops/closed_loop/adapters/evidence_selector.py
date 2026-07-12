@@ -73,6 +73,7 @@ def _legacy_verifier(candidate: EligibleCandidate) -> dict[str, Any]:
 
 class EvidenceSelectorAdapter:
     plugin_manifest = SELECTOR_MANIFEST
+
     def __init__(
         self,
         *,
@@ -200,9 +201,7 @@ class EvidenceSelectorAdapter:
             advisory_comparison=advisory,
             metadata={"deterministic_evidence_controls_selection": True},
         )
-        write_json_atomic(
-            run_dir / "selection.json", snapshot.model_dump(mode="json")
-        )
+        write_json_atomic(run_dir / "selection.json", snapshot.model_dump(mode="json"))
         return Selection(
             selected_attempt_id=winner_id,
             strategy=POLICY,

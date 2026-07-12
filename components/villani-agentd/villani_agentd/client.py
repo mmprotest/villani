@@ -112,6 +112,4 @@ class LocalClient:
         )
 
     def finalize_run(self, run_id: str, outcome: Mapping[str, Any]) -> dict[str, Any]:
-        return self.request(
-            "POST", f"/v1/runs/{run_id}/finalize", {"outcome": dict(outcome)}
-        )
+        return self.request("POST", f"/v1/runs/{run_id}/finalize", {"outcome": dict(outcome)})

@@ -18,6 +18,8 @@ from .client import ClientError, LocalClient, is_loopback_host
 from .config import AgentdPaths, Limits, ServerConfig, SyncConfig
 from .spool import SQLiteSpool
 from .adapters import ADAPTERS
+from .platform_process import windows_creation_flags
+from .local_import import LocalRunImporter
 
 
 def write_token(path: Path, token: str) -> None:
@@ -81,6 +83,13 @@ def run_foreground_service(paths: AgentdPaths, limits: Limits | None = None) -> 
     stop = threading.Event()
     sync_config = SyncConfig.load(paths.sync_config)
     worker_threads: list[threading.Thread] = []
+    worker_threads.append(
+        threading.Thread(
+            target=LocalRunImporter(paths, selected_limits).run_once,
+            name="villani-local-run-backfill",
+            daemon=True,
+        )
+    )
     if sync_config is not None:
         from .uploader import SynchronizationWorker
 
@@ -91,8 +100,8 @@ def run_foreground_service(paths: AgentdPaths, limits: Limits | None = None) -> 
 
             remote = RemoteExecutionWorker(paths, sync_config, selected_limits)
             worker_threads.append(threading.Thread(target=remote.run, args=(stop,), daemon=True))
-        for worker_thread in worker_threads:
-            worker_thread.start()
+    for worker_thread in worker_threads:
+        worker_thread.start()
     try:
         serve(ServerConfig(host="127.0.0.1", port=0, limits=selected_limits), paths, token)
     finally:
@@ -159,9 +168,8 @@ def start_background(
         command.append("--insecure-development")
     for option, value in config.limits.as_dict().items():
         command.extend([f"--{option.replace('_', '-')}", str(value)])
-    creationflags = 0
-    if os.name == "nt":
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    windows = os.name == "nt"
+    creationflags = windows_creation_flags(detached=True) if windows else 0
     log_handle = paths.log.open("ab")
     try:
         process = subprocess.Popen(
@@ -171,7 +179,7 @@ def start_background(
             stderr=log_handle,
             close_fds=True,
             creationflags=creationflags,
-            start_new_session=os.name != "nt",
+            start_new_session=not windows,
         )
     finally:
         log_handle.close()
@@ -266,6 +274,7 @@ def doctor(paths: AgentdPaths) -> tuple[bool, dict[str, Any]]:
         "adapters": [
             adapter.detect().as_dict() for name, adapter in ADAPTERS.items() if name != "generic"
         ],
+        "local_run_imports": spool.local_import_records(),
     }
     healthy = report["database_integrity"] == "ok" and endpoint_loopback
     return healthy, report

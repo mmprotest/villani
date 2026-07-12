@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 from pydantic import BaseModel, Field
 
+
 class Decision(BaseModel):
     run_id: str
 
@@ -22,8 +23,8 @@ class Decision(BaseModel):
     orchestration_summary: str = ""
     accepted: bool = False
     lifecycle_completed: bool = False
-    final_state: str = ''
-    final_action: str = 'fail'
+    final_state: str = ""
+    final_action: str = "fail"
     winning_attempt_id: str | None = None
     winning_branch: str | None = None
     winning_worktree_path: str | None = None
@@ -49,7 +50,7 @@ class Decision(BaseModel):
     decision_steps: list[dict[str, Any]] = Field(default_factory=list)
     controller_steps: list[dict[str, Any]] = Field(default_factory=list)
     controller_steps_path: str | None = None
-    failure_reason: str = ''
+    failure_reason: str = ""
     acceptance_blockers: list[str] = Field(default_factory=list)
     retries_used: int = 0
     escalations_used: int = 0
@@ -63,7 +64,7 @@ class Decision(BaseModel):
     acceptance_blockers_before_override: list[str] = Field(default_factory=list)
     acceptance_blockers_after_override: list[str] = Field(default_factory=list)
     all_attempted_backends: list[str | None] = Field(default_factory=list)
-    reason: str = ''
+    reason: str = ""
     total_attempts: int = 0
     discarded_attempts: list[dict] = Field(default_factory=list)
     decomposition_executed: bool = False
@@ -86,15 +87,43 @@ class Decision(BaseModel):
     final_review: dict[str, Any] | None = None
     parallel_execution: dict[str, Any] | None = None
 
+
 # Backward-compatible helper with the P0 acceptance guard.
 def select_attempt(run_id, attempts, selection=None, warnings=None):
-    warnings=warnings or []
-    valid=[a for a in attempts if getattr(a,'validation',None) and a.validation.passed and (getattr(a,'status',None) in {'validated','human_approved'} or getattr(a,'status',None)=='pending') and getattr(a,'error',None) is None]
+    warnings = warnings or []
+    valid = [
+        a
+        for a in attempts
+        if getattr(a, "validation", None)
+        and a.validation.passed
+        and (
+            getattr(a, "status", None) in {"validated", "human_approved"}
+            or getattr(a, "status", None) == "pending"
+        )
+        and getattr(a, "error", None) is None
+    ]
 
-    if valid and selection and getattr(selection, 'choose_lowest_cost_valid_attempt', False):
-        winner=min(valid, key=lambda a: (a.estimated_cost, -a.validation.score))
+    if (
+        valid
+        and selection
+        and getattr(selection, "choose_lowest_cost_valid_attempt", False)
+    ):
+        winner = min(valid, key=lambda a: (a.estimated_cost, -a.validation.score))
     elif valid:
-        winner=max(valid, key=lambda a: (a.validation.score, -a.estimated_cost))
+        winner = max(valid, key=lambda a: (a.validation.score, -a.estimated_cost))
     else:
-        winner=None
-    return Decision(run_id=run_id, accepted=winner is not None, final_action='accept' if winner else 'fail', winning_attempt_id=winner.attempt_id if winner else None, total_attempts=len(attempts), total_cost=sum(a.estimated_cost for a in attempts), total_input_tokens=sum(a.input_tokens for a in attempts), total_output_tokens=sum(a.output_tokens for a in attempts), warnings=warnings, reason='Selected valid successful attempt.' if winner else 'No valid successful attempt found.')
+        winner = None
+    return Decision(
+        run_id=run_id,
+        accepted=winner is not None,
+        final_action="accept" if winner else "fail",
+        winning_attempt_id=winner.attempt_id if winner else None,
+        total_attempts=len(attempts),
+        total_cost=sum(a.estimated_cost for a in attempts),
+        total_input_tokens=sum(a.input_tokens for a in attempts),
+        total_output_tokens=sum(a.output_tokens for a in attempts),
+        warnings=warnings,
+        reason="Selected valid successful attempt."
+        if winner
+        else "No valid successful attempt found.",
+    )

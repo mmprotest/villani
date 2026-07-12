@@ -84,7 +84,12 @@ def test_cross_language_fixture_byte_manifest() -> None:
 
 
 def test_span_kinds_are_documented_but_unknown_future_kinds_remain_readable() -> None:
-    assert {"controller_stage", "agent_run", "verifier", "external_service"} <= SPAN_KINDS
+    assert {
+        "controller_stage",
+        "agent_run",
+        "verifier",
+        "external_service",
+    } <= SPAN_KINDS
     document = _json(FIXTURES / "valid" / "span.json")
     document["kind"] = "future_span_kind"
     assert parse_protocol_document(document).kind == "future_span_kind"
@@ -96,9 +101,10 @@ def test_v1_translation_matches_golden_and_is_byte_stable(name: str) -> None:
     first = normalized_v2_jsonl(translate_v1_run(directory))
     second = normalized_v2_jsonl(translate_v1_run(directory))
     assert first == second
-    assert hashlib.sha256(first).hexdigest() == (
-        directory / "expected.sha256"
-    ).read_text(encoding="utf-8").strip()
+    assert (
+        hashlib.sha256(first).hexdigest()
+        == (directory / "expected.sha256").read_text(encoding="utf-8").strip()
+    )
     records = translate_v1_run(directory)
     assert all(isinstance(record, TelemetryEnvelopeV2) for record in records)
     assert all(record.idempotency_key and record.run_id for record in records)

@@ -112,7 +112,9 @@ def resolve_empirical_score(
     return EmpiricalScoreResolution(
         backend_name=requested_key.backend_name,
         static_capability_score=static_capability_score,
-        empirical_status=("insufficient_data" if any_profile else "no_matching_profile"),
+        empirical_status=(
+            "insufficient_data" if any_profile else "no_matching_profile"
+        ),
         empirical_capability_score=None,
         conservative_success_probability=None,
         mean_actual_attempt_cost=None,
@@ -128,4 +130,3 @@ def resolve_empirical_score(
         minimum_empirical_samples=minimum_empirical_samples,
         backoff_evidence=evidence,
     )
-

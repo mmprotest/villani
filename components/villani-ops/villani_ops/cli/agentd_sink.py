@@ -32,7 +32,9 @@ class AgentdEventSink:
     def register_artifact(
         self, run_id: str, descriptor: ArtifactDescriptorV2, content: bytes
     ) -> None:
-        self._client.register_artifact(run_id, descriptor.model_dump(mode="json"), content)
+        self._client.register_artifact(
+            run_id, descriptor.model_dump(mode="json"), content
+        )
 
     def finalize_run(self, run_id: str, outcome: OutcomeV2) -> None:
         self._client.finalize_run(run_id, outcome.model_dump(mode="json"))

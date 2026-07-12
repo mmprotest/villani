@@ -51,10 +51,12 @@ SCHEMA_V2_VERSION_TO_PATH: dict[str, Path] = {
     "villani.telemetry_envelope.v2": SCHEMA_ROOT_V2 / "telemetry-envelope.schema.json",
     "villani.resource.v2": SCHEMA_ROOT_V2 / "resource.schema.json",
     "villani.span.v2": SCHEMA_ROOT_V2 / "span.schema.json",
-    "villani.artifact_descriptor.v2": SCHEMA_ROOT_V2 / "artifact-descriptor.schema.json",
+    "villani.artifact_descriptor.v2": SCHEMA_ROOT_V2
+    / "artifact-descriptor.schema.json",
     "villani.outcome.v2": SCHEMA_ROOT_V2 / "outcome.schema.json",
     "villani.agent_capability.v2": SCHEMA_ROOT_V2 / "agent-capability.schema.json",
-    "villani.verifier_capability.v2": SCHEMA_ROOT_V2 / "verifier-capability.schema.json",
+    "villani.verifier_capability.v2": SCHEMA_ROOT_V2
+    / "verifier-capability.schema.json",
     "villani.policy_publication.v2": SCHEMA_ROOT_V2 / "policy-publication.schema.json",
 }
 
@@ -105,7 +107,9 @@ def _accounting_issues(
     if status == "complete" and any(value is None for value in values):
         return [
             ProtocolValidationIssue(
-                _pointer((*path, next(key for key in value_keys if document[key] is None))),
+                _pointer(
+                    (*path, next(key for key in value_keys if document[key] is None))
+                ),
                 "accounting_status",
                 f"complete {status_key} requires non-null accounting data",
             )
@@ -115,7 +119,12 @@ def _accounting_issues(
     ):
         return [
             ProtocolValidationIssue(
-                _pointer((*path, next(key for key in value_keys if document[key] is not None))),
+                _pointer(
+                    (
+                        *path,
+                        next(key for key in value_keys if document[key] is not None),
+                    )
+                ),
                 "accounting_status",
                 f"{status} {status_key} requires null accounting data",
             )
@@ -128,9 +137,7 @@ def _validate_accounting(document: Mapping[str, Any]) -> list[ProtocolValidation
     issues: list[ProtocolValidationIssue] = []
     if version == "villani.run_manifest.v1":
         issues.extend(
-            _accounting_issues(
-                document, ("total_cost_usd",), "cost_accounting_status"
-            )
+            _accounting_issues(document, ("total_cost_usd",), "cost_accounting_status")
         )
         issues.extend(
             _accounting_issues(
@@ -156,9 +163,7 @@ def _validate_accounting(document: Mapping[str, Any]) -> list[ProtocolValidation
             )
         )
         issues.extend(
-            _accounting_issues(
-                document, ("duration_ms",), "duration_accounting_status"
-            )
+            _accounting_issues(document, ("duration_ms",), "duration_accounting_status")
         )
     elif version == "villani.policy_decision.v1":
         considered = document.get("considered_backends")
@@ -212,12 +217,14 @@ def _semantic_issues(document: Mapping[str, Any]) -> list[ProtocolValidationIssu
     issues: list[ProtocolValidationIssue] = []
     version = document.get("schema_version")
 
-    if version == "villani.verification.v1" and document.get(
-        "acceptance_eligible"
-    ) is True:
-        if document.get("outcome") != "accepted" or document.get(
-            "recommended_action"
-        ) != "accept":
+    if (
+        version == "villani.verification.v1"
+        and document.get("acceptance_eligible") is True
+    ):
+        if (
+            document.get("outcome") != "accepted"
+            or document.get("recommended_action") != "accept"
+        ):
             issues.append(
                 ProtocolValidationIssue(
                     "/acceptance_eligible",
@@ -256,22 +263,24 @@ def _semantic_issues(document: Mapping[str, Any]) -> list[ProtocolValidationIssu
 
     issues.extend(_validate_accounting(document))
     if version == "villani.outcome.v2":
-        issues.extend(
-            _accounting_issues(document, ("cost",), "cost_accounting_status")
-        )
+        issues.extend(_accounting_issues(document, ("cost",), "cost_accounting_status"))
         issues.extend(
             _accounting_issues(document, ("latency_ms",), "latency_accounting_status")
         )
         if document.get("cost") is None and document.get("currency") is not None:
             issues.append(
                 ProtocolValidationIssue(
-                    "/currency", "accounting_status", "currency must be null when cost is null"
+                    "/currency",
+                    "accounting_status",
+                    "currency must be null when cost is null",
                 )
             )
         if document.get("cost") is not None and document.get("currency") is None:
             issues.append(
                 ProtocolValidationIssue(
-                    "/currency", "accounting_status", "currency is required when cost is known"
+                    "/currency",
+                    "accounting_status",
+                    "currency is required when cost is known",
                 )
             )
     return issues

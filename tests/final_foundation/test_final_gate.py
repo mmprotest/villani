@@ -63,17 +63,19 @@ def test_live_evaluator_schema_metrics_and_minimum_sample_refusal():
             wall_time_ms=100,
             attempts=2,
             escalations=1,
-            revisions={"repository_revision": "abc"},
+            revisions={"repository_revision": "a" * 40},
+            resolved_repository_revision="a" * 40,
+            policy_configuration_digest="digest",
+            locks={"evaluation": "locked"},
         )
         for policy in evaluator.POLICIES
     ]
     report = evaluator.aggregate(rows, minimum_sample_size=30)
-    assert report["schema_version"] == "villani.live_evaluation.v1"
+    assert report["schema_version"] == "villani.live_evaluation.v2"
     assert report["savings_claim_supported"] is False
     assert report["production_routing_changed"] is False
     assert all(
-        value["model_cost_accounting_status"] == "unknown"
-        and value["raw_run_ids"][0].startswith("run_")
+        value["missing_accounting_count"] == 1 and value["raw_run_ids"][0].startswith("run_")
         for value in report["strategies"].values()
     )
 

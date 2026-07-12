@@ -18,7 +18,9 @@ from villani_ops.closed_loop.schema_validation import validate_protocol_document
 
 runner = CliRunner()
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-VALID_RUN = REPOSITORY_ROOT / "integration" / "fixtures" / "protocol" / "v1" / "valid_run"
+VALID_RUN = (
+    REPOSITORY_ROOT / "integration" / "fixtures" / "protocol" / "v1" / "valid_run"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -53,9 +55,7 @@ class FakeController:
         return ClosedLoopRunResult(
             run_id="run_protocol_fixture",
             terminal_state=self.state,  # type: ignore[arg-type]
-            selected_attempt_id=(
-                "attempt_002" if self.state == "COMPLETED" else None
-            ),
+            selected_attempt_id=("attempt_002" if self.state == "COMPLETED" else None),
             run_directory=run_dir,
             actual_known_cost_usd=0.05,
             accounting_status="complete",
@@ -289,7 +289,9 @@ def test_capability_commands_rebuild_list_and_explain_without_attempt(
     rebuilt = runner.invoke(unified.app, ["capability", "rebuild"])
     assert rebuilt.exit_code == 0, rebuilt.output
     assert "Profile digest:" in rebuilt.output
-    assert (Path(os.environ["VILLANI_HOME"]) / "capabilities" / "profiles-v1.json").is_file()
+    assert (
+        Path(os.environ["VILLANI_HOME"]) / "capabilities" / "profiles-v1.json"
+    ).is_file()
 
     listed = runner.invoke(unified.app, ["capability", "list"])
     assert listed.exit_code == 0, listed.output
@@ -357,9 +359,7 @@ def test_exhausted_run_exits_three(
     assert "Terminal state: EXHAUSTED" in result.output
 
 
-def test_failed_run_exits_four(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_failed_run_exits_four(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result, _ = _invoke_fake_run(tmp_path, monkeypatch, "FAILED")
     assert result.exit_code == 4
     assert "Terminal state: FAILED" in result.output
@@ -402,9 +402,7 @@ def test_inspect_json_is_schema_valid_and_redacted() -> None:
     }
     attempt_path.write_text(json.dumps(attempt, indent=2), encoding="utf-8")
 
-    result = runner.invoke(
-        unified.app, ["inspect", "run_protocol_fixture", "--json"]
-    )
+    result = runner.invoke(unified.app, ["inspect", "run_protocol_fixture", "--json"])
 
     assert result.exit_code == 0, result.output
     assert "resolved-secret-value" not in result.output
@@ -480,7 +478,9 @@ def test_open_resolves_command_fallbacks_in_order(
         assert launched[0][:2] == ["node-executable", str(bundled)]
 
 
-def test_open_passes_optional_run_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_open_passes_optional_run_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _init()
     _copy_valid_run(unified._runs_root())
     launched: list[str] = []

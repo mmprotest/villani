@@ -89,9 +89,7 @@ def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
-def _provider(
-    attempt: AttemptSnapshot, manifest: RunManifestSnapshot
-) -> str | None:
+def _provider(attempt: AttemptSnapshot, manifest: RunManifestSnapshot) -> str | None:
     explicit = attempt.metadata.get("provider")
     if isinstance(explicit, str) and explicit:
         return explicit
@@ -120,7 +118,9 @@ def _accepted_candidates_required(manifest: RunManifestSnapshot) -> int:
         return 1
 
 
-def _human_modified(attempt: AttemptSnapshot, verification: VerificationSnapshot | None) -> bool:
+def _human_modified(
+    attempt: AttemptSnapshot, verification: VerificationSnapshot | None
+) -> bool:
     metadata: dict[str, Any] = dict(attempt.metadata)
     if verification is not None:
         metadata.update(verification.metadata)
@@ -247,9 +247,8 @@ def _make_outcome(
         excluded = "interrupted_attempt"
     elif category == "infrastructure_failure":
         excluded = "infrastructure_failure"
-    elif (
-        category == "verification_failure"
-        or (verification is not None and verification.outcome == "error")
+    elif category == "verification_failure" or (
+        verification is not None and verification.outcome == "error"
     ):
         excluded = "verification_failure"
     elif category == "materialization_failure":
@@ -262,10 +261,16 @@ def _make_outcome(
         elif (
             _outcome_label(attempt, verification) == "accepted_not_selected"
             and _accepted_candidates_required(manifest) > 1
-            and (selection is None or attempt.attempt_id not in selection.selected_candidate_ids)
+            and (
+                selection is None
+                or attempt.attempt_id not in selection.selected_candidate_ids
+            )
         ):
             included = "success"
-        elif selection is not None and attempt.attempt_id in selection.selected_candidate_ids:
+        elif (
+            selection is not None
+            and attempt.attempt_id in selection.selected_candidate_ids
+        ):
             excluded = "materialization_failure"
         else:
             excluded = "accepted_not_selected_untrusted"
@@ -316,8 +321,16 @@ def _make_outcome(
         exclusion_reason=excluded,
         actual_cost=actual_cost,
         duration_ms=duration,
-        input_tokens=(float(attempt.input_tokens) if tokens_known and attempt.input_tokens is not None else None),
-        output_tokens=(float(attempt.output_tokens) if tokens_known and attempt.output_tokens is not None else None),
+        input_tokens=(
+            float(attempt.input_tokens)
+            if tokens_known and attempt.input_tokens is not None
+            else None
+        ),
+        output_tokens=(
+            float(attempt.output_tokens)
+            if tokens_known and attempt.output_tokens is not None
+            else None
+        ),
         source_digest=_canonical_digest(payload),
     )
 
@@ -335,7 +348,9 @@ def _directory_digest(directory: Path) -> str:
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError:
             digest = "unreadable"
-        entries.append({"relative_path": path.relative_to(directory).as_posix(), "digest": digest})
+        entries.append(
+            {"relative_path": path.relative_to(directory).as_posix(), "digest": digest}
+        )
     return _canonical_digest(entries)
 
 
@@ -468,7 +483,9 @@ def _profile(accumulator: _Accumulator) -> CapabilityProfile:
         successes=accumulator.successes,
         verified_model_failures=accumulator.failures,
         sample_count=sample_count,
-        raw_success_rate=(accumulator.successes / sample_count if sample_count else 0.0),
+        raw_success_rate=(
+            accumulator.successes / sample_count if sample_count else 0.0
+        ),
         wilson_lower_bound=wilson_lower_bound(accumulator.successes, sample_count),
         mean_actual_attempt_cost=_mean(accumulator.costs),
         median_actual_attempt_cost=_median(accumulator.costs),
@@ -477,8 +494,12 @@ def _profile(accumulator: _Accumulator) -> CapabilityProfile:
         mean_input_tokens=_mean(accumulator.input_tokens),
         mean_output_tokens=_mean(accumulator.output_tokens),
         excluded_outcome_counts=dict(sorted(accumulator.exclusions.items())),
-        first_observed_at=min(accumulator.timestamps) if accumulator.timestamps else None,
-        last_observed_at=max(accumulator.timestamps) if accumulator.timestamps else None,
+        first_observed_at=min(accumulator.timestamps)
+        if accumulator.timestamps
+        else None,
+        last_observed_at=max(accumulator.timestamps)
+        if accumulator.timestamps
+        else None,
         source_data_digest=source_digest,
     )
 
@@ -501,7 +522,10 @@ def rebuild_snapshot(
 
     root = Path(runs_root).expanduser().resolve()
     directories = (
-        sorted((path for path in root.iterdir() if path.is_dir()), key=lambda path: path.name)
+        sorted(
+            (path for path in root.iterdir() if path.is_dir()),
+            key=lambda path: path.name,
+        )
         if root.is_dir()
         else []
     )
@@ -530,9 +554,7 @@ def rebuild_snapshot(
 
     def add(outcome: _Outcome, forced_exclusion: str | None = None) -> None:
         for key in _aggregate_keys(outcome.key):
-            accumulator = accumulators.setdefault(
-                key.sort_key(), _Accumulator(key=key)
-            )
+            accumulator = accumulators.setdefault(key.sort_key(), _Accumulator(key=key))
             accumulator.add(outcome, forced_exclusion=forced_exclusion)
 
     global_exclusions: Counter[str] = Counter()
@@ -553,7 +575,9 @@ def rebuild_snapshot(
             "source_digest": outcome.source_digest,
             "exclusion_reason": outcome.exclusion_reason,
         }
-        for outcome in sorted(unique, key=lambda item: (item.deduplication_key, item.source_digest))
+        for outcome in sorted(
+            unique, key=lambda item: (item.deduplication_key, item.source_digest)
+        )
     ]
     source_rows.extend(
         {
@@ -561,7 +585,9 @@ def rebuild_snapshot(
             "source_digest": outcome.source_digest,
             "exclusion_reason": "duplicate_attempt",
         }
-        for outcome in sorted(duplicates, key=lambda item: (item.deduplication_key, item.source_digest))
+        for outcome in sorted(
+            duplicates, key=lambda item: (item.deduplication_key, item.source_digest)
+        )
     )
     source_digest = _canonical_digest(
         {

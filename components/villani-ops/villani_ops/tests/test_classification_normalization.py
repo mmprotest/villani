@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from villani_ops.classification.classifier import (
     TaskClassifier,
+    adjust_classification_from_task_shape,
     fallback_task_classification_payload,
     normalize_task_classification_payload,
 )
@@ -14,21 +14,25 @@ from villani_ops.llm.client import LLMCallResult
 
 
 def _validated(payload: dict) -> TaskClassification:
-    return TaskClassification.model_validate(normalize_task_classification_payload(payload))
+    return TaskClassification.model_validate(
+        normalize_task_classification_payload(payload)
+    )
 
 
 def test_moderate_difficulty_normalizes_to_medium():
-    cls = _validated({
-        "difficulty": "moderate",
-        "category": "bug_fix",
-        "risk": "low",
-        "estimated_attempts_needed": 2,
-        "needs_tests": False,
-        "likely_files": ["src/signalshop/pricing.py"],
-        "required_capabilities": ["decimal_arithmetic"],
-        "reasoning_summary": "Focused pricing bug fix.",
-        "confidence": 0.95,
-    })
+    cls = _validated(
+        {
+            "difficulty": "moderate",
+            "category": "bug_fix",
+            "risk": "low",
+            "estimated_attempts_needed": 2,
+            "needs_tests": False,
+            "likely_files": ["src/signalshop/pricing.py"],
+            "required_capabilities": ["decimal_arithmetic"],
+            "reasoning_summary": "Focused pricing bug fix.",
+            "confidence": 0.95,
+        }
+    )
 
     assert cls.difficulty == "medium"
     assert cls.risk == "low"
@@ -37,12 +41,14 @@ def test_moderate_difficulty_normalizes_to_medium():
 
 
 def test_messy_strings_normalize():
-    cls = _validated({
-        "difficulty": "Very Hard",
-        "risk": "low-medium",
-        "needs_tests": "no",
-        "confidence": "95%",
-    })
+    cls = _validated(
+        {
+            "difficulty": "Very Hard",
+            "risk": "low-medium",
+            "needs_tests": "no",
+            "confidence": "95%",
+        }
+    )
 
     assert cls.difficulty == "hard"
     assert cls.risk == "medium"
@@ -51,14 +57,16 @@ def test_messy_strings_normalize():
 
 
 def test_missing_or_malformed_fields_are_repaired():
-    cls = _validated({
-        "difficulty": "???",
-        "risk": None,
-        "estimated_attempts_needed": "many",
-        "likely_files": "src/foo.py",
-        "required_capabilities": "python",
-        "confidence": 7,
-    })
+    cls = _validated(
+        {
+            "difficulty": "???",
+            "risk": None,
+            "estimated_attempts_needed": "many",
+            "likely_files": "src/foo.py",
+            "required_capabilities": "python",
+            "confidence": 7,
+        }
+    )
 
     assert cls.difficulty == "medium"
     assert cls.risk == "medium"
@@ -79,22 +87,24 @@ def test_fallback_payload_validates_after_unrecoverable_validation_failure():
 
 
 def test_real_model_output_regression():
-    cls = _validated({
-        "difficulty": "moderate",
-        "category": "bug_fix",
-        "risk": "low",
-        "estimated_attempts_needed": 2,
-        "needs_tests": False,
-        "likely_files": ["src/signalshop/pricing.py"],
-        "required_capabilities": [
-            "python_programming",
-            "decimal_arithmetic",
-            "business_logic_implementation",
-            "unit_testing_debugging",
-        ],
-        "reasoning_summary": "Task requires precise modifications to financial calculation logic, enforcing specific operation ordering (discount → tax → shipping), implementing exact decimal rounding, and adding input validation. Scope is tightly bounded to the pricing module with existing test coverage, indicating a focused bug fix with low regression risk.",
-        "confidence": 0.95,
-    })
+    cls = _validated(
+        {
+            "difficulty": "moderate",
+            "category": "bug_fix",
+            "risk": "low",
+            "estimated_attempts_needed": 2,
+            "needs_tests": False,
+            "likely_files": ["src/signalshop/pricing.py"],
+            "required_capabilities": [
+                "python_programming",
+                "decimal_arithmetic",
+                "business_logic_implementation",
+                "unit_testing_debugging",
+            ],
+            "reasoning_summary": "Task requires precise modifications to financial calculation logic, enforcing specific operation ordering (discount → tax → shipping), implementing exact decimal rounding, and adding input validation. Scope is tightly bounded to the pricing module with existing test coverage, indicating a focused bug fix with low regression risk.",
+            "confidence": 0.95,
+        }
+    )
 
     assert cls.difficulty == "medium"
     assert cls.category == "bug_fix"
@@ -132,11 +142,16 @@ def test_classification_validation_failure_writes_artifact(tmp_path, monkeypatch
     def invalid_normalize(raw):
         return {"difficulty": "impossible", "risk": "low"}
 
-    monkeypatch.setattr("villani_ops.classification.classifier.normalize_task_classification_payload", invalid_normalize)
+    monkeypatch.setattr(
+        "villani_ops.classification.classifier.normalize_task_classification_payload",
+        invalid_normalize,
+    )
     out_path = tmp_path / "classification.json"
     task = Task(repo_path=str(tmp_path), objective="Fix bug")
 
-    cls, call = TaskClassifier(_FakeClient({"difficulty": "impossible"})).classify(task, {"local": _backend()}, out_path)
+    cls, call = TaskClassifier(_FakeClient({"difficulty": "impossible"})).classify(
+        task, {"local": _backend()}, out_path
+    )
 
     assert cls.difficulty == "medium"
     assert call.input_tokens == 11
@@ -149,30 +164,54 @@ def test_classification_validation_failure_writes_artifact(tmp_path, monkeypatch
     assert data["fallback_payload"]["difficulty"] == "medium"
 
 
-def test_classification_cost_tokens_preserved_when_initial_validation_would_fail(tmp_path):
-    payload={"difficulty":"moderate","risk":"low","confidence":"95%"}
+def test_classification_cost_tokens_preserved_when_initial_validation_would_fail(
+    tmp_path,
+):
+    payload = {"difficulty": "moderate", "risk": "low", "confidence": "95%"}
     task = Task(repo_path=str(tmp_path), objective="Fix bug")
 
-    cls, call = TaskClassifier(_FakeClient(payload)).classify(task, {"local": _backend()}, tmp_path / "classification.json")
+    cls, call = TaskClassifier(_FakeClient(payload)).classify(
+        task, {"local": _backend()}, tmp_path / "classification.json"
+    )
 
     assert cls.difficulty == "medium"
     assert call.estimated_cost > 0
     assert call.input_tokens > 0
     assert call.output_tokens > 0
 
-from villani_ops.classification.classifier import adjust_classification_from_task_shape
-from villani_ops.core.task import TaskClassification
-
 
 def test_multifile_and_attempt_guardrails_prevent_easy():
-    cls=TaskClassification(difficulty="easy", category="bug_fix", estimated_attempts_needed=3, likely_files=["a.py","b.py","c.py","d.py","e.py"], confidence=.9)
-    out=adjust_classification_from_task_shape(cls, "Fix checkout pricing inventory orders receipts", [])
-    assert out.difficulty in {"medium","hard"}
+    cls = TaskClassification(
+        difficulty="easy",
+        category="bug_fix",
+        estimated_attempts_needed=3,
+        likely_files=["a.py", "b.py", "c.py", "d.py", "e.py"],
+        confidence=0.9,
+    )
+    out = adjust_classification_from_task_shape(
+        cls, "Fix checkout pricing inventory orders receipts", []
+    )
+    assert out.difficulty in {"medium", "hard"}
     assert any("Raised difficulty" in n for n in out.adjustment_notes)
 
 
 def test_likely_file_count_eight_is_hard_and_narrow_can_be_easy():
-    hard=adjust_classification_from_task_shape(TaskClassification(difficulty="medium", likely_files=[f"f{i}.py" for i in range(8)]), "fix", [])
+    hard = adjust_classification_from_task_shape(
+        TaskClassification(
+            difficulty="medium", likely_files=[f"f{i}.py" for i in range(8)]
+        ),
+        "fix",
+        [],
+    )
     assert hard.difficulty == "hard"
-    easy=adjust_classification_from_task_shape(TaskClassification(difficulty="easy", likely_files=["a.py"], estimated_attempts_needed=1, confidence=.9), "fix failing tests", [])
+    easy = adjust_classification_from_task_shape(
+        TaskClassification(
+            difficulty="easy",
+            likely_files=["a.py"],
+            estimated_attempts_needed=1,
+            confidence=0.9,
+        ),
+        "fix failing tests",
+        [],
+    )
     assert easy.difficulty == "easy"

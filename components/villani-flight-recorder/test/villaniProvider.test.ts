@@ -14,7 +14,9 @@ import { renderReplay } from "../src/render/renderReplay.js";
 import { renderSessionBrowser } from "../src/render/sessionBrowser.js";
 import { findVillaniRuns } from "../src/scanners/findVillaniRuns.js";
 import {
+  canonicalVillaniFixture,
   copyVillaniFixture,
+  digestRunFiles,
   snapshotRunFiles,
 } from "./helpers/villaniFixture.js";
 
@@ -31,6 +33,28 @@ async function updateJson(
 }
 
 describe("native Villani provider", () => {
+  it("copies and parses the immutable canonical fixture concurrently", async () => {
+    const canonical = canonicalVillaniFixture();
+    const before = await digestRunFiles(canonical);
+    const copies = await Promise.all(
+      Array.from({ length: 20 }, () => copyVillaniFixture()),
+    );
+    const inventories = await Promise.all(
+      copies.map(async ({ run }) => {
+        const session = await parseVillaniRun(run);
+        expect(session.sessionId).toBe("run_protocol_fixture");
+        expect(session.events).toHaveLength(24);
+        return digestRunFiles(run);
+      }),
+    );
+    expect(
+      inventories.every(
+        (inventory) => inventory.join("\n") === before.join("\n"),
+      ),
+    ).toBe(true);
+    expect(await digestRunFiles(canonical)).toEqual(before);
+  });
+
   it("accepts a valid final JSONL object without a trailing newline", async () => {
     const file = path.join(
       await fs.mkdtemp(path.join(os.tmpdir(), "vfr-jsonl-")),

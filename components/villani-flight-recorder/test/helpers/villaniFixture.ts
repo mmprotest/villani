@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,28 +15,32 @@ export const canonicalVillaniFixture = () =>
     "valid_run",
   );
 
-export async function populateVillaniFixture(): Promise<string> {
-  const target = path.resolve(
-    "test",
-    "fixtures",
-    "villani",
-    "run_protocol_fixture",
-  );
-  await fs.rm(target, { recursive: true, force: true });
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.cp(canonicalVillaniFixture(), target, { recursive: true });
-  return target;
-}
-
 export async function copyVillaniFixture(): Promise<{
   root: string;
   run: string;
 }> {
-  const generated = await populateVillaniFixture();
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-villani-runs-"));
   const run = path.join(root, "run_protocol_fixture");
-  await fs.cp(generated, run, { recursive: true });
+  await fs.cp(canonicalVillaniFixture(), run, { recursive: true });
   return { root, run };
+}
+
+export async function digestRunFiles(run: string): Promise<string[]> {
+  const rows: string[] = [];
+  const visit = async (directory: string) => {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const child = path.join(directory, entry.name);
+      if (entry.isDirectory()) await visit(child);
+      else if (entry.isFile()) {
+        const content = await fs.readFile(child);
+        rows.push(
+          `${path.relative(run, child).replaceAll(path.sep, "/")}:${content.length}:${crypto.createHash("sha256").update(content).digest("hex")}`,
+        );
+      }
+    }
+  };
+  await visit(run);
+  return rows.sort();
 }
 
 export async function snapshotRunFiles(run: string): Promise<string[]> {

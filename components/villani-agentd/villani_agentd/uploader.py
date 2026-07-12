@@ -16,6 +16,7 @@ from typing import Any
 from .config import AgentdPaths, Limits, SyncConfig
 from .credentials import InstallationCredentialStore
 from .spool import SQLiteSpool
+from .local_import import LocalRunImporter
 
 
 class RemoteError(RuntimeError):
@@ -141,6 +142,11 @@ class SynchronizationWorker:
         return self.random.uniform(0, ceiling)
 
     def sync_once(self) -> dict[str, int]:
+        LocalRunImporter(
+            self.paths,
+            self.spool.limits,
+            batch_size=self.config.batch_size,
+        ).run_once()
         now = utc_text()
         event_rows = self.spool.pending_events(self.config.batch_size, now)
         event_result = 0

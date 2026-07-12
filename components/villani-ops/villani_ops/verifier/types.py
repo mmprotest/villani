@@ -1,35 +1,143 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Any, Literal
-VerifierVerdict = Literal['success','failure','error']
-VerifierAction = Literal['accept','reject','retry_same_model','retry_higher_model','run_more_tests','inspect_manually']
+
+VerifierVerdict = Literal["success", "failure", "error"]
+VerifierAction = Literal[
+    "accept",
+    "reject",
+    "retry_same_model",
+    "retry_higher_model",
+    "run_more_tests",
+    "inspect_manually",
+]
+
+
 @dataclass
 class CommandRecord:
-    ts:str|None=None; toolCallId:str|None=None; command:str|None=None; cwd:str|None=None; exitCode:int|None=None; stdout:str|None=None; stderr:str|None=None; truncated:bool=False; event:str|None=None; raw:Any=None; index:int=0
+    ts: str | None = None
+    toolCallId: str | None = None
+    command: str | None = None
+    cwd: str | None = None
+    exitCode: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    truncated: bool = False
+    event: str | None = None
+    raw: Any = None
+    index: int = 0
+
+
 @dataclass
 class ToolCallRecord:
-    toolCallId:str|None=None; turnIndex:int|None=None; toolName:str|None=None; toolCategory:str|None=None; startedAt:str|None=None; endedAt:str|None=None; durationMs:int|None=None; status:str|None=None; args:Any=None; resultSummary:Any=None; error:Any=None; raw:Any=None; index:int=0
+    toolCallId: str | None = None
+    turnIndex: int | None = None
+    toolName: str | None = None
+    toolCategory: str | None = None
+    startedAt: str | None = None
+    endedAt: str | None = None
+    durationMs: int | None = None
+    status: str | None = None
+    args: Any = None
+    resultSummary: Any = None
+    error: Any = None
+    raw: Any = None
+    index: int = 0
+
+
 @dataclass
-class PatchRecord: filePath:str|None=None; ok:bool|None=None; raw:Any=None; index:int=0
+class PatchRecord:
+    filePath: str | None = None
+    ok: bool | None = None
+    raw: Any = None
+    index: int = 0
+
+
 @dataclass
-class ModelResponseRecord: text:str|None=None; raw:Any=None; index:int=0
+class ModelResponseRecord:
+    text: str | None = None
+    raw: Any = None
+    index: int = 0
+
+
 @dataclass
-class ValidationRecord: raw:Any=None; index:int=0
+class ValidationRecord:
+    raw: Any = None
+    index: int = 0
+
+
 @dataclass
 class EvidenceItem:
-    kind:str; source:str; confidence:str; text:str; commandId:str|None=None; turnIndex:int|None=None; timestamp:str|None=None; order:int=0
-    path:str|None=None; toolCallId:str|None=None; deliverableLinked:bool|None=None; deliverableLinks:list[str]=field(default_factory=list); validationStrength:str|None=None; validationWeakness:str|None=None
+    kind: str
+    source: str
+    confidence: str
+    text: str
+    commandId: str | None = None
+    turnIndex: int | None = None
+    timestamp: str | None = None
+    order: int = 0
+    path: str | None = None
+    toolCallId: str | None = None
+    deliverableLinked: bool | None = None
+    deliverableLinks: list[str] = field(default_factory=list)
+    validationStrength: str | None = None
+    validationWeakness: str | None = None
+
+
 @dataclass
 class DeliverableSpec:
-    required_files:list[str]=field(default_factory=list); required_output_files:list[str]=field(default_factory=list); required_edited_files:list[str]=field(default_factory=list); required_services:list[str]=field(default_factory=list); required_endpoints:list[str]=field(default_factory=list); required_binaries:list[str]=field(default_factory=list); required_generated_artifacts:list[str]=field(default_factory=list); required_commands:list[str]=field(default_factory=list); required_functions:list[str]=field(default_factory=list); required_behavior:list[str]=field(default_factory=list); negative_constraints:list[str]=field(default_factory=list); allowed_edit_constraints:list[str]=field(default_factory=list)
+    required_files: list[str] = field(default_factory=list)
+    required_output_files: list[str] = field(default_factory=list)
+    required_edited_files: list[str] = field(default_factory=list)
+    required_services: list[str] = field(default_factory=list)
+    required_endpoints: list[str] = field(default_factory=list)
+    required_binaries: list[str] = field(default_factory=list)
+    required_generated_artifacts: list[str] = field(default_factory=list)
+    required_commands: list[str] = field(default_factory=list)
+    required_functions: list[str] = field(default_factory=list)
+    required_behavior: list[str] = field(default_factory=list)
+    negative_constraints: list[str] = field(default_factory=list)
+    allowed_edit_constraints: list[str] = field(default_factory=list)
+
+
 @dataclass
 class RequirementCheck:
-    id:str; requirement:str; status:str='unsatisfied'; evidence:list[EvidenceItem]=field(default_factory=list); risks:list[EvidenceItem]=field(default_factory=list)
+    id: str
+    requirement: str
+    status: str = "unsatisfied"
+    evidence: list[EvidenceItem] = field(default_factory=list)
+    risks: list[EvidenceItem] = field(default_factory=list)
+
+
 @dataclass
 class DebugRun:
-    debugDir:str; runId:str|None=None; objective:str|None=None; repoFromMetadata:str|None=None; model:str|None=None; provider:str|None=None; status:str|None=None; startedAt:str|None=None; endedAt:str|None=None; durationMs:int|None=None; sessionMeta:Any=None; summary:Any=None; finalSummary:Any=None; commands:list[CommandRecord]=field(default_factory=list); toolCalls:list[ToolCallRecord]=field(default_factory=list); patches:list[PatchRecord]=field(default_factory=list); modelResponses:list[ModelResponseRecord]=field(default_factory=list); validations:list[ValidationRecord]=field(default_factory=list); parseWarnings:list[str]=field(default_factory=list); missingArtifacts:list[str]=field(default_factory=list)
+    debugDir: str
+    runId: str | None = None
+    objective: str | None = None
+    repoFromMetadata: str | None = None
+    model: str | None = None
+    provider: str | None = None
+    status: str | None = None
+    startedAt: str | None = None
+    endedAt: str | None = None
+    durationMs: int | None = None
+    sessionMeta: Any = None
+    summary: Any = None
+    finalSummary: Any = None
+    commands: list[CommandRecord] = field(default_factory=list)
+    toolCalls: list[ToolCallRecord] = field(default_factory=list)
+    patches: list[PatchRecord] = field(default_factory=list)
+    modelResponses: list[ModelResponseRecord] = field(default_factory=list)
+    validations: list[ValidationRecord] = field(default_factory=list)
+    parseWarnings: list[str] = field(default_factory=list)
+    missingArtifacts: list[str] = field(default_factory=list)
+
+
 def to_jsonable(x):
-    if hasattr(x,'__dataclass_fields__'): return {k:to_jsonable(v) for k,v in asdict(x).items() if k!='raw'}
-    if isinstance(x,list): return [to_jsonable(v) for v in x]
-    if isinstance(x,dict): return {k:to_jsonable(v) for k,v in x.items()}
+    if hasattr(x, "__dataclass_fields__"):
+        return {k: to_jsonable(v) for k, v in asdict(x).items() if k != "raw"}
+    if isinstance(x, list):
+        return [to_jsonable(v) for v in x]
+    if isinstance(x, dict):
+        return {k: to_jsonable(v) for k, v in x.items()}
     return x

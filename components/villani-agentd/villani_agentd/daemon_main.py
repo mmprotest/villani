@@ -12,6 +12,7 @@ from .config import AgentdPaths, ServerConfig, SyncConfig
 from .uploader import SynchronizationWorker
 from .remote_worker import RemoteExecutionWorker
 from .server import serve
+from .local_import import LocalRunImporter
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -28,14 +29,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     stop = threading.Event()
     sync_config = SyncConfig.load(paths.sync_config)
     worker_threads: list[threading.Thread] = []
+    worker_threads.append(
+        threading.Thread(
+            target=LocalRunImporter(paths, limits).run_once,
+            name="villani-local-run-backfill",
+            daemon=True,
+        )
+    )
     if sync_config is not None:
         worker = SynchronizationWorker(paths, sync_config, limits)
         worker_threads.append(threading.Thread(target=worker.run, args=(stop,), daemon=True))
         if sync_config.remote_execution_enabled:
             remote = RemoteExecutionWorker(paths, sync_config, limits)
             worker_threads.append(threading.Thread(target=remote.run, args=(stop,), daemon=True))
-        for worker_thread in worker_threads:
-            worker_thread.start()
+    for worker_thread in worker_threads:
+        worker_thread.start()
     try:
         serve(
             ServerConfig(host=args.host, port=args.port, limits=limits),

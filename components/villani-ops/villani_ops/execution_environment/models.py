@@ -106,7 +106,9 @@ class SecretRequest(StrictModel):
 
 
 class ExecutionEnvironmentConfig(StrictModel):
-    provider: Literal["inherit", "setup-command", "container", "devcontainer"] = "inherit"
+    provider: Literal["inherit", "setup-command", "container", "devcontainer"] = (
+        "inherit"
+    )
     mode: Literal["local", "controlled", "remote"] = "local"
     denied_variables: list[str] = Field(default_factory=list)
     sensitive_variables: list[str] = Field(default_factory=list)
@@ -126,7 +128,9 @@ class ExecutionEnvironmentConfig(StrictModel):
     def validate_setup(self) -> "ExecutionEnvironmentConfig":
         if self.provider in {"inherit", "container", "devcontainer"}:
             if self.setup_argv or self.shell_command or self.shell:
-                raise ValueError(f"{self.provider} provider cannot configure a setup command")
+                raise ValueError(
+                    f"{self.provider} provider cannot configure a setup command"
+                )
             if self.provider == "container" and not self.container.image:
                 raise ValueError("container provider requires container.image")
             network = self.container.network
@@ -216,9 +220,12 @@ class CommandResult(StrictModel):
     timed_out: bool
     disk_limit_exceeded: bool
     process_limit_exceeded: bool
-    failure_classification: Literal[
-        "timeout", "disk_limit", "process_limit", "memory_limit", "policy_denied"
-    ] | None = None
+    failure_classification: (
+        Literal[
+            "timeout", "disk_limit", "process_limit", "memory_limit", "policy_denied"
+        ]
+        | None
+    ) = None
 
 
 class PreparedEnvironment(StrictModel):

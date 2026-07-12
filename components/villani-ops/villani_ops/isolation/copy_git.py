@@ -73,6 +73,7 @@ def remove_tree(path: Path) -> None:
     if Path(path).is_symlink():
         Path(path).unlink(missing_ok=True)
         return
+
     def make_writable_and_retry(function, name, _exc_info):
         os.chmod(name, stat.S_IWRITE | stat.S_IREAD)
         function(name)
@@ -143,9 +144,8 @@ def _excluded(relative: str, extra: list[str] | None) -> bool:
         return True
     if lowered_name == ".env" or lowered_name.startswith(".env."):
         return True
-    if (
-        lowered_name in KNOWN_SECRET_FILENAMES
-        or lowered_name.endswith(KNOWN_SECRET_SUFFIXES)
+    if lowered_name in KNOWN_SECRET_FILENAMES or lowered_name.endswith(
+        KNOWN_SECRET_SUFFIXES
     ):
         return True
     for pattern in extra or []:
@@ -184,7 +184,9 @@ def _snapshot_paths(source: Path) -> list[str]:
 def _safe_relative_path(relative: str) -> Path:
     path = Path(relative)
     if path.is_absolute() or ".." in path.parts or path == Path("."):
-        raise AttemptIsolationError(f"Git returned an unsafe tracked path: {relative!r}")
+        raise AttemptIsolationError(
+            f"Git returned an unsafe tracked path: {relative!r}"
+        )
     return path
 
 
@@ -205,7 +207,9 @@ def _export_paths(
         rel = _safe_relative_path(relative)
         origin = source / rel
         if not origin.exists() and not origin.is_symlink():
-            raise AttemptIsolationError(f"tracked attempt file disappeared: {rel.as_posix()}")
+            raise AttemptIsolationError(
+                f"tracked attempt file disappeared: {rel.as_posix()}"
+            )
         if origin.is_dir() and not origin.is_symlink():
             # Git links (submodules) are not recursively exported. A coding
             # attempt may not import an unbounded, separately controlled tree.

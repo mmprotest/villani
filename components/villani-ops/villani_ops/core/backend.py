@@ -3,9 +3,14 @@ import os
 from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
-Provider = Literal["openai-compatible", "openai", "anthropic", "villani-code", "local", "custom"]
-Role = Literal["coding", "classification", "review", "policy", "investigation", "selection"]
+Provider = Literal[
+    "openai-compatible", "openai", "anthropic", "villani-code", "local", "custom"
+]
+Role = Literal[
+    "coding", "classification", "review", "policy", "investigation", "selection"
+]
 BillingMode = Literal["token", "compute_time", "fixed", "hybrid", "unknown"]
+
 
 class Backend(BaseModel):
     name: str
@@ -56,6 +61,7 @@ class Backend(BaseModel):
             return value
         input_price = value.get("input_cost_per_million")
         output_price = value.get("output_cost_per_million")
+
         def is_positive(price: Any) -> bool:
             if price is None or isinstance(price, bool):
                 return False
@@ -85,7 +91,11 @@ class Backend(BaseModel):
         if self.api_key not in {None, "", "***REDACTED***"}:
             return "direct_key_configured"
         if self.api_key_env:
-            return "env_var_present" if os.environ.get(self.api_key_env) else "env_var_missing"
+            return (
+                "env_var_present"
+                if os.environ.get(self.api_key_env)
+                else "env_var_missing"
+            )
         return "missing"
 
     def redacted_dict(self) -> dict[str, Any]:
@@ -94,14 +104,26 @@ class Backend(BaseModel):
             data["api_key"] = "***REDACTED***"
         return data
 
-    def estimate_cost(self, input_tokens:int=0, output_tokens:int=0) -> float:
-        return (input_tokens/1_000_000*self.input_cost_per_million) + (output_tokens/1_000_000*self.output_cost_per_million)
+    def estimate_cost(self, input_tokens: int = 0, output_tokens: int = 0) -> float:
+        return (input_tokens / 1_000_000 * self.input_cost_per_million) + (
+            output_tokens / 1_000_000 * self.output_cost_per_million
+        )
+
 
 def select_backend(backends: dict[str, Backend], role: str) -> Backend:
-    eligible=[b for b in backends.values() if b.enabled and role in b.roles]
+    eligible = [b for b in backends.values() if b.enabled and role in b.roles]
     if not eligible:
         raise ValueError(f"No enabled backend configured for role '{role}'.")
-    return sorted(eligible, key=lambda b: (-b.capability_score, b.output_cost_per_million, b.input_cost_per_million, b.name))[0]
+    return sorted(
+        eligible,
+        key=lambda b: (
+            -b.capability_score,
+            b.output_cost_per_million,
+            b.input_cost_per_million,
+            b.name,
+        ),
+    )[0]
+
 
 def coding_backends(backends: dict[str, Backend]) -> list[Backend]:
     return [b for b in backends.values() if b.enabled and "coding" in b.roles]

@@ -93,9 +93,7 @@ def evaluate_policy(
         seed=bootstrap_seed + 2,
     )
     ips_values = [
-        (1.0 if row.success is True else 0.0)
-        * row.target_probability
-        / row.propensity
+        (1.0 if row.success is True else 0.0) * row.target_probability / row.propensity
         for row in observed
         if row.propensity is not None
     ]

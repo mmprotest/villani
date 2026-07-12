@@ -11,12 +11,14 @@ class ValidationCommand(BaseModel):
     timeout_seconds: int | None = None
     shell: bool = False
 
+
 class ValidationPlan(BaseModel):
     commands: list[ValidationCommand] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     success_criteria_mapping: list[dict[str, Any]] = Field(default_factory=list)
     fallback: bool = False
     source: str | None = None
+
 
 class InvestigationResult(BaseModel):
     summary: str
@@ -35,6 +37,7 @@ class InvestigationResult(BaseModel):
     raw_findings: dict[str, Any] = Field(default_factory=dict)
     validation_plan: ValidationPlan | None = None
 
+
 class CandidateSummary(BaseModel):
     attempt_id: str
     backend_name: str
@@ -52,6 +55,7 @@ class CandidateSummary(BaseModel):
     acceptance_blockers: list[str] = Field(default_factory=list)
     has_patch: bool = False
     telemetry: dict[str, Any] = Field(default_factory=dict)
+
 
 class SelectionResult(BaseModel):
     selected_attempt_id: str | None = None

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from pydantic import BaseModel
 
+
 class TaskContext(BaseModel):
     objective: str
     success_criteria: str | None = None
@@ -10,6 +11,6 @@ class TaskContext(BaseModel):
     plan: dict[str, Any] | None = None
     decomposition: dict[str, Any] | None = None
     repo_summary: str | None = None
-    overall_difficulty: Literal['easy','medium','hard','unknown'] = 'unknown'
-    overall_risk: Literal['low','medium','high','unknown'] = 'unknown'
+    overall_difficulty: Literal["easy", "medium", "hard", "unknown"] = "unknown"
+    overall_risk: Literal["low", "medium", "high", "unknown"] = "unknown"
     confidence: float = 0.0

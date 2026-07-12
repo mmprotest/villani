@@ -176,9 +176,7 @@ class RunStore:
         try:
             validate_protocol_document(document)
             with self._lock:
-                append_jsonl_durable(
-                    self._path("policy_decisions.jsonl"), document
-                )
+                append_jsonl_durable(self._path("policy_decisions.jsonl"), document)
         except Exception as error:
             if isinstance(error, RunStoreError):
                 raise

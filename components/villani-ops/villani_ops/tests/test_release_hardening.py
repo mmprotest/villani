@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 from pathlib import Path
 
@@ -30,9 +31,7 @@ from villani_ops.providers import (
 
 
 def _git(repo: Path, *args: str) -> None:
-    result = subprocess.run(
-        ["git", *args], cwd=repo, text=True, capture_output=True
-    )
+    result = subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
 
 
@@ -59,7 +58,13 @@ def _git_repo(tmp_path: Path) -> tuple[Path, Path | None]:
         link.symlink_to(external)
     except (OSError, NotImplementedError):
         link = None
-    _git(repo, "add", "tracked.txt", ".gitignore", *( ["external-link.txt"] if link else [] ))
+    _git(
+        repo,
+        "add",
+        "tracked.txt",
+        ".gitignore",
+        *(["external-link.txt"] if link else []),
+    )
     _git(repo, "commit", "-qm", "fixture")
     return repo, link
 
@@ -80,7 +85,9 @@ def test_provider_contract_and_villani_code_mapping() -> None:
     with pytest.raises(ProviderConfigurationError, match="requires an API key"):
         validate_closed_loop_backend(openai)
 
-    with pytest.raises(ProviderConfigurationError, match="requires an explicit base_url"):
+    with pytest.raises(
+        ProviderConfigurationError, match="requires an explicit base_url"
+    ):
         validate_closed_loop_backend(
             Backend(name="missing-url", provider="openai-compatible", model="stub")
         )
@@ -117,7 +124,9 @@ def test_local_compute_pricing_preserves_configured_currency() -> None:
         (1, "tests failed", "runner_nonzero_exit"),
     ],
 )
-def test_runner_failure_categories(exit_code: int | None, stderr: str, expected: str) -> None:
+def test_runner_failure_categories(
+    exit_code: int | None, stderr: str, expected: str
+) -> None:
     assert classify_runner_failure(exit_code, "", stderr) == expected
 
 
@@ -152,7 +161,10 @@ def test_agentic_provider_failure_categories(error: Exception, expected: str) ->
     ("error", "expected"),
     [
         (FileNotFoundError("missing executable"), "executable_not_found"),
-        (ProviderConfigurationError("invalid provider configuration"), "provider_config_error"),
+        (
+            ProviderConfigurationError("invalid provider configuration"),
+            "provider_config_error",
+        ),
         (
             subprocess.CalledProcessError(1, ["runner"], stderr="connection refused"),
             "backend_connection_error",
@@ -171,13 +183,25 @@ def test_agentic_provider_failure_categories(error: Exception, expected: str) ->
         ),
         (
             subprocess.CalledProcessError(9, ["runner"], stderr="unexpected exit"),
-            "runner_nonzero_exit",
+            "runner_error",
         ),
     ],
 )
 def test_legacy_runner_failure_categories(error: Exception, expected: str) -> None:
     kind, _message, _recoverable = _provider_failure(error, object())
     assert kind == expected
+
+
+def test_provider_failure_preserves_nested_and_structured_connection_categories() -> (
+    None
+):
+    nested = RuntimeError("generic runner wrapper")
+    nested.__cause__ = socket.gaierror("backend resolution failed")
+    assert _provider_failure(nested, object())[0] == "backend_connection_error"
+
+    structured = subprocess.CalledProcessError(1, ["runner"], stderr="generic wrapper")
+    structured.result = {"failure_kind": "backend_connection_error"}
+    assert _provider_failure(structured, object())[0] == "backend_connection_error"
 
 
 def test_attempt_export_excludes_ignored_files_and_preserves_external_symlink(
@@ -241,12 +265,21 @@ def test_legacy_non_git_snapshot_is_bounded_and_excludes_private_state(
 
     assert copied >= 1 and total == (source / "source.py").stat().st_size
     assert (destination / "source.py").is_file()
-    assert not any((destination / name).exists() for name in (
-        ".villani", ".villani-ops", ".venv", "node_modules", "build", "dist"
-    ))
-    assert not any((destination / name).exists() for name in (
-        ".env.local", ".npmrc", "id_rsa", "service-account.json"
-    ))
+    assert not any(
+        (destination / name).exists()
+        for name in (
+            ".villani",
+            ".villani-ops",
+            ".venv",
+            "node_modules",
+            "build",
+            "dist",
+        )
+    )
+    assert not any(
+        (destination / name).exists()
+        for name in (".env.local", ".npmrc", "id_rsa", "service-account.json")
+    )
     if link is not None:
         assert (destination / link.name).is_symlink()
         assert os.readlink(destination / link.name) == os.readlink(link)
@@ -264,7 +297,9 @@ def test_legacy_non_git_snapshot_rejects_oversized_content(tmp_path: Path) -> No
         copy_worktree(source, tmp_path / "total-limit", max_total_size_bytes=3)
 
 
-def test_baselined_attempt_worktree_can_be_removed_after_capture(tmp_path: Path) -> None:
+def test_baselined_attempt_worktree_can_be_removed_after_capture(
+    tmp_path: Path,
+) -> None:
     repo, _ = _git_repo(tmp_path)
     candidate = create_git_baselined_copy(repo, tmp_path / "candidate")
     assert candidate.worktree_path.is_dir()
@@ -273,7 +308,9 @@ def test_baselined_attempt_worktree_can_be_removed_after_capture(tmp_path: Path)
     remove_tree(candidate.candidate_dir)
 
 
-def _classification_context(tmp_path: Path, backend: str = "primary") -> ClassificationContext:
+def _classification_context(
+    tmp_path: Path, backend: str = "primary"
+) -> ClassificationContext:
     return ClassificationContext(
         run_id="run",
         trace_id="trace",
@@ -320,7 +357,9 @@ def _successful_classifier_result(backend: Backend) -> LLMCallResult:
     )
 
 
-def test_classifier_retries_transient_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_classifier_retries_transient_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls = 0
 
     def fake_classify(_self, _task, _backends, *, backend_override=None, **_kwargs):
@@ -329,10 +368,16 @@ def test_classifier_retries_transient_failure(monkeypatch: pytest.MonkeyPatch, t
         if calls == 1:
             raise RuntimeError("temporary connection refused")
         assert backend_override is not None
-        return TaskClassification.model_validate(_successful_classifier_result(backend_override).parsed_json), _successful_classifier_result(backend_override)
+        return TaskClassification.model_validate(
+            _successful_classifier_result(backend_override).parsed_json
+        ), _successful_classifier_result(backend_override)
 
-    monkeypatch.setattr("villani_ops.cli.unified.TaskClassifier.classify", fake_classify)
-    adapter = _ClassifierAdapter(_classifier_backends(), {"policy": {"classifier_retry_limit": 1}})
+    monkeypatch.setattr(
+        "villani_ops.cli.unified.TaskClassifier.classify", fake_classify
+    )
+    adapter = _ClassifierAdapter(
+        _classifier_backends(), {"policy": {"classifier_retry_limit": 1}}
+    )
     result = adapter.classify("fix the test", _classification_context(tmp_path))
     assert result.difficulty == "medium"
     assert calls == 2
@@ -340,7 +385,9 @@ def test_classifier_retries_transient_failure(monkeypatch: pytest.MonkeyPatch, t
     assert result.metadata.get("classification_fallback") is not True
 
 
-def test_classifier_uses_configured_alternate_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_classifier_uses_configured_alternate_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     seen: list[str] = []
 
     def fake_classify(_self, _task, _backends, *, backend_override=None, **_kwargs):
@@ -351,7 +398,9 @@ def test_classifier_uses_configured_alternate_backend(monkeypatch: pytest.Monkey
         result = _successful_classifier_result(backend_override)
         return TaskClassification.model_validate(result.parsed_json), result
 
-    monkeypatch.setattr("villani_ops.cli.unified.TaskClassifier.classify", fake_classify)
+    monkeypatch.setattr(
+        "villani_ops.cli.unified.TaskClassifier.classify", fake_classify
+    )
     configuration = {
         "policy": {
             "classifier_retry_limit": 0,
@@ -364,7 +413,9 @@ def test_classifier_uses_configured_alternate_backend(monkeypatch: pytest.Monkey
     assert result.metadata["classification_backend"]["name"] == "fallback"
 
 
-def test_classifier_conservative_fallback_is_explicit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_classifier_conservative_fallback_is_explicit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     def always_fail(*_args, **_kwargs):
         raise RuntimeError("all classifier backends unavailable")
 

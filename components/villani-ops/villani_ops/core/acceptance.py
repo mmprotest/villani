@@ -2,26 +2,72 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 import fnmatch
+
+
 def _is_excluded(path: str) -> bool:
-    p=str(path).replace('\\','/')
-    if p.startswith('./'): p=p[2:]
-    return p.startswith(('.villani/', '.villani_code/')) or p in {'.villani','.villani_code'}
+    p = str(path).replace("\\", "/")
+    if p.startswith("./"):
+        p = p[2:]
+    return p.startswith((".villani/", ".villani_code/")) or p in {
+        ".villani",
+        ".villani_code",
+    }
+
 
 def _is_scratch(path: str) -> bool:
-    p=str(path).replace('\\','/').lstrip('./')
-    name=Path(p).name
-    pats=['_fix.py','*_fix.py','fix_*.py','*_debug.py','debug*.txt','debug*.log','test_debug.py','test_result.txt','test_output.txt','tmp_*.py','scratch*.py','scratch*.txt','notes.txt','size.txt','stash_list.txt','scripts/fix_*.py','scripts/*_fix.py']
+    p = str(path).replace("\\", "/").lstrip("./")
+    name = Path(p).name
+    pats = [
+        "_fix.py",
+        "*_fix.py",
+        "fix_*.py",
+        "*_debug.py",
+        "debug*.txt",
+        "debug*.log",
+        "test_debug.py",
+        "test_result.txt",
+        "test_output.txt",
+        "tmp_*.py",
+        "scratch*.py",
+        "scratch*.txt",
+        "notes.txt",
+        "size.txt",
+        "stash_list.txt",
+        "scripts/fix_*.py",
+        "scripts/*_fix.py",
+    ]
     return any(fnmatch.fnmatch(p, pat) or fnmatch.fnmatch(name, pat) for pat in pats)
 
+
 def patch_contains_internal_artifacts(patch_path: Any) -> bool:
-    try: text=Path(patch_path).read_text(errors='replace')
-    except Exception: return True
-    return any(x in text for x in ('.villani','.villani_code','context_state.json','mission_state.json','transcript','checkpoint'))
+    try:
+        text = Path(patch_path).read_text(errors="replace")
+    except Exception:
+        return True
+    return any(
+        x in text
+        for x in (
+            ".villani",
+            ".villani_code",
+            "context_state.json",
+            "mission_state.json",
+            "transcript",
+            "checkpoint",
+        )
+    )
+
 
 def is_git_compatible_patch(patch_path: Any) -> bool:
-    try: text=Path(patch_path).read_text(errors='replace').lstrip()
-    except Exception: return False
-    return text.startswith('diff --git ') and 'Added file:' not in text and 'Removed file:' not in text and 'Deleted file:' not in text
+    try:
+        text = Path(patch_path).read_text(errors="replace").lstrip()
+    except Exception:
+        return False
+    return (
+        text.startswith("diff --git ")
+        and "Added file:" not in text
+        and "Removed file:" not in text
+        and "Deleted file:" not in text
+    )
 
 
 def _get(attempt: Any, key: str, default=None):
@@ -55,12 +101,26 @@ def attempt_requires_patch(state: Any | None, attempt: Any) -> bool:
     Villani Ops normally executes coding attempts, so absence of an explicit
     no-change/analysis-only classification means changes are expected.
     """
-    classification = _get(attempt, "classification") or (_get(state, "classification") if state is not None else None) or {}
+    classification = (
+        _get(attempt, "classification")
+        or (_get(state, "classification") if state is not None else None)
+        or {}
+    )
     if not isinstance(classification, dict):
         classification = getattr(classification, "model_dump", lambda **_: {})()
-    category = str(classification.get("category") or classification.get("type") or "").lower()
-    no_change = classification.get("requires_code_changes") is False or classification.get("code_change_expected") is False
-    if no_change or category in {"analysis", "analysis_only", "no_change", "documentation_review"}:
+    category = str(
+        classification.get("category") or classification.get("type") or ""
+    ).lower()
+    no_change = (
+        classification.get("requires_code_changes") is False
+        or classification.get("code_change_expected") is False
+    )
+    if no_change or category in {
+        "analysis",
+        "analysis_only",
+        "no_change",
+        "documentation_review",
+    }:
         return False
     return True
 
@@ -78,8 +138,16 @@ def _validation_blockers(validation: Any) -> list[str]:
             return []
         if status == "failed":
             failures = decision.get("blocking_failures") or []
-            command_rejected = any(str((f or {}).get("status") or "").lower() == "command_rejected" for f in failures if isinstance(f, dict))
-            non_rejected = any(str((f or {}).get("status") or "").lower() != "command_rejected" for f in failures if isinstance(f, dict))
+            command_rejected = any(
+                str((f or {}).get("status") or "").lower() == "command_rejected"
+                for f in failures
+                if isinstance(f, dict)
+            )
+            non_rejected = any(
+                str((f or {}).get("status") or "").lower() != "command_rejected"
+                for f in failures
+                if isinstance(f, dict)
+            )
             if command_rejected:
                 blockers.append("validation_command_rejected")
             if non_rejected or not command_rejected:
@@ -107,7 +175,9 @@ def _validation_blockers(validation: Any) -> list[str]:
     return sorted(set(blockers))
 
 
-def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = None, *, state: Any | None = None) -> tuple[bool, list[str]]:
+def is_attempt_acceptance_eligible(
+    attempt: Any, human_approval: Any | None = None, *, state: Any | None = None
+) -> tuple[bool, list[str]]:
     """Return whether an attempt may be accepted by the controller.
 
     Review approval is necessary but never sufficient: runner success,
@@ -120,7 +190,11 @@ def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = No
     if not isinstance(human, dict) and human is not None:
         human = getattr(human, "model_dump", lambda **_: {})()
     override_ok, override_blockers = human_override_blockers(attempt, human)
-    if isinstance(human, dict) and human.get("decision") == "accept" and status == "human_approved":
+    if (
+        isinstance(human, dict)
+        and human.get("decision") == "accept"
+        and status == "human_approved"
+    ):
         if override_ok:
             return True, []
         return False, override_blockers
@@ -132,7 +206,10 @@ def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = No
     if scope == "subtask" and not _get(attempt, "subtask_id"):
         blockers.append("subtask_id_missing")
     if scope == "integration":
-        if _get(attempt, "failure_reason") == "agentic_subtask_integration_not_implemented":
+        if (
+            _get(attempt, "failure_reason")
+            == "agentic_subtask_integration_not_implemented"
+        ):
             blockers.append("integration_not_implemented")
         if _get(attempt, "merge_conflicts"):
             blockers.append("merge_conflicts")
@@ -147,7 +224,13 @@ def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = No
         blockers.append("attempt_not_completed")
     elif status in {"failed", "rejected"}:
         blockers.append("runner_failed")
-    elif status not in {"completed", "reviewed", "validated", "accepted", "human_approved"}:
+    elif status not in {
+        "completed",
+        "reviewed",
+        "validated",
+        "accepted",
+        "human_approved",
+    }:
         blockers.append(f"attempt_status_invalid:{status}")
 
     exit_code = _get(attempt, "exit_code")
@@ -156,7 +239,9 @@ def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = No
     if _get(attempt, "runner_error_type"):
         blockers.append("runner_exception")
     if _get(attempt, "error") or _get(attempt, "failure_reason"):
-        blockers.append("integration_failed" if scope == "integration" else "runner_failed")
+        blockers.append(
+            "integration_failed" if scope == "integration" else "runner_failed"
+        )
 
     if attempt_requires_patch(state, attempt):
         patch_path = _get(attempt, "patch_path")
@@ -172,7 +257,7 @@ def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = No
         elif all(_is_excluded(str(f)) for f in changed_files):
             blockers.append("internal_artifacts_only")
         if any(_is_scratch(str(f)) for f in changed_files):
-            blockers.extend(["scratch_artifact_in_patch","patch_hygiene_failed"])
+            blockers.extend(["scratch_artifact_in_patch", "patch_hygiene_failed"])
         if patch_path and _patch_readable(patch_path):
             if patch_contains_internal_artifacts(patch_path):
                 blockers.append("patch_contains_internal_artifacts")
@@ -187,14 +272,14 @@ def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = No
             if hygiene.get("format_valid") is False and patch_path:
                 blockers.append("invalid_patch_format")
             if hygiene.get("scratch_artifacts_in_patch"):
-                blockers.extend(["scratch_artifact_in_patch","patch_hygiene_failed"])
+                blockers.extend(["scratch_artifact_in_patch", "patch_hygiene_failed"])
         scope_assessment = _get(attempt, "scope_assessment") or {}
         if isinstance(scope_assessment, dict):
             blockers.extend(scope_assessment.get("blockers") or [])
 
     review = _get(attempt, "review")
     review_status = _get(attempt, "review_status")
-    if review_status in {"unavailable","malformed","provider_error"}:
+    if review_status in {"unavailable", "malformed", "provider_error"}:
         blockers.append("review_infrastructure_failed")
     if not review:
         blockers.append("review_missing")
@@ -216,7 +301,9 @@ def is_attempt_acceptance_eligible(attempt: Any, human_approval: Any | None = No
     return (not blockers), sorted(set(blockers))
 
 
-def human_override_blockers(attempt: Any, human_approval: Any | None = None) -> tuple[bool, list[str]]:
+def human_override_blockers(
+    attempt: Any, human_approval: Any | None = None
+) -> tuple[bool, list[str]]:
     """Strictly validate whether a human approval can override normal gates."""
     human = human_approval or _get(attempt, "human_approval") or {}
     if not isinstance(human, dict) and human is not None:
@@ -234,7 +321,9 @@ def human_override_blockers(attempt: Any, human_approval: Any | None = None) -> 
         blockers.append("human approval was not prompted")
     if human.get("skipped_reason") is not None:
         blockers.append(f"human approval was skipped: {human.get('skipped_reason')}")
-    if not isinstance(human.get("request_reasons"), list) or not human.get("request_reasons"):
+    if not isinstance(human.get("request_reasons"), list) or not human.get(
+        "request_reasons"
+    ):
         blockers.append("human override requires non-empty request reasons")
     patch_path = _get(attempt, "patch_path")
     changed = _get(attempt, "changed_files") or []

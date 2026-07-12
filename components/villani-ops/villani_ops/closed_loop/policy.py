@@ -47,9 +47,7 @@ class EmpiricalCapabilityConfiguration(BaseModel):
     # By default the routing confidence target is also the minimum Wilson
     # lower bound for empirical qualification. Operators can set a lower
     # explicit bound when empirical evidence should qualify earlier.
-    minimum_empirical_wilson_lower_bound: float | None = Field(
-        default=None, ge=0, le=1
-    )
+    minimum_empirical_wilson_lower_bound: float | None = Field(default=None, ge=0, le=1)
     persisted_sequence_top_n: int = Field(default=100, ge=1)
     classifier_version: str = Field(default="task_classifier_v1", min_length=1)
     verifier_version: str = Field(
@@ -74,9 +72,7 @@ def configured_backends(configuration: Mapping[str, Any]) -> dict[str, Backend]:
                 items.append(Backend.model_validate({"name": str(name), **dict(value)}))
     elif isinstance(raw, list):
         items = [
-            value
-            if isinstance(value, Backend)
-            else Backend.model_validate(value)
+            value if isinstance(value, Backend) else Backend.model_validate(value)
             for value in raw
             if isinstance(value, (Backend, Mapping))
         ]
@@ -92,8 +88,7 @@ def required_capability(
     if (
         classification.risk == "high"
         or classification.difficulty == "hard"
-        or classification.confidence
-        < configuration.conservative_confidence_threshold
+        or classification.confidence < configuration.conservative_confidence_threshold
     ):
         return (
             configuration.hard_min_capability,
@@ -172,7 +167,9 @@ class BootstrapPolicyEngine:
                 continue
             resolution = resolve_empirical_score(
                 self.capability_snapshot,
-                profile_key_for(backend, context.classification, self.raw_configuration),
+                profile_key_for(
+                    backend, context.classification, self.raw_configuration
+                ),
                 static_capability_score=backend.capability_score,
                 minimum_empirical_samples=(
                     self.empirical_configuration.minimum_empirical_samples
@@ -180,11 +177,7 @@ class BootstrapPolicyEngine:
             )
             resolutions.append(resolution)
             option = options.get(backend.name)
-            if (
-                option is None
-                or not option.eligible
-                or backend.name in excluded
-            ):
+            if option is None or not option.eligible or backend.name in excluded:
                 continue
             inputs.append(
                 EmpiricalBackendInput(
@@ -196,7 +189,8 @@ class BootstrapPolicyEngine:
                     sufficient_probability_data=(
                         resolution.empirical_status == "sufficient_data"
                         and resolution.conservative_success_probability is not None
-                        and resolution.conservative_success_probability >= wilson_threshold
+                        and resolution.conservative_success_probability
+                        >= wilson_threshold
                     ),
                     profile_version=(
                         resolution.selected_profile_key.scorer_version
@@ -228,11 +222,18 @@ class BootstrapPolicyEngine:
         alternatives: tuple[BackendOption, ...],
         optimization: SequenceOptimizationResult,
     ) -> BackendOption | None:
-        if optimization.optimizer_status != "empirical" or not optimization.chosen_sequence:
+        if (
+            optimization.optimizer_status != "empirical"
+            or not optimization.chosen_sequence
+        ):
             return None
         name = optimization.chosen_sequence[0]
         return next(
-            (item for item in alternatives if item.backend_name == name and item.eligible),
+            (
+                item
+                for item in alternatives
+                if item.backend_name == name and item.eligible
+            ),
             None,
         )
 
@@ -253,7 +254,9 @@ class BootstrapPolicyEngine:
             estimate = estimate_attempt_cost(backend)
             empirical = resolve_empirical_score(
                 self.capability_snapshot,
-                profile_key_for(backend, context.classification, self.raw_configuration),
+                profile_key_for(
+                    backend, context.classification, self.raw_configuration
+                ),
                 static_capability_score=backend.capability_score,
                 minimum_empirical_samples=self.empirical_configuration.minimum_empirical_samples,
             )
@@ -332,7 +335,9 @@ class BootstrapPolicyEngine:
         return min(
             eligible,
             key=lambda option: (
-                option.capability_score if option.capability_score is not None else float("inf"),
+                option.capability_score
+                if option.capability_score is not None
+                else float("inf"),
                 option.backend_name,
             ),
         )
@@ -368,7 +373,9 @@ class BootstrapPolicyEngine:
     ) -> BudgetContext:
         if action not in {"attempt", "retry", "escalate"} or chosen is None:
             return budget
-        verification_only = action == "retry" and chosen.cost_source == "verification_retry"
+        verification_only = (
+            action == "retry" and chosen.cost_source == "verification_retry"
+        )
         if verification_only:
             return budget
         remaining_cost = budget.remaining_cost_usd
@@ -496,7 +503,10 @@ class BootstrapPolicyEngine:
             context, alternatives
         )
 
-        if len(context.eligible_candidate_ids) >= self.configuration.accepted_candidates_required:
+        if (
+            len(context.eligible_candidate_ids)
+            >= self.configuration.accepted_candidates_required
+        ):
             return self._decision(
                 context,
                 alternatives,
@@ -507,16 +517,24 @@ class BootstrapPolicyEngine:
             )
         if context.budget.remaining_attempts <= 0:
             return self._decision(
-                context, alternatives, minimum, rule,
-                action="exhaust", reason="Attempt budget exhausted."
+                context,
+                alternatives,
+                minimum,
+                rule,
+                action="exhaust",
+                reason="Attempt budget exhausted.",
             )
         if (
             context.budget.remaining_wall_time_ms is not None
             and context.budget.remaining_wall_time_ms <= 0
         ):
             return self._decision(
-                context, alternatives, minimum, rule,
-                action="exhaust", reason="Wall-time budget exhausted."
+                context,
+                alternatives,
+                minimum,
+                rule,
+                action="exhaust",
+                reason="Wall-time budget exhausted.",
             )
         if (
             context.budget.cost_accounting_status == "complete"
@@ -525,8 +543,12 @@ class BootstrapPolicyEngine:
             and context.budget.actual_attempts_used > 0
         ):
             return self._decision(
-                context, alternatives, minimum, rule,
-                action="exhaust", reason="Cost budget exhausted."
+                context,
+                alternatives,
+                minimum,
+                rule,
+                action="exhaust",
+                reason="Cost budget exhausted.",
             )
 
         chosen = self._optimization_choice(alternatives, optimization)
@@ -601,8 +623,13 @@ class BootstrapPolicyEngine:
                     "sequence under the configured target probability."
                 )
             return self._decision(
-                context, alternatives, minimum, rule,
-                action="attempt", reason=reason, chosen=chosen,
+                context,
+                alternatives,
+                minimum,
+                rule,
+                action="attempt",
+                reason=reason,
+                chosen=chosen,
                 metadata={"constraint_violation": violation},
                 empirical_resolutions=empirical_resolutions,
                 optimization=optimization,
@@ -610,14 +637,21 @@ class BootstrapPolicyEngine:
 
         previous_attempt = context.attempts[-1]
         previous = next(
-            (item for item in alternatives if item.backend_name == previous_attempt.backend_name),
+            (
+                item
+                for item in alternatives
+                if item.backend_name == previous_attempt.backend_name
+            ),
             None,
         )
         failure = previous_attempt.failure_category
         latest_verification = (
             context.verifications[-1] if context.verifications else None
         )
-        if latest_verification and latest_verification.attempt_id == previous_attempt.attempt_id:
+        if (
+            latest_verification
+            and latest_verification.attempt_id == previous_attempt.attempt_id
+        ):
             failure = latest_verification.failure_category or failure
         attempted_backend_names = {item.backend_name for item in context.attempts}
         remaining_resolutions, remaining_optimization = self._empirical_routing(
@@ -646,15 +680,29 @@ class BootstrapPolicyEngine:
 
         if failure == "materialization_failure":
             return self._decision(
-                context, alternatives, minimum, rule,
-                action="fail", reason="Materialization failure is terminal."
+                context,
+                alternatives,
+                minimum,
+                rule,
+                action="fail",
+                reason="Materialization failure is terminal.",
             )
         if failure == "verification_failure":
-            retries = latest_verification.verifier_retry_count if latest_verification else 0
-            if retries < self.configuration.verifier_retry_limit and previous is not None:
-                verification_option = replace(previous, cost_source="verification_retry")
+            retries = (
+                latest_verification.verifier_retry_count if latest_verification else 0
+            )
+            if (
+                retries < self.configuration.verifier_retry_limit
+                and previous is not None
+            ):
+                verification_option = replace(
+                    previous, cost_source="verification_retry"
+                )
                 return self._decision(
-                    context, alternatives, minimum, rule,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
                     action="retry",
                     reason="Retrying verification once without rerunning the coding attempt.",
                     chosen=verification_option,
@@ -666,16 +714,24 @@ class BootstrapPolicyEngine:
             )
             if higher is not None:
                 return self._decision(
-                    context, alternatives, minimum, rule,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
                     action="escalate",
                     reason="Verification remained ineligible after its retry; continuing with the next backend in the selected routing path.",
-                    chosen=higher, escalates=True,
+                    chosen=higher,
+                    escalates=True,
                     empirical_resolutions=route_scores,
                     optimization=route_optimization,
                 )
             return self._decision(
-                context, alternatives, minimum, rule,
-                action="exhaust", reason="Verification failed twice and no further eligible backend exists."
+                context,
+                alternatives,
+                minimum,
+                rule,
+                action="exhaust",
+                reason="Verification failed twice and no further eligible backend exists.",
             )
 
         same_failures = sum(
@@ -688,13 +744,18 @@ class BootstrapPolicyEngine:
         if failure == "infrastructure_failure":
             if retry_available and previous is not None and previous.eligible:
                 return self._decision(
-                    context, alternatives, minimum, rule,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
                     action="retry",
                     reason="Infrastructure failure does not change the capability diagnosis; retrying the same backend once.",
-                    chosen=previous, repeats=True,
+                    chosen=previous,
+                    repeats=True,
                 )
             others = tuple(
-                item for item in alternatives
+                item
+                for item in alternatives
                 if item.backend_name != previous_attempt.backend_name
             )
             replacement, route_scores, route_optimization = remaining_or_bootstrap(
@@ -702,17 +763,25 @@ class BootstrapPolicyEngine:
             )
             if replacement is not None:
                 return self._decision(
-                    context, alternatives, minimum, rule,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
                     action="escalate",
                     reason="Repeated infrastructure failure disabled the prior backend; choosing another configured eligible backend.",
-                    chosen=replacement, escalates=True,
+                    chosen=replacement,
+                    escalates=True,
                     metadata={"prior_backend_failed": True},
                     empirical_resolutions=route_scores,
                     optimization=route_optimization,
                 )
             return self._decision(
-                context, alternatives, minimum, rule,
-                action="fail", reason="Infrastructure failure repeated and no alternative eligible backend is configured."
+                context,
+                alternatives,
+                minimum,
+                rule,
+                action="fail",
+                reason="Infrastructure failure repeated and no alternative eligible backend is configured.",
             )
         if failure == "implementation_failure":
             if (
@@ -722,20 +791,28 @@ class BootstrapPolicyEngine:
                 and previous.eligible
             ):
                 return self._decision(
-                    context, alternatives, minimum, rule,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
                     action="retry",
                     reason="Implementation made material progress; retrying the same backend once.",
-                    chosen=previous, repeats=True,
+                    chosen=previous,
+                    repeats=True,
                 )
             higher, route_scores, route_optimization = remaining_or_bootstrap(
                 self._next_higher(alternatives, previous) if previous else None
             )
             if higher is not None:
                 return self._decision(
-                    context, alternatives, minimum, rule,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
                     action="escalate",
                     reason="Implementation retry is unavailable or used; escalating to the next backend in the selected routing path.",
-                    chosen=higher, escalates=True,
+                    chosen=higher,
+                    escalates=True,
                     empirical_resolutions=route_scores,
                     optimization=route_optimization,
                 )
@@ -745,10 +822,14 @@ class BootstrapPolicyEngine:
             )
             if higher is not None:
                 return self._decision(
-                    context, alternatives, minimum, rule,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
                     action="escalate",
                     reason="Verifier evidence indicates insufficient capability; escalating immediately through the selected routing path.",
-                    chosen=higher, escalates=True,
+                    chosen=higher,
+                    escalates=True,
                     empirical_resolutions=route_scores,
                     optimization=route_optimization,
                 )
@@ -760,18 +841,28 @@ class BootstrapPolicyEngine:
                 and previous.eligible
             ):
                 return self._decision(
-                    context, alternatives, minimum, rule,
-                    action="retry", reason="Explicit policy permits one no-change retry.",
-                    chosen=previous, repeats=True,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
+                    action="retry",
+                    reason="Explicit policy permits one no-change retry.",
+                    chosen=previous,
+                    repeats=True,
                 )
             higher, route_scores, route_optimization = remaining_or_bootstrap(
                 self._next_higher(alternatives, previous) if previous else None
             )
             if higher is not None:
                 return self._decision(
-                    context, alternatives, minimum, rule,
-                    action="escalate", reason="No-change failures escalate by default.",
-                    chosen=higher, escalates=True,
+                    context,
+                    alternatives,
+                    minimum,
+                    rule,
+                    action="escalate",
+                    reason="No-change failures escalate by default.",
+                    chosen=higher,
+                    escalates=True,
                     empirical_resolutions=route_scores,
                     optimization=route_optimization,
                 )

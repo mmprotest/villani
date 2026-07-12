@@ -4,7 +4,10 @@ from typing import Literal
 from pydantic import BaseModel
 from villani_ops.validation.base import ValidationResult
 
-AttemptStatus = Literal["pending","running","succeeded","failed","validated","rejected","skipped"]
+AttemptStatus = Literal[
+    "pending", "running", "succeeded", "failed", "validated", "rejected", "skipped"
+]
+
 
 class Attempt(BaseModel):
     attempt_id: str

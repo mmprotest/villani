@@ -1,9 +1,11 @@
 from __future__ import annotations
 from pathlib import Path
 from datetime import datetime, timezone
-import secrets, json
+import secrets
 import httpx
 import subprocess
+import socket
+from collections.abc import Mapping
 from pydantic import BaseModel, ConfigDict
 from villani_ops.core.decision import Decision
 from .state import OpsRunState
@@ -25,221 +27,868 @@ from villani_ops.providers import ProviderConfigurationError
 
 
 def _backend_label(backend):
-    return str(getattr(backend, 'base_url', None) or getattr(backend, 'name', None) or getattr(backend, 'model', None) or 'configured backend')
+    return str(
+        getattr(backend, "base_url", None)
+        or getattr(backend, "name", None)
+        or getattr(backend, "model", None)
+        or "configured backend"
+    )
+
+
+def _exception_chain(exc: BaseException):
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _structured_failure_kind(exc: BaseException) -> str | None:
+    for attribute in ("failure_kind", "failure_category", "category"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, str):
+            return value
+    result = getattr(exc, "result", None)
+    if isinstance(result, Mapping):
+        for key in ("failure_kind", "failure_category", "category"):
+            value = result.get(key)
+            if isinstance(value, str):
+                return value
+    return None
+
 
 def _provider_failure(exc: Exception, backend) -> tuple[str, str, bool]:
     label = _backend_label(backend)
-    if isinstance(exc, httpx.ConnectError):
-        return 'backend_connection_error', f'Could not connect to backend: {label}', True
-    if isinstance(exc, httpx.ConnectTimeout):
-        return 'backend_connection_error', f'Could not establish a backend connection before timeout: {label}', True
-    if isinstance(exc, (httpx.ReadTimeout, httpx.TimeoutException)):
-        return 'backend_timeout', f'Backend timed out: {label}', True
-    if isinstance(exc, httpx.HTTPStatusError):
-        code = getattr(getattr(exc, 'response', None), 'status_code', 'unknown')
-        response_text = str(getattr(getattr(exc, 'response', None), 'text', '') or '')
-        kind = classify_runner_failure(1, '', f'{code} {response_text}')
-        if kind == 'runner_nonzero_exit':
-            kind = 'provider_config_error'
-        return kind, f'Backend returned HTTP {code}: {label}', kind in {'backend_connection_error', 'backend_rate_limited'}
-    if isinstance(exc, ProviderConfigurationError):
-        return 'provider_config_error', str(exc) or f'Invalid provider configuration: {label}', False
-    if isinstance(exc, FileNotFoundError):
-        return 'executable_not_found', str(exc) or 'Runner executable was not found', False
-    if isinstance(exc, subprocess.CalledProcessError):
-        kind = classify_runner_failure(exc.returncode, str(exc.stdout or ''), str(exc.stderr or ''))
-        return kind, str(exc) or f'Runner exited {exc.returncode}', kind in {'backend_connection_error', 'backend_rate_limited'}
-    if isinstance(exc, httpx.HTTPError):
-        return 'backend_response_error', f'Backend request failed: {label}', True
-    if isinstance(exc, (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError)):
-        return 'backend_response_error', f'Backend response could not be parsed: {label}', True
-    return 'runner_error', str(exc) or exc.__class__.__name__, False
+    for current in _exception_chain(exc):
+        structured = _structured_failure_kind(current)
+        if structured == "backend_connection_error":
+            return structured, f"Could not connect to backend: {label}", True
+        if isinstance(current, httpx.ConnectTimeout):
+            return (
+                "backend_connection_error",
+                f"Could not establish a backend connection before timeout: {label}",
+                True,
+            )
+        if isinstance(
+            current, (httpx.ConnectError, ConnectionRefusedError, socket.gaierror)
+        ):
+            return (
+                "backend_connection_error",
+                f"Could not connect to backend: {label}",
+                True,
+            )
+        if isinstance(current, (httpx.ReadTimeout, httpx.TimeoutException)):
+            return "backend_timeout", f"Backend timed out: {label}", True
+        if isinstance(current, httpx.HTTPStatusError):
+            code = getattr(getattr(current, "response", None), "status_code", "unknown")
+            response_text = str(
+                getattr(getattr(current, "response", None), "text", "") or ""
+            )
+            kind = classify_runner_failure(1, "", f"{code} {response_text}")
+            if kind == "runner_nonzero_exit":
+                kind = "provider_config_error"
+            return (
+                kind,
+                f"Backend returned HTTP {code}: {label}",
+                kind in {"backend_connection_error", "backend_rate_limited"},
+            )
+        if isinstance(current, ProviderConfigurationError):
+            return (
+                "provider_config_error",
+                str(current) or f"Invalid provider configuration: {label}",
+                False,
+            )
+        if isinstance(current, FileNotFoundError):
+            return (
+                "executable_not_found",
+                str(current) or "Runner executable was not found",
+                False,
+            )
+        if isinstance(current, subprocess.CalledProcessError):
+            kind = structured or classify_runner_failure(
+                current.returncode,
+                str(current.stdout or ""),
+                str(current.stderr or ""),
+            )
+            if kind == "runner_nonzero_exit":
+                kind = "runner_error"
+            return (
+                kind,
+                f"Runner exited with status {current.returncode}",
+                kind in {"backend_connection_error", "backend_rate_limited"},
+            )
+        if structured:
+            return structured, str(current) or type(current).__name__, False
+        if isinstance(current, httpx.HTTPError):
+            return "backend_response_error", f"Backend request failed: {label}", True
+    return "runner_error", str(exc) or exc.__class__.__name__, False
+
 
 def _write_final_report(run_dir: Path, state: OpsRunState):
     try:
-        from villani_ops.viewer.adapter import build_viewer_snapshot, render_final_report
-        (Path(run_dir) / 'final_report.md').write_text(render_final_report(build_viewer_snapshot(Path(run_dir))), encoding='utf-8')
+        from villani_ops.viewer.adapter import (
+            build_viewer_snapshot,
+            render_final_report,
+        )
+
+        (Path(run_dir) / "final_report.md").write_text(
+            render_final_report(build_viewer_snapshot(Path(run_dir))), encoding="utf-8"
+        )
         return
     except Exception:
         pass
-    msg = state.failure_message or (state.final_decision or {}).get('summary') or ('Run completed' if state.status=='completed' else 'Run failed')
-    lines = ['# Villani Ops Run Failed' if state.status!='completed' else '# Villani Ops Final Report', '', f'Run ID: {state.run_id}', f'Run directory: {run_dir}', f'Status: {state.status}', '', 'Decision Economics: unavailable because no candidates ran.']
-    if state.failure_kind or state.status=='failed': lines += [f'Failure kind: {state.failure_kind or "runner_error"}', f'Failure message: {msg}']
-    (Path(run_dir) / 'final_report.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    msg = (
+        state.failure_message
+        or (state.final_decision or {}).get("summary")
+        or ("Run completed" if state.status == "completed" else "Run failed")
+    )
+    lines = [
+        "# Villani Ops Run Failed"
+        if state.status != "completed"
+        else "# Villani Ops Final Report",
+        "",
+        f"Run ID: {state.run_id}",
+        f"Run directory: {run_dir}",
+        f"Status: {state.status}",
+        "",
+        "Decision Economics: unavailable because no candidates ran.",
+    ]
+    if state.failure_kind or state.status == "failed":
+        lines += [
+            f"Failure kind: {state.failure_kind or 'runner_error'}",
+            f"Failure message: {msg}",
+        ]
+    (Path(run_dir) / "final_report.md").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+
 
 def _write_failure_report(run_dir: Path, state: OpsRunState):
     _write_final_report(run_dir, state)
 
+
 def _write_viewer(run_dir: Path):
     try:
         from villani_ops.viewer.builder import write_offline_viewer
+
         write_offline_viewer(Path(run_dir))
     except Exception:
         pass
 
-def _finalize_provider_failure(run_dir: Path, state: OpsRunState, rec: OpsEventRecorder, usage_rec: UsageRecorder, transcript: list[dict], exc: Exception, backend) -> OpsRunResult:
+
+def _finalize_provider_failure(
+    run_dir: Path,
+    state: OpsRunState,
+    rec: OpsEventRecorder,
+    usage_rec: UsageRecorder,
+    transcript: list[dict],
+    exc: Exception,
+    backend,
+) -> OpsRunResult:
     kind, msg, recoverable = _provider_failure(exc, backend)
-    state.status='failed'; state.phase='failed'; state.failure_kind=kind; state.failure_message=msg; state.recoverable=recoverable; state.backend_name=getattr(backend,'name',None); state.backend_model=getattr(backend,'model',None); state.backend_url=getattr(backend,'base_url',None)
-    state.final_decision={'decision':'failed','summary':msg,'failure_kind':kind,'failure_message':msg,'recoverable':recoverable,'next_step':'Start the backend server or update the backend configuration.'}
+    state.status = "failed"
+    state.phase = "failed"
+    state.failure_kind = kind
+    state.failure_message = msg
+    state.recoverable = recoverable
+    state.backend_name = getattr(backend, "name", None)
+    state.backend_model = getattr(backend, "model", None)
+    state.backend_url = getattr(backend, "base_url", None)
+    state.final_decision = {
+        "decision": "failed",
+        "summary": msg,
+        "failure_kind": kind,
+        "failure_message": msg,
+        "recoverable": recoverable,
+        "next_step": "Start the backend server or update the backend configuration.",
+    }
     state.blockers.append(kind)
-    rec.record('provider_failure', payload={'failure_kind':kind,'failure_message':msg,'recoverable':recoverable,'backend_name':getattr(backend,'name',None),'model':getattr(backend,'model',None),'backend_url':getattr(backend,'base_url',None)})
-    rec.record('run_finalized', payload=state.final_decision)
-    try: usage_rec.write_artifacts()
-    except Exception: pass
-    state.save(Path(run_dir)/'state.json'); rec.write_digest(state); write_artifacts(Path(run_dir),state,rec.events(),transcript); _write_failure_report(Path(run_dir), state); _write_viewer(Path(run_dir))
-    d=Decision(run_id=state.run_id,accepted=False,mode=state.mode,runner=state.runner,reason=msg,failure_reason=msg)
-    return OpsRunResult(run_id=state.run_id,run_dir=str(run_dir),state=state,decision=d)
+    rec.record(
+        "provider_failure",
+        payload={
+            "failure_kind": kind,
+            "failure_message": msg,
+            "recoverable": recoverable,
+            "backend_name": getattr(backend, "name", None),
+            "model": getattr(backend, "model", None),
+            "backend_url": getattr(backend, "base_url", None),
+        },
+    )
+    rec.record("run_finalized", payload=state.final_decision)
+    try:
+        usage_rec.write_artifacts()
+    except Exception:
+        pass
+    state.save(Path(run_dir) / "state.json")
+    rec.write_digest(state)
+    write_artifacts(Path(run_dir), state, rec.events(), transcript)
+    _write_failure_report(Path(run_dir), state)
+    _write_viewer(Path(run_dir))
+    d = Decision(
+        run_id=state.run_id,
+        accepted=False,
+        mode=state.mode,
+        runner=state.runner,
+        reason=msg,
+        failure_reason=msg,
+    )
+    return OpsRunResult(
+        run_id=state.run_id, run_dir=str(run_dir), state=state, decision=d
+    )
+
 
 class AgenticLLMReviewer:
     def __init__(self, review_backend):
-        self.review_backend=review_backend
-        self.client=ToolCallingLLMClient(); self.last_response=None
+        self.review_backend = review_backend
+        self.client = ToolCallingLLMClient()
+        self.last_response = None
+
     def review(self, *, state, attempt, scope):
         from .tools import OpsReviewResult
-        payload={'task':state.task,'success_criteria':state.success_criteria,'execution_path':state.execution_path,'scope':scope,'review_payload':attempt}
-        tool={'type':'function','function':{'name':'agentic_review_decision','description':'Return a structured Villani Ops review decision. Never pass without evidence.','parameters':OpsReviewResult.model_json_schema(),'strict':True}}
-        messages=[{'role':'user','content':'Review this attempt using the forced structured review tool. Fail closed on missing evidence, runner failure, validation failure, or scope mismatch.\n'+__import__('json').dumps(payload,indent=2,default=str)[:120000]}]
-        resp=self.client.create_message(backend=self.review_backend,messages=messages,system='You are a strict production code reviewer for Villani Ops agentic mode.',tools=[tool],tool_choice={'type':'function','function':{'name':'agentic_review_decision'}},strict=True)
-        self.last_response=resp
-        raw={'raw_response':getattr(resp,'raw_response',{}),'content':getattr(resp,'content',[])}
-        state_reviews=getattr(state,'reviews',None)
-        if isinstance(state_reviews,list):
-            state_reviews.append({'attempt_id':attempt.get('attempt',{}).get('attempt_id') if isinstance(attempt,dict) else None,'structured_review_request_summary':{'scope':scope,'changed_files':attempt.get('changed_files') if isinstance(attempt,dict) else None},'structured_review_raw_response':raw})
-        calls=[b for b in resp.content if b.get('type')=='tool_use' and b.get('name')=='agentic_review_decision']
+
+        payload = {
+            "task": state.task,
+            "success_criteria": state.success_criteria,
+            "execution_path": state.execution_path,
+            "scope": scope,
+            "review_payload": attempt,
+        }
+        tool = {
+            "type": "function",
+            "function": {
+                "name": "agentic_review_decision",
+                "description": "Return a structured Villani Ops review decision. Never pass without evidence.",
+                "parameters": OpsReviewResult.model_json_schema(),
+                "strict": True,
+            },
+        }
+        messages = [
+            {
+                "role": "user",
+                "content": "Review this attempt using the forced structured review tool. Fail closed on missing evidence, runner failure, validation failure, or scope mismatch.\n"
+                + __import__("json").dumps(payload, indent=2, default=str)[:120000],
+            }
+        ]
+        resp = self.client.create_message(
+            backend=self.review_backend,
+            messages=messages,
+            system="You are a strict production code reviewer for Villani Ops agentic mode.",
+            tools=[tool],
+            tool_choice={
+                "type": "function",
+                "function": {"name": "agentic_review_decision"},
+            },
+            strict=True,
+        )
+        self.last_response = resp
+        raw = {
+            "raw_response": getattr(resp, "raw_response", {}),
+            "content": getattr(resp, "content", []),
+        }
+        state_reviews = getattr(state, "reviews", None)
+        if isinstance(state_reviews, list):
+            state_reviews.append(
+                {
+                    "attempt_id": attempt.get("attempt", {}).get("attempt_id")
+                    if isinstance(attempt, dict)
+                    else None,
+                    "structured_review_request_summary": {
+                        "scope": scope,
+                        "changed_files": attempt.get("changed_files")
+                        if isinstance(attempt, dict)
+                        else None,
+                    },
+                    "structured_review_raw_response": raw,
+                }
+            )
+        calls = [
+            b
+            for b in resp.content
+            if b.get("type") == "tool_use"
+            and b.get("name") == "agentic_review_decision"
+        ]
         if not calls:
-            raise ValueError('agentic_structured_review_missing_tool_call')
-        parsed=OpsReviewResult.model_validate(calls[0].get('input') or {})
-        if isinstance(state_reviews,list): state_reviews[-1]['structured_review_parsed_result']=parsed.model_dump()
+            raise ValueError("agentic_structured_review_missing_tool_call")
+        parsed = OpsReviewResult.model_validate(calls[0].get("input") or {})
+        if isinstance(state_reviews, list):
+            state_reviews[-1]["structured_review_parsed_result"] = parsed.model_dump()
         return parsed.model_dump()
 
+
 def _fakeish(obj):
-    n=(getattr(obj,'name',None) or obj.__class__.__name__).lower()
-    return 'fake' in n or 'placeholder' in n
+    n = (getattr(obj, "name", None) or obj.__class__.__name__).lower()
+    return "fake" in n or "placeholder" in n
+
 
 def _select_role_backend(mode, backends, role, task):
-    node_kind={'orchestration':'plan','investigation':'investigate','decomposition':'decompose','coding':'code','review':'review','selection':'select'}[role]
-    node=OrchestrationNode(id=f'agentic_{role}',kind=node_kind,objective=f'agentic {role}')
-    sel=policy_for_mode(mode).select_backend(node=node, backends=backends, task_context=TaskContext(objective=task))
-    if not sel.backend: raise ValueError(f'agentic_backend_role_unavailable: {role}')
+    node_kind = {
+        "orchestration": "plan",
+        "investigation": "investigate",
+        "decomposition": "decompose",
+        "coding": "code",
+        "review": "review",
+        "selection": "select",
+    }[role]
+    node = OrchestrationNode(
+        id=f"agentic_{role}", kind=node_kind, objective=f"agentic {role}"
+    )
+    sel = policy_for_mode(mode).select_backend(
+        node=node, backends=backends, task_context=TaskContext(objective=task)
+    )
+    if not sel.backend:
+        raise ValueError(f"agentic_backend_role_unavailable: {role}")
     return sel.backend_name, sel.backend
 
 
 def _state_aware_no_progress_summary(state):
-    reviewed=[c.attempt_id for c in state.candidates if c.review]
-    validated=[c.attempt_id for c in state.candidates if c.validation]
-    eligible=[]
+    reviewed = [c.attempt_id for c in state.candidates if c.review]
+    validated = [c.attempt_id for c in state.candidates if c.validation]
+    eligible = []
     try:
         from villani_ops.core.acceptance import is_attempt_acceptance_eligible
-        eligible=[c.attempt_id for c in state.candidates if is_attempt_acceptance_eligible(c,state=state)[0]]
+
+        eligible = [
+            c.attempt_id
+            for c in state.candidates
+            if is_attempt_acceptance_eligible(c, state=state)[0]
+        ]
     except Exception:
         pass
     if reviewed or validated or eligible:
         return f"The orchestrator made no tool-call progress. Candidates completed={len(state.candidates)}, reviewed={reviewed}, validated={validated}, eligible={eligible}, selection={(state.selection or {}).get('selected_attempt_id')}. No accepted result was finalized."
-    return 'agentic_orchestrator_no_progress'
+    return "agentic_orchestrator_no_progress"
+
 
 class OpsRunRequest(BaseModel):
-    model_config=ConfigDict(extra='forbid', arbitrary_types_allowed=True)
-    repo_path:str; task:str; success_criteria:str|None=None; mode:str='performance'; runner:str='villani-code'; candidate_attempts:int=3; timeout_seconds:int|None=DEFAULT_TIMEOUT_SECONDS; workspace:str='.villani-ops'; orchestrator:str='agentic'; backend:object|None=None; backends:object|None=None; runner_adapter:object|None=None; reviewer:object|None=None; production:bool=True; allow_fake_dependencies:bool=False; tournament_budget_policy:str='off'
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+    repo_path: str
+    task: str
+    success_criteria: str | None = None
+    mode: str = "performance"
+    runner: str = "villani-code"
+    candidate_attempts: int = 3
+    timeout_seconds: int | None = DEFAULT_TIMEOUT_SECONDS
+    workspace: str = ".villani-ops"
+    orchestrator: str = "agentic"
+    backend: object | None = None
+    backends: object | None = None
+    runner_adapter: object | None = None
+    reviewer: object | None = None
+    production: bool = True
+    allow_fake_dependencies: bool = False
+    tournament_budget_policy: str = "off"
+
+
 class OpsRunResult(BaseModel):
-    model_config=ConfigDict(arbitrary_types_allowed=True)
-    run_id:str; run_dir:str; state:OpsRunState; decision:Decision
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    run_id: str
+    run_dir: str
+    state: OpsRunState
+    decision: Decision
+
+
 class OpsRunner:
-    def __init__(self, storage=None, client=None, backend=None, backends=None, runner_adapter=None, reviewer=None, max_turns:int=60, max_recovery_attempts:int=2, progress_reporter=None): self.storage=storage; self.client=client or ToolCallingLLMClient(); self.backend=backend; self.backends=backends; self.runner_adapter=runner_adapter; self.reviewer=reviewer; self.max_turns=max_turns; self.max_recovery_attempts=max_recovery_attempts; self.progress_reporter=progress_reporter
-    def run(self, request:OpsRunRequest)->OpsRunResult:
-        rid=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+secrets.token_hex(3)
-        run_dir=(self.storage.create_run_dir(rid) if self.storage else Path(request.workspace)/'runs'/rid); run_dir.mkdir(parents=True,exist_ok=True)
-        state=OpsRunState(run_id=rid,run_dir=str(run_dir),repo_path=request.repo_path,task=request.task,success_criteria=request.success_criteria,mode=request.mode,runner=request.runner,candidate_attempts=request.candidate_attempts,orchestrator=request.orchestrator,tournament_budget_policy=request.tournament_budget_policy)
-        rec=OpsEventRecorder(run_dir,rid,on_event=(self.progress_reporter.on_event if self.progress_reporter else None)); usage_rec=UsageRecorder(run_dir,rid); transcript=[]; state.save(run_dir/'state.json'); rec.record('run_started',payload={'run_dir':str(run_dir)},phase=state.phase); usage_rec.write_artifacts()
+    def __init__(
+        self,
+        storage=None,
+        client=None,
+        backend=None,
+        backends=None,
+        runner_adapter=None,
+        reviewer=None,
+        max_turns: int = 60,
+        max_recovery_attempts: int = 2,
+        progress_reporter=None,
+    ):
+        self.storage = storage
+        self.client = client or ToolCallingLLMClient()
+        self.backend = backend
+        self.backends = backends
+        self.runner_adapter = runner_adapter
+        self.reviewer = reviewer
+        self.max_turns = max_turns
+        self.max_recovery_attempts = max_recovery_attempts
+        self.progress_reporter = progress_reporter
+
+    def run(self, request: OpsRunRequest) -> OpsRunResult:
+        rid = (
+            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            + "-"
+            + secrets.token_hex(3)
+        )
+        run_dir = (
+            self.storage.create_run_dir(rid)
+            if self.storage
+            else Path(request.workspace) / "runs" / rid
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        state = OpsRunState(
+            run_id=rid,
+            run_dir=str(run_dir),
+            repo_path=request.repo_path,
+            task=request.task,
+            success_criteria=request.success_criteria,
+            mode=request.mode,
+            runner=request.runner,
+            candidate_attempts=request.candidate_attempts,
+            orchestrator=request.orchestrator,
+            tournament_budget_policy=request.tournament_budget_policy,
+        )
+        rec = OpsEventRecorder(
+            run_dir,
+            rid,
+            on_event=(
+                self.progress_reporter.on_event if self.progress_reporter else None
+            ),
+        )
+        usage_rec = UsageRecorder(run_dir, rid)
+        transcript = []
+        state.save(run_dir / "state.json")
+        rec.record("run_started", payload={"run_dir": str(run_dir)}, phase=state.phase)
+        usage_rec.write_artifacts()
+
         def _update_usage_state():
-            summary=usage_rec.summarize(); state.usage_summary=summary.model_dump(mode='json'); state.usage_records_count=summary.calls_count; state.total_input_tokens=summary.input_tokens; state.total_output_tokens=summary.output_tokens; state.total_tokens=summary.total_tokens; state.total_cost=summary.total_cost; state.usage_unavailable_count=summary.unavailable_calls_count; state.input_tokens=summary.input_tokens; state.output_tokens=summary.output_tokens; state.costs={'total':summary.total_cost,'input':summary.input_cost,'output':summary.output_cost}
-        backends=request.backends or self.backends
-        backend=request.backend or self.backend
-        role_backends={}
+            summary = usage_rec.summarize()
+            state.usage_summary = summary.model_dump(mode="json")
+            state.usage_records_count = summary.calls_count
+            state.total_input_tokens = summary.input_tokens
+            state.total_output_tokens = summary.output_tokens
+            state.total_tokens = summary.total_tokens
+            state.total_cost = summary.total_cost
+            state.usage_unavailable_count = summary.unavailable_calls_count
+            state.input_tokens = summary.input_tokens
+            state.output_tokens = summary.output_tokens
+            state.costs = {
+                "total": summary.total_cost,
+                "input": summary.input_cost,
+                "output": summary.output_cost,
+            }
+
+        backends = request.backends or self.backends
+        backend = request.backend or self.backend
+        role_backends = {}
         try:
             if backends:
-                for role in ['orchestration','coding','review','selection']:
-                    role_backends[role]=_select_role_backend(request.mode, backends, role, request.task)
-                if backend is None: backend=role_backends['orchestration'][1]
+                for role in ["orchestration", "coding", "review", "selection"]:
+                    role_backends[role] = _select_role_backend(
+                        request.mode, backends, role, request.task
+                    )
+                if backend is None:
+                    backend = role_backends["orchestration"][1]
             elif backend is not None:
-                role_backends={r:(getattr(backend,'name','backend'),backend) for r in ['orchestration','coding','review','selection']}
+                role_backends = {
+                    r: (getattr(backend, "name", "backend"), backend)
+                    for r in ["orchestration", "coding", "review", "selection"]
+                }
         except Exception as e:
-            state.status='failed'; state.phase='failed'; state.final_decision={'decision':'failed','summary':str(e),'blockers':['agentic_backend_role_unavailable']}; state.save(run_dir/'state.json'); rec.record('run_finalized',payload=state.final_decision); rec.write_digest(state); write_artifacts(run_dir,state,rec.events(),transcript); _write_final_report(run_dir, state); _write_viewer(run_dir); return OpsRunResult(run_id=rid,run_dir=str(run_dir),state=state,decision=Decision(run_id=rid,accepted=False,mode=state.mode,runner=state.runner,reason=str(e),failure_reason=str(e)))
-        if backend is None or not getattr(backend,'model',None) or not (hasattr(backend,'create_message') or getattr(backend,'base_url',None)) or (request.production and not request.allow_fake_dependencies and _fakeish(backend)):
-            msg='agentic orchestrator requires a real configured backend with tool-calling support or OpenAI-compatible chat completions'
-            state.status='failed'; state.phase='failed'; state.final_decision={'decision':'failed','summary':msg,'blockers':['backend_config_missing']}; state.save(run_dir/'state.json'); rec.record('run_finalized',payload=state.final_decision); rec.write_digest(state); write_artifacts(run_dir,state,rec.events(),transcript); _write_final_report(run_dir, state); _write_viewer(run_dir); return OpsRunResult(run_id=rid,run_dir=str(run_dir),state=state,decision=Decision(run_id=rid,accepted=False,mode=state.mode,runner=state.runner,reason=msg,failure_reason=msg))
-        if request.production and not request.allow_fake_dependencies and _fakeish(self.client):
-            msg='fake orchestrator client forbidden in production agentic mode'
-            state.status='failed'; state.phase='failed'; state.final_decision={'decision':'failed','summary':msg,'blockers':['agentic_fake_client_forbidden']}; state.save(run_dir/'state.json'); rec.record('run_finalized',payload=state.final_decision); rec.write_digest(state); write_artifacts(run_dir,state,rec.events(),transcript); _write_final_report(run_dir, state); _write_viewer(run_dir); return OpsRunResult(run_id=rid,run_dir=str(run_dir),state=state,decision=Decision(run_id=rid,accepted=False,mode=state.mode,runner=state.runner,reason=msg,failure_reason=msg))
-        state.backend_name=getattr(backend,'name',None); state.backend_model=getattr(backend,'model',None); state.backend_url=getattr(backend,'base_url',None); state.save(run_dir/'state.json')
-        runner_adapter=request.runner_adapter or self.runner_adapter or runner_for_name(request.runner)
-        reviewer=request.reviewer or self.reviewer or (AgenticLLMReviewer(role_backends['review'][1]) if role_backends.get('review') else None)
-        coding_name,coding_backend=role_backends.get('coding',(getattr(backend,'name',None),backend))
-        review_name,review_backend=role_backends.get('review',(None,None))
+            state.status = "failed"
+            state.phase = "failed"
+            state.final_decision = {
+                "decision": "failed",
+                "summary": str(e),
+                "blockers": ["agentic_backend_role_unavailable"],
+            }
+            state.save(run_dir / "state.json")
+            rec.record("run_finalized", payload=state.final_decision)
+            rec.write_digest(state)
+            write_artifacts(run_dir, state, rec.events(), transcript)
+            _write_final_report(run_dir, state)
+            _write_viewer(run_dir)
+            return OpsRunResult(
+                run_id=rid,
+                run_dir=str(run_dir),
+                state=state,
+                decision=Decision(
+                    run_id=rid,
+                    accepted=False,
+                    mode=state.mode,
+                    runner=state.runner,
+                    reason=str(e),
+                    failure_reason=str(e),
+                ),
+            )
+        if (
+            backend is None
+            or not getattr(backend, "model", None)
+            or not (
+                hasattr(backend, "create_message") or getattr(backend, "base_url", None)
+            )
+            or (
+                request.production
+                and not request.allow_fake_dependencies
+                and _fakeish(backend)
+            )
+        ):
+            msg = "agentic orchestrator requires a real configured backend with tool-calling support or OpenAI-compatible chat completions"
+            state.status = "failed"
+            state.phase = "failed"
+            state.final_decision = {
+                "decision": "failed",
+                "summary": msg,
+                "blockers": ["backend_config_missing"],
+            }
+            state.save(run_dir / "state.json")
+            rec.record("run_finalized", payload=state.final_decision)
+            rec.write_digest(state)
+            write_artifacts(run_dir, state, rec.events(), transcript)
+            _write_final_report(run_dir, state)
+            _write_viewer(run_dir)
+            return OpsRunResult(
+                run_id=rid,
+                run_dir=str(run_dir),
+                state=state,
+                decision=Decision(
+                    run_id=rid,
+                    accepted=False,
+                    mode=state.mode,
+                    runner=state.runner,
+                    reason=msg,
+                    failure_reason=msg,
+                ),
+            )
+        if (
+            request.production
+            and not request.allow_fake_dependencies
+            and _fakeish(self.client)
+        ):
+            msg = "fake orchestrator client forbidden in production agentic mode"
+            state.status = "failed"
+            state.phase = "failed"
+            state.final_decision = {
+                "decision": "failed",
+                "summary": msg,
+                "blockers": ["agentic_fake_client_forbidden"],
+            }
+            state.save(run_dir / "state.json")
+            rec.record("run_finalized", payload=state.final_decision)
+            rec.write_digest(state)
+            write_artifacts(run_dir, state, rec.events(), transcript)
+            _write_final_report(run_dir, state)
+            _write_viewer(run_dir)
+            return OpsRunResult(
+                run_id=rid,
+                run_dir=str(run_dir),
+                state=state,
+                decision=Decision(
+                    run_id=rid,
+                    accepted=False,
+                    mode=state.mode,
+                    runner=state.runner,
+                    reason=msg,
+                    failure_reason=msg,
+                ),
+            )
+        state.backend_name = getattr(backend, "name", None)
+        state.backend_model = getattr(backend, "model", None)
+        state.backend_url = getattr(backend, "base_url", None)
+        state.save(run_dir / "state.json")
+        runner_adapter = (
+            request.runner_adapter
+            or self.runner_adapter
+            or runner_for_name(request.runner)
+        )
+        reviewer = (
+            request.reviewer
+            or self.reviewer
+            or (
+                AgenticLLMReviewer(role_backends["review"][1])
+                if role_backends.get("review")
+                else None
+            )
+        )
+        coding_name, coding_backend = role_backends.get(
+            "coding", (getattr(backend, "name", None), backend)
+        )
+        review_name, review_backend = role_backends.get("review", (None, None))
+
         def _ctx():
-            return OpsToolContext(run_dir=run_dir,recorder=rec,transcript=transcript,runner_adapter=runner_adapter,reviewer=reviewer,backend=backend,backend_name=getattr(backend,'name',None),coding_backend=coding_backend,coding_backend_name=coding_name,review_backend=review_backend,review_backend_name=review_name,backends=backends,usage_recorder=usage_rec,timeout_seconds=request.timeout_seconds or DEFAULT_TIMEOUT_SECONDS,max_parallel=getattr(coding_backend,'max_parallel',1),production=request.production,allow_fake_dependencies=request.allow_fake_dependencies)
-        def _execute_recommendation(recobj, tool_use_id='recovery'):
-            rec.record('recovery_deterministic_action_executed', payload=recobj.model_dump())
-            res=execute_tool_with_policy(state,recobj.tool_name,recobj.tool_input or {},tool_use_id,_ctx())
-            block={'type':'tool_result','tool_use_id':res.tool_use_id,'content':res.content,'is_error':res.is_error}; transcript.append(block); messages.append({'role':'tool','tool_call_id':res.tool_use_id,'content':str(res.content)}); rec.record('tool_result_appended',tool_name=res.tool_name,payload=block)
+            return OpsToolContext(
+                run_dir=run_dir,
+                recorder=rec,
+                transcript=transcript,
+                runner_adapter=runner_adapter,
+                reviewer=reviewer,
+                backend=backend,
+                backend_name=getattr(backend, "name", None),
+                coding_backend=coding_backend,
+                coding_backend_name=coding_name,
+                review_backend=review_backend,
+                review_backend_name=review_name,
+                backends=backends,
+                usage_recorder=usage_rec,
+                timeout_seconds=request.timeout_seconds or DEFAULT_TIMEOUT_SECONDS,
+                max_parallel=getattr(coding_backend, "max_parallel", 1),
+                production=request.production,
+                allow_fake_dependencies=request.allow_fake_dependencies,
+            )
+
+        def _execute_recommendation(recobj, tool_use_id="recovery"):
+            rec.record(
+                "recovery_deterministic_action_executed", payload=recobj.model_dump()
+            )
+            res = execute_tool_with_policy(
+                state, recobj.tool_name, recobj.tool_input or {}, tool_use_id, _ctx()
+            )
+            block = {
+                "type": "tool_result",
+                "tool_use_id": res.tool_use_id,
+                "content": res.content,
+                "is_error": res.is_error,
+            }
+            transcript.append(block)
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": res.tool_use_id,
+                    "content": str(res.content),
+                }
+            )
+            rec.record("tool_result_appended", tool_name=res.tool_name, payload=block)
             return res
-        messages=[initial_user_message(task=request.task,success_criteria=request.success_criteria,mode=request.mode,runner=request.runner,candidate_attempts=request.candidate_attempts,repo_path=request.repo_path,orchestrator=request.orchestrator)]
-        system_prompt=SYSTEM_PROMPT + (ADAPTIVE_SYSTEM_APPENDIX if request.orchestrator=='adaptive' else '')
+
+        messages = [
+            initial_user_message(
+                task=request.task,
+                success_criteria=request.success_criteria,
+                mode=request.mode,
+                runner=request.runner,
+                candidate_attempts=request.candidate_attempts,
+                repo_path=request.repo_path,
+                orchestrator=request.orchestrator,
+            )
+        ]
+        system_prompt = SYSTEM_PROMPT + (
+            ADAPTIVE_SYSTEM_APPENDIX if request.orchestrator == "adaptive" else ""
+        )
         for _ in range(self.max_turns):
-            if state.is_terminal(): break
-            rec.record('model_request_started',phase=state.phase,payload={'backend_name':state.backend_name,'model':state.backend_model,'backend_url':state.backend_url})
+            if state.is_terminal():
+                break
+            rec.record(
+                "model_request_started",
+                phase=state.phase,
+                payload={
+                    "backend_name": state.backend_name,
+                    "model": state.backend_model,
+                    "backend_url": state.backend_url,
+                },
+            )
             try:
-                resp=self.client.create_message(backend=backend,messages=messages,system=system_prompt,tools=openai_tool_specs(adaptive=(request.orchestrator=='adaptive')),tool_choice='auto',strict=True)
+                resp = self.client.create_message(
+                    backend=backend,
+                    messages=messages,
+                    system=system_prompt,
+                    tools=openai_tool_specs(
+                        adaptive=(request.orchestrator == "adaptive")
+                    ),
+                    tool_choice="auto",
+                    strict=True,
+                )
             except Exception as e:
-                return _finalize_provider_failure(run_dir,state,rec,usage_rec,transcript,e,backend)
-            assistant_msg={'role':'assistant','content':resp.content,'raw_response':getattr(resp,'raw_response',{})}; transcript.append(assistant_msg)
-            urec=usage_record_from_response(run_id=rid,phase=state.phase,role='orchestration',backend=backend,response=resp); usage_rec.record(urec); _update_usage_state(); usage_payload={k:getattr(urec,k) for k in ['input_tokens','output_tokens','total_tokens','total_cost','usage_source']}
-            rec.record('model_response_received',payload={'finish_reason':getattr(resp,'finish_reason',None),'content':resp.content,'raw_response':getattr(resp,'raw_response',{}),**usage_payload})
-            tool_calls=[b for b in resp.content if b.get('type')=='tool_use']
+                return _finalize_provider_failure(
+                    run_dir, state, rec, usage_rec, transcript, e, backend
+                )
+            assistant_msg = {
+                "role": "assistant",
+                "content": resp.content,
+                "raw_response": getattr(resp, "raw_response", {}),
+            }
+            transcript.append(assistant_msg)
+            urec = usage_record_from_response(
+                run_id=rid,
+                phase=state.phase,
+                role="orchestration",
+                backend=backend,
+                response=resp,
+            )
+            usage_rec.record(urec)
+            _update_usage_state()
+            usage_payload = {
+                k: getattr(urec, k)
+                for k in [
+                    "input_tokens",
+                    "output_tokens",
+                    "total_tokens",
+                    "total_cost",
+                    "usage_source",
+                ]
+            }
+            rec.record(
+                "model_response_received",
+                payload={
+                    "finish_reason": getattr(resp, "finish_reason", None),
+                    "content": resp.content,
+                    "raw_response": getattr(resp, "raw_response", {}),
+                    **usage_payload,
+                },
+            )
+            tool_calls = [b for b in resp.content if b.get("type") == "tool_use"]
             if tool_calls:
                 import json as _json
-                text='\n'.join([b.get('text','') for b in resp.content if b.get('type')=='text']) or None
-                messages.append({'role':'assistant','content':text,'tool_calls':[{'id':tc.get('id'),'type':'function','function':{'name':tc['name'],'arguments':_json.dumps(tc.get('input') or {})}} for tc in tool_calls]})
+
+                text = (
+                    "\n".join(
+                        [
+                            b.get("text", "")
+                            for b in resp.content
+                            if b.get("type") == "text"
+                        ]
+                    )
+                    or None
+                )
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": text,
+                        "tool_calls": [
+                            {
+                                "id": tc.get("id"),
+                                "type": "function",
+                                "function": {
+                                    "name": tc["name"],
+                                    "arguments": _json.dumps(tc.get("input") or {}),
+                                },
+                            }
+                            for tc in tool_calls
+                        ],
+                    }
+                )
             if not tool_calls:
-                rr=handle_no_tool_call(state,max_recovery_attempts=self.max_recovery_attempts)
-                rec.record('recovery_injected',payload={'message':rr.message,'recommendation':rr.recommendation.model_dump() if rr.recommendation else None})
-                if rr.recommendation and rr.recommendation.can_execute_deterministically and rr.recommendation.tool_name:
-                    res=_execute_recommendation(rr.recommendation, 'recovery')
+                rr = handle_no_tool_call(
+                    state, max_recovery_attempts=self.max_recovery_attempts
+                )
+                rec.record(
+                    "recovery_injected",
+                    payload={
+                        "message": rr.message,
+                        "recommendation": rr.recommendation.model_dump()
+                        if rr.recommendation
+                        else None,
+                    },
+                )
+                if (
+                    rr.recommendation
+                    and rr.recommendation.can_execute_deterministically
+                    and rr.recommendation.tool_name
+                ):
+                    res = _execute_recommendation(rr.recommendation, "recovery")
                     if not res.is_error:
-                        state.recovery_count=0
-                        state.turns_since_progress=0
-                        state.save(run_dir/'state.json')
+                        state.recovery_count = 0
+                        state.turns_since_progress = 0
+                        state.save(run_dir / "state.json")
                     continue
-                messages.append(rr.message); state.save(run_dir/'state.json')
+                messages.append(rr.message)
+                state.save(run_dir / "state.json")
                 if rr.should_fail:
-                    rec2=recommend_next_agentic_action(state)
+                    rec2 = recommend_next_agentic_action(state)
                     if rec2.can_execute_deterministically and rec2.tool_name:
-                        res=_execute_recommendation(rec2, 'no_progress_finalization')
+                        res = _execute_recommendation(rec2, "no_progress_finalization")
                         if not res.is_error:
                             break
-                    summary=_state_aware_no_progress_summary(state)
-                    state.status='failed'; state.phase='failed'; state.final_decision={'decision':'failed','summary':summary,'blockers':['agentic_orchestrator_no_progress']}; rec.record('run_finalized',payload=state.final_decision); break
+                    summary = _state_aware_no_progress_summary(state)
+                    state.status = "failed"
+                    state.phase = "failed"
+                    state.final_decision = {
+                        "decision": "failed",
+                        "summary": summary,
+                        "blockers": ["agentic_orchestrator_no_progress"],
+                    }
+                    rec.record("run_finalized", payload=state.final_decision)
+                    break
                 continue
             for tc in tool_calls:
-                res=execute_tool_with_policy(state,tc['name'],tc.get('input') or {},tc.get('id','tool'),_ctx())
-                block={'type':'tool_result','tool_use_id':res.tool_use_id,'content':res.content,'is_error':res.is_error}; transcript.append(block); messages.append({'role':'tool','tool_call_id':res.tool_use_id,'content':str(res.content)}); rec.record('tool_result_appended',tool_name=res.tool_name,payload=block)
+                res = execute_tool_with_policy(
+                    state,
+                    tc["name"],
+                    tc.get("input") or {},
+                    tc.get("id", "tool"),
+                    _ctx(),
+                )
+                block = {
+                    "type": "tool_result",
+                    "tool_use_id": res.tool_use_id,
+                    "content": res.content,
+                    "is_error": res.is_error,
+                }
+                transcript.append(block)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": res.tool_use_id,
+                        "content": str(res.content),
+                    }
+                )
+                rec.record(
+                    "tool_result_appended", tool_name=res.tool_name, payload=block
+                )
         if not state.is_terminal():
-            rec2=recommend_next_agentic_action(state)
+            rec2 = recommend_next_agentic_action(state)
             if rec2.can_execute_deterministically and rec2.tool_name:
-                _execute_recommendation(rec2, 'max_turn_finalization')
+                _execute_recommendation(rec2, "max_turn_finalization")
             if not state.is_terminal():
-                state.status='failed'; state.phase='failed'; state.final_decision={'decision':'failed','summary':'max orchestration turns reached','blockers':['max_orchestration_turns_reached']}; rec.record('run_finalized',payload=state.final_decision)
+                state.status = "failed"
+                state.phase = "failed"
+                state.final_decision = {
+                    "decision": "failed",
+                    "summary": "max orchestration turns reached",
+                    "blockers": ["max_orchestration_turns_reached"],
+                }
+                rec.record("run_finalized", payload=state.final_decision)
         _update_usage_state()
         try:
             usage_rec.write_artifacts()
         except Exception as e:
-            state.warnings.append(f'usage_summary_write_failed: {e}')
-            rec.record('artifact_write_failed', payload={'path':str(run_dir/'usage.json'),'artifact_type':'usage_summary','error':str(e),'attempts':8})
-            print('[agentic] Warning: usage summary write failed; usage.jsonl remains available')
+            state.warnings.append(f"usage_summary_write_failed: {e}")
+            rec.record(
+                "artifact_write_failed",
+                payload={
+                    "path": str(run_dir / "usage.json"),
+                    "artifact_type": "usage_summary",
+                    "error": str(e),
+                    "attempts": 8,
+                },
+            )
+            print(
+                "[agentic] Warning: usage summary write failed; usage.jsonl remains available"
+            )
         try:
-            state.save(run_dir/'state.json'); rec.write_digest(state); write_artifacts(run_dir,state,rec.events(),transcript); _write_final_report(run_dir, state); _write_viewer(run_dir)
+            state.save(run_dir / "state.json")
+            rec.write_digest(state)
+            write_artifacts(run_dir, state, rec.events(), transcript)
+            _write_final_report(run_dir, state)
+            _write_viewer(run_dir)
         except Exception as e:
-            state.warnings.append(f'artifact_finalization_error: {e}')
-            rec.record('artifact_write_failed', payload={'path':str(run_dir),'artifact_type':'final_artifacts','error':str(e),'attempts':8})
-            print(f'[agentic] Warning: final artifact write failed: {e}')
-        d=Decision(run_id=rid,accepted=state.status=='completed',mode=state.mode,runner=state.runner,orchestration_graph_path=str(run_dir/'orchestration_graph.json'),candidate_attempts_requested=state.candidate_attempts,candidate_attempts_completed=len(state.candidates),winning_attempt_id=(state.selection or {}).get('selected_attempt_id'),reason=(state.final_decision or {}).get('summary',''),decomposition_executed=state.decomposition_executed,subtask_count=len(state.subtasks),subtasks_executed=[s.subtask_id for s in state.subtasks if s.attempts],subtasks_accepted=[s.subtask_id for s in state.subtasks if s.status=='accepted'],attempts_per_subtask=state.candidate_attempts,subtask_attempts_completed=sum(len(s.attempts) for s in state.subtasks),failure_reason='' if state.status=='completed' else (state.final_decision or {}).get('summary','failed'))
-        return OpsRunResult(run_id=rid,run_dir=str(run_dir),state=state,decision=d)
+            state.warnings.append(f"artifact_finalization_error: {e}")
+            rec.record(
+                "artifact_write_failed",
+                payload={
+                    "path": str(run_dir),
+                    "artifact_type": "final_artifacts",
+                    "error": str(e),
+                    "attempts": 8,
+                },
+            )
+            print(f"[agentic] Warning: final artifact write failed: {e}")
+        d = Decision(
+            run_id=rid,
+            accepted=state.status == "completed",
+            mode=state.mode,
+            runner=state.runner,
+            orchestration_graph_path=str(run_dir / "orchestration_graph.json"),
+            candidate_attempts_requested=state.candidate_attempts,
+            candidate_attempts_completed=len(state.candidates),
+            winning_attempt_id=(state.selection or {}).get("selected_attempt_id"),
+            reason=(state.final_decision or {}).get("summary", ""),
+            decomposition_executed=state.decomposition_executed,
+            subtask_count=len(state.subtasks),
+            subtasks_executed=[s.subtask_id for s in state.subtasks if s.attempts],
+            subtasks_accepted=[
+                s.subtask_id for s in state.subtasks if s.status == "accepted"
+            ],
+            attempts_per_subtask=state.candidate_attempts,
+            subtask_attempts_completed=sum(len(s.attempts) for s in state.subtasks),
+            failure_reason=""
+            if state.status == "completed"
+            else (state.final_decision or {}).get("summary", "failed"),
+        )
+        return OpsRunResult(run_id=rid, run_dir=str(run_dir), state=state, decision=d)

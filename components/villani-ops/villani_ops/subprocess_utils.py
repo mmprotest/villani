@@ -41,7 +41,11 @@ def resolve_command_prefix(command: str) -> list[str] | None:
         return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "call", resolved]
     if os.name == "nt" and suffix not in {".exe", ".com"}:
         try:
-            first_line = Path(resolved).read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+            first_line = (
+                Path(resolved)
+                .read_text(encoding="utf-8", errors="ignore")
+                .splitlines()[0]
+            )
         except (OSError, IndexError):
             first_line = ""
         if first_line.startswith("#!") and "python" in first_line.lower():

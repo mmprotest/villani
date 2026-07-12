@@ -147,9 +147,12 @@ def test_offline_finalization_retries_and_uploads_one_outcome(tmp_path) -> None:
     assert client.outcomes == [outcome]
     assert sync.sync_once()["outcomes"] == 0
     with sqlite3.connect(paths.database) as connection:
-        assert connection.execute(
-            "SELECT upload_state FROM runs WHERE run_id=?", (run_id,)
-        ).fetchone()[0] == "acknowledged"
+        assert (
+            connection.execute(
+                "SELECT upload_state FROM runs WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            == "acknowledged"
+        )
 
 
 def test_backoff_is_exponential_with_full_jitter_and_retry_after_wins(tmp_path) -> None:
@@ -212,7 +215,7 @@ def test_version_one_spool_upgrades_without_losing_pending_event(tmp_path) -> No
     spool = SQLiteSpool(paths, Limits())
     assert spool.status()["pending_events"] == 1
     with sqlite3.connect(paths.database) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
         assert "dead_lettered_at" in {
             row[1] for row in connection.execute("PRAGMA table_info(events)")
         }

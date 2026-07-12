@@ -161,4 +161,3 @@ class SequenceOptimizationResult(StrictModel):
     pruning_rule: str | None
     pruned_backends: tuple[str, ...]
     formulas: dict[str, str]
-

@@ -72,7 +72,14 @@ class StrictProtocolModel(BaseModel):
 class StageUsage(StrictProtocolModel):
     """One model invocation or aggregate for a named controller stage."""
 
-    stage: Literal["classification", "coding", "verification", "selection", "materialization", "total"]
+    stage: Literal[
+        "classification",
+        "coding",
+        "verification",
+        "selection",
+        "materialization",
+        "total",
+    ]
     backend: str | None = None
     model: str | None = None
     input_tokens: int | None = Field(default=None, ge=0)
@@ -176,9 +183,7 @@ class RunManifestSnapshot(StrictProtocolModel):
         if not self.currency.isalpha():
             raise ValueError("currency must contain only letters")
         self.currency = self.currency.upper()
-        _check_accounting(
-            self.cost_accounting_status, (self.total_cost_usd,), "cost"
-        )
+        _check_accounting(self.cost_accounting_status, (self.total_cost_usd,), "cost")
         _check_accounting(
             self.token_accounting_status,
             (self.total_input_tokens, self.total_output_tokens),
@@ -434,9 +439,7 @@ class CandidateRanking(StrictProtocolModel):
 
     @model_validator(mode="after")
     def validate_accounting(self) -> CandidateRanking:
-        _check_accounting(
-            self.cost_accounting_status, (self.actual_cost_usd,), "cost"
-        )
+        _check_accounting(self.cost_accounting_status, (self.actual_cost_usd,), "cost")
         return self
 
 
@@ -455,9 +458,7 @@ class SelectionSnapshot(StrictProtocolModel):
 
     @model_validator(mode="after")
     def validate_selected_candidates(self) -> SelectionSnapshot:
-        unexpected = set(self.selected_candidate_ids) - set(
-            self.eligible_candidate_ids
-        )
+        unexpected = set(self.selected_candidate_ids) - set(self.eligible_candidate_ids)
         if unexpected:
             raise ValueError(
                 "selected candidates are not acceptance eligible: "

@@ -22,6 +22,7 @@ from villani_ops.execution_environment.secrets import LocalSecretBroker, SecretL
 from .adapters import ADAPTERS
 from .config import AgentdPaths, Limits, SyncConfig, villani_home
 from .credentials import InstallationCredentialStore
+from .platform_process import windows_creation_flags, windows_total_physical_memory
 from .process import is_windows, terminate_process_tree
 from .uploader import ControlPlaneClient, RemoteError
 
@@ -31,26 +32,7 @@ logger = logging.getLogger(__name__)
 
 def _memory_bytes() -> int:
     if os.name == "nt":
-        import ctypes
-
-        class MemoryStatus(ctypes.Structure):
-            _fields_ = [
-                ("length", ctypes.c_ulong),
-                ("memory_load", ctypes.c_ulong),
-                ("total_physical", ctypes.c_ulonglong),
-                ("available_physical", ctypes.c_ulonglong),
-                ("total_page_file", ctypes.c_ulonglong),
-                ("available_page_file", ctypes.c_ulonglong),
-                ("total_virtual", ctypes.c_ulonglong),
-                ("available_virtual", ctypes.c_ulonglong),
-                ("available_extended_virtual", ctypes.c_ulonglong),
-            ]
-
-        status = MemoryStatus()
-        status.length = ctypes.sizeof(status)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-            return int(status.total_physical)
-        return 0
+        return windows_total_physical_memory()
     try:
         sysconf = getattr(os, "sysconf", None)
         if sysconf is None:
@@ -285,7 +267,7 @@ class RemoteExecutionWorker:
     def _run_child(
         self, command: list[str], workspace: Path, task: dict[str, Any]
     ) -> RemoteExecutionResult:
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if is_windows() else 0
+        creationflags = windows_creation_flags() if is_windows() else 0
         process = subprocess.Popen(
             command,
             cwd=workspace,

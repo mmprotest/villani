@@ -21,6 +21,23 @@ run ID and idempotent event/outcome keys; it does not create a telemetry-only ru
 does not fail the coding run, and a later resume or run finalization replays locally committed
 events that remain pending.
 
+Runs created while agentd was absent follow a separate durable path. Startup and every sync
+iteration scan a bounded, deterministic batch of canonical directories under
+`VILLANI_HOME/runs`; operators can trigger it directly with:
+
+```console
+villani-agentd backfill --batch-size 100
+villani-agentd doctor
+```
+
+Backfill validates the canonical protocol, preserves the original run/trace/event/attempt and
+sequence identities, imports only approved metadata artifacts, and records progress in SQLite.
+The command reports `imported`, `already_imported`, `incomplete`, `malformed`,
+`unsupported_protocol`, `sensitive_content_rejected`, and `temporarily_failed`; `doctor` exposes
+the persistent `local_run_imports` records. Repair the local bundle or remove prohibited content
+at its source and rerun the command. Event IDs, sequence identities, artifact IDs, and outcome
+keys—not the tracking row—make retries safe after interruption or tracking loss.
+
 To opt into synchronization, exchange a one-time enrollment token and run a first sync:
 
 ```console

@@ -1,0 +1,53 @@
+{
+  "artifact_signature": {
+    "test_key_only": true,
+    "verified": true
+  },
+  "container_cve_scan": {
+    "evidence": "C:\\Users\\Simon\\OneDrive\\Documents\\Python Scripts\\villani\\release\\evidence\\container-scan.sarif",
+    "executed": true,
+    "findings": 0,
+    "passed": true,
+    "scanner": "docker-scout",
+    "severity_filter": [
+      "critical",
+      "high"
+    ]
+  },
+  "container_scan": {
+    "findings": [],
+    "passed": true,
+    "scanner": "offline-dockerfile-policy-v1"
+  },
+  "dependency_audit": {
+    "output": "No broken requirements found.",
+    "passed": true,
+    "tool": "pip check"
+  },
+  "migration_restore_tests": {
+    "required": true
+  },
+  "operating_system_package_smoke": {
+    "configured": true,
+    "systems": [
+      "linux",
+      "macos",
+      "windows"
+    ]
+  },
+  "passed": true,
+  "sbom": {
+    "path": "release-verification\\supply-chain\\sbom.cdx.json",
+    "sha256": "6994a7db45b0a8468d3a79f54c10d2fcfca7e4d57752cafbfcc08e603b25ac0e"
+  },
+  "schema_version": "villani.supply_chain_gate.v1",
+  "secret_scan": {
+    "command": "scripts/check-secrets.py integration/fixtures",
+    "required": true
+  },
+  "unsupported": [
+    "cloud KMS integration",
+    "production SAML/SCIM",
+    "online CVE container scanner when air-gapped"
+  ]
+}

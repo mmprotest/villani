@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -192,7 +193,12 @@ def test_new_tasks_fail_before_fix() -> None:
         ("two_stage_fix", "tests/test_cache.py"),
     ]:
         repo = Path(f"benchmark_tasks/villani_bench_v1/{task_id}/repo")
-        proc = subprocess.run(["pytest", "-q", test_file], cwd=repo, capture_output=True, text=True)
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", test_file],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
         assert proc.returncode != 0
 
 

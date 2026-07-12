@@ -4,7 +4,6 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
 
 from typer.testing import CliRunner
 
@@ -30,7 +29,9 @@ def _copy_bundle(home: Path, run_id: str) -> Path:
     return destination
 
 
-def _make_interrupted(bundle: Path, *, state: str = "ATTEMPT_RUNNING", repository: str | None = None) -> None:
+def _make_interrupted(
+    bundle: Path, *, state: str = "ATTEMPT_RUNNING", repository: str | None = None
+) -> None:
     state_document = json.loads((bundle / "state.json").read_text(encoding="utf-8"))
     state_document.update(
         {
@@ -39,9 +40,7 @@ def _make_interrupted(bundle: Path, *, state: str = "ATTEMPT_RUNNING", repositor
             "terminal": False,
         }
     )
-    (bundle / "state.json").write_text(
-        json.dumps(state_document), encoding="utf-8"
-    )
+    (bundle / "state.json").write_text(json.dumps(state_document), encoding="utf-8")
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     manifest.update(
         {
@@ -94,12 +93,16 @@ def test_resume_terminal_run_is_read_only(tmp_path, monkeypatch) -> None:
     assert (bundle / "events.jsonl").read_bytes() == before
 
 
-def test_resume_interrupted_run_calls_controller_and_latest_discovers_it(tmp_path, monkeypatch) -> None:
+def test_resume_interrupted_run_calls_controller_and_latest_discovers_it(
+    tmp_path, monkeypatch
+) -> None:
     home = tmp_path / "home"
     monkeypatch.setenv("VILLANI_HOME", str(home))
     _make_interrupted(_copy_bundle(home, "interrupted"))
     controller = _ResumeController()
-    monkeypatch.setattr(unified, "_controller_builder", lambda _config, _events: controller)
+    monkeypatch.setattr(
+        unified, "_controller_builder", lambda _config, _events: controller
+    )
 
     result = runner.invoke(unified.app, ["resume", "--latest"])
     assert result.exit_code == 0, result.output
@@ -116,7 +119,9 @@ def test_resume_refuses_dirty_materialization_target(tmp_path, monkeypatch) -> N
         ("config", "user.email", "tests@example.invalid"),
         ("config", "user.name", "Villani tests"),
     ):
-        result = subprocess.run(["git", *args], cwd=repository, capture_output=True, text=True)
+        result = subprocess.run(
+            ["git", *args], cwd=repository, capture_output=True, text=True
+        )
         assert result.returncode == 0, result.stderr
     (repository / "tracked.txt").write_text("clean\n", encoding="utf-8")
     subprocess.run(["git", "add", "tracked.txt"], cwd=repository, check=True)

@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from villani_agentd import process as process_module
+from villani_agentd import platform_process
 from villani_agentd import wrapper as wrapper_module
 from villani_agentd.cli import build_parser
 from villani_agentd.client import ClientError, LocalClient
@@ -261,7 +262,7 @@ def test_committed_events_survive_spool_restart_and_wal_is_enabled(paths: Agentd
 
     with sqlite3.connect(paths.database) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_unknown_legacy_spool_layout_is_refused(paths: AgentdPaths) -> None:
@@ -403,8 +404,8 @@ def test_http_run_event_artifact_and_finalize_endpoints(running_server) -> None:
         "runs": 1,
         "events": 1,
         "artifacts": 1,
-            "pending_events": 1,
-            "pending_outcomes": 0,
+        "pending_events": 1,
+        "pending_outcomes": 0,
         "dead_letters": 0,
         "upload_mode": "offline",
     }
@@ -470,6 +471,57 @@ def test_windows_process_group_flags_are_used_through_mock(monkeypatch: pytest.M
     assert seen["shell"] is False
     assert seen["creationflags"] == 512
     assert seen["start_new_session"] is False
+
+
+def test_posix_process_path_never_requests_windows_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    class FakeProcess:
+        pid = 457
+        stdout = io.BytesIO()
+        stderr = io.BytesIO()
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(process_module, "is_windows", lambda: False)
+    monkeypatch.setattr(
+        process_module,
+        "windows_creation_flags",
+        lambda: pytest.fail("POSIX path requested Windows constants"),
+    )
+    monkeypatch.setattr(
+        process_module.subprocess,
+        "Popen",
+        lambda *args, **kwargs: seen.update(kwargs) or FakeProcess(),
+    )
+
+    assert run_process(["fake"], 10, 10).exit_code == 0
+    assert seen["creationflags"] == 0
+    assert seen["start_new_session"] is True
+
+
+def test_windows_helpers_use_available_flags_and_safely_handle_missing_attributes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(platform_process.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, raising=False)
+    monkeypatch.setattr(platform_process.subprocess, "DETACHED_PROCESS", 8, raising=False)
+    assert platform_process.windows_creation_flags() == 512
+    assert platform_process.windows_creation_flags(detached=True) == 520
+
+    monkeypatch.delattr(platform_process.subprocess, "CREATE_NEW_PROCESS_GROUP", raising=False)
+    monkeypatch.delattr(platform_process.subprocess, "DETACHED_PROCESS", raising=False)
+    monkeypatch.delattr(platform_process.signal, "CTRL_BREAK_EVENT", raising=False)
+    assert platform_process.windows_creation_flags(detached=True) == 0
+    assert platform_process.windows_ctrl_break_event() == 0
+
+
+def test_portable_agentd_modules_import_without_windows_apis() -> None:
+    __import__("villani_agentd.process")
+    __import__("villani_agentd.lifecycle")
+    __import__("villani_agentd.remote_worker")
 
 
 def test_generic_wrapper_returns_child_exit_and_emits_two_events(

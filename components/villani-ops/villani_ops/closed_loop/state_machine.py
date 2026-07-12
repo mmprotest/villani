@@ -20,9 +20,7 @@ ALLOWED_TRANSITIONS: dict[ControllerState, frozenset[ControllerState]] = {
     "ATTEMPT_COMPLETED": frozenset({"VERIFYING", "REJECTED", "FAILED"}),
     "VERIFYING": frozenset({"VERIFIED", "FAILED"}),
     "VERIFIED": frozenset({"SELECTING", "REJECTED", "FAILED"}),
-    "REJECTED": frozenset(
-        {"POLICY_SELECTED", "ESCALATING", "EXHAUSTED", "FAILED"}
-    ),
+    "REJECTED": frozenset({"POLICY_SELECTED", "ESCALATING", "EXHAUSTED", "FAILED"}),
     "ESCALATING": frozenset({"POLICY_SELECTED", "EXHAUSTED", "FAILED"}),
     "SELECTING": frozenset({"MATERIALIZING", "EXHAUSTED", "FAILED"}),
     "MATERIALIZING": frozenset({"COMPLETED", "FAILED"}),

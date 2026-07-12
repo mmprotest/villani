@@ -19,9 +19,7 @@ from ..interfaces import AttemptContext
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args], cwd=repo, text=True, capture_output=True
-    )
+    return subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True)
 
 
 def repository_identity(repo: Path) -> dict[str, Any]:
@@ -55,16 +53,19 @@ def validate_target_identity(target_repo: Path, baseline: dict[str, Any]) -> Non
         raise ValueError("attempt baseline did not identify a Git target repository")
     if not current.get("is_git_repository"):
         raise ValueError("target repository is no longer a Git repository")
-    if Path(str(current["repository_path"])).resolve() != Path(
-        str(baseline.get("repository_path"))
-    ).resolve():
+    if (
+        Path(str(current["repository_path"])).resolve()
+        != Path(str(baseline.get("repository_path"))).resolve()
+    ):
         raise ValueError("target repository identity does not match attempt baseline")
     if current.get("git_root") != baseline.get("git_root"):
         raise ValueError("target Git root does not match attempt baseline")
     if current.get("head") != baseline.get("head"):
         raise ValueError("target repository HEAD changed after attempt isolation")
     if current.get("status_porcelain") != baseline.get("status_porcelain"):
-        raise ValueError("target repository working state changed after attempt isolation")
+        raise ValueError(
+            "target repository working state changed after attempt isolation"
+        )
 
 
 def validate_target_lineage(target_repo: Path, baseline: dict[str, Any]) -> None:
@@ -72,10 +73,13 @@ def validate_target_lineage(target_repo: Path, baseline: dict[str, Any]) -> None
 
     current = repository_identity(target_repo)
     if not baseline.get("is_git_repository") or not current.get("is_git_repository"):
-        raise ValueError("materialization recovery requires the original Git repository")
-    if Path(str(current["repository_path"])).resolve() != Path(
-        str(baseline.get("repository_path"))
-    ).resolve():
+        raise ValueError(
+            "materialization recovery requires the original Git repository"
+        )
+    if (
+        Path(str(current["repository_path"])).resolve()
+        != Path(str(baseline.get("repository_path"))).resolve()
+    ):
         raise ValueError("target repository identity does not match attempt baseline")
     if current.get("git_root") != baseline.get("git_root"):
         raise ValueError("target Git root does not match attempt baseline")

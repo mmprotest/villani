@@ -136,9 +136,9 @@ class InheritProvider:
         path_list_names = {"PATH", "Path", "PYTHONPATH", "NODE_PATH"}
         for name in list(environment):
             upper = name.upper()
-            reason: Literal[
-                "sensitive", "denied", "villani_private_variable"
-            ] | None = None
+            reason: (
+                Literal["sensitive", "denied", "villani_private_variable"] | None
+            ) = None
             if upper in denied:
                 reason = "denied"
             elif upper in sensitive:

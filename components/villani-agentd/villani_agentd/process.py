@@ -10,6 +10,8 @@ import time
 from dataclasses import dataclass
 from typing import BinaryIO, Callable, Mapping, Sequence
 
+from .platform_process import windows_creation_flags, windows_ctrl_break_event
+
 
 @dataclass(frozen=True, slots=True)
 class CapturedStream:
@@ -65,7 +67,7 @@ def terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
         return
     if is_windows():
         try:
-            process.send_signal(signal.CTRL_BREAK_EVENT)
+            process.send_signal(windows_ctrl_break_event())
             process.wait(timeout=2)
             return
         except (OSError, subprocess.TimeoutExpired):
@@ -112,9 +114,8 @@ def run_process(
 ) -> ProcessResult:
     if not command:
         raise ValueError("wrapped command must not be empty")
-    creationflags = 0
-    if is_windows():
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+    windows = is_windows()
+    creationflags = windows_creation_flags() if windows else 0
     started = time.monotonic()
     process = subprocess.Popen(
         list(command),
@@ -124,7 +125,7 @@ def run_process(
         stderr=subprocess.PIPE,
         env=dict(env) if env is not None else None,
         creationflags=creationflags,
-        start_new_session=not is_windows(),
+        start_new_session=not windows,
     )
     assert process.stdout is not None and process.stderr is not None
     captured: dict[str, CapturedStream] = {}

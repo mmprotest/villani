@@ -16,6 +16,7 @@ from .remote_worker import RemoteExecutionWorker
 from .lifecycle import doctor, run_foreground_service, start_background, stop_background
 from .wrapper import wrap_adapter
 from .adapters import ADAPTERS
+from .local_import import LocalRunImporter
 
 
 def _add_limits(parser: argparse.ArgumentParser) -> None:
@@ -50,6 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
     enroll.add_argument("--batch-size", type=int, default=250)
     enroll.add_argument("--concurrency", type=int, default=2)
     subparsers.add_parser("sync-once", help="synchronize pending data once")
+    backfill = subparsers.add_parser(
+        "backfill", help="import canonical runs created while agentd was absent"
+    )
+    backfill.add_argument("--batch-size", type=int, default=100)
     subparsers.add_parser("rotate-credential", help="rotate this installation credential")
     worker_enable = subparsers.add_parser(
         "worker-enable", help="explicitly enable pull-based controlled remote execution"
@@ -128,6 +133,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 json.dumps(
                     SynchronizationWorker(paths, config, Limits()).sync_once(), sort_keys=True
+                )
+            )
+            return 0
+        if args.command == "backfill":
+            print(
+                json.dumps(
+                    LocalRunImporter(paths, Limits(), batch_size=args.batch_size).run_once(),
+                    sort_keys=True,
                 )
             )
             return 0

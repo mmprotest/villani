@@ -148,14 +148,14 @@ def test_bootstrap_threshold_routing_table(
         }
     )
 
-    decision = engine.decide(
-        _context(_classification(difficulty, risk, confidence))
-    )
+    decision = engine.decide(_context(_classification(difficulty, risk, confidence)))
 
     assert decision.chosen_backend == expected
     assert decision.required_capability_score == required
     if difficulty == "medium":
-        cheap = next(x for x in decision.considered_backends if x.backend_name == "cheap")
+        cheap = next(
+            x for x in decision.considered_backends if x.backend_name == "cheap"
+        )
         assert cheap.eligible is False
 
 
@@ -168,7 +168,9 @@ def test_unknown_local_cost_is_not_sorted_as_zero() -> None:
     )
     decision = engine.decide(_context(_classification()))
     assert decision.chosen_backend == "known"
-    unknown = next(x for x in decision.considered_backends if x.backend_name == "unknown")
+    unknown = next(
+        x for x in decision.considered_backends if x.backend_name == "unknown"
+    )
     assert unknown.estimated_cost_usd is None
     assert unknown.cost_accounting_status == "unknown"
 
@@ -183,15 +185,17 @@ def test_cost_cap_excludes_unknown_estimate() -> None:
     decision = engine.decide(
         _context(_classification(), budget=_budget(cost=1.0, cost_status="complete"))
     )
-    unknown = next(x for x in decision.considered_backends if x.backend_name == "unknown")
+    unknown = next(
+        x for x in decision.considered_backends if x.backend_name == "unknown"
+    )
     assert unknown.eligible is False
     assert "unknown under an active cost cap" in " ".join(unknown.rejection_reasons)
 
 
 def test_no_capable_backend_exhausts_without_constraint_violations() -> None:
-    decision = BootstrapPolicyEngine({"small": _backend("small", 40, fixed=0.1)}).decide(
-        _context(_classification("hard"))
-    )
+    decision = BootstrapPolicyEngine(
+        {"small": _backend("small", 40, fixed=0.1)}
+    ).decide(_context(_classification("hard")))
     assert decision.action == "exhaust"
     assert decision.chosen_backend is None
 
@@ -208,7 +212,9 @@ def test_no_capable_backend_uses_strongest_with_explicit_violation() -> None:
     assert decision.action == "attempt"
     assert decision.chosen_backend == "strongest"
     assert decision.metadata["constraint_violation"] is True
-    chosen = next(x for x in decision.considered_backends if x.backend_name == "strongest")
+    chosen = next(
+        x for x in decision.considered_backends if x.backend_name == "strongest"
+    )
     assert any("constraint violated" in reason for reason in chosen.rejection_reasons)
 
 
@@ -259,7 +265,9 @@ def test_implementation_failure_retries_once_then_escalates() -> None:
         {"low": _backend("low", 25, fixed=0.1), "high": _backend("high", 80, fixed=1)}
     )
     first = _failed_attempt("implementation_failure")
-    assert engine.decide(_context(_classification(), attempts=(first,))).action == "retry"
+    assert (
+        engine.decide(_context(_classification(), attempts=(first,))).action == "retry"
+    )
     second = _failed_attempt("implementation_failure", attempt_id="attempt_002")
     escalated = engine.decide(_context(_classification(), attempts=(first, second)))
     assert escalated.action == "escalate"
@@ -309,8 +317,7 @@ def test_cost_budget_stops_before_unaffordable_attempt() -> None:
     assert decision.action == "exhaust"
     option = decision.considered_backends[0]
     assert any(
-        "exceeds remaining cost budget" in reason
-        for reason in option.rejection_reasons
+        "exceeds remaining cost budget" in reason for reason in option.rejection_reasons
     )
 
 
@@ -464,7 +471,9 @@ def test_legacy_backend_yaml_still_loads(tmp_path: Path) -> None:
 
 def test_nonzero_exit_is_not_automatically_capability_failure() -> None:
     result = attempt(exit_code=1)
-    assert classify_failure(result, requires_file_changes=True) == "implementation_failure"
+    assert (
+        classify_failure(result, requires_file_changes=True) == "implementation_failure"
+    )
 
 
 class _OrderingClassifier(FakeClassifier):
@@ -500,7 +509,9 @@ def test_controller_persists_classification_before_coding_routing_and_retries_ve
     }
     classifier = _OrderingClassifier()
     runner = FakeAttemptRunner([attempt()])
-    verifier = FakeVerifier([RuntimeError("verifier endpoint timeout"), accepted_verification()])
+    verifier = FakeVerifier(
+        [RuntimeError("verifier endpoint timeout"), accepted_verification()]
+    )
     controller = ClosedLoopController(
         classifier=classifier,
         attempt_runner=runner,
@@ -525,10 +536,14 @@ def test_controller_persists_classification_before_coding_routing_and_retries_ve
     assert len(verifier.calls) == 2
     events = read_jsonl_tolerant(result.run_directory / "events.jsonl")
     classification_sequence = next(
-        row["sequence"] for row in events if row["event_type"] == "classification_completed"
+        row["sequence"]
+        for row in events
+        if row["event_type"] == "classification_completed"
     )
     policy_sequence = next(
-        row["sequence"] for row in events if row["event_type"] == "policy_decision_started"
+        row["sequence"]
+        for row in events
+        if row["event_type"] == "policy_decision_started"
     )
     assert (result.run_directory / "classification.json").is_file()
     assert classification_sequence < policy_sequence

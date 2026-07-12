@@ -111,7 +111,9 @@ def _fixture_run(
             "created_at": "2026-07-10T00:00:00Z",
             "updated_at": STAMP,
             "completed_at": STAMP,
-            "final_state": "COMPLETED" if materialization_status == "succeeded" else "FAILED",
+            "final_state": "COMPLETED"
+            if materialization_status == "succeeded"
+            else "FAILED",
             "attempt_ids": [attempt_id],
             "selected_attempt_id": attempt_id if acceptance_eligible else None,
             "total_cost_usd": cost,
@@ -120,7 +122,9 @@ def _fixture_run(
             "total_output_tokens": 50,
             "token_accounting_status": "complete",
             "total_duration_ms": duration_ms,
-            "duration_accounting_status": "complete" if duration_ms is not None else "unknown",
+            "duration_accounting_status": "complete"
+            if duration_ms is not None
+            else "unknown",
             "artifact_paths": {
                 "task": "task.json",
                 "classification": "classification.json",
@@ -135,9 +139,7 @@ def _fixture_run(
                     "policy": {
                         "accepted_candidates_required": accepted_candidates_required
                     },
-                    "backends": {
-                        backend: {"provider": provider, "model": model}
-                    },
+                    "backends": {backend: {"provider": provider, "model": model}},
                 }
             },
         },
@@ -186,7 +188,9 @@ def _fixture_run(
             "trace_path": f"attempts/{attempt_id}/trace/events.jsonl",
             "exit_code": 0 if attempt_status == "completed" else 1,
             "duration_ms": duration_ms,
-            "duration_accounting_status": "complete" if duration_ms is not None else "unknown",
+            "duration_accounting_status": "complete"
+            if duration_ms is not None
+            else "unknown",
             "input_tokens": 100,
             "output_tokens": 50,
             "token_accounting_status": "complete",
@@ -213,9 +217,9 @@ def _fixture_run(
             "failure_evidence": [],
             "missing_evidence": [],
             "risk_flags": [],
-            "recommended_action": "accept" if acceptance_eligible else (
-                "retry_verifier" if outcome == "error" else "reject"
-            ),
+            "recommended_action": "accept"
+            if acceptance_eligible
+            else ("retry_verifier" if outcome == "error" else "reject"),
             "raw_verifier_artifact": None,
             "metadata": verification_metadata,
         },
@@ -249,14 +253,24 @@ def _fixture_run(
                     "selection_id": "selection_001",
                     "selected_attempt_id": attempt_id,
                     "started_at": "2026-07-10T00:00:08Z",
-                    "completed_at": STAMP if materialization_status == "succeeded" else None,
+                    "completed_at": STAMP
+                    if materialization_status == "succeeded"
+                    else None,
                     "status": materialization_status,
                     "source_patch_path": f"attempts/{attempt_id}/patch.diff",
                     "target_repository_path": "/fixture/repo",
-                    "materialized_patch_path": "final.patch" if materialization_status == "succeeded" else None,
-                    "patch_sha256": "a" * 64 if materialization_status == "succeeded" else None,
-                    "changed_files": ["example.py"] if materialization_status == "succeeded" else [],
-                    "failure": None if materialization_status == "succeeded" else {
+                    "materialized_patch_path": "final.patch"
+                    if materialization_status == "succeeded"
+                    else None,
+                    "patch_sha256": "a" * 64
+                    if materialization_status == "succeeded"
+                    else None,
+                    "changed_files": ["example.py"]
+                    if materialization_status == "succeeded"
+                    else [],
+                    "failure": None
+                    if materialization_status == "succeeded"
+                    else {
                         "code": "apply_failed",
                         "message": "fixture failure",
                         "details": {},
@@ -281,7 +295,11 @@ def _fine(snapshot: CapabilitySnapshot, backend: str = "fixture") -> CapabilityP
 def test_accepted_materialized_attempt_counts_as_success(tmp_path: Path) -> None:
     _fixture_run(tmp_path, "run_success")
     profile = _fine(rebuild_snapshot(tmp_path))
-    assert (profile.successes, profile.verified_model_failures, profile.sample_count) == (1, 0, 1)
+    assert (
+        profile.successes,
+        profile.verified_model_failures,
+        profile.sample_count,
+    ) == (1, 0, 1)
     assert profile.included_attempts[0].attempt_id == "attempt_001"
 
 
@@ -301,7 +319,11 @@ def test_verified_rejection_counts_as_failure(
         materialization_status=None,
     )
     profile = _fine(rebuild_snapshot(tmp_path))
-    assert (profile.successes, profile.verified_model_failures, profile.sample_count) == (0, 1, 1)
+    assert (
+        profile.successes,
+        profile.verified_model_failures,
+        profile.sample_count,
+    ) == (0, 1, 1)
 
 
 @pytest.mark.parametrize(
@@ -408,7 +430,9 @@ def test_profile_aggregates_known_cost_duration_and_tokens(tmp_path: Path) -> No
     assert profile.last_observed_at == "2026-07-10T00:00:06Z"
 
 
-def test_explicit_unselected_acceptance_in_multi_candidate_policy_counts(tmp_path: Path) -> None:
+def test_explicit_unselected_acceptance_in_multi_candidate_policy_counts(
+    tmp_path: Path,
+) -> None:
     _fixture_run(
         tmp_path,
         "run_unselected",
@@ -420,7 +444,9 @@ def test_explicit_unselected_acceptance_in_multi_candidate_policy_counts(tmp_pat
     assert profile.successes == 1
 
 
-def test_controller_explicitly_labels_clean_unselected_acceptance(tmp_path: Path) -> None:
+def test_controller_explicitly_labels_clean_unselected_acceptance(
+    tmp_path: Path,
+) -> None:
     option = fake_backend("fixture")
     controller = ClosedLoopController(
         classifier=FakeClassifier(),
@@ -473,7 +499,9 @@ def test_controller_explicitly_labels_clean_unselected_acceptance(tmp_path: Path
     )
 
 
-def test_rebuild_is_atomic_idempotent_and_provenance_is_append_only(tmp_path: Path) -> None:
+def test_rebuild_is_atomic_idempotent_and_provenance_is_append_only(
+    tmp_path: Path,
+) -> None:
     runs = tmp_path / "runs"
     registry = tmp_path / "capabilities"
     _fixture_run(runs, "run_stable")
@@ -594,9 +622,7 @@ def test_sparse_fine_group_backs_off_to_category_difficulty() -> None:
     )
     assert selected.empirical_status == "sufficient_data"
     assert selected.selected_level == "category_difficulty"
-    assert selected.empirical_capability_score == int(
-        100 * wilson_lower_bound(24, 30)
-    )
+    assert selected.empirical_capability_score == int(100 * wilson_lower_bound(24, 30))
 
 
 def test_empirical_score_never_overwrites_static_score() -> None:
@@ -617,7 +643,9 @@ def test_expected_cost_to_success_formula() -> None:
     assert expected_cost_to_success(2.0, 0.0, sufficient=True) is None
 
 
-def _input(name: str, probability: float | None, cost: float | None, *, sufficient: bool = True) -> EmpiricalBackendInput:
+def _input(
+    name: str, probability: float | None, cost: float | None, *, sufficient: bool = True
+) -> EmpiricalBackendInput:
     return EmpiricalBackendInput(
         backend_name=name,
         conservative_success_probability=probability,
@@ -635,7 +663,9 @@ def test_two_backend_sequence_formulas_and_cheap_first_choice() -> None:
         max_attempts=2,
         target_success_probability=0.80,
     )
-    cheap_first = next(x for x in result.considered_sequences if x.backends == ("cheap", "strong"))
+    cheap_first = next(
+        x for x in result.considered_sequences if x.backends == ("cheap", "strong")
+    )
     assert cheap_first.expected_cost == pytest.approx(3.0)
     assert cheap_first.success_probability == pytest.approx(0.85)
     assert result.chosen_sequence == ("cheap", "strong")
@@ -654,7 +684,10 @@ def test_optimizer_chooses_strong_first_when_expected_cost_is_lower() -> None:
     ("inputs", "missing"),
     [
         ([_input("unknown", 0.5, None)], "unknown:mean_actual_attempt_cost"),
-        ([_input("sparse", None, 1.0, sufficient=False)], "sparse:insufficient_probability_data"),
+        (
+            [_input("sparse", None, 1.0, sufficient=False)],
+            "sparse:insufficient_probability_data",
+        ),
     ],
 )
 def test_missing_optimizer_inputs_force_bootstrap_fallback(
@@ -676,7 +709,9 @@ def test_max_attempts_and_cost_budget_constrain_sequences() -> None:
         known_cost_budget=3.0,
         target_success_probability=0.8,
     )
-    assert all(sequence.worst_case_cost <= 3.0 for sequence in budgeted.considered_sequences)
+    assert all(
+        sequence.worst_case_cost <= 3.0 for sequence in budgeted.considered_sequences
+    )
     assert budgeted.rejected_by_cost_budget == 2
 
 
@@ -693,14 +728,18 @@ def test_more_than_eight_backends_are_pruned_deterministically() -> None:
     assert result.total_enumerated_sequences == 8
 
 
-def test_same_source_data_produces_same_digest_and_optimizer_decision(tmp_path: Path) -> None:
+def test_same_source_data_produces_same_digest_and_optimizer_decision(
+    tmp_path: Path,
+) -> None:
     _fixture_run(tmp_path, "run_deterministic")
     first = rebuild_snapshot(tmp_path)
     second = rebuild_snapshot(tmp_path)
     assert first.source_data_digest == second.source_data_digest
     assert first.profile_digest == second.profile_digest
     inputs = [_input("a", 0.5, 1.0), _input("b", 0.7, 2.0)]
-    assert optimize_sequence(inputs, max_attempts=2) == optimize_sequence(inputs, max_attempts=2)
+    assert optimize_sequence(inputs, max_attempts=2) == optimize_sequence(
+        inputs, max_attempts=2
+    )
 
 
 def test_sufficient_empirical_evidence_can_qualify_below_static_threshold() -> None:
@@ -787,11 +826,16 @@ def test_sufficient_empirical_evidence_can_qualify_below_static_threshold() -> N
     ).decide(context)
     assert decision.chosen_backend == "cheap"
     assert decision.policy_version == "empirical_sequence_v1"
-    assert {item.backend_name: item.capability_score for item in decision.considered_backends} == {
+    assert {
+        item.backend_name: item.capability_score
+        for item in decision.considered_backends
+    } == {
         "cheap": 10.0,
         "strong": 90.0,
     }
-    assert decision.metadata["capability_scores"]["cheap"]["static_capability_score"] == 10
+    assert (
+        decision.metadata["capability_scores"]["cheap"]["static_capability_score"] == 10
+    )
     eligibility = decision.metadata["eligibility_by_backend"]["cheap"]
     assert eligibility["static_eligible"] is False
     assert eligibility["empirical_eligible"] is True

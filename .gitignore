@@ -41,6 +41,8 @@ site/
 pip-wheel-metadata/
 wheelhouse/
 dist/
+!components/villani-run-model/dist/
+!components/villani-run-model/dist/**
 build/
 
 # Node, JavaScript, and TypeScript dependencies/build output

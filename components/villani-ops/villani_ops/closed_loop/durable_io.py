@@ -38,12 +38,15 @@ def write_json_atomic(path: str | os.PathLike[str], value: Any) -> None:
 
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(
-        _json_compatible(value),
-        ensure_ascii=False,
-        indent=2,
-        allow_nan=False,
-    ) + "\n"
+    payload = (
+        json.dumps(
+            _json_compatible(value),
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        )
+        + "\n"
+    )
 
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{destination.name}.",
@@ -75,12 +78,15 @@ def append_jsonl_durable(path: str | os.PathLike[str], value: Any) -> None:
 
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(
-        document,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        allow_nan=False,
-    ) + "\n"
+    line = (
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    )
     with destination.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(line)
         handle.flush()
@@ -122,7 +128,7 @@ def _is_truncated_json_object(line: str, error: json.JSONDecodeError) -> bool:
     content = line.rstrip("\r\n")
     if error.pos >= len(content):
         return True
-    incomplete_token = content[error.pos:].strip()
+    incomplete_token = content[error.pos :].strip()
     return bool(incomplete_token) and any(
         literal.startswith(incomplete_token) and literal != incomplete_token
         for literal in ("true", "false", "null")

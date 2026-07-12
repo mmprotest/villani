@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
@@ -38,6 +40,14 @@ from villani_code.utils import ensure_dir
 
 
 _DIAGNOSIS_KEYS = ("target_file", "bug_class", "fix_intent")
+
+
+def _verification_command(command: str) -> tuple[str | list[str], bool]:
+    """Use the active interpreter for pytest and the native shell otherwise."""
+    parts = shlex.split(command, posix=os.name != "nt")
+    if parts and Path(parts[0]).name.lower() in {"pytest", "pytest.exe"}:
+        return [sys.executable, "-m", "pytest", *parts[1:]], False
+    return command, True
 
 
 def _user_message_is_safe_for_text_injection(message: dict[str, Any]) -> bool:
@@ -199,11 +209,13 @@ def run_pre_edit_failure_localization(runner: Any) -> dict[str, Any] | None:
             isolated_repo = Path(temp_root) / "repo"
             shutil.copytree(runner.repo, isolated_repo)
             runner.event_callback({"type": "pre_edit_failure_signal_isolated", "isolated": True})
+            command, use_shell = _verification_command(visible_command)
             proc = subprocess.run(
-                ["bash", "-lc", visible_command],
+                command,
                 cwd=isolated_repo,
                 capture_output=True,
                 text=True,
+                shell=use_shell,
             )
     except Exception as exc:  # pragma: no cover - defensive path
         runner.event_callback(

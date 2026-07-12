@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`Consolidation and release-truth pass: blocked on pre-existing full Villani Ops Ruff debt`
+`Authorized release-blocker cleanup pass: complete`
 
 ### Milestone status
 
@@ -2409,3 +2409,90 @@ Next permitted milestone:
 - Resolve the existing repository-wide Villani Ops Ruff debt in an explicitly authorized cleanup
   milestone, or adjust scope only through an intentional project decision. No later milestone was
   started in this pass.
+
+#### 2026-07-12: Authorized release-blocker cleanup pass
+
+Status: complete. The separately authorized full Villani Ops Ruff cleanup and all seven release
+blockers were implemented. No later milestone was started.
+
+Changed files:
+- Backend classification, patch capture/materialization, canonical event helpers, and regression
+  tests: `components/villani-ops/villani_ops/agentic/{runner.py,git_artifacts.py}`,
+  `components/villani-ops/villani_ops/materialize.py`,
+  `components/villani-ops/villani_ops/closed_loop/event_sink.py`,
+  `components/villani-ops/villani_ops/tests/{test_cli_orchestrator_default.py,test_release_hardening.py}`.
+- Ruff cleanup: all 213 changed tracked Python files under
+  `components/villani-ops/villani_ops/`, plus `components/villani-ops/tests/.gitkeep` so the exact
+  release lint command has a stable `tests` target. Changes are formatting, explicit imports,
+  removal of genuine dead names, and resolution of duplicate/shadowed definitions; no Ruff rule,
+  exclusion, or ignore was added.
+- Agentd portability/backfill: `components/villani-agentd/villani_agentd/{platform_process.py,local_import.py,spool.py,cli.py,daemon_main.py,lifecycle.py,process.py,remote_worker.py,uploader.py,client.py}`,
+  `components/villani-agentd/tests/{test_agentd_core.py,test_local_import.py,test_synchronization.py}`,
+  and `components/villani-agentd/README.md`.
+- Flight Recorder/run-model: `components/villani-run-model/package.json`,
+  `components/villani-flight-recorder/{package-lock.json,test/helpers/villaniFixture.ts,test/villaniProvider.test.ts}`,
+  and `.gitignore`.
+- Evaluation: `evaluation/{live_evaluation.py,live-task-manifest.example.json}` and
+  `tests/final_foundation/{test_live_evaluation.py,test_final_gate.py}`.
+- Cross-platform subprocess/CI/docs: `components/villani-code/villani_code/state_runtime.py`,
+  `components/villani-code/tests/{test_state_runtime.py,test_benchmark_system.py}`,
+  `.github/workflows/ci.yml`, and `README.md`.
+
+Architectural decisions:
+- The existing `ClosedLoopController`, canonical run ID, event schema, verifier eligibility rules,
+  and selected-patch-only materialization remain authoritative. Connection categories now traverse
+  exception causes and structured runner results before considering wrapper text. Full-index Git
+  patches are captured as bytes; exact apply remains first, with a clean-tree-only checked
+  line-ending fallback for Git's CRLF textual-diff edge case.
+- Windows process constants and kernel memory access are isolated behind named lazy helpers using
+  `getattr`; POSIX import and execution never require Windows-only attributes.
+- Agentd owns a bounded canonical local-run importer. Stable event IDs/sequences and finalization
+  keys provide source idempotency; SQLite import tracking records progress/diagnostics but is not
+  the source of identity. Startup, each sync iteration, and `villani-agentd backfill` invoke it.
+- Run-model consumer installs use committed `dist` without dependency-local build hooks;
+  `prepack` builds publication output and CI rebuilds then requires a clean `dist` diff.
+- Live evaluation is task-paired and uses a fresh exact-revision Git worktree for every policy/task
+  observation. The adaptive-versus-strong-only decision uses deterministic paired percentile
+  bootstrap intervals (10,000 resamples, seed 20260712 in tests) for success non-inferiority and
+  the configured cost-improvement threshold, plus cost completeness, false-acceptance, lock,
+  contamination, pairing, corruption, and sample gates.
+
+Verification:
+- Clean Python 3.12 environment installation of all five editable distributions and extras passed.
+- Linux Villani Code: `python -m pytest -q` 671 passed, 1 platform skip; required Ruff passed;
+  mypy 3 files, zero errors.
+- Linux Villani Ops: `python -m pytest -q` 846 passed, 114 marker deselections, zero skips;
+  `ruff check villani_ops tests` zero findings; required mypy 69 files, zero errors. Focused public
+  backend command: 33 passed. Ruff before/after: 5,012/0 (E702 3,230; E701 1,429; E402 92;
+  F405 89; F401 80; E401 48; F841 11; E703 7; E741 7; F811 6; F403 5; F541 4; F601 3; E731 1).
+- Linux agentd: 56 passed, zero skips; Ruff zero findings; mypy 22 files, zero errors. Backfill
+  tests cover absent daemon, repeat import, partial resume, corrupt-before-valid, registered-secret
+  rejection, and offline spool-to-remote exactly-once synchronization.
+- Control plane with PostgreSQL 16: live Alembic upgrade and offline SQL passed; 82 passed including
+  integration and 100,000-event load smoke, zero skips; JUnit no-skip assertion passed; backup and
+  restore retained 1/1 seeded runs; Ruff zero findings; Linux mypy 34 files, zero errors.
+- Distribution/root: Villani distribution 9 passed; closed-loop plus final-foundation 23 passed;
+  public CLI E2E 2 passed and 1 non-selected test; fixture secret scan 0 findings; supply-chain gate
+  passed. Live-evaluation/final-foundation focused suite: 13 passed.
+- Run model clean install: 3 passed; production audit 0 vulnerabilities; typecheck/build passed;
+  rebuilding committed `dist` produced no diff.
+- Flight Recorder standalone clean checkout on Linux with no sibling or local `node_modules`:
+  `npm ci`, production audit (0 vulnerabilities), 20 files/103 tests, typecheck, build, format,
+  and 63-file pack dry-run passed. Five consecutive full test runs each passed 20 files/103 tests.
+- Web: production audit 0 vulnerabilities; 3 files/5 unit tests, typecheck, build, format, and all
+  10 Chromium Playwright scenarios passed.
+- Workflow YAML parsed successfully. The final `release-green` job uses `needs` on every real
+  component, PostgreSQL, browser, cross-component, packaging, distribution, and foundation job.
+  `git diff --check` passed.
+
+Remaining unsupported integrations and risks:
+- Production cloud KMS/BYOK, production SAML, production SCIM, deployment-supplied production OIDC
+  verification, production SLO claims, and live cost-savings claims without a qualifying locked
+  evaluation remain unsupported. Deterministic fixtures are not economic evidence.
+- The local verification host produced ACL-protected ignored pytest temp/cache directories; tests
+  were rerun with isolated writable temp roots and in disposable Linux containers. These generated
+  paths are not product inputs or patch materialization candidates.
+
+Next permitted milestone:
+- None. This authorized cleanup stopped after the release blockers and did not start a later
+  milestone.

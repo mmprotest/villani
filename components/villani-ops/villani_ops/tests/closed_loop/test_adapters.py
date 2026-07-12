@@ -46,11 +46,7 @@ def _repository_root() -> Path:
 
 
 FIXTURE = (
-    _repository_root()
-    / "integration"
-    / "fixtures"
-    / "closed_loop_m4"
-    / "tiny_repo"
+    _repository_root() / "integration" / "fixtures" / "closed_loop_m4" / "tiny_repo"
 )
 
 
@@ -363,9 +359,7 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
 ) -> None:
     repo = _tiny_repo(tmp_path)
     runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
-    controller = _controller(
-        [_attempt_policy(), policy("select")], runner, None
-    )
+    controller = _controller([_attempt_policy(), policy("select")], runner, None)
 
     result = controller.run(_request(tmp_path, repo))
 
@@ -373,7 +367,13 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
     assert result.selected_attempt_id == "attempt_001"
     assert (repo / "example.txt").read_text(encoding="utf-8") == "changed\n"
     attempt_dir = result.run_directory / "attempts" / "attempt_001"
-    for name in ("worktree.json", "attempt.json", "patch.diff", "stdout.log", "stderr.log"):
+    for name in (
+        "worktree.json",
+        "attempt.json",
+        "patch.diff",
+        "stdout.log",
+        "stderr.log",
+    ):
         assert (attempt_dir / name).is_file()
     assert runner.worktree_observations == [True]
     assert not (attempt_dir / "worktree").exists()
@@ -387,7 +387,9 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
     assert runner.calls[0].env["VILLANI_TRACE_ID"].startswith("trace_")
     assert runner.calls[0].env["VILLANI_ATTEMPT_ID"] == "attempt_001"
     assert Path(runner.calls[0].run_dir) == attempt_dir
-    assert (result.run_directory / "verification" / "raw" / "attempt_001.json").is_file()
+    assert (
+        result.run_directory / "verification" / "raw" / "attempt_001.json"
+    ).is_file()
     assert not (tmp_path / ".villani-ops" / "orchestrations").exists()
 
 
@@ -424,9 +426,7 @@ def test_ineligible_candidate_with_higher_llm_advisory_score_cannot_win(
     tmp_path: Path,
 ) -> None:
     repo = _tiny_repo(tmp_path)
-    runner = InjectedVillaniCodeRunner(
-        [{"value": "first\n"}, {"value": "second\n"}]
-    )
+    runner = InjectedVillaniCodeRunner([{"value": "first\n"}, {"value": "second\n"}])
     raw = SequenceVerifier([_rejected_raw, _accepted_raw])
     selector = EvidenceSelectorAdapter(
         advisory_comparator=lambda candidates: {
@@ -455,9 +455,7 @@ def test_ineligible_candidate_with_higher_llm_advisory_score_cannot_win(
 
 def test_missing_villani_code_trace_is_rejected(tmp_path: Path) -> None:
     repo = _tiny_repo(tmp_path)
-    runner = InjectedVillaniCodeRunner(
-        [{"value": "changed\n", "missing_trace": True}]
-    )
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n", "missing_trace": True}])
     controller = _controller(
         [_attempt_policy(), policy("exhaust")], runner, _accepted_raw
     )
@@ -479,9 +477,7 @@ def test_empty_patch_is_rejected_for_code_change_task(tmp_path: Path) -> None:
     repo = _tiny_repo(tmp_path)
     runner = InjectedVillaniCodeRunner([{"value": None}])
     raw = SequenceVerifier([_accepted_raw])
-    controller = _controller(
-        [_attempt_policy(), policy("exhaust")], runner, raw
-    )
+    controller = _controller([_attempt_policy(), policy("exhaust")], runner, raw)
 
     result = controller.run(_request(tmp_path, repo))
 
@@ -520,9 +516,7 @@ def test_verifier_timeout_is_rejected(tmp_path: Path) -> None:
     runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
     timeout = subprocess.TimeoutExpired("verifier", 1)
     raw = SequenceVerifier([timeout])
-    controller = _controller(
-        [_attempt_policy(), policy("exhaust")], runner, raw
-    )
+    controller = _controller([_attempt_policy(), policy("exhaust")], runner, raw)
 
     result = controller.run(_request(tmp_path, repo))
 
@@ -540,9 +534,7 @@ def test_candidate_exit_127_is_infrastructure_failure_and_not_accepted(
     tmp_path: Path,
 ) -> None:
     repo = _tiny_repo(tmp_path)
-    runner = InjectedVillaniCodeRunner(
-        [{"value": "changed\n", "exit_code": 127}]
-    )
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n", "exit_code": 127}])
     controller = _controller(
         [_attempt_policy(), policy("exhaust")], runner, _accepted_raw
     )
@@ -550,12 +542,9 @@ def test_candidate_exit_127_is_infrastructure_failure_and_not_accepted(
     result = controller.run(_request(tmp_path, repo))
 
     attempt_snapshot = json.loads(
-        (
-            result.run_directory
-            / "attempts"
-            / "attempt_001"
-            / "attempt.json"
-        ).read_text(encoding="utf-8")
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
+            encoding="utf-8"
+        )
     )
     verification = json.loads(
         (result.run_directory / "verification" / "attempt_001.json").read_text(
@@ -563,7 +552,10 @@ def test_candidate_exit_127_is_infrastructure_failure_and_not_accepted(
         )
     )
     assert result.terminal_state == "EXHAUSTED"
-    assert attempt_snapshot["metadata"]["failure_classification"] == "infrastructure_failure"
+    assert (
+        attempt_snapshot["metadata"]["failure_classification"]
+        == "infrastructure_failure"
+    )
     assert verification["acceptance_eligible"] is False
     assert "runner_nonzero_exit" in verification["reason"]
 
@@ -578,12 +570,9 @@ def test_patch_path_outside_selected_attempt_directory_is_rejected(
     )
     result = controller.run(_request(tmp_path, repo))
     attempt_snapshot = AttemptSnapshot.model_validate_json(
-        (
-            result.run_directory
-            / "attempts"
-            / "attempt_001"
-            / "attempt.json"
-        ).read_text(encoding="utf-8")
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
+            encoding="utf-8"
+        )
     )
     verification = VerificationSnapshot.model_validate_json(
         (result.run_directory / "verification" / "attempt_001.json").read_text(
@@ -684,7 +673,11 @@ def test_canonical_events_include_translated_model_tool_and_command_events(
 
     events = read_jsonl_tolerant(result.run_directory / "events.jsonl")
     event_types = {event["event_type"] for event in events}
-    assert {"model_call_completed", "tool_call_completed", "command_completed"} <= event_types
+    assert {
+        "model_call_completed",
+        "tool_call_completed",
+        "command_completed",
+    } <= event_types
     translated = next(
         event for event in events if event["event_type"] == "model_call_completed"
     )

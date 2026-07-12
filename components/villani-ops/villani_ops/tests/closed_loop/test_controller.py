@@ -198,8 +198,7 @@ def test_capability_rejection_escalates_backend_then_accepts(
         "high",
     ]
     transitions = [
-        event["payload"].get("to_state")
-        for event in _events(result.run_directory)
+        event["payload"].get("to_state") for event in _events(result.run_directory)
     ]
     assert "ESCALATING" in transitions
     assert "escalation_selected" in {
@@ -303,12 +302,10 @@ def test_selector_cannot_choose_ineligible_candidate(tmp_path: Path) -> None:
     result = controller.run(_request(tmp_path))
 
     assert result.terminal_state == "FAILED"
-    assert "not acceptance eligible" in (
-        result.failure_or_exhaustion_reason or ""
-    )
-    assert [
-        candidate.attempt.attempt_id for candidate in selector.calls[0][0]
-    ] == ["attempt_002"]
+    assert "not acceptance eligible" in (result.failure_or_exhaustion_reason or "")
+    assert [candidate.attempt.attempt_id for candidate in selector.calls[0][0]] == [
+        "attempt_002"
+    ]
     assert not dependencies["materializer"].calls
 
 
@@ -338,9 +335,7 @@ def test_materialization_failure_ends_failed(tmp_path: Path) -> None:
     assert result.selected_attempt_id == "attempt_001"
     assert len(dependencies["materializer"].calls) == 1
     snapshot = json.loads(
-        (result.run_directory / "materialization.json").read_text(
-            encoding="utf-8"
-        )
+        (result.run_directory / "materialization.json").read_text(encoding="utf-8")
     )
     assert snapshot["status"] == "failed"
     assert not (result.run_directory / "final.patch").exists()
@@ -389,9 +384,7 @@ def test_task_and_success_criteria_are_preserved_verbatim(tmp_path: Path) -> Non
         [],
     )
 
-    result = controller.run(
-        _request(tmp_path, task=task, success_criteria=criteria)
-    )
+    result = controller.run(_request(tmp_path, task=task, success_criteria=criteria))
 
     snapshot = json.loads(
         (result.run_directory / "task.json").read_text(encoding="utf-8")
@@ -463,13 +456,9 @@ def test_run_bundle_matches_protocol_schemas(tmp_path: Path) -> None:
         "final.patch",
         "final_report.md",
     }
-    assert required_artifacts <= {
-        path.name for path in result.run_directory.iterdir()
-    }
+    assert required_artifacts <= {path.name for path in result.run_directory.iterdir()}
     controller_source = Path(
-        __import__(
-            "villani_ops.closed_loop.controller", fromlist=["__file__"]
-        ).__file__
+        __import__("villani_ops.closed_loop.controller", fromlist=["__file__"]).__file__
     ).read_text(encoding="utf-8")
     assert "villani_ops.agentic" not in controller_source
     assert "villani_ops.adaptive" not in controller_source

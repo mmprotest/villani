@@ -171,12 +171,17 @@ def test_named_execution_provider_selection_is_strict() -> None:
         provider_from_configuration(configuration, selection="missing")
 
 
-def test_network_defaults_and_verified_proxy_allowlist(tmp_path: Path, monkeypatch) -> None:
+def test_network_defaults_and_verified_proxy_allowlist(
+    tmp_path: Path, monkeypatch
+) -> None:
     import villani_ops.execution_environment.container as module
 
-    assert ExecutionEnvironmentConfig(
-        provider="container", container={"image": "fixture:image"}
-    ).container.network.mode == "inherit"
+    assert (
+        ExecutionEnvironmentConfig(
+            provider="container", container={"image": "fixture:image"}
+        ).container.network.mode
+        == "inherit"
+    )
     _fake_runtime(monkeypatch, module)
     provider = ContainerProvider(
         _container_config(
@@ -248,9 +253,12 @@ def test_container_secret_canary_is_name_forwarded_and_removed(
     provider.cleanup(prepared)
     assert not temporary.exists()
     assert canary not in json.dumps(prepared.durable_report())
-    assert prepared.durable_report()["runtime_state"]["secret_lease"][
-        "temporary_files_cleaned"
-    ] is True
+    assert (
+        prepared.durable_report()["runtime_state"]["secret_lease"][
+            "temporary_files_cleaned"
+        ]
+        is True
+    )
 
 
 def test_parallel_preparations_keep_separate_secret_leases(
@@ -296,7 +304,9 @@ def test_parallel_preparations_keep_separate_secret_leases(
     assert not second_file.exists()
 
 
-def test_container_fixture_runs_tests_and_produces_patch(tmp_path: Path, monkeypatch) -> None:
+def test_container_fixture_runs_tests_and_produces_patch(
+    tmp_path: Path, monkeypatch
+) -> None:
     import villani_ops.execution_environment.container as module
 
     _fake_runtime(monkeypatch, module)
@@ -308,10 +318,19 @@ def test_container_fixture_runs_tests_and_produces_patch(tmp_path: Path, monkeyp
         "class T(unittest.TestCase):\n    def test_add(self): self.assertEqual(add(2,3),5)\n"
     )
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"],
+        cwd=tmp_path,
+        check=True,
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "baseline"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "baseline"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
     monkeypatch.setattr(
         module.subprocess, "Popen", _host_container_popen(original_popen)
     )
@@ -509,7 +528,9 @@ def test_devcontainer_refuses_unsupported_features(
 
 def test_command_path_and_domain_policies_fail_closed(tmp_path: Path) -> None:
     with pytest.raises(ExecutionPolicyDenied) as denied:
-        check_command(["curl", "https://blocked.example"], ActionPolicy(command_deny=["curl"]))
+        check_command(
+            ["curl", "https://blocked.example"], ActionPolicy(command_deny=["curl"])
+        )
     assert denied.value.event["decision"] == "deny"
     with pytest.raises(ExecutionPolicyDenied, match="traversal"):
         check_path(tmp_path.parent / "outside", tmp_path, ActionPolicy())
@@ -556,7 +577,9 @@ def test_denied_command_fails_before_process_spawn(tmp_path: Path, monkeypatch) 
     provider.cleanup(prepared)
 
 
-def test_workspace_rejects_symlink_oversized_and_decompression_bomb(tmp_path: Path) -> None:
+def test_workspace_rejects_symlink_oversized_and_decompression_bomb(
+    tmp_path: Path,
+) -> None:
     outside = tmp_path.parent / "outside-canary"
     outside.write_text("outside")
     link = tmp_path / "link"
@@ -612,7 +635,9 @@ def test_device_file_modes_are_rejected_portably() -> None:
         check_file_mode(stat.S_IFCHR, "host-device")
 
 
-def test_secret_broker_command_source_redacts_and_cleans_on_failure(tmp_path: Path) -> None:
+def test_secret_broker_command_source_redacts_and_cleans_on_failure(
+    tmp_path: Path,
+) -> None:
     canary = "secret-canary-command-44a1"
     broker = LocalSecretBroker(source_environment={"CANARY": canary})
     lease = broker.acquire(
@@ -679,7 +704,9 @@ def test_secret_broker_scavenges_files_from_crashed_owner(
     assert not stale.exists()
 
 
-def test_pids_limit_is_present_for_fork_bomb_containment(tmp_path: Path, monkeypatch) -> None:
+def test_pids_limit_is_present_for_fork_bomb_containment(
+    tmp_path: Path, monkeypatch
+) -> None:
     import villani_ops.execution_environment.container as module
 
     _fake_runtime(monkeypatch, module)

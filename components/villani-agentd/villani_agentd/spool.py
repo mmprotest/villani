@@ -59,9 +59,9 @@ class SQLiteSpool:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=FULL")
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if version > 3:
+            if version > 4:
                 raise SpoolError(
-                    f"spool schema version {version} is newer than supported version 3"
+                    f"spool schema version {version} is newer than supported version 4"
                 )
             existing_tables = {
                 str(row[0])
@@ -118,6 +118,14 @@ class SQLiteSpool:
                     upload_state TEXT NOT NULL DEFAULT 'offline',
                     UNIQUE(run_id, digest)
                 );
+                CREATE TABLE IF NOT EXISTS local_run_imports (
+                    run_id TEXT PRIMARY KEY,
+                    highest_event_sequence INTEGER NOT NULL DEFAULT 0,
+                    finalization_digest TEXT,
+                    last_attempt_at TEXT NOT NULL,
+                    last_error_category TEXT,
+                    completion_status TEXT NOT NULL
+                );
                 """
             )
             if version < 2:
@@ -141,9 +149,7 @@ class SQLiteSpool:
                         connection.execute(f"ALTER TABLE artifacts ADD COLUMN {name} {definition}")
                 connection.execute("PRAGMA user_version=2")
             if version < 3:
-                run_columns = {
-                    row[1] for row in connection.execute("PRAGMA table_info(runs)")
-                }
+                run_columns = {row[1] for row in connection.execute("PRAGMA table_info(runs)")}
                 for name, definition in (
                     ("upload_state", "TEXT NOT NULL DEFAULT 'offline'"),
                     ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
@@ -154,6 +160,65 @@ class SQLiteSpool:
                     if name not in run_columns:
                         connection.execute(f"ALTER TABLE runs ADD COLUMN {name} {definition}")
                 connection.execute("PRAGMA user_version=3")
+            if version < 4:
+                connection.execute("PRAGMA user_version=4")
+
+    def record_local_import(
+        self,
+        run_id: str,
+        *,
+        highest_event_sequence: int,
+        finalization_digest: str | None,
+        attempted_at: str,
+        error_category: str | None,
+        completion_status: str,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO local_run_imports(
+                       run_id,highest_event_sequence,finalization_digest,last_attempt_at,
+                       last_error_category,completion_status
+                   ) VALUES(?,?,?,?,?,?)
+                   ON CONFLICT(run_id) DO UPDATE SET
+                       highest_event_sequence=MAX(
+                           local_run_imports.highest_event_sequence,
+                           excluded.highest_event_sequence
+                       ),
+                       finalization_digest=COALESCE(
+                           excluded.finalization_digest,
+                           local_run_imports.finalization_digest
+                       ),
+                       last_attempt_at=excluded.last_attempt_at,
+                       last_error_category=excluded.last_error_category,
+                       completion_status=excluded.completion_status""",
+                (
+                    run_id,
+                    highest_event_sequence,
+                    finalization_digest,
+                    attempted_at,
+                    error_category,
+                    completion_status,
+                ),
+            )
+
+    def local_import_records(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT run_id,highest_event_sequence,finalization_digest,last_attempt_at,
+                          last_error_category,completion_status
+                   FROM local_run_imports ORDER BY run_id"""
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def local_import_record(self, run_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT run_id,highest_event_sequence,finalization_digest,last_attempt_at,
+                          last_error_category,completion_status
+                   FROM local_run_imports WHERE run_id=?""",
+                (run_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     def register_run(self, run_id: str, trace_id: str | None, created_at: str) -> bool:
         if not run_id:

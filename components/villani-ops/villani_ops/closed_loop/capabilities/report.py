@@ -81,9 +81,13 @@ def backend_score_rows(
                 "model": backend.model,
                 "static_capability_score": backend.capability_score,
                 "static_score_source": backend.capability_score_source,
-                "empirical_status": "sufficient_data" if sufficient else "insufficient_data",
+                "empirical_status": "sufficient_data"
+                if sufficient
+                else "insufficient_data",
                 "empirical_capability_score": (
-                    int(100 * profile.wilson_lower_bound) if sufficient and profile else None
+                    int(100 * profile.wilson_lower_bound)
+                    if sufficient and profile
+                    else None
                 ),
                 "conservative_success_probability": (
                     profile.wilson_lower_bound if sufficient and profile else None
@@ -138,7 +142,8 @@ def explain_routing(
                     sufficient_probability_data=(
                         resolution.empirical_status == "sufficient_data"
                         and resolution.conservative_success_probability is not None
-                        and resolution.conservative_success_probability >= wilson_threshold
+                        and resolution.conservative_success_probability
+                        >= wilson_threshold
                     ),
                     profile_version=(
                         resolution.selected_profile_key.scorer_version
