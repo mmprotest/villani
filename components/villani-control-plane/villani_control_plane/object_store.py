@@ -167,6 +167,8 @@ class S3ObjectStore:
 
 
 def create_object_store(settings: Settings) -> ObjectStore:
+    if settings.air_gapped and settings.object_store_backend != "filesystem":
+        raise ValueError("air-gapped mode requires filesystem object storage")
     if settings.object_store_backend == "filesystem":
         return FilesystemObjectStore(settings.object_store_path)
     if settings.object_store_backend == "s3":

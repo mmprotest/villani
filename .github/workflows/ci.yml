@@ -211,3 +211,27 @@ jobs:
           name: villani-${{ runner.os }}-${{ runner.arch }}-rc
           path: ${{ runner.temp }}/villani-distribution/release/*
           if-no-files-found: error
+
+  final-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -e "components/villani-ops" -e "components/villani-control-plane[test]"
+      - run: python -m pytest -q
+        working-directory: components/villani-control-plane
+      - run: alembic upgrade head --sql > /dev/null
+        working-directory: components/villani-control-plane
+      - run: python -m pytest -q tests/final_foundation
+      - run: python evaluation/final_gate.py --output "$RUNNER_TEMP/final-evaluation.json"
+      - run: python scripts/run-final-scenarios.py --output "$RUNNER_TEMP/final-scenarios.json"
+      - run: python scripts/supply-chain-gate.py --output "$RUNNER_TEMP/supply-chain"
+      - run: python scripts/check-secrets.py integration/fixtures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-foundation-evidence
+          path: |
+            ${{ runner.temp }}/final-evaluation.json
+            ${{ runner.temp }}/final-scenarios.json
+            ${{ runner.temp }}/supply-chain/*

@@ -18,6 +18,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    event as sqlalchemy_event,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,7 +52,121 @@ class Organization(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "organizations"
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
+    region: Mapped[str] = mapped_column(String(64), nullable=False, default="local")
+    residency_labels: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
     __table_args__ = (UniqueConstraint("name", name="uq_organizations_name"),)
+
+
+class User(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Identity(Base, TimestampMixin):
+    __tablename__ = "identities"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"))
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    issuer: Mapped[str] = mapped_column(String(512), nullable=False, default="local")
+    subject: Mapped[str] = mapped_column(String(512), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("provider", "issuer", "subject", name="uq_identities_subject"),
+        Index("ix_identities_user", "user_id"),
+    )
+
+
+class Membership(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "memberships"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", name="uq_memberships_org_user"),
+        Index("ix_memberships_org_active", "organization_id", "status", "deleted_at"),
+    )
+
+
+class Group(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "groups"
+    organization_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_groups_org_name"),)
+
+
+class GroupMembership(Base):
+    __tablename__ = "group_memberships"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    membership_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "group_id"],
+            ["groups.organization_id", "groups.id"],
+            ondelete="CASCADE",
+            name="fk_group_memberships_group",
+        ),
+        ForeignKeyConstraint(
+            ["membership_id"],
+            ["memberships.id"],
+            ondelete="CASCADE",
+            name="fk_group_memberships_membership",
+        ),
+    )
+
+
+class Role(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "roles"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    built_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    permissions: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_roles_org_name"),
+        Index("ix_roles_org_active", "organization_id", "deleted_at"),
+    )
+
+
+class RoleAssignment(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "role_assignments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    role_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("roles.id", ondelete="CASCADE"), nullable=False
+    )
+    subject_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "role_id",
+            "subject_type",
+            "subject_id",
+            "workspace_id",
+            name="uq_role_assignments_scope",
+        ),
+        Index("ix_role_assignments_subject", "organization_id", "subject_type", "subject_id"),
+    )
 
 
 class Workspace(Base, TimestampMixin, SoftDeleteMixin):
@@ -59,6 +176,8 @@ class Workspace(Base, TimestampMixin, SoftDeleteMixin):
     )
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
+    region: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    residency_labels: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
     __table_args__ = (
         UniqueConstraint("organization_id", "name", name="uq_workspaces_org_name"),
         Index("ix_workspaces_org_active", "organization_id", "deleted_at"),
@@ -71,6 +190,11 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     name: Mapped[str] = mapped_column(String(255))
+    region: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    residency_labels: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    chargeback_tags: Mapped[dict[str, str]] = mapped_column(
+        JSON_DOCUMENT, nullable=False, default=dict
+    )
     __table_args__ = (
         ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
@@ -263,6 +387,9 @@ class Event(Base):
     status: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     document: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    retention_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     __table_args__ = (
         ForeignKeyConstraint(
@@ -301,6 +428,9 @@ class Artifact(Base, TimestampMixin):
     available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rejection_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     document: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    retention_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     __table_args__ = (
         ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
@@ -611,6 +741,16 @@ class ApiToken(Base, TimestampMixin, SoftDeleteMixin):
     lookup_digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     secret_hash: Mapped[str] = mapped_column(Text, nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=lambda: ["*"])
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rotated_from_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    service_account_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("service_accounts.id", ondelete="CASCADE"), nullable=True
+    )
     __table_args__ = (
         ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
@@ -621,6 +761,228 @@ class ApiToken(Base, TimestampMixin, SoftDeleteMixin):
         UniqueConstraint("organization_id", "workspace_id", "name", name="uq_api_tokens_name"),
         Index("ix_api_tokens_tenant_active", "organization_id", "workspace_id", "deleted_at"),
     )
+
+
+class ServiceAccount(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "service_accounts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            ondelete="RESTRICT",
+            name="fk_service_accounts_workspace",
+        ),
+        UniqueConstraint(
+            "organization_id", "workspace_id", "name", name="uq_service_accounts_name"
+        ),
+    )
+
+
+class BrowserSession(Base, TimestampMixin):
+    __tablename__ = "browser_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    lookup_digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    secret_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    csrf_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_ip_classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    __table_args__ = (
+        Index("ix_browser_sessions_active", "lookup_digest", "expires_at", "revoked_at"),
+    )
+
+
+class Invitation(Base, TimestampMixin):
+    __tablename__ = "invitations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    role_ids: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    invited_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    token_lookup_digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AdministrativeAuditEvent(Base):
+    __tablename__ = "administrative_audit_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    result: Mapped[str] = mapped_column(String(32), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_ip_classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    before_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    after_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="0" * 64)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    corrects_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (Index("ix_admin_audit_org_time", "organization_id", "occurred_at", "id"),)
+
+
+@sqlalchemy_event.listens_for(AdministrativeAuditEvent, "before_update")
+@sqlalchemy_event.listens_for(AdministrativeAuditEvent, "before_delete")
+def _administrative_audit_events_are_immutable(*_args) -> None:
+    raise ValueError("administrative audit events are immutable")
+
+
+class GovernancePolicy(Base, TimestampMixin):
+    __tablename__ = "governance_policies"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    project_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    retention_days: Mapped[dict[str, int]] = mapped_column(
+        JSON_DOCUMENT, nullable=False, default=dict
+    )
+    metadata_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    exclusions: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    redaction_rules: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False, default=dict
+    )
+    dlp_hook: Mapped[str] = mapped_column(String(64), nullable=False, default="builtin")
+    allowed_regions: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    required_residency_labels: Mapped[list[str]] = mapped_column(
+        JSON_DOCUMENT, nullable=False, default=list
+    )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    __table_args__ = (
+        Index(
+            "ix_governance_policy_scope", "organization_id", "workspace_id", "project_id", "active"
+        ),
+    )
+
+
+class LegalHold(Base, TimestampMixin):
+    __tablename__ = "legal_holds"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        Index("ix_legal_hold_target", "organization_id", "target_type", "target_id", "active"),
+    )
+
+
+class DeletionWorkflow(Base, TimestampMixin):
+    __tablename__ = "deletion_workflows"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="requested")
+    tombstone: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    completion_evidence: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False, default=dict
+    )
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GovernanceExport(Base, TimestampMixin):
+    __tablename__ = "governance_exports"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="completed")
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+class QuotaPolicy(Base, TimestampMixin):
+    __tablename__ = "quota_policies"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    project_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    limits: Mapped[dict[str, float]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    soft_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=80)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    __table_args__ = (
+        Index("ix_quota_policy_scope", "organization_id", "workspace_id", "project_id", "active"),
+    )
+
+
+class UsageRecord(Base):
+    __tablename__ = "usage_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    metric: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    chargeback_tags: Mapped[dict[str, str]] = mapped_column(
+        JSON_DOCUMENT, nullable=False, default=dict
+    )
+    source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "metric", "source_id", name="uq_usage_metric_source"),
+        Index(
+            "ix_usage_scope_metric",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "metric",
+            "recorded_at",
+        ),
+    )
+
+
+class KeyRotationMetadata(Base, TimestampMixin):
+    __tablename__ = "key_rotation_metadata"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    key_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_key_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "key_id", "version", name="uq_key_rotation_version"),
+    )
+
+
+class RunCommitment(Base):
+    __tablename__ = "run_commitments"
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    root_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    item_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    finalized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    correction_of_root: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Outbox(Base):

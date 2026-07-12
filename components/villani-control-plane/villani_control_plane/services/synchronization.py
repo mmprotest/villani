@@ -127,6 +127,34 @@ class ArtifactTransferService:
         run = self.session.get(models.Run, (principal.organization_id, run_id))
         if run is None or run.workspace_id != principal.workspace_id:
             raise NotFoundError("run not found")
+        from .governance import GovernanceService, QuotaService
+
+        project = self.session.get(models.Project, (principal.organization_id, run.project_id))
+        governance = GovernanceService(self.session)
+        governance.enforce_residency(
+            principal.organization_id,
+            principal.workspace_id,
+            run.project_id,
+            self.settings.deployment_region,
+            project.residency_labels if project else [],
+        )
+        governed = governance.govern(
+            "artifact",
+            parsed.model_dump(mode="json"),
+            principal.organization_id,
+            principal.workspace_id,
+            run.project_id,
+        )
+        if not governed.retained or self.settings.metadata_only:
+            raise AuthorizationError("artifact bytes are excluded by governance policy")
+        QuotaService(self.session).consume(
+            principal,
+            "artifact_bytes",
+            parsed.size_bytes,
+            f"artifact:{parsed.artifact_id}",
+            run.project_id,
+            project.chargeback_tags if project else {},
+        )
         object_key = f"organizations/{principal.organization_id}/sha256/{parsed.digest.value[:2]}/{parsed.digest.value}"
         normalized = parsed.model_copy(
             update={"storage_reference": f"object://{object_key}"}
@@ -157,6 +185,9 @@ class ArtifactTransferService:
             digest_sha256=parsed.digest.value,
             size_bytes=parsed.size_bytes,
             document=normalized,
+            retention_expires_at=(
+                datetime.fromisoformat(governed.expires_at) if governed.expires_at else None
+            ),
             status="available" if available else "pending",
             object_key=object_key,
             upload_id=upload_id,

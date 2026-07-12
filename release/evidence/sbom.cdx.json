@@ -1,0 +1,6483 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "name": "villani",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "7d8cbb8fadab8c497250d857ab6f2ef9e1a7cd10abba7b78896518389b7f4f91"
+        }
+      ],
+      "type": "application",
+      "version": "0.3.0rc1"
+    },
+    {
+      "name": "villani-ops==0.2.0",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-code==0.1.0rc1",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-agentd==0.1.0",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "PyYAML>=6",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-agentd",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "f4d78b97ea0111429dc9992dd79bdf206435ad56f0e0355328babe0b55ed5490"
+        }
+      ],
+      "type": "application",
+      "version": "0.1.0"
+    },
+    {
+      "name": "villani-ops>=0.2.0",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-agentd"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-code",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "0dbc477af794e5318f8cc6095425c150d171ade26b82a5a97a35b03dee14a210"
+        }
+      ],
+      "type": "application",
+      "version": "0.1.0rc1"
+    },
+    {
+      "name": "typer>=0.12",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-code"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "httpx>=0.27",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-code"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "pydantic>=2.7",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-code"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "rich>=13.7",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-code"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "prompt_toolkit>=3.0",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-code"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "pyyaml>=6.0",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-code"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "requests>=2.31",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-code"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-control-plane",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "7e0c18fa5eff2c996b5a107bd0f6dc6581d16c5f751a16c0f6ff5d679e8ad253"
+        }
+      ],
+      "type": "application",
+      "version": "0.1.0"
+    },
+    {
+      "name": "alembic>=1.13,<2",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "boto3>=1.35,<2",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "fastapi>=0.115,<1",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "psycopg[binary]>=3.2,<4",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "pydantic-settings>=2.4,<3",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "sqlalchemy>=2.0,<3",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "uvicorn[standard]>=0.30,<1",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-ops>=0.2.0",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-control-plane"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-ops",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "81a5a290e09214e4eb03f48345ae41263a9da2f267968c12da70e728801e3dc7"
+        }
+      ],
+      "type": "application",
+      "version": "0.2.0"
+    },
+    {
+      "name": "typer>=0.12",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-ops"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "pydantic>=2",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-ops"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "PyYAML>=6",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-ops"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "rich>=13",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-ops"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "httpx>=0.27",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-ops"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "jsonschema>=4.22",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-ops"
+        }
+      ],
+      "scope": "required",
+      "type": "library"
+    },
+    {
+      "name": "villani-flight-recorder",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "92aec5c57e231af935e6e34ace6b82fe77db9f2c46f494fac50d3671486cca2f"
+        }
+      ],
+      "type": "application",
+      "version": "0.1.0"
+    },
+    {
+      "name": "../villani-run-model",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
+      "name": "@asamuzakjp/css-color",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.0"
+    },
+    {
+      "name": "@csstools/color-helpers",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.1.0"
+    },
+    {
+      "name": "@csstools/css-calc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.4"
+    },
+    {
+      "name": "@csstools/css-color-parser",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.0"
+    },
+    {
+      "name": "@csstools/css-parser-algorithms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.5"
+    },
+    {
+      "name": "@csstools/css-tokenizer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.4"
+    },
+    {
+      "name": "@esbuild/aix-ppc64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-arm",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/darwin-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/darwin-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/freebsd-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/freebsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-arm",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-ia32",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-loong64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-mips64el",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-ppc64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-riscv64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-s390x",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/netbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/openbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/sunos-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-ia32",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@jridgewell/sourcemap-codec",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.5"
+    },
+    {
+      "name": "@nodelib/fs.scandir",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.5"
+    },
+    {
+      "name": "@nodelib/fs.stat",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.5"
+    },
+    {
+      "name": "@nodelib/fs.walk",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.8"
+    },
+    {
+      "name": "@rollup/rollup-android-arm-eabi",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-android-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-darwin-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-darwin-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-freebsd-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-freebsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm-gnueabihf",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm-musleabihf",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-loong64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-loong64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-ppc64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-ppc64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-riscv64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-riscv64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-s390x-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-x64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-x64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-openbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-openharmony-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-arm64-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-ia32-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@types/estree",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.9"
+    },
+    {
+      "name": "@types/jsdom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "21.1.7"
+    },
+    {
+      "name": "@types/node",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "20.19.43"
+    },
+    {
+      "name": "@types/tough-cookie",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.5"
+    },
+    {
+      "name": "@villani/run-model",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "unknown"
+    },
+    {
+      "name": "@vitest/expect",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/mocker",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/pretty-format",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/runner",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/snapshot",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/spy",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/utils",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "agent-base",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.1.4"
+    },
+    {
+      "name": "ajv",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "8.20.0"
+    },
+    {
+      "name": "assertion-error",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.1"
+    },
+    {
+      "name": "asynckit",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.4.0"
+    },
+    {
+      "name": "braces",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.3"
+    },
+    {
+      "name": "cac",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.7.14"
+    },
+    {
+      "name": "call-bind-apply-helpers",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.2"
+    },
+    {
+      "name": "chai",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.3.3"
+    },
+    {
+      "name": "check-error",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.3"
+    },
+    {
+      "name": "combined-stream",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.8"
+    },
+    {
+      "name": "commander",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "12.1.0"
+    },
+    {
+      "name": "cssstyle",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.6.0"
+    },
+    {
+      "name": "cssstyle/node_modules/rrweb-cssom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.8.0"
+    },
+    {
+      "name": "data-urls",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.0"
+    },
+    {
+      "name": "debug",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.4.3"
+    },
+    {
+      "name": "decimal.js",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "10.6.0"
+    },
+    {
+      "name": "deep-eql",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.2"
+    },
+    {
+      "name": "delayed-stream",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "name": "dunder-proto",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "entities",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.0.1"
+    },
+    {
+      "name": "es-define-property",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "es-errors",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.3.0"
+    },
+    {
+      "name": "es-module-lexer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.7.0"
+    },
+    {
+      "name": "es-object-atoms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "es-set-tostringtag",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.0"
+    },
+    {
+      "name": "esbuild",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "estree-walker",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.3"
+    },
+    {
+      "name": "expect-type",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.4.0"
+    },
+    {
+      "name": "fast-deep-equal",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.3"
+    },
+    {
+      "name": "fast-glob",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.3.3"
+    },
+    {
+      "name": "fast-uri",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.3"
+    },
+    {
+      "name": "fastq",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.20.1"
+    },
+    {
+      "name": "fill-range",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.1.1"
+    },
+    {
+      "name": "form-data",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.6"
+    },
+    {
+      "name": "fsevents",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "2.3.3"
+    },
+    {
+      "name": "function-bind",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "get-intrinsic",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.3.0"
+    },
+    {
+      "name": "get-proto",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "glob-parent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.1.2"
+    },
+    {
+      "name": "gopd",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "name": "has-symbols",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.0"
+    },
+    {
+      "name": "has-tostringtag",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.2"
+    },
+    {
+      "name": "hasown",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.4"
+    },
+    {
+      "name": "html-encoding-sniffer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.0"
+    },
+    {
+      "name": "http-proxy-agent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.0.2"
+    },
+    {
+      "name": "https-proxy-agent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.0.6"
+    },
+    {
+      "name": "iconv-lite",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.6.3"
+    },
+    {
+      "name": "is-extglob",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.1"
+    },
+    {
+      "name": "is-glob",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.3"
+    },
+    {
+      "name": "is-number",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.0.0"
+    },
+    {
+      "name": "is-potential-custom-element-name",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "jsdom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "24.1.3"
+    },
+    {
+      "name": "json-schema-traverse",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "name": "loupe",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.1"
+    },
+    {
+      "name": "lru-cache",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "10.4.3"
+    },
+    {
+      "name": "magic-string",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.30.21"
+    },
+    {
+      "name": "math-intrinsics",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.0"
+    },
+    {
+      "name": "merge2",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.4.1"
+    },
+    {
+      "name": "micromatch",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.8"
+    },
+    {
+      "name": "mime-db",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.52.0"
+    },
+    {
+      "name": "mime-types",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.35"
+    },
+    {
+      "name": "ms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.3"
+    },
+    {
+      "name": "nanoid",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.3.15"
+    },
+    {
+      "name": "nwsapi",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.2.24"
+    },
+    {
+      "name": "parse5",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.3.0"
+    },
+    {
+      "name": "pathe",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "pathval",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.1"
+    },
+    {
+      "name": "picocolors",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "name": "picomatch",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.3.2"
+    },
+    {
+      "name": "postcss",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "8.5.16"
+    },
+    {
+      "name": "prettier",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.9.4"
+    },
+    {
+      "name": "psl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.15.0"
+    },
+    {
+      "name": "punycode",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.3.1"
+    },
+    {
+      "name": "querystringify",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.2.0"
+    },
+    {
+      "name": "queue-microtask",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.3"
+    },
+    {
+      "name": "require-from-string",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.2"
+    },
+    {
+      "name": "requires-port",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "name": "reusify",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.0"
+    },
+    {
+      "name": "rollup",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "rrweb-cssom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.7.1"
+    },
+    {
+      "name": "run-parallel",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "name": "safer-buffer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.2"
+    },
+    {
+      "name": "saxes",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.0.0"
+    },
+    {
+      "name": "siginfo",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "name": "source-map-js",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.1"
+    },
+    {
+      "name": "stackback",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.0.2"
+    },
+    {
+      "name": "std-env",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.10.0"
+    },
+    {
+      "name": "symbol-tree",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.4"
+    },
+    {
+      "name": "tinybench",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.9.0"
+    },
+    {
+      "name": "tinyexec",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.3.2"
+    },
+    {
+      "name": "tinypool",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "name": "tinyrainbow",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "name": "tinyspy",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.2"
+    },
+    {
+      "name": "to-regex-range",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.1"
+    },
+    {
+      "name": "tough-cookie",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.1.4"
+    },
+    {
+      "name": "tr46",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.1.1"
+    },
+    {
+      "name": "typescript",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.9.3"
+    },
+    {
+      "name": "undici-types",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.21.0"
+    },
+    {
+      "name": "universalify",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.2.0"
+    },
+    {
+      "name": "url-parse",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.10"
+    },
+    {
+      "name": "vite",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.4.21"
+    },
+    {
+      "name": "vite-node",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "vitest",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "w3c-xmlserializer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.0"
+    },
+    {
+      "name": "webidl-conversions",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.0.0"
+    },
+    {
+      "name": "whatwg-encoding",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.1"
+    },
+    {
+      "name": "whatwg-mimetype",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.0"
+    },
+    {
+      "name": "whatwg-url",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "14.2.0"
+    },
+    {
+      "name": "why-is-node-running",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.3.0"
+    },
+    {
+      "name": "ws",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "8.21.0"
+    },
+    {
+      "name": "xml-name-validator",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.0"
+    },
+    {
+      "name": "xmlchars",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-flight-recorder"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.2.0"
+    },
+    {
+      "name": "villani-run-model",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "45ed6069e71a2192fabb2e8403230899b449a638635149522a144eacc1eee3f1"
+        }
+      ],
+      "type": "application",
+      "version": "0.1.0"
+    },
+    {
+      "name": "@esbuild/aix-ppc64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-arm",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/darwin-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/darwin-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/freebsd-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/freebsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-arm",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-ia32",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-loong64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-mips64el",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-ppc64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-riscv64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-s390x",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/netbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/openbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/sunos-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-ia32",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@jridgewell/sourcemap-codec",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.5"
+    },
+    {
+      "name": "@rollup/rollup-android-arm-eabi",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-android-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-darwin-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-darwin-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-freebsd-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-freebsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm-gnueabihf",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm-musleabihf",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-loong64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-loong64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-ppc64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-ppc64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-riscv64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-riscv64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-s390x-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-x64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-x64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-openbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-openharmony-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-arm64-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-ia32-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@types/estree",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.9"
+    },
+    {
+      "name": "@vitest/expect",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/mocker",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/pretty-format",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/runner",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/snapshot",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/spy",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/utils",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "assertion-error",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.1"
+    },
+    {
+      "name": "cac",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.7.14"
+    },
+    {
+      "name": "chai",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.3.3"
+    },
+    {
+      "name": "check-error",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.3"
+    },
+    {
+      "name": "debug",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.4.3"
+    },
+    {
+      "name": "deep-eql",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.2"
+    },
+    {
+      "name": "es-module-lexer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.7.0"
+    },
+    {
+      "name": "esbuild",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "estree-walker",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.3"
+    },
+    {
+      "name": "expect-type",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.4.0"
+    },
+    {
+      "name": "fsevents",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "2.3.3"
+    },
+    {
+      "name": "loupe",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.1"
+    },
+    {
+      "name": "magic-string",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.30.21"
+    },
+    {
+      "name": "ms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.3"
+    },
+    {
+      "name": "nanoid",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.3.15"
+    },
+    {
+      "name": "pathe",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "pathval",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.1"
+    },
+    {
+      "name": "picocolors",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "name": "postcss",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "8.5.16"
+    },
+    {
+      "name": "rollup",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "siginfo",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "name": "source-map-js",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.1"
+    },
+    {
+      "name": "stackback",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.0.2"
+    },
+    {
+      "name": "std-env",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.10.0"
+    },
+    {
+      "name": "tinybench",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.9.0"
+    },
+    {
+      "name": "tinyexec",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.3.2"
+    },
+    {
+      "name": "tinypool",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "name": "tinyrainbow",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "name": "tinyspy",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.2"
+    },
+    {
+      "name": "typescript",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.9.3"
+    },
+    {
+      "name": "vite",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.4.21"
+    },
+    {
+      "name": "vite-node",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "vitest",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "why-is-node-running",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-run-model"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.3.0"
+    },
+    {
+      "name": "villani-web",
+      "properties": [
+        {
+          "name": "lock_sha256",
+          "value": "1f2e6820cb9b22ea18aaa141e6cf03f3b8a169e8801d6d663d58bc88f1e1f0ad"
+        }
+      ],
+      "type": "application",
+      "version": "0.1.0"
+    },
+    {
+      "name": "../villani-run-model",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
+      "name": "@adobe/css-tools",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.5.0"
+    },
+    {
+      "name": "@asamuzakjp/css-color",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.0"
+    },
+    {
+      "name": "@asamuzakjp/css-color/node_modules/lru-cache",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "10.4.3"
+    },
+    {
+      "name": "@babel/code-frame",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/compat-data",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/core",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/generator",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-compilation-targets",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-globals",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-module-imports",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-module-transforms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-plugin-utils",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-string-parser",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-validator-identifier",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helper-validator-option",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/helpers",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/parser",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/plugin-transform-react-jsx-self",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/plugin-transform-react-jsx-source",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/runtime",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/template",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/traverse",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@babel/types",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.29.7"
+    },
+    {
+      "name": "@csstools/color-helpers",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.1.0"
+    },
+    {
+      "name": "@csstools/css-calc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.4"
+    },
+    {
+      "name": "@csstools/css-color-parser",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.0"
+    },
+    {
+      "name": "@csstools/css-parser-algorithms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.5"
+    },
+    {
+      "name": "@csstools/css-tokenizer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.4"
+    },
+    {
+      "name": "@esbuild/aix-ppc64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-arm",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/android-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/darwin-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/darwin-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/freebsd-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/freebsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-arm",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-ia32",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-loong64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-mips64el",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-ppc64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-riscv64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-s390x",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/linux-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/netbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/openbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/sunos-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-ia32",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@esbuild/win32-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "@jridgewell/gen-mapping",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.3.13"
+    },
+    {
+      "name": "@jridgewell/remapping",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.3.5"
+    },
+    {
+      "name": "@jridgewell/resolve-uri",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.2"
+    },
+    {
+      "name": "@jridgewell/sourcemap-codec",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.5"
+    },
+    {
+      "name": "@jridgewell/trace-mapping",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.3.31"
+    },
+    {
+      "name": "@playwright/test",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.61.1"
+    },
+    {
+      "name": "@rolldown/pluginutils",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.0-beta.27"
+    },
+    {
+      "name": "@rollup/rollup-android-arm-eabi",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-android-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-darwin-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-darwin-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-freebsd-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-freebsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm-gnueabihf",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm-musleabihf",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-arm64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-loong64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-loong64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-ppc64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-ppc64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-riscv64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-riscv64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-s390x-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-x64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-linux-x64-musl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-openbsd-x64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-openharmony-arm64",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-arm64-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-ia32-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-gnu",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-msvc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "@testing-library/dom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "10.4.1"
+    },
+    {
+      "name": "@testing-library/jest-dom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.9.1"
+    },
+    {
+      "name": "@testing-library/jest-dom/node_modules/dom-accessibility-api",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.6.3"
+    },
+    {
+      "name": "@testing-library/react",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "16.3.2"
+    },
+    {
+      "name": "@types/aria-query",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.4"
+    },
+    {
+      "name": "@types/babel__core",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.20.5"
+    },
+    {
+      "name": "@types/babel__generator",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.27.0"
+    },
+    {
+      "name": "@types/babel__template",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.4.4"
+    },
+    {
+      "name": "@types/babel__traverse",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.28.0"
+    },
+    {
+      "name": "@types/estree",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.9"
+    },
+    {
+      "name": "@types/node",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "20.19.43"
+    },
+    {
+      "name": "@types/prop-types",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "15.7.15"
+    },
+    {
+      "name": "@types/react",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "18.3.31"
+    },
+    {
+      "name": "@types/react-dom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "18.3.7"
+    },
+    {
+      "name": "@villani/run-model",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "unknown"
+    },
+    {
+      "name": "@vitejs/plugin-react",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.7.0"
+    },
+    {
+      "name": "@vitest/expect",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/mocker",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/pretty-format",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/runner",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/snapshot",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/spy",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "@vitest/utils",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "agent-base",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.1.4"
+    },
+    {
+      "name": "ansi-regex",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.1"
+    },
+    {
+      "name": "ansi-styles",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.2.0"
+    },
+    {
+      "name": "aria-query",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.3.0"
+    },
+    {
+      "name": "assertion-error",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.1"
+    },
+    {
+      "name": "asynckit",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.4.0"
+    },
+    {
+      "name": "baseline-browser-mapping",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.10.42"
+    },
+    {
+      "name": "browserslist",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.28.5"
+    },
+    {
+      "name": "cac",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.7.14"
+    },
+    {
+      "name": "call-bind-apply-helpers",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.2"
+    },
+    {
+      "name": "caniuse-lite",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.30001803"
+    },
+    {
+      "name": "chai",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.3.3"
+    },
+    {
+      "name": "check-error",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.3"
+    },
+    {
+      "name": "combined-stream",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.8"
+    },
+    {
+      "name": "convert-source-map",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "name": "css.escape",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.1"
+    },
+    {
+      "name": "cssstyle",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.6.0"
+    },
+    {
+      "name": "cssstyle/node_modules/rrweb-cssom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.8.0"
+    },
+    {
+      "name": "csstype",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.3"
+    },
+    {
+      "name": "data-urls",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.0"
+    },
+    {
+      "name": "debug",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.4.3"
+    },
+    {
+      "name": "decimal.js",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "10.6.0"
+    },
+    {
+      "name": "deep-eql",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.2"
+    },
+    {
+      "name": "delayed-stream",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "name": "dequal",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.3"
+    },
+    {
+      "name": "dom-accessibility-api",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.5.16"
+    },
+    {
+      "name": "dunder-proto",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "electron-to-chromium",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.389"
+    },
+    {
+      "name": "entities",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.0.1"
+    },
+    {
+      "name": "es-define-property",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "es-errors",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.3.0"
+    },
+    {
+      "name": "es-module-lexer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.7.0"
+    },
+    {
+      "name": "es-object-atoms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "es-set-tostringtag",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.0"
+    },
+    {
+      "name": "esbuild",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.21.5"
+    },
+    {
+      "name": "escalade",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.0"
+    },
+    {
+      "name": "estree-walker",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.3"
+    },
+    {
+      "name": "expect-type",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.4.0"
+    },
+    {
+      "name": "form-data",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.6"
+    },
+    {
+      "name": "fsevents",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "2.3.2"
+    },
+    {
+      "name": "function-bind",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "gensync",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.0-beta.2"
+    },
+    {
+      "name": "get-intrinsic",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.3.0"
+    },
+    {
+      "name": "get-proto",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "gopd",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "name": "has-symbols",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.0"
+    },
+    {
+      "name": "has-tostringtag",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.2"
+    },
+    {
+      "name": "hasown",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.4"
+    },
+    {
+      "name": "html-encoding-sniffer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.0"
+    },
+    {
+      "name": "http-proxy-agent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.0.2"
+    },
+    {
+      "name": "https-proxy-agent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.0.6"
+    },
+    {
+      "name": "iconv-lite",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.6.3"
+    },
+    {
+      "name": "indent-string",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.0"
+    },
+    {
+      "name": "is-potential-custom-element-name",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "js-tokens",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.0"
+    },
+    {
+      "name": "jsdom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "24.1.3"
+    },
+    {
+      "name": "jsesc",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.0"
+    },
+    {
+      "name": "json5",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.2.3"
+    },
+    {
+      "name": "loose-envify",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.4.0"
+    },
+    {
+      "name": "loupe",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.1"
+    },
+    {
+      "name": "lru-cache",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.1.1"
+    },
+    {
+      "name": "lz-string",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.0"
+    },
+    {
+      "name": "magic-string",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.30.21"
+    },
+    {
+      "name": "math-intrinsics",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.0"
+    },
+    {
+      "name": "mime-db",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.52.0"
+    },
+    {
+      "name": "mime-types",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.35"
+    },
+    {
+      "name": "min-indent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.1"
+    },
+    {
+      "name": "ms",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.3"
+    },
+    {
+      "name": "nanoid",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.3.15"
+    },
+    {
+      "name": "node-releases",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.51"
+    },
+    {
+      "name": "nwsapi",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.2.24"
+    },
+    {
+      "name": "parse5",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.3.0"
+    },
+    {
+      "name": "pathe",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "pathval",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.1"
+    },
+    {
+      "name": "picocolors",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "name": "playwright",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.61.1"
+    },
+    {
+      "name": "playwright-core",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.61.1"
+    },
+    {
+      "name": "postcss",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "8.5.16"
+    },
+    {
+      "name": "prettier",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.9.5"
+    },
+    {
+      "name": "pretty-format",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "27.5.1"
+    },
+    {
+      "name": "psl",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.15.0"
+    },
+    {
+      "name": "punycode",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.3.1"
+    },
+    {
+      "name": "querystringify",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.2.0"
+    },
+    {
+      "name": "react",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "18.3.1"
+    },
+    {
+      "name": "react-dom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "18.3.1"
+    },
+    {
+      "name": "react-is",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "17.0.2"
+    },
+    {
+      "name": "react-refresh",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.17.0"
+    },
+    {
+      "name": "redent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.0"
+    },
+    {
+      "name": "requires-port",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "name": "rollup",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.62.2"
+    },
+    {
+      "name": "rrweb-cssom",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.7.1"
+    },
+    {
+      "name": "safer-buffer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.2"
+    },
+    {
+      "name": "saxes",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.0.0"
+    },
+    {
+      "name": "scheduler",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.23.2"
+    },
+    {
+      "name": "semver",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.3.1"
+    },
+    {
+      "name": "siginfo",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "name": "source-map-js",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.1"
+    },
+    {
+      "name": "stackback",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.0.2"
+    },
+    {
+      "name": "std-env",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.10.0"
+    },
+    {
+      "name": "strip-indent",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.0"
+    },
+    {
+      "name": "symbol-tree",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.2.4"
+    },
+    {
+      "name": "tinybench",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.9.0"
+    },
+    {
+      "name": "tinyexec",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.3.2"
+    },
+    {
+      "name": "tinypool",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "name": "tinyrainbow",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "name": "tinyspy",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.0.2"
+    },
+    {
+      "name": "tough-cookie",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.1.4"
+    },
+    {
+      "name": "tr46",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.1.1"
+    },
+    {
+      "name": "typescript",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.9.3"
+    },
+    {
+      "name": "undici-types",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "6.21.0"
+    },
+    {
+      "name": "universalify",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "0.2.0"
+    },
+    {
+      "name": "update-browserslist-db",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.2.3"
+    },
+    {
+      "name": "url-parse",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "1.5.10"
+    },
+    {
+      "name": "vite",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.4.21"
+    },
+    {
+      "name": "vite-node",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "vite/node_modules/fsevents",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "optional",
+      "type": "library",
+      "version": "2.3.3"
+    },
+    {
+      "name": "vitest",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.1.9"
+    },
+    {
+      "name": "w3c-xmlserializer",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.0"
+    },
+    {
+      "name": "webidl-conversions",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "7.0.0"
+    },
+    {
+      "name": "whatwg-encoding",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.1"
+    },
+    {
+      "name": "whatwg-mimetype",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.0"
+    },
+    {
+      "name": "whatwg-url",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "14.2.0"
+    },
+    {
+      "name": "why-is-node-running",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.3.0"
+    },
+    {
+      "name": "ws",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "8.21.0"
+    },
+    {
+      "name": "xml-name-validator",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "5.0.0"
+    },
+    {
+      "name": "xmlchars",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "2.2.0"
+    },
+    {
+      "name": "yallist",
+      "properties": [
+        {
+          "name": "declared_by",
+          "value": "villani-web"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.1.1"
+    }
+  ],
+  "metadata": {
+    "component": {
+      "name": "villani-foundation",
+      "type": "application"
+    }
+  },
+  "specVersion": "1.5",
+  "version": 1
+}

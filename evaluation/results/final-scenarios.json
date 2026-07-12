@@ -1,0 +1,119 @@
+{
+  "passed": true,
+  "scenarios": [
+    {
+      "evidence": {
+        "duplicates_on_retry": 1,
+        "proof": "test_duplicate_batches_and_events_are_idempotent",
+        "replayed": false
+      },
+      "evidence_sha256": "796f675420854d012271575c9891a2a27fec1285990ab955078ba736e0c13b7b",
+      "passed": true,
+      "scenario": "offline_local_then_sync"
+    },
+    {
+      "evidence": {
+        "fixture_sha256": "d07fde5e542c0e1e93b409a888864f17f896fef9c2efe98b13094c6f898fdf10",
+        "proof": "villani-flight-recorder:test/providers.test.ts",
+        "provider": "codex"
+      },
+      "evidence_sha256": "6ca21dadc19ca8729e15e3be795e852095f16b9d4589960bb2adf127d9d78c0f",
+      "passed": true,
+      "scenario": "live_observed_codex_fixture"
+    },
+    {
+      "evidence": {
+        "fixture_sha256": "387f5fd05993eb7b75fea0f5d05b14de9dae2a450f27bdcbdd4d92dcb2650fb0",
+        "proof": "villani-flight-recorder:test/providers.test.ts",
+        "provider": "claude"
+      },
+      "evidence_sha256": "1863f26c40d884f339e1eabb85f82a032ea35e6b19c5da9b3566e8ca47b32216",
+      "passed": true,
+      "scenario": "live_observed_claude_fixture"
+    },
+    {
+      "evidence": {
+        "attempts": [
+          "cheap:rejected",
+          "strong:accepted"
+        ],
+        "proof": "tests/closed_loop/test_cli_e2e.py",
+        "selected": "strong"
+      },
+      "evidence_sha256": "ddcd21393a76af5592e4f9e800b0f3fb0291f2b530ae238b0d4e5a193a945c00",
+      "passed": true,
+      "scenario": "guarded_cheap_first_escalation"
+    },
+    {
+      "evidence": {
+        "eligible": [
+          "candidate-002"
+        ],
+        "proof": "test_verification_delivery.py",
+        "selected": "candidate-002"
+      },
+      "evidence_sha256": "6baa45404d3e16e1b6c3aae98e475b2baacd0cd013610804539318fa5653d96d",
+      "passed": true,
+      "scenario": "parallel_one_rejected_one_selected"
+    },
+    {
+      "evidence": {
+        "after": "materialized",
+        "approval": "recorded",
+        "before": "blocked",
+        "proof": "test_verification_delivery.py"
+      },
+      "evidence_sha256": "fad6845e12b33db9f365501e8611b064ed2be2ec78b520d61bb95b0c8893f4f4",
+      "passed": true,
+      "scenario": "human_approval_before_pr"
+    },
+    {
+      "evidence": {
+        "deliveries": 1,
+        "leases": [
+          "expired",
+          "completed"
+        ],
+        "proof": "test_remote_dispatch.py"
+      },
+      "evidence_sha256": "1744ed89dd9a147e2c7b8c501943a10e243ccb62173c3773bebaaae2d902c079",
+      "passed": true,
+      "scenario": "worker_crash_lease_reassignment"
+    },
+    {
+      "evidence": {
+        "proof": "test_policy_publication.py",
+        "states": [
+          "canary",
+          "degraded",
+          "rolled_back"
+        ]
+      },
+      "evidence_sha256": "cbb7a51c2c37891b5f59979a3c7630f4702fba2e4170cb324dfb1362f9fe01fd",
+      "passed": true,
+      "scenario": "policy_rollback_provider_degradation"
+    },
+    {
+      "evidence": {
+        "content_disclosed": false,
+        "guessed_id_result": 404,
+        "proof": "test_artifact_download_is_tenant_scoped"
+      },
+      "evidence_sha256": "a75d270c8274fc29a478c107de9a5711da182e3515aa8ead9f3e4d10f5badf5e",
+      "passed": true,
+      "scenario": "tenant_isolation_artifact_exfiltration"
+    },
+    {
+      "evidence": {
+        "chain_valid": true,
+        "deletion_evidence": true,
+        "proof": "test_governance_operations.py",
+        "tombstone": true
+      },
+      "evidence_sha256": "607b8062ae1dc19cde6b37dd1f54579a8510a28a549a90cc3942b4923f6e76b9",
+      "passed": true,
+      "scenario": "retention_deletion_tamper_verification"
+    }
+  ],
+  "schema_version": "villani.final_scenarios.v1"
+}

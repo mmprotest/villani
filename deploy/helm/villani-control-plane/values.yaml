@@ -1,0 +1,15 @@
+image:
+  repository: villani/control-plane
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+replicaCount: 2
+region: local
+airGapped: false
+databaseSecretName: villani-database
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: "1", memory: 1Gi}
+service:
+  port: 8000
+podDisruptionBudget:
+  minAvailable: 1

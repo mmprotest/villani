@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-control-plane
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: {app: villani-control-plane}
+  template:
+    metadata:
+      labels: {app: villani-control-plane}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: http, containerPort: 8000}]
+          env:
+            - name: VILLANI_CONTROL_PLANE_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: "{{ .Values.databaseSecretName }}", key: url}}
+            - {name: VILLANI_CONTROL_PLANE_DEPLOYMENT_MODE, value: self-hosted}
+            - {name: VILLANI_CONTROL_PLANE_DEPLOYMENT_REGION, value: "{{ .Values.region }}"}
+            - {name: VILLANI_CONTROL_PLANE_AIR_GAPPED, value: "{{ .Values.airGapped }}"}
+          readinessProbe: {httpGet: {path: /readiness, port: http}, initialDelaySeconds: 3}
+          livenessProbe: {httpGet: {path: /liveness, port: http}, initialDelaySeconds: 3}
+          lifecycle: {preStop: {exec: {command: ["/bin/sh", "-c", "sleep 5"]}}}
+          resources: {{ toYaml .Values.resources | nindent 12 }}

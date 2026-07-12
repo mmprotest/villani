@@ -3,12 +3,16 @@ from __future__ import annotations
 import io
 from datetime import datetime
 from typing import Annotated, Any
+from uuid import uuid4
 
-from fastapi import APIRouter, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import RedirectResponse, StreamingResponse
+from sqlalchemy import func, select
 
 from ..config import get_settings
 from ..live import broker, encode_sse
+from ..metrics import metrics
+from ..models import AdministrativeAuditEvent, RemoteTask, Run, RunCommitment
 from ..schemas import (
     AlertRuleRequest,
     ArtifactDescriptorRequest,
@@ -45,18 +49,516 @@ from ..services import (
     ArtifactTransferService,
     EnrollmentService,
     FleetObservabilityService,
+    GovernanceService,
     IngestionService,
     NaturalLanguageInterrogationService,
     OperationsService,
     OutcomeLedgerService,
     PolicyPublicationService,
+    QuotaService,
     RemoteDispatchService,
     RunQueryService,
 )
+from ..services.identity import (
+    AuditService,
+    FakeSAMLProvider,
+    FakeSCIMProvider,
+    IdentityAdministrationService,
+    IdentityService,
+)
 from ..services.interrogation import InterrogationRequest, semantic_catalog
-from .dependencies import ObjectStoreDependency, PrincipalDependency, SessionDependency
+from ..tamper import digest_body, verify_audit_events
+from .dependencies import (
+    ObjectStoreDependency,
+    PrincipalDependency,
+    SessionDependency,
+    authorize_request,
+)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(authorize_request)])
+
+
+def _request_context(request: Request) -> tuple[str | None, str]:
+    return (
+        request.client.host if request.client else None,
+        request.headers.get("X-Request-ID", "unassigned"),
+    )
+
+
+def _audit_route(
+    session,
+    principal,
+    request: Request,
+    action: str,
+    target_type: str,
+    target_id: str,
+) -> None:
+    source_ip, request_id = _request_context(request)
+    AuditService(session).record(
+        actor_id=principal.actor_id,
+        actor_type=principal.principal_type,
+        organization_id=principal.organization_id,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        result="success",
+        request_id=request_id,
+        source_ip=source_ip,
+    )
+    session.commit()
+
+
+@router.get("/liveness")
+def liveness() -> dict[str, str]:
+    return {"status": "alive"}
+
+
+@router.get("/metrics")
+def structured_metrics() -> dict[str, Any]:
+    return {"metrics": metrics.snapshot()}
+
+
+@router.get("/v1/admin/governance/policies")
+def get_governance_policy(
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    project_id: str | None = None,
+) -> dict[str, Any]:
+    policy = GovernanceService(session).resolve(
+        principal.organization_id, principal.workspace_id, project_id
+    )
+    return {
+        "policy": None
+        if policy is None
+        else {
+            "id": policy.id,
+            "version": policy.version,
+            "retention_days": policy.retention_days,
+            "metadata_only": policy.metadata_only,
+            "exclusions": policy.exclusions,
+            "redaction_rules": policy.redaction_rules,
+            "dlp_hook": policy.dlp_hook,
+            "allowed_regions": policy.allowed_regions,
+            "required_residency_labels": policy.required_residency_labels,
+        }
+    }
+
+
+@router.post("/v1/admin/governance/policies", status_code=status.HTTP_201_CREATED)
+def create_governance_policy(
+    payload: dict[str, Any],
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    http_request: Request,
+) -> dict[str, Any]:
+    policy = GovernanceService(session).create_policy(
+        principal,
+        workspace_id=payload.get("workspace_id"),
+        project_id=payload.get("project_id"),
+        retention_days=dict(payload.get("retention_days", {})),
+        metadata_only=bool(payload.get("metadata_only", False)),
+        exclusions=list(payload.get("exclusions", [])),
+        redaction_rules=dict(payload.get("redaction_rules", {})),
+        dlp_hook=str(payload.get("dlp_hook", "builtin")),
+        allowed_regions=list(payload.get("allowed_regions", [])),
+        required_residency_labels=list(payload.get("required_residency_labels", [])),
+    )
+    _audit_route(
+        session, principal, http_request, "retention.policy.create", "governance_policy", policy.id
+    )
+    return {"id": policy.id, "version": policy.version}
+
+
+@router.post("/v1/admin/governance/legal-holds", status_code=status.HTTP_201_CREATED)
+def create_legal_hold(
+    payload: dict[str, Any],
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    http_request: Request,
+) -> dict[str, Any]:
+    hold = GovernanceService(session).place_hold(
+        principal,
+        str(payload.get("target_type", "")),
+        str(payload.get("target_id", "")),
+        str(payload.get("reason", "")),
+    )
+    _audit_route(
+        session, principal, http_request, "retention.legal_hold.create", "legal_hold", hold.id
+    )
+    return {"id": hold.id, "active": hold.active}
+
+
+@router.post("/v1/admin/governance/retention/sweep")
+def sweep_governance_retention(
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    store: ObjectStoreDependency,
+    http_request: Request,
+) -> dict[str, int]:
+    result = GovernanceService(session).sweep_retention(principal, store)
+    _audit_route(
+        session, principal, http_request, "retention.sweep", "workspace", principal.workspace_id
+    )
+    return result
+
+
+@router.post("/v1/admin/governance/deletions", status_code=status.HTTP_202_ACCEPTED)
+def request_governance_deletion(
+    payload: dict[str, Any],
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    http_request: Request,
+) -> dict[str, Any]:
+    workflow = GovernanceService(session).request_deletion(
+        principal, str(payload.get("target_type", "")), str(payload.get("target_id", ""))
+    )
+    _audit_route(
+        session, principal, http_request, "deletion.request", "deletion_workflow", workflow.id
+    )
+    return {"id": workflow.id, "state": workflow.state, "tombstone": workflow.tombstone}
+
+
+@router.post("/v1/admin/governance/deletions/{workflow_id}/complete")
+def complete_governance_deletion(
+    workflow_id: str,
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    store: ObjectStoreDependency,
+    http_request: Request,
+) -> dict[str, Any]:
+    workflow = GovernanceService(session).complete_deletion(principal, workflow_id, store)
+    _audit_route(
+        session, principal, http_request, "deletion.complete", "deletion_workflow", workflow.id
+    )
+    return {
+        "id": workflow.id,
+        "state": workflow.state,
+        "completion_evidence": workflow.completion_evidence,
+    }
+
+
+@router.post("/v1/admin/governance/exports", status_code=status.HTTP_201_CREATED)
+def create_governance_export(
+    payload: dict[str, Any],
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    http_request: Request,
+) -> dict[str, Any]:
+    QuotaService(session).consume(
+        principal,
+        "exports",
+        1,
+        str(payload.get("request_id", "governance-export")),
+        payload.get("project_id"),
+    )
+    record = GovernanceService(session).create_export(
+        principal, payload.get("project_id"), list(payload.get("rows", []))
+    )
+    _audit_route(
+        session, principal, http_request, "export.governance", "governance_export", record.id
+    )
+    return {"id": record.id, "digest_sha256": record.digest_sha256, "manifest": record.manifest}
+
+
+@router.post("/v1/admin/quotas/policies", status_code=status.HTTP_201_CREATED)
+def create_quota_policy(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    policy = QuotaService(session).create_policy(
+        principal,
+        {str(key): float(value) for key, value in dict(payload.get("limits", {})).items()},
+        int(payload.get("soft_percent", 80)),
+        payload.get("workspace_id"),
+        payload.get("project_id"),
+    )
+    return {"id": policy.id, "limits": policy.limits, "soft_percent": policy.soft_percent}
+
+
+@router.get("/v1/admin/usage/export")
+def export_usage(principal: PrincipalDependency, session: SessionDependency) -> dict[str, Any]:
+    return QuotaService(session).export_usage(principal)
+
+
+@router.get("/v1/admin/tamper/audit/verify")
+def verify_audit_chain(
+    principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    events = list(
+        session.scalars(
+            select(AdministrativeAuditEvent)
+            .where(AdministrativeAuditEvent.organization_id == principal.organization_id)
+            .order_by(AdministrativeAuditEvent.occurred_at, AdministrativeAuditEvent.id)
+        )
+    )
+    valid, head = verify_audit_events(events)
+    result = {"valid": valid, "event_count": len(events), "head_sha256": head}
+    return {**result, "commitment_sha256": digest_body(result)}
+
+
+@router.post("/v1/auth/local/login")
+def local_login(
+    payload: dict[str, Any], request: Request, response: Response, session: SessionDependency
+):
+    source_ip, request_id = _request_context(request)
+    token, csrf, record = IdentityService(session, get_settings()).local_login(
+        str(payload.get("email", "")).lower(),
+        str(payload.get("password", "")),
+        str(payload.get("organization_id", "")),
+        str(payload.get("workspace_id", "")),
+        source_ip,
+        request_id,
+    )
+    response.set_cookie(
+        get_settings().session_cookie_name,
+        token,
+        httponly=True,
+        secure=get_settings().secure_cookies,
+        samesite="strict",
+        max_age=get_settings().session_ttl_seconds,
+        path="/",
+    )
+    return {"csrf_token": csrf, "expires_at": record.expires_at}
+
+
+@router.post("/v1/auth/oidc/login")
+def oidc_login(
+    payload: dict[str, Any], request: Request, response: Response, session: SessionDependency
+):
+    source_ip, request_id = _request_context(request)
+    token, csrf, record = IdentityService(session, get_settings()).oidc_login(
+        str(payload.get("assertion", "")),
+        str(payload.get("organization_id", "")),
+        str(payload.get("workspace_id", "")),
+        source_ip,
+        request_id,
+    )
+    response.set_cookie(
+        get_settings().session_cookie_name,
+        token,
+        httponly=True,
+        secure=get_settings().secure_cookies,
+        samesite="strict",
+        max_age=get_settings().session_ttl_seconds,
+        path="/",
+    )
+    return {"csrf_token": csrf, "expires_at": record.expires_at}
+
+
+@router.post("/v1/auth/logout")
+def logout(
+    principal: PrincipalDependency, response: Response, session: SessionDependency
+) -> dict[str, bool]:
+    if principal.session_id:
+        IdentityAdministrationService(session).revoke_session(principal, principal.session_id)
+    response.delete_cookie(get_settings().session_cookie_name, path="/")
+    return {"revoked": True}
+
+
+@router.get("/v1/admin/roles")
+def list_roles(principal: PrincipalDependency, session: SessionDependency) -> dict[str, Any]:
+    roles = IdentityAdministrationService(session).list_roles(principal)
+    return {
+        "roles": [
+            {"id": r.id, "name": r.name, "built_in": r.built_in, "permissions": r.permissions}
+            for r in roles
+        ]
+    }
+
+
+@router.post("/v1/admin/roles", status_code=status.HTTP_201_CREATED)
+def create_role(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    role = IdentityAdministrationService(session).create_custom_role(
+        principal, str(payload.get("name", "")), list(payload.get("permissions", []))
+    )
+    return {"id": role.id, "name": role.name, "permissions": role.permissions}
+
+
+@router.post("/v1/admin/users", status_code=status.HTTP_201_CREATED)
+def create_user(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    user = IdentityAdministrationService(session).create_user(
+        principal,
+        str(payload.get("email", "")),
+        str(payload.get("display_name", "")),
+        str(payload.get("provider", "local")),
+        str(payload.get("issuer", "local")),
+        str(payload.get("subject", payload.get("email", ""))),
+        payload.get("password"),
+    )
+    return {"id": user.id, "email": user.email, "display_name": user.display_name}
+
+
+@router.post("/v1/admin/memberships", status_code=status.HTTP_201_CREATED)
+def create_membership(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    membership = IdentityAdministrationService(session).create_membership(
+        principal,
+        str(payload.get("user_id", "")),
+        str(payload.get("role_id", "")),
+        payload.get("workspace_id"),
+    )
+    return {"id": membership.id, "status": membership.status}
+
+
+@router.post("/v1/admin/groups", status_code=status.HTTP_201_CREATED)
+def create_group(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    group = IdentityAdministrationService(session).create_group(
+        principal, str(payload.get("name", ""))
+    )
+    return {"id": group.id, "name": group.name}
+
+
+@router.post("/v1/admin/groups/{group_id}/members", status_code=status.HTTP_201_CREATED)
+def add_group_member(
+    group_id: str,
+    payload: dict[str, Any],
+    principal: PrincipalDependency,
+    session: SessionDependency,
+) -> dict[str, bool]:
+    IdentityAdministrationService(session).add_group_member(
+        principal, group_id, str(payload.get("membership_id", ""))
+    )
+    return {"created": True}
+
+
+@router.post("/v1/admin/role-assignments", status_code=status.HTTP_201_CREATED)
+def create_role_assignment(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    assignment = IdentityAdministrationService(session).assign_role(
+        principal,
+        str(payload.get("role_id", "")),
+        str(payload.get("subject_type", "")),
+        str(payload.get("subject_id", "")),
+        payload.get("workspace_id"),
+    )
+    return {"id": assignment.id}
+
+
+@router.post("/v1/admin/service-accounts", status_code=status.HTTP_201_CREATED)
+def create_service_account(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    account = IdentityAdministrationService(session).create_service_account(
+        principal, str(payload.get("name", "")), str(payload.get("role_id", ""))
+    )
+    return {"id": account.id, "name": account.name}
+
+
+@router.post("/v1/admin/api-keys", status_code=status.HTTP_201_CREATED)
+def create_api_key(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    key, plaintext = IdentityAdministrationService(session).create_api_key(
+        principal,
+        str(payload.get("name", "")),
+        list(payload.get("scopes", [])),
+        int(payload.get("expires_in_seconds", 3600)),
+        payload.get("user_id"),
+        payload.get("service_account_id"),
+    )
+    return {
+        "id": key.id,
+        "api_key": plaintext,
+        "expires_at": key.expires_at,
+        "displayed_once": True,
+    }
+
+
+@router.post("/v1/admin/api-keys/{key_id}/rotate")
+def rotate_api_key(
+    key_id: str, principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    key, plaintext = IdentityAdministrationService(session).rotate_api_key(principal, key_id)
+    return {
+        "id": key.id,
+        "api_key": plaintext,
+        "expires_at": key.expires_at,
+        "displayed_once": True,
+    }
+
+
+@router.post("/v1/admin/api-keys/{key_id}/revoke")
+def revoke_api_key(
+    key_id: str, principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, bool]:
+    IdentityAdministrationService(session).revoke_api_key(principal, key_id)
+    return {"revoked": True}
+
+
+@router.post("/v1/admin/sessions/{session_id}/revoke")
+def revoke_session(
+    session_id: str, principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, bool]:
+    IdentityAdministrationService(session).revoke_session(principal, session_id)
+    return {"revoked": True}
+
+
+@router.post("/v1/admin/invitations", status_code=status.HTTP_201_CREATED)
+def create_invitation(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    invitation, plaintext = IdentityAdministrationService(session).invite(
+        principal,
+        str(payload.get("email", "")),
+        list(payload.get("role_ids", [])),
+        int(payload.get("expires_in_seconds", 604800)),
+    )
+    return {
+        "id": invitation.id,
+        "invitation_token": plaintext,
+        "expires_at": invitation.expires_at,
+        "displayed_once": True,
+    }
+
+
+@router.get("/v1/admin/audit-events")
+def audit_events(
+    principal: PrincipalDependency,
+    session: SessionDependency,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> dict[str, Any]:
+    events = IdentityAdministrationService(session).audit_events(principal, limit)
+    return {
+        "events": [
+            {
+                "id": e.id,
+                "actor": e.actor_id,
+                "organization_id": e.organization_id,
+                "action": e.action,
+                "target": {"type": e.target_type, "id": e.target_id},
+                "result": e.result,
+                "request_id": e.request_id,
+                "source_ip_classification": e.source_ip_classification,
+                "timestamp": e.occurred_at,
+                "before_digest": e.before_digest,
+                "after_digest": e.after_digest,
+            }
+            for e in events
+        ]
+    }
+
+
+@router.get("/v1/admin/federation/saml")
+def saml_interface(principal: PrincipalDependency, session: SessionDependency) -> dict[str, str]:
+    del principal, session
+    return FakeSAMLProvider().metadata()
+
+
+@router.post("/v1/admin/federation/scim/sync")
+def scim_sync(
+    payload: dict[str, Any], principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, int]:
+    del session
+    return FakeSCIMProvider().synchronize(
+        principal.organization_id, list(payload.get("records", []))
+    )
 
 
 @router.get("/v1/interrogation/catalog")
@@ -76,7 +578,12 @@ def interrogate_runs(
     request: InterrogationRequestModel,
     principal: PrincipalDependency,
     session: SessionDependency,
+    http_request: Request,
 ) -> dict[str, Any]:
+    _, request_id = _request_context(http_request)
+    QuotaService(session).consume(
+        principal, "queries", 1, f"query:{request_id if request_id != 'unassigned' else uuid4()}"
+    )
     return NaturalLanguageInterrogationService(session).ask(
         InterrogationRequest(request.question, request.conversation_id), principal
     )
@@ -196,8 +703,17 @@ def export_fleet_runs(
     request: FleetExportRequest,
     principal: PrincipalDependency,
     session: SessionDependency,
+    http_request: Request,
 ) -> Response:
+    _, request_id = _request_context(http_request)
+    QuotaService(session).consume(
+        principal,
+        "exports",
+        1,
+        f"fleet-export:{request_id if request_id != 'unassigned' else uuid4()}",
+    )
     media_type, body = FleetObservabilityService(session).export(request, principal)
+    _audit_route(session, principal, http_request, "export.create", "fleet", principal.workspace_id)
     extension = "csv" if request.format == "csv" else "json"
     return Response(
         content=body,
@@ -213,6 +729,7 @@ def worker_heartbeat(
     principal: PrincipalDependency,
     session: SessionDependency,
 ) -> dict[str, Any]:
+    QuotaService(session).consume(principal, "workers", 1, f"worker:{worker_id}")
     return RemoteDispatchService(session).heartbeat(
         worker_id,
         request.capabilities.model_dump(mode="json"),
@@ -235,8 +752,33 @@ def submit_remote_task(
     request: RemoteTaskRequest,
     principal: PrincipalDependency,
     session: SessionDependency,
+    http_request: Request,
 ) -> dict[str, Any]:
-    return RemoteDispatchService(session).submit(request, principal)
+    run = session.get(Run, (principal.organization_id, request.run_id))
+    project_id = run.project_id if run else None
+    active = (
+        session.scalar(
+            select(func.count())
+            .select_from(RemoteTask)
+            .where(
+                RemoteTask.organization_id == principal.organization_id,
+                RemoteTask.workspace_id == principal.workspace_id,
+                RemoteTask.state.in_(["queued", "leased", "cancellation_requested"]),
+            )
+        )
+        or 0
+    )
+    QuotaService(session).enforce_current(principal, "concurrency", float(active), project_id)
+    result = RemoteDispatchService(session).submit(request, principal)
+    _audit_route(
+        session,
+        principal,
+        http_request,
+        "deployment.task.submit",
+        "task",
+        str(result.get("id", "submitted")),
+    )
+    return result
 
 
 @router.post("/v1/tasks/{task_id}/cancel")
@@ -448,6 +990,15 @@ def outcome(
     principal: PrincipalDependency,
     session: SessionDependency,
 ) -> dict[str, Any]:
+    if document.get("cost") is not None:
+        run = session.get(Run, (principal.organization_id, str(document.get("run_id", ""))))
+        QuotaService(session).consume(
+            principal,
+            "model_cost",
+            float(document["cost"]),
+            f"outcome:{document.get('run_id')}:{document.get('attempt_id') or 'run'}",
+            run.project_id if run else None,
+        )
     return {"outcome": IngestionService(session).record_outcome(document, principal)}
 
 
@@ -506,8 +1057,18 @@ def create_policy_publication(
     request: PolicyPublicationCreateRequest,
     principal: PrincipalDependency,
     session: SessionDependency,
+    http_request: Request,
 ) -> dict[str, Any]:
-    return PolicyPublicationService(session).create(request, principal)
+    result = PolicyPublicationService(session).create(request, principal)
+    _audit_route(
+        session,
+        principal,
+        http_request,
+        "policy.create",
+        "policy_publication",
+        str(result.get("id", "created")),
+    )
+    return result
 
 
 @router.get("/v1/policy-publications/{publication_id}")
@@ -525,8 +1086,13 @@ def approve_policy_publication(
     request: PolicyPublicationApprovalRequest,
     principal: PrincipalDependency,
     session: SessionDependency,
+    http_request: Request,
 ) -> dict[str, Any]:
-    return PolicyPublicationService(session).approve(publication_id, request.evidence, principal)
+    result = PolicyPublicationService(session).approve(publication_id, request.evidence, principal)
+    _audit_route(
+        session, principal, http_request, "policy.approve", "policy_publication", publication_id
+    )
+    return result
 
 
 @router.post("/v1/policy-publications/{publication_id}/transition")
@@ -535,10 +1101,20 @@ def transition_policy_publication(
     request: PolicyPublicationTransitionRequest,
     principal: PrincipalDependency,
     session: SessionDependency,
+    http_request: Request,
 ) -> dict[str, Any]:
-    return PolicyPublicationService(session).transition(
+    result = PolicyPublicationService(session).transition(
         publication_id, request.state, request.reason, principal
     )
+    _audit_route(
+        session,
+        principal,
+        http_request,
+        "deployment.policy.transition",
+        "policy_publication",
+        publication_id,
+    )
+    return result
 
 
 @router.post("/v1/policy-publications/{publication_id}/evaluate-canary")
@@ -558,10 +1134,20 @@ def emergency_policy_disable(
     request: PolicyEmergencyDisableRequest,
     principal: PrincipalDependency,
     session: SessionDependency,
+    http_request: Request,
 ) -> dict[str, Any]:
-    return PolicyPublicationService(session).emergency_disable(
+    result = PolicyPublicationService(session).emergency_disable(
         request.disabled, request.reason, principal
     )
+    _audit_route(
+        session,
+        principal,
+        http_request,
+        "policy.emergency_disable",
+        "workspace",
+        principal.workspace_id,
+    )
+    return result
 
 
 @router.get("/v1/runs/{run_id}", response_model=RunDetail)
@@ -600,6 +1186,26 @@ def get_run_artifacts(
     limit: Annotated[int, Query(ge=1, le=250)] = 50,
 ) -> ArtifactPage:
     return RunQueryService(session).artifacts(run_id, principal, cursor=cursor, limit=limit)
+
+
+@router.get("/v1/runs/{run_id}/commitment")
+def get_run_commitment(
+    run_id: str, principal: PrincipalDependency, session: SessionDependency
+) -> dict[str, Any]:
+    run = session.get(Run, (principal.organization_id, run_id))
+    commitment = session.get(RunCommitment, (principal.organization_id, run_id))
+    if run is None or run.workspace_id != principal.workspace_id or commitment is None:
+        from ..errors import NotFoundError
+
+        raise NotFoundError("run commitment not found")
+    result = {
+        "run_id": run_id,
+        "root_sha256": commitment.root_sha256,
+        "item_count": commitment.item_count,
+        "finalized_at": commitment.finalized_at,
+        "correction_of_root": commitment.correction_of_root,
+    }
+    return {**result, "commitment_sha256": digest_body(result)}
 
 
 @router.get("/v1/runs", response_model=RunList)

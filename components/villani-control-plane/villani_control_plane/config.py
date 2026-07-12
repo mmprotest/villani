@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     dev_workspace_name: str = "Development"
     dev_api_token: str | None = Field(default=None, min_length=24)
     dev_enrollment_token: str | None = Field(default=None, min_length=24)
+    dev_user_email: str | None = None
+    dev_user_password: str | None = Field(default=None, min_length=12)
     object_store_backend: str = "filesystem"
     object_store_path: Path = Path(".object-store")
     s3_bucket: str | None = None
@@ -42,6 +44,23 @@ class Settings(BaseSettings):
     natural_language_query_max_scan_rows: int = 100_000
     natural_language_query_max_result_rows: int = 200
     natural_language_query_default_days: int = 30
+    session_ttl_seconds: int = 28_800
+    authorization_cache_bound_seconds: int = 0
+    authentication_rate_limit_per_minute: int = 30
+    api_rate_limit_per_minute: int = 600
+    secure_cookies: bool = True
+    session_cookie_name: str = "villani_session"
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    deployment_mode: str = "local-only"
+    deployment_region: str = "local"
+    air_gapped: bool = False
+    metadata_only: bool = False
+    metrics_enabled: bool = True
+    otlp_endpoint: str | None = None
+    graceful_shutdown_seconds: int = 30
+    development_encryption_key: str = "development-only-key-change-me"
+    development_encryption_key_id: str = "dev-key-v1"
 
     @property
     def sensitivity_policy(self) -> frozenset[str]:

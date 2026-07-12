@@ -72,3 +72,12 @@ class Principal:
     organization_id: str
     workspace_id: str
     installation_id: str | None = None
+    principal_type: str = "api_key"
+    subject_id: str | None = None
+    permissions: frozenset[str] = frozenset()
+    scopes: frozenset[str] = frozenset({"*"})
+    session_id: str | None = None
+
+    @property
+    def actor_id(self) -> str:
+        return self.subject_id or self.installation_id or self.token_id

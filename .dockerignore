@@ -23,3 +23,5 @@ components/villani-ops/villani_ops/tests
 components/villani-control-plane/.pytest_cache
 components/villani-control-plane/.ruff_cache
 components/villani-control-plane/tests
+components/villani-control-plane/.test-temp
+components/villani-control-plane/**/__pycache__

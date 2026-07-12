@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -192,6 +192,13 @@ class IngestionService:
     ) -> BatchIngestionResult:
         parsed = self._parse_events(documents)
         settings = get_settings()
+        from ..metrics import metrics
+        from .governance import GovernanceService, QuotaService
+
+        quotas = QuotaService(self.session)
+        governance = GovernanceService(self.session)
+        project_hint = next((event.project_id for event in parsed if event.project_id), None)
+        quotas.consume(principal, "events", len(parsed), f"batch:{batch_id}", project_hint)
         if principal.installation_id:
             if len(parsed) > settings.max_installation_batch_events:
                 raise RateLimitError("installation batch event limit exceeded")
@@ -220,7 +227,52 @@ class IngestionService:
                 raise RateLimitError("installation per-minute ingest limit exceeded")
         for event in parsed:
             self._authorize_event(event, principal)
-        normalized = [event.model_dump(mode="json") for event in parsed]
+        normalized = []
+        retention_expiries: list[datetime | None] = []
+        for event in parsed:
+            document = event.model_dump(mode="json")
+            name = event.name.lower()
+            data_class = (
+                "prompt"
+                if "prompt" in name
+                else "response"
+                if "response" in name or "completion" in name
+                else "source"
+                if "file" in name or "source" in name
+                else "metadata"
+            )
+            governance.enforce_residency(
+                principal.organization_id,
+                principal.workspace_id,
+                event.project_id,
+                settings.deployment_region,
+                list(event.attributes.get("data_residency_labels", [])),
+            )
+            decision = governance.govern(
+                data_class,
+                document,
+                principal.organization_id,
+                principal.workspace_id,
+                event.project_id,
+            )
+            retention_expiries.append(
+                datetime.fromisoformat(decision.expires_at) if decision.expires_at else None
+            )
+            governed = decision.document
+            if governed is None:
+                governed = {
+                    key: value
+                    for key, value in document.items()
+                    if key in GovernanceService.METADATA_FIELDS
+                }
+                governed["governance_excluded"] = data_class
+            if settings.metadata_only:
+                governed = {
+                    key: value
+                    for key, value in governed.items()
+                    if key in GovernanceService.METADATA_FIELDS
+                }
+            normalized.append(governed)
         batch_digest = digest_document(normalized)
 
         existing = self.ingestion.batch(principal.organization_id, batch_id)
@@ -251,8 +303,11 @@ class IngestionService:
 
         inserted = 0
         duplicates = 0
+        finalized_run_ids: set[str] = set()
         seen: dict[tuple[str, str], str] = {}
-        for event, document in zip(parsed, normalized, strict=True):
+        for event, document, retention_expires_at in zip(
+            parsed, normalized, retention_expiries, strict=True
+        ):
             payload_digest = digest_document(document)
             in_batch_key = (event.event_id, event.idempotency_key)
             prior_digest = seen.get(in_batch_key)
@@ -279,6 +334,12 @@ class IngestionService:
             project, repository = self._resolve_project_repository(event, principal)
             run = self.ingestion.run(principal.organization_id, event.run_id)
             if run is None:
+                project_tags = (
+                    project.chargeback_tags if hasattr(project, "chargeback_tags") else {}
+                )
+                quotas.consume(
+                    principal, "runs", 1, f"run:{event.run_id}", project.id, project_tags
+                )
                 run = models.Run(
                     organization_id=principal.organization_id,
                     workspace_id=principal.workspace_id,
@@ -323,6 +384,7 @@ class IngestionService:
             }
             if event.name in terminal_names:
                 run.status = terminal_names[event.name]
+                finalized_run_ids.add(event.run_id)
 
             project_run_observability(run, event)
             record_failure_cluster(self.session, run, event)
@@ -399,6 +461,7 @@ class IngestionService:
                     status=event.status,
                     payload_sha256=payload_digest,
                     document=document,
+                    retention_expires_at=retention_expires_at,
                 )
             )
             self.ingestion.add(
@@ -427,6 +490,13 @@ class IngestionService:
             if replay is not None and replay.payload_sha256 == batch_digest:
                 return BatchIngestionResult(batch_id, 0, len(parsed), True)
             raise ConflictError("event or sequence identity collision") from error
+        metrics.add("villani_ingest_events_total", inserted, organization=principal.organization_id)
+        metrics.add("villani_ingest_batches_total", 1, organization=principal.organization_id)
+        if finalized_run_ids:
+            from ..tamper import commit_run
+
+            for run_id in sorted(finalized_run_ids):
+                commit_run(self.session, principal.organization_id, run_id)
         return BatchIngestionResult(batch_id, inserted, duplicates, False)
 
     def register_artifact(

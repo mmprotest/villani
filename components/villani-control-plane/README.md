@@ -1,8 +1,11 @@
 # Villani Control Plane
 
 This component is the single-region Villani v2 persistence and controlled remote-dispatch
-boundary. It does not open inbound worker connections and has no web UI, SSO, billing, learned
-routing, or enterprise scheduler.
+boundary. It does not open inbound worker connections and has no enterprise scheduler. Its
+enterprise identity/RBAC foundation is documented in
+[`docs/IDENTITY_AUTHORIZATION.md`](docs/IDENTITY_AUTHORIZATION.md).
+Repository-level deployment, operations, SLO, supply-chain, evaluation, and limitation documents
+cover the final foundation without making a general-availability claim.
 
 ## Development
 
@@ -16,6 +19,11 @@ The Compose-only development bearer token is
 `local-development-token-change-me-123456`. Replace it outside disposable local development.
 Only its scrypt verifier and a SHA-256 lookup digest are stored; plaintext tokens are never
 persisted.
+
+Optional local browser authentication is enabled with
+`VILLANI_CONTROL_PLANE_DEV_USER_EMAIL` and `VILLANI_CONTROL_PLANE_DEV_USER_PASSWORD`. OIDC uses
+the provider interface; the bundled OIDC, SAML, and SCIM providers are development fakes and are
+not claimed as production federation integrations.
 
 The API accepts strict v2 telemetry in this shape:
 
@@ -41,6 +49,12 @@ SSE subscriptions at `/v1/runs/{run_id}/stream`. Slow subscribers are disconnect
 bounded queue fills. Outcome requests are the exact v2 outcome document.
 Telemetry is ordered for pagination by server-visible `observed_at` plus a database identity,
 while retaining both source `occurred_at` and receiver `observed_at` unchanged.
+
+Governance policies resolve project over workspace over organization. They control data-class
+retention, metadata-only capture, exclusions, redaction/DLP, residency, legal holds, deletion,
+and governed exports. Quotas use the same precedence for runs, events, artifact bytes, model
+cost, concurrency, workers, exports, and queries. Exported audit/run commitment documents can be
+checked with `python -m villani_control_plane.tamper <document.json>`.
 
 ## Controlled remote dispatch
 

@@ -2244,3 +2244,97 @@ Known remaining issues:
 
 Next permitted milestone:
 - Enterprise roles, broader sensitive-data grants, answer-generation over permitted rows, or any later milestone only after an explicit user request. None was started in this pass.
+
+#### 2026-07-12: Enterprise identity and authorization foundation pass
+
+Status: complete
+
+Changed files:
+- Extended the control-plane configuration, security principal, persistence models, development bootstrap, authentication service, API dependencies/routes, service exports, and README for enterprise identity and authorization.
+- Added the normative allowlisted permission catalog, exact built-in role grants, centralized endpoint policy registry/service, identity administration and federation interfaces, PostgreSQL Alembic revision `e8f9a0b1c2d3`, identity/authorization documentation, and focused acceptance tests.
+- Added users, local/OIDC identities, memberships, groups/group membership, built-in and custom roles/assignments, service accounts, scoped API keys, browser sessions, invitations, and immutable administrative audit events while retaining existing organization, workspace, project, and repository tenant keys.
+
+Architectural decisions:
+- `villani.enterprise_rbac.v1` is a fail-closed allowlist. All 70 registered routes are generated from one registry: 62 require one named permission and eight are explicitly public or use a dedicated one-time upload/enrollment credential. The same registry drives the every-endpoint/every-role authorization matrix test.
+- Policy precedence is credential validity, organization isolation, interactive-session/CSRF restrictions, API-key scope narrowing, unioned role grants, then resource sensitivity/state constraints. Data-authored custom roles contain only allowlisted permission strings and cannot execute policy code.
+- Existing development tokens retain local compatibility. Newly issued keys belong to exactly one user or service account, store only lookup/verifier digests, require explicit scopes and expiry, record last use, and revoke their predecessor during rotation. Authorization data is read on every request, so the documented application cache bound is zero seconds.
+- Interactive sessions belong only to users and use expiring, revocable, `HttpOnly; Secure; SameSite=Strict` cookies plus double-token CSRF verification for unsafe methods. Local passwords and all credentials use salted scrypt verifiers. Authentication and general APIs have separate bounded per-minute rate limits.
+- OIDC uses a typed verifier boundary and issuer/subject mapping with a deterministic local fake. SAML and SCIM are interface-only fakes explicitly marked non-production; production compatibility is not claimed without real provider integration tests.
+- Administrative audit records are append-only with no public mutation API and ORM update/delete guards. They include actor/type, organization, action, target, result, request ID, source-IP classification, timestamp, and masked before/after digests for login, membership, role, key, policy, export, retention, deletion, secret, and deployment categories.
+
+Verification:
+- Control plane required full suite: exit code 0; 62 passed, 6 skipped in 10.71s using a workspace-local pytest temp root. The skipped cases require `VILLANI_TEST_POSTGRES_URL`. Focused identity/authorization, interrogation, and API suite: 29 passed.
+- Generated authorization matrix: all 70 routes covered and all nine built-in roles evaluated against every protected endpoint. Cross-organization guessed-key access, immediate key/session revocation, scoped/expiring/rotating keys, secure-cookie CSRF, service-account session exclusion, audit immutability, and plaintext-key absence passed.
+- PostgreSQL Alembic offline upgrade rendered every revision through `e8f9a0b1c2d3`; Ruff check/format, compileall, and `git diff --check` exited 0.
+- Villani Ops required full suite: exit code 0; 830 passed, 1 skipped, 114 deselected in 122.68s. Root closed-loop integration: exit code 0; 6 passed in 21.09s.
+- Flight Recorder: `npm.cmd test` exited 0 with 20 files/102 tests passed; typecheck, build, and format check all exited 0.
+- Villani Code required full suite: exit code 1; 670 passed, 1 skipped, 1 failed in 72.00s. The sole failure remains the documented dirty-root-sensitive `test_inloop_verification_uses_task_local_delta_not_global_dirty_tree`, which observes legitimate uncommitted control-plane milestone files instead of its mocked task-local delta.
+
+Acceptance criteria:
+- PASS: the generated matrix covers every endpoint and built-in role; endpoints without an explicit public or permission entry fail closed.
+- PASS: cross-organization identifiers remain inaccessible regardless of grants, and resource services retain organization/workspace predicates.
+- PASS: revoked/expired keys and sessions fail on the next request within the documented zero-second application cache bound.
+- PASS: administrative audit records have no public write/update/delete path, ORM mutation is rejected, and secret values are masked before digesting.
+- PASS: API-key plaintext is returned only from create/rotate responses and is absent from database string fields, lookup digests, verifiers, and audit records.
+
+Assumptions:
+- Deployments configure a shared database-backed identity store; the zero-second bound describes application caching and does not override database replication latency outside this single-region component.
+- The bundled deterministic OIDC provider is for local/test assertions. A deployment supplies an `OIDCProvider` implementation that performs issuer, audience, signature, nonce, and time validation before production use.
+- Rate limits are per control-plane process in this foundation; horizontally scaled deployments require a shared limiter while preserving the same dependency boundary.
+
+Known risks:
+- PostgreSQL integration tests remain environment-gated when `VILLANI_TEST_POSTGRES_URL` is absent; full offline PostgreSQL migration rendering and SQLite service behavior passed.
+- Database-level audit immutability against privileged direct SQL requires deployment database permissions or a later database trigger; public APIs expose reads only, and ORM update/delete attempts fail.
+- The unrelated Villani Code dirty-root-sensitive baseline test remains failing while legitimate milestone changes are uncommitted.
+
+Known remaining issues:
+- None within the enterprise identity/RBAC foundation, endpoint policy coverage, key/session revocation, tenant isolation, audit API immutability, or credential-storage guarantees covered by this pass.
+
+Next permitted milestone:
+- Production SAML/SCIM provider integrations, shared distributed rate limiting, broader product work, or later milestones only after an explicit user request. None was started in this pass.
+
+#### 2026-07-12: Final foundational enterprise pass
+
+Status: complete as a release-candidate foundation; not generally available
+
+Changed files and artifacts:
+- Extended the control-plane configuration, models, API dependencies/routes, ingestion, synchronization, bootstrap, object-store selection, lifecycle, packaging, Dockerfile, Compose file, and README. Added governance, encryption, tamper, backup/restore, and structured-metrics services plus Alembic revision `f9a0b1c2d3e4` and focused unit tests. The immediately preceding identity/RBAC files and revision `e8f9a0b1c2d3` remain part of the same uncommitted repository state.
+- Added `deploy/helm/villani-control-plane/**`, deployment/operations/SLO/evaluation/supply-chain/limitations documentation, `.github/workflows/ci.yml` gates, `evaluation/final_gate.py`, `scripts/run-final-scenarios.py`, `scripts/supply-chain-gate.py`, and `tests/final_foundation/test_final_gate.py`.
+- Generated `evaluation/results/final-foundation.json`, `evaluation/results/final-scenarios.json`, and `release/evidence/{sbom.cdx.json,SHA256SUMS,TEST-SIGNATURE.json,supply-chain-report.json,container-scan.sarif}`. The CycloneDX document contains 542 application/library entries; the signature uses an explicitly test-only HMAC key.
+- Corrected Villani Code task-local verification discovery in `state_runtime.py` so a dirty repository root cannot contaminate an isolated attempt's changed-file set.
+
+Architectural decisions:
+- Governance policy and quotas resolve project over workspace over organization. Governance owns per-data-class retention, metadata-only/exclusion controls, configurable redaction/DLP hooks, legal holds, tombstoned deletion with completion evidence, governed export, and region/residency enforcement. Quotas cover runs, events, artifact bytes, model cost, concurrency, workers, exports, and queries with separate soft warnings and hard rejection; usage records carry chargeback tags.
+- Application encryption is envelope-oriented behind a `KeyProvider`; the portable development provider and deterministic fake KMS validate the boundary and rotation metadata. Neither is a production KMS claim. A real cloud KMS/BYOK implementation remains unsupported until provider integration tests exist.
+- Administrative audit events form per-organization SHA-256 chains covering actor, organization, action, target, result, request ID, source-IP classification, timestamp, before/after digests, correction links, and prior hash. Upgrade bootstrap commits legacy zero-hash rows without changing their facts. Finalized run event payload hashes receive a Merkle root; verification is available through the API and `python -m villani_control_plane.tamper`. Corrections append rather than update immutable audit rows.
+- Deployment modes are local-only, hosted-development Compose, self-hosted Helm, documented hybrid, and air-gapped. Air-gapped mode rejects network object storage and OTLP endpoints. Compose/Helm use a separate migration job, readiness/liveness probes, rolling-update/PDB controls, graceful worker shutdown, and forward-only expand/backfill/contract migration rules.
+- Structured process metrics expose JSON and an optional real OpenTelemetry SDK OTLP/HTTP adapter via the `otel` extra; tests use a deterministic fake exporter. Numeric SLOs remain unset where no representative measurement exists. The retained measured baseline is 100,000 PostgreSQL events in 319.061 seconds (313.4 events/second), not an availability, percentile-latency, durability-window, UI-freshness, or capacity claim.
+- The benchmark is separate from production routing and locks fixture agent, cheap/strong models, prompt, verifier, schema, and Python protocol environment. All ten end-to-end scenarios use protocol-faithful deterministic fixtures and evidence references; paid/live models are not required. `evaluation/final_gate.py --live` is documented as opt-in only.
+
+Final evaluation results (20 deterministic fixture runs per strategy):
+- `strong-only`: 16/20 verified successes (80.0%, 95% Wilson CI 58.40-91.93%), false acceptance 0, false rejection 1, cost/accepted 2.5000, wall time 18,000 ms, 20 attempts, 0 escalations, verifier cost 4.0.
+- `cheap-only`: 10/20 (50.0%, CI 29.93-70.07%), false acceptance 1, false rejection 3, cost/accepted 0.8000, wall time 10,000 ms, 20 attempts, 0 escalations, verifier cost 2.4.
+- `cheap-first-escalation`: 16/20 (80.0%, CI 58.40-91.93%), false acceptance 0, false rejection 1, cost/accepted 1.5625, wall time 22,000 ms, 32 attempts, 12 escalations, verifier cost 5.0; escalation added 6 acceptances for 17.0 fixture cost units.
+- `strong-first`: 16/20 (80.0%, CI 58.40-91.93%), false acceptance 0, false rejection 1, cost/accepted 2.5000, wall time 18,400 ms, 20 attempts, 0 escalations, verifier cost 4.0.
+- `adaptive`: 15/20 (75.0%, CI 53.13-88.81%), false acceptance 0, false rejection 2, cost/accepted 1.4667, wall time 17,000 ms, 28 attempts, 8 escalations, verifier cost 4.4. Raw references are in the report. Because every sample is below the locked 30-run minimum, the report sets `savings_claim_supported=false` and makes no savings claim.
+
+Verification and release gates:
+- Villani Code required suite: 671 passed, 1 skipped; the prior dirty-root failure is fixed. Final focused `test_state_runtime.py`: 36 passed.
+- Villani Ops required suite: 830 passed, 1 skipped, 114 deselected. Villani Agentd: 46 passed. Villani distribution: 9 passed. Root closed-loop integration: 6 passed.
+- Control plane final required suite: 73 passed, 6 PostgreSQL-gated skips, 43 warnings in 11.72 seconds. PostgreSQL-targeted Alembic offline SQL rendered every revision through `f9a0b1c2d3e4`. Generated authorization coverage now contains all 83 registered routes (73 protected, 10 explicit public/one-time paths) across all nine built-in roles.
+- Final foundation gate: 3 passed. All ten required scenarios are `passed` in `evaluation/results/final-scenarios.json`. Backup/restore integrity, deletion/tamper workflow, legal hold, quota precedence, fake KMS, tenant isolation/exfiltration denial, lease reassignment, approval, rollback, and migration/deployment assertions passed.
+- Flight Recorder: 20 files/102 tests passed; typecheck, build, and format check passed. Shared run model: 1 file/3 tests, typecheck, build, and source Prettier check passed (the package has no format script). Villani web: 3 files/5 unit tests and 10 Chromium E2E tests passed; typecheck, build, and format check passed.
+- Production npm dependency audits for Flight Recorder, shared run model, and web each reported 0 vulnerabilities. Fixture secret scan reported 0 findings. `pip check` passed. Ruff check/format, compileall, workflow YAML parsing, and `git diff --check` passed.
+- Docker Compose validation passed. The final non-root Alpine 3.23 control-plane image built and imported successfully. Docker Scout indexed 109 packages and reported 0 high/critical findings; the zero-result SARIF is retained. Its post-scan Windows cache cleanup warning did not affect the report or exit status.
+- The local Windows distribution smoke passed: Bun standalone Flight Recorder compile, four wheel builds, isolated installs and CLI/service lifecycle smoke, release archive/checksum generation, extraction, and binary smoke. The three-OS package matrix is configured for Ubuntu, macOS, and Windows; Linux/macOS jobs were not executed in this local Windows workspace.
+
+Remaining risks and unsupported integrations:
+- This is not a GA declaration and no compliance certification is claimed. Production SAML and SCIM providers, a provider-tested cloud KMS/BYOK adapter, and deployment-supplied production OIDC verification remain unsupported. The OTLP adapter was unit-boundary checked but not exercised against an external collector in this pass.
+- PostgreSQL integration and the 100,000-event load smoke remain environment-gated without `VILLANI_TEST_POSTGRES_URL`; offline PostgreSQL migration rendering and SQLite behavior passed. The 2026-07-11 PostgreSQL throughput artifact is the only retained load measurement.
+- Process-local rate limiting and metric accumulation are not distributed. Database-level audit protection against privileged direct SQL depends on deployment database roles/triggers; public APIs expose no audit mutation and ORM update/delete is rejected.
+- Vulnerability results age with the scanner database and must be refreshed for release. The test-key HMAC is not a production signing identity. Linux/macOS package smoke is configured but not locally re-executed here. Hybrid and Kubernetes assets are foundation templates, not proof of every production topology.
+- Helm was not installed on this host, so chart structure and required templates were covered by repository tests but `helm template` was not executed locally.
+- Deterministic fixtures do not establish live-provider quality, cost, availability, or latency. SLO production windows remain unmeasured and therefore unset.
+
+Next permitted milestone:
+- None. The requested final foundational enterprise pass stopped here; no unrelated product feature or later milestone was started.
