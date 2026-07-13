@@ -1316,6 +1316,90 @@ def build_controller(
         ),
         backend_config=verifier_backend,
     )
+    verifier_routes = verifier_config.get("routes")
+    if isinstance(verifier_routes, list) and verifier_routes:
+        from villani_ops.closed_loop.verifier_routing import (
+            VerifierCascade,
+            VerifierPolicyEntry,
+            VerifierRoute,
+            VerifierRoutingPolicy,
+        )
+
+        configured_routes: list[VerifierRoute] = []
+        run_currencies = {
+            backend.currency
+            for backend in backends.values()
+            if backend.enabled
+            and ("classification" in backend.roles or "coding" in backend.roles)
+        }
+        for index, route_value in enumerate(verifier_routes):
+            if not isinstance(route_value, Mapping):
+                _usage_error(f"verifier.routes[{index}] must be a mapping")
+            route_backend_name = str(route_value.get("backend") or "")
+            route_backend = backends.get(route_backend_name)
+            if route_backend is None:
+                _usage_error(
+                    f"verifier route backend {route_backend_name!r} is not configured"
+                )
+            route_no_llm = bool(route_value.get("no_llm", False))
+            if not route_no_llm:
+                try:
+                    validate_closed_loop_backend(route_backend)
+                except ProviderConfigurationError as error:
+                    _usage_error(f"verifier route configuration error: {error}")
+                if run_currencies and route_backend.currency not in run_currencies:
+                    _usage_error(
+                        "enabled classification/coding/verifier backends must use one currency per run; "
+                        "currency conversion is not performed"
+                    )
+            entry = VerifierPolicyEntry.model_validate(
+                {
+                    "backend": route_backend_name,
+                    "model": route_value.get("model") or route_backend.model,
+                    "capability_score": route_value.get(
+                        "capability_score", route_backend.capability_score
+                    ),
+                    "price_per_call_usd": route_value.get(
+                        "price_per_call_usd", route_backend.fixed_cost_per_attempt
+                    ),
+                    "expected_latency_ms": route_value.get("expected_latency_ms"),
+                    "authority": route_value.get("authority", "acceptance"),
+                    "available": route_value.get("available", route_backend.enabled),
+                }
+            )
+            configured_routes.append(
+                VerifierRoute(
+                    entry=entry,
+                    verifier=VillaniVerifierAdapter(
+                        invocation=str(route_value.get("invocation") or invocation),
+                        no_llm=route_no_llm,
+                        backend=route_backend_name,
+                        timeout_seconds=int(
+                            route_value.get("timeout_seconds")
+                            or verifier_config.get("timeout_seconds")
+                            or 180
+                        ),
+                        max_tool_calls=int(
+                            route_value.get("max_tool_calls")
+                            or verifier_config.get("max_tool_calls")
+                            or 12
+                        ),
+                        base_url=str(
+                            route_value.get("base_url") or route_backend.base_url or ""
+                        )
+                        or None,
+                        model=str(route_value.get("model") or route_backend.model),
+                        backend_config=route_backend,
+                    ),
+                )
+            )
+        policy_value = verifier_config.get("policy")
+        verifier_impl = VerifierCascade(
+            configured_routes,
+            VerifierRoutingPolicy.model_validate(
+                policy_value if isinstance(policy_value, Mapping) else {}
+            ),
+        )
     graph_value = configuration.get("verification_graph")
     signer = None
     if isinstance(graph_value, Mapping):

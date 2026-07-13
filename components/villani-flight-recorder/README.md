@@ -2,6 +2,10 @@
 
 Flight Recorder consumes the same `@villani/ui` monochrome tokens as Villani Web. Its replay and
 session-browser output remain self-contained without establishing a separate light-mode theme.
+Canonical connected replay uses `@villani/run-model` to render the same synchronized run truth as
+Web, including raw/effective classification, verifier authority and cost, candidate eligibility,
+file activity, redaction metadata, and withheld-artifact notices. The release gate reconciles that
+derived model with the API before Playwright captures the replay surfaces.
 
 Villani Flight Recorder turns local coding-agent transcripts into a searchable local session browser and static replay reports.
 

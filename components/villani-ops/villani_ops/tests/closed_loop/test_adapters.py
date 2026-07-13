@@ -26,6 +26,7 @@ from villani_ops.closed_loop.interfaces import (
 )
 from villani_ops.closed_loop.protocol import AttemptSnapshot, VerificationSnapshot
 from villani_ops.core.backend import Backend
+from villani_ops.materialize import apply_patch_safely
 from villani_ops.runners.base import RunnerContext, RunnerResult
 from villani_ops.tests.closed_loop.fakes import (
     FakeClassifier,
@@ -227,7 +228,9 @@ class InjectedVillaniCodeRunner:
             model_requests=1,
             total_tool_calls=2,
             tool_calls_by_name={"exec_command": 1, "Write": 1},
-            total_file_writes=1 if value is not None else 0,
+            total_file_writes=int(
+                step.get("reported_file_writes", 1 if value is not None else 0)
+            ),
             commands_executed=1,
             token_accounting_status="verified",
             telemetry={"Authorization": f"Bearer {secret}" if secret else None},
@@ -390,6 +393,13 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
     assert worktree_metadata["retained"] is False
     assert worktree_metadata["cleanup_status"] == "removed"
     assert (attempt_dir / "patch.diff").read_text(encoding="utf-8").strip()
+    materialization = json.loads(
+        (result.run_directory / "materialization.json").read_text(encoding="utf-8")
+    )
+    assert materialization["changed_files"] == ["example.txt"]
+    assert materialization["metadata"]["safe_apply"]["changed_files"] == [
+        "example.txt"
+    ]
     assert runner.calls[0].env["VILLANI_RUN_ID"] == result.run_id
     assert runner.calls[0].env["VILLANI_TRACE_ID"].startswith("trace_")
     assert runner.calls[0].env["VILLANI_ATTEMPT_ID"] == "attempt_001"
@@ -398,6 +408,37 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
         result.run_directory / "verification" / "raw" / "attempt_001.json"
     ).is_file()
     assert not (tmp_path / ".villani-ops" / "orchestrations").exists()
+
+
+def test_materialization_preserves_captured_files_when_apply_helper_omits_names(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
+
+    def apply_without_names(repo_path: Path, patch_path: Path) -> dict[str, Any]:
+        result = apply_patch_safely(repo_path, patch_path)
+        result["changed_files"] = []
+        return result
+
+    controller = _controller(
+        [_attempt_policy(), policy("select")],
+        runner,
+        None,
+        materializer=PatchMaterializerAdapter(apply_service=apply_without_names),
+    )
+
+    result = controller.run(_request(tmp_path, repo))
+
+    assert result.terminal_state == "COMPLETED"
+    materialization = json.loads(
+        (result.run_directory / "materialization.json").read_text(encoding="utf-8")
+    )
+    assert materialization["changed_files"] == ["example.txt"]
+    assert (
+        materialization["metadata"]["safe_apply"]["changed_files_source"]
+        == "selected_attempt_git_capture"
+    )
 
 
 def test_two_eligible_candidates_are_ranked_deterministically_by_evidence(
@@ -692,11 +733,77 @@ def test_canonical_events_include_translated_model_tool_and_command_events(
     assert translated["payload"]["source_event_id"].startswith("model-")
 
 
+def test_controller_configured_repository_validation_is_canonical_evidence(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
+    controller = _controller(
+        [_attempt_policy(), policy("select")], runner, _accepted_raw
+    )
+    request = _request(
+        tmp_path,
+        repo,
+        policy_configuration={
+            "version": "m4_test",
+            "repository_validation_commands": [
+                {
+                    "validation_id": "git_diff_check",
+                    "argv": ["git", "diff", "--check"],
+                    "timeout_seconds": 10,
+                }
+            ],
+        },
+    )
+
+    result = controller.run(request)
+
+    events = read_jsonl_tolerant(result.run_directory / "events.jsonl")
+    validation_events = [
+        event
+        for event in events
+        if event["event_type"] in {"command_completed", "command_failed"}
+        and event["payload"].get("command_role") == "repository_validation"
+        and event["source"] == "villani_ops_verifier"
+    ]
+    assert len(validation_events) == 1
+    assert validation_events[0]["event_type"] == "command_completed"
+    assert validation_events[0]["payload"]["argv"] == ["git", "diff", "--check"]
+    assert validation_events[0]["payload"]["exit_code"] == 0
+    assert validation_events[0]["payload"]["validation_id"] == "git_diff_check"
+
+
+def test_structured_write_event_repairs_underreported_runner_write_count(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner(
+        [{"value": "changed\n", "reported_file_writes": 0}]
+    )
+    controller = _controller(
+        [_attempt_policy(), policy("select")], runner, _accepted_raw
+    )
+
+    result = controller.run(_request(tmp_path, repo))
+
+    attempt = json.loads(
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    events = read_jsonl_tolerant(result.run_directory / "events.jsonl")
+    completion = next(
+        event for event in events if event["event_type"] == "attempt_completed"
+    )
+    assert attempt["metadata"]["total_file_writes"] >= 1
+    assert completion["payload"]["file_write_count"] >= 1
+
+
 def test_runner_configuration_secret_never_appears_under_run_directory(
     tmp_path: Path,
 ) -> None:
     repo = _tiny_repo(tmp_path)
-    secret = "sk-m4-super-secret-value"
+    secret = "registered-test-secret-value"
     runner = InjectedVillaniCodeRunner([{"value": "changed\n", "secret": secret}])
     controller = _controller(
         [_attempt_policy(), policy("select")],

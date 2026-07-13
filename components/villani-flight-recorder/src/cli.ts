@@ -474,8 +474,9 @@ program
     const idx = await requireIndex(o.indexDir);
     if (!idx) return;
     const out = o.out ?? path.resolve("villani-flight-recorder-index.html");
-    const html = `<!doctype html><meta charset="utf-8"><title>Villani Flight Recorder Index</title><style>body{font-family:system-ui;margin:2rem;line-height:1.45}code{background:#eef;padding:.15rem .3rem;border-radius:4px}</style><h1>Villani Flight Recorder</h1><p>${idx.sessions.length} sessions · ${idx.taskSegments.length} task segments · ${idx.repos.length} repos · ${idx.sessions.reduce((n, s) => n + s.failedCommandCount, 0)} failed commands</p><h2>Recent sessions</h2><ul>${idx.sessions.map((s) => `<li><b>${s.id}</b> ${s.providerLabel} <code>vfr replay --session ${s.id}</code></li>`).join("")}</ul><h2>Likely task segments</h2><ul>${idx.taskSegments.map((t) => `<li><b>${t.title}</b> ${t.id} <code>vfr replay --segment ${t.id}</code></li>`).join("")}</ul><h2>Repos</h2><ul>${idx.repos.map((r) => `<li><b>${r.name}</b> ${r.root} <code>vfr replay --repo ${r.root}</code></li>`).join("")}</ul>`;
-    await fs.writeFile(out, html);
+    const html = `<!doctype html><meta charset="utf-8"><title>Villani Flight Recorder Index</title><style>body{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;margin:2rem;line-height:1.45;background:#050505;color:#f2f2f2}code{background:#0d0d0d;padding:.15rem .3rem;border-radius:4px}</style><h1>Villani Flight Recorder</h1><p>${idx.sessions.length} sessions · ${idx.taskSegments.length} task segments · ${idx.repos.length} repos · ${idx.sessions.reduce((n, s) => n + s.failedCommandCount, 0)} failed commands</p><h2>Recent sessions</h2><ul>${idx.sessions.map((s) => `<li><b>${s.id}</b> ${s.providerLabel} <code>vfr replay --session ${s.id}</code></li>`).join("")}</ul><h2>Likely task segments</h2><ul>${idx.taskSegments.map((t) => `<li><b>${t.title}</b> ${t.id} <code>vfr replay --segment ${t.id}</code></li>`).join("")}</ul><h2>Repos</h2><ul>${idx.repos.map((r) => `<li><b>${r.name}</b> ${r.root} <code>vfr replay --repo ${r.root}</code></li>`).join("")}</ul>`;
+    const sharedHtml = renderSessionBrowser(idx, { browserOut: out });
+    await fs.writeFile(out, sharedHtml);
     console.log(
       `Session browser generated:\n${out}\n\nOpen this file in your browser.`,
     );

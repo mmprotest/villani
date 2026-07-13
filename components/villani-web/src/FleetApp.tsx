@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { maskSensitive } from "@villani/run-model";
 import { RunClient } from "./api";
+import { ProductShell } from "./ProductShell";
 
 type Filters = Record<string, string | number | string[] | undefined>;
 type RunRow = Record<string, unknown>;
@@ -206,16 +207,16 @@ export default function FleetApp() {
   }
   const known = metrics.verified_success_rate ?? {};
   return (
-    <>
-      <nav aria-label="Fleet sections">
-        <a href="#overview">Overview</a>
-        <a href="#runs">Runs</a>
-        <a href="#comparisons">Comparisons</a>
-        <a href="#alerts">Alerts</a>
-        <a href="#review">Review</a>
-        <a href="#clusters">Failures</a>
-      </nav>
-      <main id="main">
+    <ProductShell
+      surface="fleet"
+      title="FLEET CONTROL ROOM"
+      detail={loading ? "QUERY / ACTIVE" : `${runs.length} ROWS / PAGE`}
+      status={error ? "failed" : loading ? "running" : "succeeded"}
+      statusText={
+        error ? "API / ERROR" : loading ? "FLEET / LOADING" : "FLEET / SYNCHRONIZED"
+      }
+    >
+      <div className="fleet-page">
         <header className="fleet-header">
           <p className="kicker">Structured fleet observability</p>
           <div className="title-row">
@@ -558,7 +559,7 @@ export default function FleetApp() {
         <footer>
           <pre>{JSON.stringify(maskSensitive({ filters }), null, 2)}</pre>
         </footer>
-      </main>
-    </>
+      </div>
+    </ProductShell>
   );
 }

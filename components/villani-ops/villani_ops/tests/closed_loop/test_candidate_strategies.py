@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import threading
 import time
 from dataclasses import replace
@@ -10,6 +11,7 @@ from typing import Any
 import pytest
 
 from villani_ops.closed_loop.candidate_strategies import (
+    acknowledged_diversity_summary,
     CandidateDimensions,
     CandidateObservation,
     CandidateScheduler,
@@ -18,6 +20,7 @@ from villani_ops.closed_loop.candidate_strategies import (
     build_candidate_plans,
     diversity_summary,
 )
+from villani_ops.runners.base import CandidateExecutionAcknowledgement
 from villani_ops.closed_loop.controller import ClosedLoopController
 from villani_ops.closed_loop.interfaces import ClosedLoopRunRequest
 from villani_ops.tests.closed_loop.fakes import (
@@ -34,6 +37,97 @@ from villani_ops.tests.closed_loop.fakes import (
 
 
 BASELINE = "a" * 64
+
+
+def _execution_acknowledgement(
+    *, prompt_strategy: str = "direct", requested_seed: int | None = None
+) -> CandidateExecutionAcknowledgement:
+    requested = {
+        "agent": "villani-code",
+        "backend_name": "fixture",
+        "model": "fixture-model",
+        "prompt_strategy_id": prompt_strategy,
+        "seed": requested_seed,
+    }
+    applied = {
+        "agent": "villani-code",
+        "backend_name": "fixture",
+        "model": "fixture-model",
+        "prompt_strategy_id": prompt_strategy,
+    }
+    digest = hashlib.sha256(
+        json.dumps(applied, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return CandidateExecutionAcknowledgement.model_validate(
+        {
+            "candidate_id": "attempt_001",
+            "requested_dimensions": requested,
+            "applied_dimensions": applied,
+            "unsupported_dimensions": (
+                {"seed": requested_seed} if requested_seed is not None else {}
+            ),
+            "runner_acknowledged": True,
+            "rendered_prompt_digest": "b" * 64,
+            "effective_configuration_digest": digest,
+            "acknowledgement_timestamp": "2026-07-13T00:00:00Z",
+        }
+    )
+
+
+def test_unsupported_seed_is_audited_but_does_not_change_effective_fingerprint() -> None:
+    first = _execution_acknowledgement(requested_seed=7)
+    second = _execution_acknowledgement(requested_seed=99)
+    assert first.requested_dimensions != second.requested_dimensions
+    assert first.unsupported_dimensions == {"seed": 7}
+    assert second.unsupported_dimensions == {"seed": 99}
+    assert (
+        first.effective_configuration_digest
+        == second.effective_configuration_digest
+    )
+
+
+def test_acknowledged_prompt_strategies_have_distinct_effective_fingerprints() -> None:
+    direct = _execution_acknowledgement(prompt_strategy="direct")
+    test_first = _execution_acknowledgement(prompt_strategy="test_first")
+    assert direct.runner_acknowledged is True
+    assert test_first.runner_acknowledged is True
+    assert (
+        direct.effective_configuration_digest
+        != test_first.effective_configuration_digest
+    )
+
+
+def test_unacknowledged_execution_fingerprint_never_counts_as_diversity() -> None:
+    acknowledged = _execution_acknowledgement(prompt_strategy="direct")
+    other = _execution_acknowledgement(prompt_strategy="test_first")
+    records = [
+        {
+            "metadata": {
+                "runner_acknowledged_candidate_configuration": True,
+                "effective_configuration_sha256": (
+                    acknowledged.effective_configuration_digest
+                ),
+            }
+        },
+        {
+            "metadata": {
+                "runner_acknowledged_candidate_configuration": False,
+                "effective_configuration_sha256": other.effective_configuration_digest,
+            }
+        },
+    ]
+
+    claimed, distinct = acknowledged_diversity_summary(records)
+
+    assert claimed is False
+    assert distinct == 1
+
+
+def test_malformed_effective_configuration_digest_is_rejected() -> None:
+    document = _execution_acknowledgement().model_dump(mode="json")
+    document["effective_configuration_digest"] = "c" * 64
+    with pytest.raises(ValueError, match="does not match applied dimensions"):
+        CandidateExecutionAcknowledgement.model_validate(document)
 
 
 def _configuration(**updates: Any) -> ReliabilityStrategyConfiguration:
@@ -395,3 +489,65 @@ def test_controller_parallel_comparison_persists_dimensions_and_selects_only_eli
     )
     assert accounting["actual_savings_usd"] is None
     assert accounting["maximum_observed_concurrency"] == 2
+
+
+def test_controller_diverse_comparison_runs_sequentially_when_parallelism_is_one(
+    tmp_path: Path,
+) -> None:
+    """A concurrency cap of one must not collapse a diverse comparison to one attempt."""
+
+    option = backend("sequential-diverse")
+    runner = _ConcurrentRunner()
+    controller = ClosedLoopController(
+        classifier=FakeClassifier(),
+        policy_engine=type(
+            "OneDecisionPolicy",
+            (),
+            {"decide": lambda self, context: policy("attempt", backend_option=option)},
+        )(),
+        attempt_runner=runner,
+        verifier=_AcceptingVerifier(),
+        selector=FakeSelector(selected_attempt_id="attempt_001"),
+        materializer=FakeMaterializer(),
+        now=FixedNow(),
+        id_factory=StableIds(),
+    )
+    result = controller.run(
+        ClosedLoopRunRequest(
+            task="one immutable task",
+            repository_path=tmp_path / "repository",
+            success_criteria="two sequential candidates verify",
+            runs_root=tmp_path / "runs",
+            max_attempts=2,
+            policy_configuration={
+                "candidate_reliability": {
+                    "strategy": "parallel_diverse_candidates",
+                    "stop_policy": "compare",
+                    "accepted_candidate_requirement": 2,
+                    "maximum_candidates": 2,
+                    "maximum_parallelism": 1,
+                    "candidates": [
+                        {"prompt_strategy_id": "direct"},
+                        {"prompt_strategy_id": "plan-first"},
+                    ],
+                }
+            },
+        )
+    )
+
+    assert result.terminal_state == "COMPLETED"
+    assert runner.maximum == 1
+    selection = json.loads((result.run_directory / "selection.json").read_text())
+    assert selection["eligible_candidate_ids"] == ["attempt_001", "attempt_002"]
+    attempts = [
+        json.loads(
+            (
+                result.run_directory / "attempts" / attempt_id / "attempt.json"
+            ).read_text()
+        )
+        for attempt_id in selection["eligible_candidate_ids"]
+    ]
+    assert (
+        len({item["metadata"]["effective_configuration_sha256"] for item in attempts})
+        == 2
+    )

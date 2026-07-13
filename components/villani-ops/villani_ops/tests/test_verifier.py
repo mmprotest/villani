@@ -12,6 +12,8 @@ from villani_ops.verifier.extract import (
     classify_recovered,
 )
 from villani_ops.verifier.deterministic import deterministic_result
+from villani_ops.verifier.errors import VerifierSchemaError
+from villani_ops.verifier.service import _subprocess_invocation_status, execute_verifier
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -137,11 +139,64 @@ def test_cli_missing_llm_config_errors(tmp_path):
     obj = json.loads(res.stdout)
     assert obj["verdict"] == "error" and obj["result"] is None
     assert obj["recommendedAction"] == "inspect_manually"
+    assert obj["invocationStatus"] == "subprocess_failure"
     assert (
         "missing verifier backend" in obj["reason"]
         or "missing verifier model" in obj["reason"]
         or "base URL" in obj["reason"]
     )
+
+
+def test_nested_verifier_status_preserves_valid_rejection_and_fail_closed_errors():
+    assert (
+        _subprocess_invocation_status(
+            {"verdict": "failure", "result": 0},
+            1,
+        )
+        == "completed"
+    )
+    assert (
+        _subprocess_invocation_status(
+            {
+                "verdict": "error",
+                "result": None,
+                "invocationStatus": "malformed_output",
+            },
+            3,
+        )
+        == "malformed_output"
+    )
+    assert (
+        _subprocess_invocation_status(
+            {
+                "verdict": "error",
+                "result": None,
+                "invocationStatus": "timeout",
+            },
+            3,
+        )
+        == "timeout"
+    )
+
+
+def test_in_process_schema_error_is_reported_as_malformed_output(tmp_path):
+    def malformed(**_kwargs):
+        raise VerifierSchemaError("invalid JSON after repair")
+
+    execution = execute_verifier(
+        debug_root=FIX / "verifier_success",
+        resolved_trace_dir=FIX / "verifier_success",
+        repo_dir=tmp_path,
+        workspace=tmp_path,
+        out=tmp_path / "verification.json",
+        trace_dir=tmp_path / "trace",
+        verifier=malformed,
+        invocation="in_process",
+    )
+
+    assert execution.invocation_status == "malformed_output"
+    assert execution.result["verdict"] == "error"
+    assert "malformed verifier output" in execution.result["reason"]
 
 
 def test_validation_before_cleanup_categorization_and_no_llm():

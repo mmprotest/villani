@@ -7,6 +7,8 @@
 .ruff_cache
 .test-temp
 **/.test-temp
+.test-temp*
+**/.test-temp*
 .venv
 **/__pycache__
 **/*.pyc
@@ -24,4 +26,6 @@ components/villani-control-plane/.pytest_cache
 components/villani-control-plane/.ruff_cache
 components/villani-control-plane/tests
 components/villani-control-plane/.test-temp
+components/villani-control-plane/.test-temp*
+components/villani-ops/.test-temp*
 components/villani-control-plane/**/__pycache__

@@ -3,13 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./index.js",
+    ".": {"types": "./index.d.ts", "import": "./index.js"},
+    "./react": {"types": "./react.d.ts", "import": "./react.js"},
     "./theme.css": "./theme.css"
   },
-  "files": ["index.js", "index.d.ts", "theme.css"],
+  "files": ["index.js", "index.d.ts", "react.js", "react.d.ts", "theme-source.js", "theme.css"],
   "engines": {"node": ">=20"},
   "scripts": {
-    "build": "node --check index.js",
+    "build": "node scripts/build.mjs && node --check index.js && node --check react.js",
     "test": "node --test test/theme.test.js"
-  }
+  },
+  "peerDependencies": {"react": ">=18"}
 }

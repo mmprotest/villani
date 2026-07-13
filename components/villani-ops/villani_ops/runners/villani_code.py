@@ -8,7 +8,7 @@ import time
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from .base import RunnerContext, RunnerResult
+from .base import CandidateExecutionAcknowledgement, RunnerContext, RunnerResult
 from .villani_code_debug import write_runner_telemetry
 from villani_ops.subprocess_utils import resolve_command_prefix
 from villani_ops.providers import villani_code_provider
@@ -77,25 +77,28 @@ class VillaniCodeRunner:
         telemetry_path = Path(context.run_dir) / "runner_telemetry.json"
         prompt_path = Path(context.run_dir) / "villani_code_prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
+        acknowledgement = CandidateExecutionAcknowledgement(
+            candidate_id=context.attempt_id,
+            requested_dimensions=requested,
+            applied_dimensions=applied,
+            unsupported_dimensions=unsupported,
+            rejected_dimensions={},
+            rendered_prompt_digest=prompt_digest,
+            effective_configuration_digest=effective_digest,
+            runner_acknowledged=True,
+            acknowledgement_timestamp=datetime.now(timezone.utc),
+            provider_acknowledgement={
+                "status": "not_reported",
+                "provider": context.backend.provider,
+                "model": context.backend.model,
+                "reason": (
+                    "The runner applied prompt-local dimensions; the provider did "
+                    "not return an independent sampling-configuration acknowledgement."
+                ),
+            },
+        )
         (Path(context.run_dir) / "effective_candidate_configuration.json").write_text(
-            json.dumps(
-                {
-                    "candidate_id": context.attempt_id,
-                    "requested_dimensions": requested,
-                    "applied_dimensions": applied,
-                    "unsupported_dimensions": unsupported,
-                    "rejected_dimensions": {},
-                    "effective_prompt_digest": prompt_digest,
-                    "effective_configuration_digest": effective_digest,
-                    "runner_acknowledged": True,
-                    "acknowledgement_timestamp": datetime.now(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z"),
-                    "provider_acknowledgement": None,
-                },
-                indent=2,
-                sort_keys=True,
-            ),
+            acknowledgement.model_dump_json(indent=2),
             encoding="utf-8",
         )
         safe_inline_limit = int(

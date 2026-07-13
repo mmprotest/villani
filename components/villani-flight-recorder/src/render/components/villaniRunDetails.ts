@@ -30,6 +30,27 @@ const artifactList = (paths: Record<string, string | null>) =>
     )
     .join("")}</ul>`;
 
+function classificationAudit(run: VillaniRunData) {
+  const metadata = (run.classification?.metadata ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const raw = metadata.raw_classification ?? run.classification ?? null;
+  const effective =
+    metadata.effective_classification ?? run.classification ?? null;
+  const adjustments = Array.isArray(metadata.classification_adjustments)
+    ? metadata.classification_adjustments
+    : [];
+  const rows = adjustments
+    .map((item) => item as Record<string, unknown>)
+    .map(
+      (adjustment) =>
+        `<li>${escapeHtml(text(adjustment.field))}: ${escapeHtml(text(adjustment.before))} → ${escapeHtml(text(adjustment.after))}<span>${escapeHtml(text(adjustment.rule_id))} / ${escapeHtml(text(adjustment.reason))} / ${escapeHtml(text(adjustment.authority))}</span></li>`,
+    )
+    .join("");
+  return `<section class="panel villani-panel" data-testid="classification-adjustment"><div class="panel-head"><div><h2>Classification / raw → effective</h2><p>Immutable classifier output and the auditable value used for routing.</p></div><span class="replay-chip">${adjustments.length} adjustment${adjustments.length === 1 ? "" : "s"}</span></div><div class="classification-audit"><div><h4>Raw / immutable</h4><pre>${json(raw)}</pre></div><div><h4>Effective / routing</h4><pre>${json(effective)}</pre></div></div><h4>Adjustment records</h4>${rows ? `<ol class="adjustment-list">${rows}</ol>` : `<p>No semantic classification adjustment applied.</p>`}</section>`;
+}
+
 function policyDetails(run: VillaniRunData) {
   if (!run.policyDecisions.length)
     return `<section class="panel villani-panel"><h2>Policy decisions</h2><p>Not captured</p></section>`;
@@ -122,7 +143,13 @@ function aggregateDetails(run: VillaniRunData) {
   return `<section class="panel villani-panel"><div class="panel-head"><div><h2>Run evidence summary</h2><p>Verbatim task, classification, aggregate telemetry, selection, and materialization.</p></div></div><dl class="compact-facts aggregate-facts"><div><dt>Task</dt><dd>${escapeHtml(run.task?.instruction ?? "Not captured")}</dd></div><div><dt>Success criteria</dt><dd>${escapeHtml(run.task?.success_criteria ?? "Not captured")}</dd></div><div><dt>Classification</dt><dd>${escapeHtml(run.classification ? `${run.classification.category}; ${run.classification.difficulty}; ${run.classification.risk}; confidence ${run.classification.confidence}` : "Not captured")}</dd></div><div><dt>Cost</dt><dd>${escapeHtml(usd(aggregate?.costUsd, aggregate?.currency))} (${escapeHtml(aggregate?.costAccountingStatus ?? "unknown")})</dd></div><div><dt>Tokens</dt><dd>input ${escapeHtml(number(aggregate?.inputTokens))}, output ${escapeHtml(number(aggregate?.outputTokens))}</dd></div><div><dt>Duration</dt><dd>${escapeHtml(duration(aggregate?.durationMs))}</dd></div><div><dt>Model calls</dt><dd>${escapeHtml(number(aggregate?.modelCalls, "Not captured"))}</dd></div><div><dt>Tool calls</dt><dd>${escapeHtml(number(aggregate?.toolCalls, "Not captured"))}</dd></div><div><dt>Commands</dt><dd>${escapeHtml(number(aggregate?.commands, "Not captured"))}</dd></div><div><dt>File reads</dt><dd>${escapeHtml(number(aggregate?.fileReads, "Not captured"))}</dd></div><div><dt>File writes</dt><dd>${escapeHtml(number(aggregate?.fileWrites, "Not captured"))}</dd></div><div><dt>Selected attempt</dt><dd>${escapeHtml(run.manifest?.selected_attempt_id ?? "Not selected")}</dd></div><div><dt>Materialization</dt><dd>${escapeHtml(run.materialization?.status ?? "Not captured")}</dd></div></dl><details><summary>Stage metrics</summary><pre>${json(run.manifest?.stage_metrics)}</pre></details><details><summary>Verification results</summary><pre>${json(run.verifications)}</pre></details><details><summary>Materialization</summary><pre>${json(run.materialization)}</pre></details><details><summary>Canonical artifact paths</summary>${artifactList(run.artifactPaths)}</details></section>`;
 }
 
+function costAudit(run: VillaniRunData) {
+  const coding = run.aggregate?.stageMetrics?.coding;
+  const verification = run.aggregate?.stageMetrics?.verification;
+  return `<section class="panel villani-panel" data-testid="cost-accounting"><div class="panel-head"><div><h2>Cost / token accounting</h2><p>Coding and verification remain separate; totals are not inferred when accounting is unknown.</p></div></div><dl class="compact-facts"><div><dt>Coding cost</dt><dd>${escapeHtml(usd(coding?.cost, run.aggregate?.currency))} (${escapeHtml(coding?.cost_accounting_status ?? "unknown")})</dd></div><div><dt>Verifier cost</dt><dd>${escapeHtml(usd(verification?.cost, run.aggregate?.currency))} (${escapeHtml(verification?.cost_accounting_status ?? "unknown")})</dd></div><div><dt>Total cost</dt><dd>${escapeHtml(usd(run.aggregate?.costUsd, run.aggregate?.currency))} (${escapeHtml(run.aggregate?.costAccountingStatus ?? "unknown")})</dd></div><div><dt>Total tokens</dt><dd>input ${escapeHtml(number(run.aggregate?.inputTokens))} / output ${escapeHtml(number(run.aggregate?.outputTokens))}</dd></div></dl></section>`;
+}
+
 export function villaniRunDetails(run: VillaniRunData): string {
   if (run.corruptReason) return "";
-  return `<div class="villani-details">${aggregateDetails(run)}${policyDetails(run)}${candidateComparison(run)}${attemptDetails(run)}</div>`;
+  return `<div class="villani-details"><div id="evidence-panel" data-testid="evidence-panel">${aggregateDetails(run)}</div>${costAudit(run)}${classificationAudit(run)}${policyDetails(run)}<div id="candidate-comparison" data-testid="candidate-comparison">${candidateComparison(run)}</div><div id="file-activity" data-testid="file-activity">${attemptDetails(run)}</div></div>`;
 }

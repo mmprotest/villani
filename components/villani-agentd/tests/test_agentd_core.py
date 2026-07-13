@@ -29,7 +29,13 @@ from villani_agentd.config import AgentdPaths, Limits, ServerConfig
 from villani_agentd.lifecycle import start_background, stop_background, write_token
 from villani_agentd.process import CapturedStream, ProcessResult, run_process
 from villani_agentd.server import AgentdHTTPServer, serve
-from villani_agentd.spool import CollisionError, LimitError, SQLiteSpool, SpoolError
+from villani_agentd.spool import (
+    ArtifactWithheldError,
+    CollisionError,
+    LimitError,
+    SQLiteSpool,
+    SpoolError,
+)
 from villani_agentd.structured_log import StructuredLogger
 from villani_ops.closed_loop.protocol_v2 import ResourceV2, TelemetryEnvelopeV2
 from villani_ops.closed_loop.event_writer import EventWriter
@@ -363,6 +369,75 @@ def test_artifact_digest_and_size_are_verified_and_content_is_addressed(paths: A
     mismatch["digest"]["value"] = "0" * 64
     with pytest.raises(SpoolError, match="digest mismatch"):
         spool.register_artifact("run_1", mismatch, content)
+
+
+def test_artifact_delivery_waits_for_its_run_events(paths: AgentdPaths) -> None:
+    spool = SQLiteSpool(paths, Limits())
+    spool.register_run("run_1", "trace_1", _now().isoformat())
+    spool.ingest_events([_event(1)])
+    content = b"safe artifact"
+    digest = hashlib.sha256(content).hexdigest()
+    spool.register_artifact(
+        "run_1",
+        {
+            "schema_version": "villani.artifact_descriptor.v2",
+            "artifact_id": "artifact_causal",
+            "digest": {"algorithm": "sha256", "value": digest},
+            "size_bytes": len(content),
+            "media_type": "text/plain",
+            "logical_role": "release.safe",
+            "sensitivity": "internal",
+            "retention_class": "run",
+            "encryption_status": "unencrypted",
+            "storage_reference": None,
+            "provenance_status": "recorded",
+            "attributes": {},
+        },
+        content,
+    )
+
+    assert spool.pending_artifacts(10, _now().isoformat()) == []
+    spool.acknowledge_events(["evt_1"])
+    pending = spool.pending_artifacts(10, _now().isoformat())
+    assert [row["artifact_id"] for row in pending] == ["artifact_causal"]
+
+
+def test_unsafe_artifact_is_withheld_and_only_safe_notice_is_spooled(
+    paths: AgentdPaths,
+) -> None:
+    spool = SQLiteSpool(paths, Limits())
+    spool.register_run("run_1", "trace_local_1", _now().isoformat())
+    content = b"Authorization: Bearer abcdefghijklmnop"
+    digest = hashlib.sha256(content).hexdigest()
+    descriptor = {
+        "schema_version": "villani.artifact_descriptor.v2",
+        "artifact_id": "artifact_unsafe",
+        "digest": {"algorithm": "sha256", "value": digest},
+        "size_bytes": len(content),
+        "media_type": "text/plain",
+        "logical_role": "command.stdout",
+        "sensitivity": "internal",
+        "retention_class": "run",
+        "encryption_status": "unencrypted",
+        "storage_reference": None,
+        "provenance_status": "recorded",
+        "attributes": {},
+    }
+
+    with pytest.raises(ArtifactWithheldError) as caught:
+        spool.register_artifact("run_1", descriptor, content)
+
+    assert caught.value.categories == ("bearer_token",)
+    assert spool.status()["artifacts"] == 0
+    assert not any(path.is_file() for path in paths.artifacts.rglob("*"))
+    with sqlite3.connect(paths.database) as connection:
+        payload = json.loads(
+            connection.execute("SELECT payload_json FROM events").fetchone()[0]
+        )
+    assert payload["name"] == "artifact_withholding_recorded"
+    assert payload["body"]["withheld_artifact_count"] == 1
+    assert payload["body"]["withheld_artifact_categories"] == ["bearer_token"]
+    assert b"abcdefghijklmnop" not in paths.database.read_bytes()
 
 
 def test_artifact_file_and_per_run_limits_are_enforced(paths: AgentdPaths) -> None:

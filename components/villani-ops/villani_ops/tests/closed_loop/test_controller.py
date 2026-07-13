@@ -224,6 +224,15 @@ def test_attempt_budget_exhausts_without_materialization(tmp_path: Path) -> None
     assert len(dependencies["runner"].calls) == 1
     assert not dependencies["materializer"].calls
     assert not (result.run_directory / "materialization.json").exists()
+    exhausted = next(
+        event
+        for event in _events(result.run_directory)
+        if event["event_type"] == "run_exhausted"
+    )["payload"]
+    assert exhausted["attempt_count"] == 1
+    assert exhausted["selected_backend"] == "low"
+    assert exhausted["materialization_status"] == "not_materialized"
+    assert exhausted["terminal_reason"] == "attempt budget exhausted"
 
 
 def test_cost_budget_exhausts_before_unaffordable_attempt(tmp_path: Path) -> None:

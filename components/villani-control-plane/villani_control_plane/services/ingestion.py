@@ -95,10 +95,25 @@ def project_run_observability(run: models.Run, event: TelemetryEnvelopeV2) -> No
         candidates[str(event.attempt_id)] = {
             key: values.get(key)
             for key in (
-                "status", "backend_name", "model", "exit_code", "duration_ms",
-                "input_tokens", "output_tokens", "total_tokens",
-                "token_accounting_status", "cost_usd", "cost_accounting_status",
-                "file_write_count", "changed_files", "failure_category",
+                "status",
+                "backend_name",
+                "model",
+                "exit_code",
+                "duration_ms",
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "token_accounting_status",
+                "cost_usd",
+                "cost_accounting_status",
+                "file_write_count",
+                "changed_files",
+                "failure_category",
+                "patch_sha256",
+                "patch_bytes",
+                "candidate_configuration",
+                "candidate_configuration_acknowledged",
+                "effective_configuration_sha256",
             )
         }
         projection["candidate_outcomes"] = candidates
@@ -107,6 +122,15 @@ def project_run_observability(run: models.Run, event: TelemetryEnvelopeV2) -> No
         candidate = dict(candidates.get(str(event.attempt_id)) or {})
         candidate["verification"] = dict(event.body)
         candidate["candidate_eligibility"] = values.get("acceptance_eligible", False)
+        verification_metadata = values.get("metadata")
+        verification_metadata = (
+            verification_metadata if isinstance(verification_metadata, dict) else {}
+        )
+        verification_failure = values.get("failure_category") or verification_metadata.get(
+            "failure_category"
+        )
+        if isinstance(verification_failure, str) and verification_failure:
+            candidate["failure_category"] = verification_failure
         candidates[str(event.attempt_id)] = candidate
         projection["candidate_outcomes"] = candidates
         projection["verification_status"] = values.get("outcome")
@@ -124,20 +148,72 @@ def project_run_observability(run: models.Run, event: TelemetryEnvelopeV2) -> No
             changed_files=values.get("changed_files", []),
             patch_digest=values.get("patch_digest"),
         )
+    elif event.name == "artifact_withholding_recorded":
+        count = int(projection.get("withheld_artifact_count") or 0)
+        count += int(values.get("withheld_artifact_count") or 0)
+        categories = sorted(
+            {
+                str(item)
+                for item in (
+                    list(projection.get("withheld_artifact_categories") or [])
+                    + list(values.get("withheld_artifact_categories") or [])
+                )
+                if str(item)
+            }
+        )
+        projection["withheld_artifact_count"] = count
+        projection["withheld_artifact_categories"] = categories
     if event.name in {"run_completed", "run_failed", "run_exhausted"}:
         for key in (
-            "status", "selected_attempt_id", "selected_backend", "selected_model",
-            "attempt_count", "escalation_count", "input_tokens", "output_tokens",
-            "total_tokens", "token_accounting_status", "coding_cost_usd",
-            "verifier_cost_usd", "total_cost_usd", "cost_accounting_status",
-            "duration_ms", "changed_files", "file_write_count", "verification_status",
-            "materialization_status", "terminal_reason", "failure_category",
+            "status",
+            "selected_attempt_id",
+            "selected_backend",
+            "selected_model",
+            "attempt_count",
+            "escalation_count",
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "token_accounting_status",
+            "coding_cost_usd",
+            "verifier_cost_usd",
+            "total_cost_usd",
+            "cost_accounting_status",
+            "duration_ms",
+            "changed_files",
+            "file_write_count",
+            "verification_status",
+            "materialization_status",
+            "terminal_reason",
+            "failure_category",
         ):
             if values.get(key) is not None:
                 projection[key] = values[key]
     redaction = values.get("villani_redaction")
     if isinstance(redaction, dict):
-        projection["redaction_status"] = redaction
+        previous = projection.get("redaction_status")
+        previous = previous if isinstance(previous, dict) else {}
+        total = int(previous.get("redacted_field_count") or previous.get("count") or 0)
+        total += int(redaction.get("redacted_field_count") or redaction.get("count") or 0)
+        categories = sorted(
+            {
+                str(item)
+                for item in (
+                    list(previous.get("categories") or []) + list(redaction.get("categories") or [])
+                )
+                if str(item)
+            }
+        )
+        projection["redaction_applied"] = total > 0
+        projection["redacted_field_count"] = total
+        projection["redaction_categories"] = categories
+        projection["redaction_status"] = {
+            "status": "redacted" if total else "not_redacted",
+            "applied": total > 0,
+            "count": total,
+            "redacted_field_count": total,
+            "categories": categories,
+        }
     run.canonical_projection = projection
     text_fields = {
         "agent_name": ("agent_name", "agent"),
@@ -493,18 +569,40 @@ class IngestionService:
                     models.Attempt,
                     (principal.organization_id, event.run_id, event.attempt_id),
                 )
+                attempt_status = None
+                if event.name == "attempt_started":
+                    attempt_status = "running"
+                elif event.name in {"attempt_completed", "attempt_failed"}:
+                    reported = event.body.get("status")
+                    attempt_status = (
+                        str(reported)
+                        if reported
+                        in {
+                            "pending",
+                            "running",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                        }
+                        else "failed"
+                        if event.name == "attempt_failed"
+                        else "completed"
+                    )
                 if attempt is None:
                     self.ingestion.add(
                         models.Attempt(
                             organization_id=principal.organization_id,
                             id=event.attempt_id,
                             run_id=event.run_id,
-                            status=event.status,
+                            # Non-lifecycle telemetry can legitimately be the
+                            # first event observed for an attempt. Preserve its
+                            # canonical status instead of inventing "running".
+                            status=attempt_status or event.status or "unknown",
                         )
                     )
                     run.attempt_count += 1
-                else:
-                    attempt.status = event.status
+                elif attempt_status is not None:
+                    attempt.status = attempt_status
 
             span = self.session.get(
                 models.Span, (principal.organization_id, event.trace_id, event.span_id)

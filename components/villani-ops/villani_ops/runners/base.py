@@ -1,8 +1,59 @@
 from __future__ import annotations
+import hashlib
+import json
+from datetime import datetime
 from pathlib import Path
-from typing import Protocol, Any
-from pydantic import BaseModel, Field
+from typing import Protocol, Any, Literal
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from villani_ops.core.backend import Backend
+
+
+class CandidateExecutionAcknowledgement(BaseModel):
+    """Execution-time proof of the configuration the runner actually applied."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["villani.candidate_execution.v1"] = (
+        "villani.candidate_execution.v1"
+    )
+    candidate_id: str = Field(min_length=1)
+    requested_dimensions: dict[str, Any]
+    applied_dimensions: dict[str, Any]
+    unsupported_dimensions: dict[str, Any] = Field(default_factory=dict)
+    rejected_dimensions: dict[str, Any] = Field(default_factory=dict)
+    provider_acknowledgement: dict[str, Any] | None = None
+    runner_acknowledged: bool
+    rendered_prompt_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    effective_configuration_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    acknowledgement_timestamp: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_v0_document(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        normalized.setdefault("schema_version", "villani.candidate_execution.v1")
+        if "rendered_prompt_digest" not in normalized:
+            legacy = normalized.pop("effective_prompt_digest", None)
+            if legacy is not None:
+                normalized["rendered_prompt_digest"] = legacy
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_effective_digest(self) -> "CandidateExecutionAcknowledgement":
+        expected = hashlib.sha256(
+            json.dumps(
+                self.applied_dimensions,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if self.effective_configuration_digest != expected:
+            raise ValueError("effective configuration digest does not match applied dimensions")
+        if self.runner_acknowledged and not self.applied_dimensions:
+            raise ValueError("runner acknowledgement requires applied dimensions")
+        return self
 
 
 class RunnerContext(BaseModel):

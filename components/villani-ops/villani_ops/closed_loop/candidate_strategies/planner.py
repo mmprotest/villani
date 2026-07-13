@@ -6,7 +6,7 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from .models import (
     AdaptiveStopDecision,
@@ -145,6 +145,28 @@ def build_candidate_plans(
 
 def diversity_summary(plans: tuple[CandidatePlan, ...]) -> tuple[bool, int]:
     distinct = len({item.effective_configuration_sha256 for item in plans})
+    return distinct > 1, distinct
+
+
+def acknowledged_diversity_summary(values: Iterable[Any]) -> tuple[bool, int]:
+    """Count only execution fingerprints explicitly acknowledged by a runner."""
+
+    fingerprints: set[str] = set()
+    for value in values:
+        metadata: Any
+        if isinstance(value, Mapping):
+            metadata = value.get("metadata", value)
+        else:
+            metadata = getattr(value, "metadata", None)
+        if not isinstance(metadata, Mapping):
+            continue
+        acknowledged = metadata.get(
+            "runner_acknowledged_candidate_configuration"
+        )
+        digest = metadata.get("effective_configuration_sha256")
+        if acknowledged is True and isinstance(digest, str) and len(digest) == 64:
+            fingerprints.add(digest)
+    distinct = len(fingerprints)
     return distinct > 1, distinct
 
 

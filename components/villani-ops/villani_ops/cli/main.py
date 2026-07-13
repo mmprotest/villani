@@ -333,6 +333,7 @@ def verifier(
     ),
 ):
     from villani_ops.verifier import load_debug_run, deterministic_result, llm_result
+    from villani_ops.verifier.errors import VerifierSchemaError
     from villani_ops.verifier.render import render, exit_code
     from villani_ops.verifier.deterministic import build_packet, PROMPT_VERSION
     from villani_ops.verifier.trace import (
@@ -490,6 +491,7 @@ def verifier(
         result["traceLevel"] = trace_level
         result["toolCallCount"] = len(result.get("toolsUsed") or [])
         result["llmCallCount"] = getattr(tw, "llm_call_count", 0)
+        result["invocationStatus"] = "completed"
         if not trace:
             result.setdefault("riskFlags", []).append(
                 "Verifier trace was disabled; run cannot be fully audited."
@@ -522,6 +524,14 @@ def verifier(
             tw.record_error("output", e)
         except Exception:
             pass
+        if isinstance(e, VerifierSchemaError):
+            invocation_status = "malformed_output"
+        elif isinstance(e, (TimeoutError, subprocess.TimeoutExpired)) or any(
+            marker in str(e).lower() for marker in ("timeout", "timed out")
+        ):
+            invocation_status = "timeout"
+        else:
+            invocation_status = "subprocess_failure"
         result = {
             "schemaVersion": "villani-ops-verifier-result-v3",
             "result": None,
@@ -560,6 +570,7 @@ def verifier(
             "traceLevel": trace_level,
             "toolCallCount": 0,
             "llmCallCount": getattr(tw, "llm_call_count", 0) if "tw" in locals() else 0,
+            "invocationStatus": invocation_status,
         }
         try:
             if "tw" in locals():

@@ -8,14 +8,16 @@ import os
 import sqlite3
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from villani_ops.closed_loop.protocol_v2 import ArtifactDescriptorV2, OutcomeV2, TelemetryEnvelopeV2
 from villani_ops.closed_loop.schema_validation import parse_protocol_document
+from villani_ops.closed_loop.translate_v2 import legacy_trace_id_to_w3c
 
 from .config import AgentdPaths, Limits
-from .redaction import redact_remote_document
+from .redaction import redact_remote_document, unsafe_artifact_categories
 from .spool_schema import SpoolSchemaError, migrate_spool_schema
 
 
@@ -29,6 +31,16 @@ class CollisionError(SpoolError):
 
 class LimitError(SpoolError):
     status_code = 413
+
+
+class ArtifactWithheldError(SpoolError):
+    status_code = 422
+
+    def __init__(self, categories: tuple[str, ...]) -> None:
+        self.categories = categories
+        super().__init__(
+            "artifact content was withheld: " + ",".join(categories)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +240,10 @@ class SQLiteSpool:
         parsed = parse_protocol_document(dict(descriptor_document))
         if not isinstance(parsed, ArtifactDescriptorV2):
             raise SpoolError("artifact registration requires villani.artifact_descriptor.v2")
+        unsafe_categories = unsafe_artifact_categories(content)
+        if unsafe_categories:
+            self._record_artifact_withholding(run_id, parsed, unsafe_categories)
+            raise ArtifactWithheldError(unsafe_categories)
         if len(content) > self.limits.artifact_file_bytes:
             raise LimitError(f"artifact exceeds {self.limits.artifact_file_bytes} bytes")
         digest = hashlib.sha256(content).hexdigest()
@@ -299,6 +315,62 @@ class SQLiteSpool:
             except BaseException:
                 connection.execute("ROLLBACK")
                 raise
+
+    def _record_artifact_withholding(
+        self,
+        run_id: str,
+        descriptor: ArtifactDescriptorV2,
+        categories: tuple[str, ...],
+    ) -> None:
+        """Persist only a safe notice when an artifact is rejected locally."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT trace_id FROM runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+        legacy_trace = str(row["trace_id"] if row is not None else run_id)
+        digest = hashlib.sha256(
+            f"{run_id}:{descriptor.artifact_id}:withheld".encode()
+        ).hexdigest()
+        now = datetime.now(timezone.utc)
+        notice = TelemetryEnvelopeV2(
+            schema_version="villani.telemetry_envelope.v2",
+            event_id=f"evt2_{digest[:32]}",
+            idempotency_key=f"agentd:artifact-withheld:{digest}",
+            occurred_at=now,
+            observed_at=now,
+            sequence=int(digest[:8], 16),
+            sequence_scope=f"agentd:artifact-withholding:{run_id}",
+            organization_id=None,
+            workspace_id=None,
+            project_id=None,
+            repository_id=None,
+            run_id=run_id,
+            trace_id=legacy_trace_id_to_w3c(legacy_trace),
+            span_id=digest[32:48],
+            parent_span_id=None,
+            attempt_id=None,
+            source="villani-agentd",
+            kind="file_operation",
+            name="artifact_withholding_recorded",
+            status="ok",
+            resource={
+                "schema_version": "villani.resource.v2",
+                "service_name": "villani-agentd",
+                "service_version": None,
+                "deployment_environment": "local",
+                "host_id": None,
+                "process_id": None,
+                "attributes": {},
+            },
+            attributes={},
+            body={
+                "withheld_artifact_count": 1,
+                "withheld_artifact_categories": list(categories),
+                "logical_role": descriptor.logical_role,
+            },
+        )
+        self.ingest_events((notice.model_dump(mode="json"),))
 
     def finalize_run(self, run_id: str, payload: Mapping[str, Any], finalized_at: str) -> None:
         outcome = payload.get("outcome")
@@ -379,11 +451,14 @@ class SQLiteSpool:
     def pending_finalizations(self, limit: int, now: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT run_id,final_payload_json,retry_count FROM runs
-                   WHERE final_payload_json IS NOT NULL
-                     AND upload_state IN ('offline','retry')
-                     AND (next_retry_at IS NULL OR next_retry_at<=?)
-                   ORDER BY finalized_at,run_id LIMIT ?""",
+                """SELECT r.run_id,r.final_payload_json,r.retry_count FROM runs AS r
+                   WHERE r.final_payload_json IS NOT NULL
+                     AND r.upload_state IN ('offline','retry')
+                     AND (r.next_retry_at IS NULL OR r.next_retry_at<=?)
+                     AND NOT EXISTS (
+                         SELECT 1 FROM events AS e WHERE e.run_id=r.run_id
+                     )
+                   ORDER BY r.finalized_at,r.run_id LIMIT ?""",
                 (now, limit),
             ).fetchall()
         return [
@@ -471,10 +546,15 @@ class SQLiteSpool:
     def pending_artifacts(self, limit: int, now: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT artifact_id,run_id,descriptor_json,storage_reference,retry_count FROM artifacts
-                   WHERE upload_state IN ('offline','retry')
-                     AND (next_retry_at IS NULL OR next_retry_at<=?)
-                   ORDER BY artifact_id LIMIT ?""",
+                """SELECT a.artifact_id,a.run_id,a.descriptor_json,
+                          a.storage_reference,a.retry_count
+                     FROM artifacts AS a
+                    WHERE a.upload_state IN ('offline','retry')
+                      AND (a.next_retry_at IS NULL OR a.next_retry_at<=?)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM events AS e WHERE e.run_id=a.run_id
+                      )
+                    ORDER BY a.artifact_id LIMIT ?""",
                 (now, limit),
             ).fetchall()
         return [dict(row) | {"descriptor": json.loads(row["descriptor_json"])} for row in rows]

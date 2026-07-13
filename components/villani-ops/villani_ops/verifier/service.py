@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from .deterministic import deterministic_result
+from .errors import VerifierSchemaError
 from .llm import llm_result
 from .load_debug_run import load_debug_run
 from .trace import redact
@@ -144,6 +145,36 @@ def _read_result(path: Path) -> dict[str, Any] | None:
         return value if isinstance(value, dict) else None
     except Exception:
         return None
+
+
+def _subprocess_invocation_status(
+    result: dict[str, Any], returncode: int | None
+) -> str:
+    """Preserve a nested verifier's fail-closed status across its CLI boundary."""
+
+    declared = result.get("invocationStatus", result.get("invocation_status"))
+    if declared in {
+        "completed",
+        "malformed_output",
+        "timeout",
+        "subprocess_failure",
+    }:
+        return str(declared)
+    # A valid rejecting verifier exits one by CLI convention.  That is a
+    # completed invocation, not an infrastructure failure.
+    if result.get("verdict") in {"success", "failure"} and result.get("result") in {
+        0,
+        1,
+    }:
+        return "completed"
+    if returncode in {None, 0}:
+        return "completed"
+    reason = str(result.get("reason") or "").lower()
+    if "malformed" in reason:
+        return "malformed_output"
+    if "timeout" in reason or "timed out" in reason:
+        return "timeout"
+    return "subprocess_failure"
 
 
 def execute_verifier(
@@ -308,7 +339,7 @@ def execute_verifier(
             resolved,
             resolution_status,
             resolution_reason,
-            "completed",
+            _subprocess_invocation_status(result, subprocess_exit_code),
             subprocess_exit_code,
         )
     except subprocess.TimeoutExpired as error:
@@ -323,7 +354,7 @@ def execute_verifier(
             "timeout",
             subprocess_exit_code,
         )
-    except (json.JSONDecodeError, ValueError, TypeError) as error:
+    except (json.JSONDecodeError, ValueError, TypeError, VerifierSchemaError) as error:
         reason = f"malformed verifier output: {error}"
         result = _error_result(reason)
         _write_result(out, result)

@@ -114,9 +114,14 @@ describe("session browser", () => {
       ]),
     );
     expect(html).toContain("Local investigation index");
-    expect(html).toContain("--villani-bg-deepest:#050505");
-    expect(html).toContain("background:var(--villani-bg-deepest)");
-    expect(html).toContain("color-scheme:dark");
+    expect(html).toContain("--v-bg-root: #050505");
+    expect(html).toContain("background: var(--v-bg-root)");
+    expect(html).toContain("color-scheme: dark");
+    expect(html).toContain('class="v-app-shell vfr-shell"');
+    expect(html).toContain('data-testid="shared-sidebar"');
+    expect(html).not.toMatch(
+      /#f8fafc|#f7f3ea|#334155|rgba\(255,255,255,\.(?:3|4|5|6|7|8|9)/i,
+    );
     expect(html).not.toContain("background: linear-gradient(180deg, #eef1f3");
     expect(html).not.toContain("#0f172a");
     expect(html).not.toContain("#071020");

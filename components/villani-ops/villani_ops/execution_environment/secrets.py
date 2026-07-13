@@ -65,8 +65,20 @@ def register_secret_values(values: Sequence[str]) -> None:
 
 
 def registered_secret_values() -> tuple[str, ...]:
+    configured_names = {
+        name.strip()
+        for name in os.environ.get("VILLANI_REGISTERED_SECRET_ENV_VARS", "").split(",")
+        if name.strip()
+    }
+    configured_values = {
+        value
+        for name in configured_names
+        if (value := os.environ.get(name))
+    }
     with _REGISTERED_LOCK:
-        return tuple(sorted(_REGISTERED, key=len, reverse=True))
+        return tuple(
+            sorted(_REGISTERED | configured_values, key=len, reverse=True)
+        )
 
 
 @dataclass(slots=True)

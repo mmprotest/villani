@@ -84,6 +84,8 @@ _SECRET_BYTES = re.compile(
 SAFE_CANONICAL_ARTIFACTS = (
     "manifest.json",
     "state.json",
+    "task.json",
+    "classification.json",
     "selection.json",
     "materialization.json",
 )
@@ -166,17 +168,23 @@ class RunEventDelivery:
             )
             return
         try:
+            withheld_count = 0
+            withheld_categories: set[str] = set()
             for relative in SAFE_CANONICAL_ARTIFACTS:
                 path = self._store.run_directory / relative
                 if not path.is_file():
                     continue
                 content = path.read_bytes()
-                if contains_registered_secret(content):
+                unsafe_categories = artifact_withholding_categories(content)
+                if unsafe_categories:
+                    withheld_count += 1
+                    withheld_categories.update(unsafe_categories)
                     self._record(
                         "artifact_registration",
                         status="rejected_protocol",
                         artifact=relative,
                         detail="sensitive_content_rejected",
+                        categories=list(unsafe_categories),
                     )
                     continue
                 digest = hashlib.sha256(content).hexdigest()
@@ -196,7 +204,12 @@ class RunEventDelivery:
                 )
                 self._sink.register_artifact(self._store.run_id, descriptor, content)
             self._sink.finalize_run(
-                self._store.run_id, build_canonical_outcome(self._store.run_directory)
+                self._store.run_id,
+                build_canonical_outcome(
+                    self._store.run_directory,
+                    withheld_artifact_count=withheld_count,
+                    withheld_artifact_categories=tuple(sorted(withheld_categories)),
+                ),
             )
         except Exception as error:
             self._record(
@@ -214,14 +227,40 @@ def _read_object(path: Path) -> dict[str, Any]:
 
 
 def contains_registered_secret(content: bytes) -> bool:
-    if _SECRET_BYTES.search(content):
-        return True
-    return any(
-        secret.encode() in content for secret in registered_secret_values() if secret
-    )
+    return bool(artifact_withholding_categories(content))
 
 
-def build_canonical_outcome(run_directory: Path) -> OutcomeV2:
+def artifact_withholding_categories(content: bytes) -> tuple[str, ...]:
+    """Classify unsafe artifact content without exposing the matched value."""
+
+    categories: set[str] = set()
+    if any(
+        secret.encode() in content
+        for secret in registered_secret_values()
+        if secret
+    ):
+        categories.add("registered_secret")
+    if re.search(rb"(?i)bearer\s+[A-Za-z0-9._~+/-]{12,}", content):
+        categories.add("bearer_token")
+    if re.search(rb"(?i)\b(?:sk|pk|api)[-_][A-Za-z0-9_-]{16,}\b", content):
+        categories.add("api_key")
+    if re.search(
+        rb"(?i)(?:api[_-]?key|password|secret|private[_-]?key)\s*[:=]\s*"
+        rb"(?!test(?:-|_|\b))[^\s,;]+",
+        content,
+    ):
+        categories.add("credential_assignment")
+    if _SECRET_BYTES.search(content) and not categories:
+        categories.add("sensitive_content")
+    return tuple(sorted(categories))
+
+
+def build_canonical_outcome(
+    run_directory: Path,
+    *,
+    withheld_artifact_count: int = 0,
+    withheld_artifact_categories: tuple[str, ...] = (),
+) -> OutcomeV2:
     manifest = _read_object(run_directory / "manifest.json")
     selected = manifest.get("selected_attempt_id")
     verification: Mapping[str, Any] = {}
@@ -266,5 +305,7 @@ def build_canonical_outcome(run_directory: Path) -> OutcomeV2:
         provenance={
             "source": "canonical_local_run_bundle",
             "manifest": "manifest.json",
+            "withheld_artifact_count": withheld_artifact_count,
+            "withheld_artifact_categories": list(withheld_artifact_categories),
         },
     )

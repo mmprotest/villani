@@ -156,6 +156,21 @@ class OutcomeLedgerService:
             run.duration_ms = int(parsed.latency_ms)
         if parsed.accepted is True:
             run.status = "COMPLETED" if parsed.materialized is True else "accepted"
+        projection = dict(run.canonical_projection or {})
+        if parsed.latency_ms is not None:
+            # The outcome is written after the terminal event and carries the
+            # canonical, persisted wall-clock duration.  Keep the projection
+            # aligned with that value instead of an earlier event timestamp.
+            projection["duration_ms"] = int(parsed.latency_ms)
+        withheld_count = parsed.provenance.get("withheld_artifact_count")
+        withheld_categories = parsed.provenance.get("withheld_artifact_categories")
+        if isinstance(withheld_count, int) and withheld_count > 0:
+            projection["withheld_artifact_count"] = withheld_count
+        if isinstance(withheld_categories, list) and withheld_categories:
+            projection["withheld_artifact_categories"] = sorted(
+                {str(item) for item in withheld_categories if str(item)}
+            )
+        run.canonical_projection = projection
         self.session.add(
             models.Outbox(
                 organization_id=principal.organization_id,

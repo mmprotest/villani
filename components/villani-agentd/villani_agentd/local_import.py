@@ -44,6 +44,8 @@ class ImportDiagnostic:
     category: str
     imported_events: int = 0
     imported_artifacts: int = 0
+    withheld_artifacts: int = 0
+    withheld_artifact_categories: tuple[str, ...] = ()
     finalized: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -52,6 +54,8 @@ class ImportDiagnostic:
             "category": self.category,
             "imported_events": self.imported_events,
             "imported_artifacts": self.imported_artifacts,
+            "withheld_artifacts": self.withheld_artifacts,
+            "withheld_artifact_categories": list(self.withheld_artifact_categories),
             "finalized": self.finalized,
         }
 
@@ -195,12 +199,17 @@ class LocalRunImporter:
             result = self.spool.ingest_events(translated)
 
             artifact_count = 0
+            withheld_count = 0
+            withheld_categories: set[str] = set()
             for relative in SAFE_CANONICAL_ARTIFACTS if terminal else ():
                 path = run_directory / relative
                 if not path.exists():
                     continue
                 content = _bounded_bytes(path, self.limits.artifact_file_bytes)
-                if unsafe_artifact_categories(content):
+                unsafe_categories = unsafe_artifact_categories(content)
+                if unsafe_categories:
+                    withheld_count += 1
+                    withheld_categories.update(unsafe_categories)
                     continue
                 digest = hashlib.sha256(content).hexdigest()
                 descriptor = ArtifactDescriptorV2(
@@ -221,7 +230,11 @@ class LocalRunImporter:
                 artifact_count += 1
 
             if terminal:
-                outcome = build_canonical_outcome(run_directory)
+                outcome = build_canonical_outcome(
+                    run_directory,
+                    withheld_artifact_count=withheld_count,
+                    withheld_artifact_categories=tuple(sorted(withheld_categories)),
+                )
                 self.spool.finalize_run(
                     run_id,
                     {"outcome": outcome.model_dump(mode="json")},
@@ -240,6 +253,8 @@ class LocalRunImporter:
                 category,
                 imported_events=result.inserted,
                 imported_artifacts=artifact_count,
+                withheld_artifacts=withheld_count,
+                withheld_artifact_categories=tuple(sorted(withheld_categories)),
                 finalized=terminal,
             )
         except ProtocolValidationError as error:

@@ -6,7 +6,7 @@ import vm from "node:vm";
 import { JSDOM } from "jsdom";
 import { parseClaudeSession } from "../src/providers/claude.js";
 import { parseCodexSession } from "../src/providers/codex.js";
-import { renderReplay } from "../src/render/renderReplay.js";
+import { renderReplayForTest } from "./renderReplayForTest.js";
 import { safeJsonForScript } from "../src/render/safeHtml.js";
 import { deriveTimeline } from "../src/render/deriveTimeline.js";
 import { deriveReplayViewModel } from "../src/render/viewModel.js";
@@ -15,10 +15,7 @@ const fx = (p: string) => path.resolve("test/fixtures", p);
 describe("rendered HTML", () => {
   it("contains forensic report UI, status sections, self-contained assets, and valid inline JS", async () => {
     const s = await parseCodexSession(fx("codex/realistic-rollout.jsonl"));
-    const html = await fs.readFile(
-      await renderReplay(s, { cwd: process.cwd() }),
-      "utf8",
-    );
+    const html = await fs.readFile(await renderReplayForTest(s), "utf8");
     for (const text of [
       "Villani Flight Recorder",
       "Replay Event Timeline",
@@ -96,10 +93,7 @@ describe("rendered HTML", () => {
 
   it("renders structured timeline, detail tabs, and interactions without replay coverage", async () => {
     const s = await parseClaudeSession(fx("claude/realistic-transcript.jsonl"));
-    const html = await fs.readFile(
-      await renderReplay(s, { cwd: process.cwd() }),
-      "utf8",
-    );
+    const html = await fs.readFile(await renderReplayForTest(s), "utf8");
     const dom = new JSDOM(html, { runScripts: "dangerously" });
     const doc = dom.window.document;
     const times = [...doc.querySelectorAll(".timeline-time")].map(
@@ -173,22 +167,19 @@ describe("rendered HTML", () => {
 
   it("renders generic replay summary with intentional fallback labels", async () => {
     const html = await fs.readFile(
-      await renderReplay(
-        {
-          provider: "unknown",
-          sessionPath: "generic.jsonl",
-          events: [
-            {
-              id: "g1",
-              provider: "unknown",
-              type: "unknown",
-              title: "Generic replay",
-            },
-          ],
-          warnings: [],
-        },
-        { cwd: process.cwd() },
-      ),
+      await renderReplayForTest({
+        provider: "unknown",
+        sessionPath: "generic.jsonl",
+        events: [
+          {
+            id: "g1",
+            provider: "unknown",
+            type: "unknown",
+            title: "Generic replay",
+          },
+        ],
+        warnings: [],
+      }),
       "utf8",
     );
     const doc = new JSDOM(html).window.document;
@@ -315,10 +306,7 @@ describe("timeline correlated command failures", () => {
       exitCode: 1,
     });
 
-    const html = await fs.readFile(
-      await renderReplay(session, { cwd: process.cwd() }),
-      "utf8",
-    );
+    const html = await fs.readFile(await renderReplayForTest(session), "utf8");
     const doc = new JSDOM(html, { runScripts: "dangerously" }).window.document;
     const primaryRows = [...doc.querySelectorAll(".timeline-title")].map(
       (n) => n.textContent ?? "",
@@ -338,13 +326,12 @@ it("renders optional replay return navigation", async () => {
   const s = await parseClaudeSession(
     "test/fixtures/claude/realistic-transcript.jsonl",
   );
-  const withBack = await renderReplay(s, {
-    cwd: process.cwd(),
+  const withBack = await renderReplayForTest(s, {
     returnHref: "../session-browser.html",
     returnLabel: "Back to sessions",
   });
   expect(await fs.readFile(withBack, "utf8")).toContain("Back to sessions");
-  const withoutBack = await renderReplay(s, { cwd: process.cwd() });
+  const withoutBack = await renderReplayForTest(s);
   expect(await fs.readFile(withoutBack, "utf8")).not.toContain(
     'href="undefined"',
   );

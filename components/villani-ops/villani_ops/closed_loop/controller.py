@@ -105,6 +105,7 @@ from .shadow_routing import (
 )
 from .guarded_routing import GuardedTaskRouter
 from .candidate_strategies import (
+    acknowledged_diversity_summary,
     CandidateDimensions,
     CandidateObservation,
     CandidatePlan,
@@ -371,7 +372,6 @@ class ClosedLoopController:
                 and not runtime.attempts
                 and reliability.strategy
                 in {"parallel_diverse_candidates", "adaptive_candidates"}
-                and reliability.maximum_parallelism > 1
             ):
                 self._run_parallel_strategy(runtime, action, attempt_id)
                 break
@@ -733,6 +733,17 @@ class ClosedLoopController:
             candidate_dimensions=(
                 _read_only_mapping(attempt.metadata["candidate_dimensions"])
                 if isinstance(attempt.metadata.get("candidate_dimensions"), Mapping)
+                else MappingProxyType({})
+            ),
+            classification=(
+                _read_only_mapping(
+                    runtime.classification.metadata["effective_classification"]
+                )
+                if runtime.classification is not None
+                and isinstance(
+                    runtime.classification.metadata.get("effective_classification"),
+                    Mapping,
+                )
                 else MappingProxyType({})
             ),
             baseline_sha256=(
@@ -1618,7 +1629,7 @@ class ClosedLoopController:
                 "task_instruction": runtime.request.task,
                 "success_criteria": runtime.request.success_criteria,
                 "repository_id": str(runtime.request.repository_path),
-                "repository": runtime.request.repository_path.name,
+                "repository": Path(runtime.request.repository_path).name,
                 "agent_name": "villani-ops",
                 "agent_version": "0.2.0",
             },
@@ -1631,8 +1642,8 @@ class ClosedLoopController:
             run_id=runtime.run_id,
             created_at=runtime.created_at,
             repository_path=str(runtime.request.repository_path),
-            instruction=runtime.request.task,
-            success_criteria=runtime.request.success_criteria,
+            instruction=str(redact_data(runtime.request.task)),
+            success_criteria=str(redact_data(runtime.request.success_criteria)),
             constraints=[],
             requires_file_changes=runtime.request.requires_file_changes,
             metadata={},
@@ -2398,14 +2409,9 @@ class ClosedLoopController:
             remaining_attempt_budget=budget.remaining_attempts,
             remaining_cost_budget_usd=budget.remaining_cost_usd,
         )
-        acknowledged_fingerprints = {
-            str(item.metadata["effective_configuration_sha256"])
-            for item in runtime.attempts
-            if item.metadata.get("runner_acknowledged_candidate_configuration")
-            and isinstance(item.metadata.get("effective_configuration_sha256"), str)
-        }
-        distinct = len(acknowledged_fingerprints)
-        diversity_claimed = distinct > 1
+        diversity_claimed, distinct = acknowledged_diversity_summary(
+            runtime.attempts
+        )
         accounting = ReliabilityAccounting(
             strategy=configuration.strategy,
             planned_attempts=len(merged),
@@ -2694,6 +2700,17 @@ class ClosedLoopController:
                 else MappingProxyType({})
             ),
             candidate_dimensions=_read_only_mapping(dimensions.model_dump(mode="json")),
+            classification=(
+                _read_only_mapping(
+                    runtime.classification.metadata["effective_classification"]
+                )
+                if runtime.classification is not None
+                and isinstance(
+                    runtime.classification.metadata.get("effective_classification"),
+                    Mapping,
+                )
+                else MappingProxyType({})
+            ),
             baseline_sha256=plan.baseline_sha256,
             repair_source_attempt_id=plan.repair_source_attempt_id,
             cancellation_event=threading.Event(),
@@ -2812,6 +2829,19 @@ class ClosedLoopController:
                 ),
                 "changed_files": snapshot.metadata.get("changed_files", []),
                 "failure_category": snapshot.metadata.get("failure_category"),
+                "patch_sha256": snapshot.patch_sha256,
+                "patch_bytes": snapshot.patch_bytes,
+                "candidate_configuration": snapshot.metadata.get(
+                    "effective_candidate_configuration"
+                ),
+                "candidate_configuration_acknowledged": bool(
+                    snapshot.metadata.get(
+                        "runner_acknowledged_candidate_configuration"
+                    )
+                ),
+                "effective_configuration_sha256": snapshot.metadata.get(
+                    "effective_configuration_sha256"
+                ),
             },
             attempt_id=attempt_id,
             parent_event_id=started.event_id,
@@ -3142,6 +3172,12 @@ class ClosedLoopController:
                 returned_override = None
                 if not isinstance(returned, Verification):
                     raise TypeError("verifier returned an invalid Verification")
+                self._emit_repository_validation_events(
+                    runtime,
+                    context.attempt_id,
+                    returned,
+                    attempt_start_event_id,
+                )
                 verification_usage.extend(
                     StageUsage.model_validate(dict(item))
                     for item in returned.llm_usage
@@ -3277,6 +3313,65 @@ class ClosedLoopController:
                 attempt_id=context.attempt_id,
                 parent_event_id=attempt_start_event_id,
             )
+
+    def _emit_repository_validation_events(
+        self,
+        runtime: _Runtime,
+        attempt_id: str,
+        verification: Verification,
+        parent_event_id: str,
+    ) -> None:
+        """Persist controller-owned validation commands returned as verifier evidence."""
+
+        records = verification.metadata.get("repository_validation_events")
+        if not isinstance(records, list):
+            return
+        delivered = {
+            str(event.payload.get("source_event_id"))
+            for event in runtime.committed_events
+            if event.payload.get("source_event_id")
+        }
+        appended = False
+        for record in records:
+            if not isinstance(record, Mapping):
+                continue
+            payload = record.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            source_event_id = str(record.get("source_event_id") or "")
+            if source_event_id and source_event_id in delivered:
+                continue
+            timestamp = self._now()
+            raw_timestamp = record.get("timestamp")
+            if isinstance(raw_timestamp, str):
+                try:
+                    timestamp = datetime.fromisoformat(
+                        raw_timestamp.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    pass
+            event_payload = _mapping_copy(payload)
+            if source_event_id:
+                event_payload["source_event_id"] = source_event_id
+            event_type = str(record.get("event_type") or "command_failed")
+            if event_type not in {"command_completed", "command_failed"}:
+                event_type = "command_failed"
+            event = runtime.store.append_event(
+                timestamp=timestamp,
+                trace_id=runtime.trace_id,
+                attempt_id=attempt_id,
+                parent_event_id=parent_event_id,
+                source="villani_ops_verifier",
+                event_type=event_type,
+                payload=event_payload,
+            )
+            runtime.last_event = event
+            runtime.committed_events.append(event)
+            appended = True
+            if source_event_id:
+                delivered.add(source_event_id)
+        if appended:
+            self._persist_state(runtime)
 
     def _normalize_verification(
         self, runtime: _Runtime, attempt_id: str, returned: Verification
@@ -3566,7 +3661,14 @@ class ClosedLoopController:
         )
         stage_metrics = self._stage_metrics(runtime)
         total = stage_metrics["total"]
-        coding = stage_metrics["coding"]
+        # Public "coding" cost is the non-verifier product path: task
+        # classification plus candidate execution.  This keeps the public
+        # invariant total = coding + verifier without hiding classifier spend.
+        coding = self._aggregate_stage(
+            "coding",
+            [stage_metrics["classification"], stage_metrics["coding"]],
+            total.currency,
+        )
         verification = stage_metrics["verification"]
         selected_attempt = next(
             item for item in runtime.attempts if item.attempt_id == runtime.selected_attempt_id
@@ -4416,6 +4518,91 @@ class ClosedLoopController:
             parent_event_id=parent_event_id,
         )
 
+    def _terminal_observability_payload(
+        self, runtime: _Runtime, *, status: str
+    ) -> dict[str, Any]:
+        """Project complete accounting for every terminal state, not only success."""
+
+        stages = self._stage_metrics(runtime)
+        total = stages["total"]
+        coding = self._aggregate_stage(
+            "coding",
+            [stages["classification"], stages["coding"]],
+            total.currency,
+        )
+        verification = stages["verification"]
+        routed_attempt = next(
+            (
+                item
+                for item in runtime.attempts
+                if item.attempt_id == runtime.selected_attempt_id
+            ),
+            runtime.attempts[-1] if runtime.attempts else None,
+        )
+        changed_files = (
+            list(runtime.materialization.changed_files)
+            if runtime.materialization is not None
+            else []
+        )
+        file_write_count = 0
+        for attempt in runtime.attempts:
+            result = runtime.attempt_results.get(attempt.attempt_id)
+            telemetry = result.runner_telemetry if result is not None else {}
+            file_write_count += int(
+                attempt.metadata.get(
+                    "total_file_writes", telemetry.get("total_file_writes", 0)
+                )
+                or 0
+            )
+        last_verification = runtime.verifications[-1] if runtime.verifications else None
+        failure_category = (
+            last_verification.metadata.get("failure_category")
+            if last_verification is not None
+            else runtime.failure.code
+            if runtime.failure is not None
+            else None
+        )
+        return {
+            "status": status,
+            "selected_attempt_id": runtime.selected_attempt_id,
+            "selected_backend": routed_attempt.backend_name if routed_attempt else None,
+            "selected_model": routed_attempt.model if routed_attempt else None,
+            "attempt_count": len(runtime.attempts),
+            "escalation_count": sum(
+                event.event_type == "escalation_selected"
+                for event in runtime.committed_events
+            ),
+            "input_tokens": total.input_tokens,
+            "output_tokens": total.output_tokens,
+            "total_tokens": (
+                total.input_tokens + total.output_tokens
+                if total.input_tokens is not None and total.output_tokens is not None
+                else None
+            ),
+            "token_accounting_status": total.token_accounting_status,
+            "coding_cost_usd": coding.cost,
+            "verifier_cost_usd": verification.cost,
+            "total_cost_usd": total.cost,
+            "cost_accounting_status": total.cost_accounting_status,
+            "duration_ms": max(
+                runtime.wall_clock_offset_ms
+                + int((self._monotonic() - runtime.started_monotonic) * 1000),
+                0,
+            ),
+            "changed_files": changed_files,
+            "file_write_count": file_write_count,
+            "verification_status": (
+                last_verification.outcome if last_verification is not None else None
+            ),
+            "materialization_status": (
+                runtime.materialization.status
+                if runtime.materialization is not None
+                else "not_materialized"
+            ),
+            "terminal_reason": runtime.terminal_reason,
+            "failure_category": failure_category,
+        }
+
     def _fail(
         self,
         runtime: _Runtime,
@@ -4441,7 +4628,9 @@ class ClosedLoopController:
             "FAILED",
             "run_failed",
             {
+                **self._terminal_observability_payload(runtime, status="failed"),
                 "code": code,
+                "failure_category": code,
                 "message": runtime.terminal_reason,
                 "exception_class": (
                     error.__class__.__name__ if error is not None else None
@@ -4455,7 +4644,10 @@ class ClosedLoopController:
             runtime,
             "EXHAUSTED",
             "run_exhausted",
-            {"reason": reason},
+            {
+                **self._terminal_observability_payload(runtime, status="exhausted"),
+                "reason": reason,
+            },
         )
 
     def _result(

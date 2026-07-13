@@ -44,6 +44,91 @@ def test_ingest_and_query_endpoints(session, principal) -> None:
     assert [run["id"] for run in listing["runs"]] == ["run_001"]
 
 
+def test_attempt_lifecycle_and_acknowledged_configuration_projection(
+    session, principal
+) -> None:
+    client = client_for(session)
+    headers = {"Authorization": f"Bearer {TEST_TOKEN}"}
+    base = load_v2_fixture("telemetry-envelope.json")
+
+    def event(
+        sequence: int,
+        name: str,
+        status: str,
+        body: dict,
+    ) -> dict:
+        value = dict(base)
+        value.update(
+            event_id=f"evt2_attempt_{sequence}",
+            idempotency_key=f"attempt-lifecycle:{sequence}",
+            sequence=sequence,
+            span_id=f"{sequence:016x}",
+            attempt_id="attempt_001" if sequence > 1 else None,
+            name=name,
+            status=status,
+            body=body,
+        )
+        return value
+
+    configuration = {
+        "candidate_id": "attempt_001",
+        "requested_dimensions": {"prompt_strategy_id": "test_first", "seed": 7},
+        "applied_dimensions": {"prompt_strategy_id": "test_first"},
+        "unsupported_dimensions": {"seed": 7},
+        "rejected_dimensions": {},
+        "rendered_prompt_digest": "a" * 64,
+        "effective_configuration_digest": "b" * 64,
+        "runner_acknowledged": True,
+        "acknowledgement_timestamp": "2026-07-11T00:00:02Z",
+        "provider_acknowledgement": None,
+    }
+    events = [
+        event(1, "run_created", "ok", {"task_instruction": "fix it"}),
+        event(2, "attempt_started", "running", {}),
+        event(
+            3,
+            "attempt_completed",
+            "ok",
+            {
+                "status": "completed",
+                "backend_name": "standard",
+                "model": "model-a",
+                "file_write_count": 1,
+                "changed_files": ["example.py"],
+                "candidate_configuration": configuration,
+                "candidate_configuration_acknowledged": True,
+                "effective_configuration_sha256": "b" * 64,
+            },
+        ),
+        event(
+            4,
+            "verification_completed",
+            "ok",
+            {
+                "outcome": "rejected",
+                "acceptance_eligible": False,
+                "metadata": {"failure_category": "implementation_failure"},
+            },
+        ),
+    ]
+
+    response = client.post(
+        "/v1/ingest/batches",
+        headers=headers,
+        json={"batch_id": "attempt-lifecycle", "events": events},
+    )
+
+    assert response.status_code == 200, response.text
+    detail = client.get("/v1/runs/run_001", headers=headers).json()
+    assert detail["attempts"] == [{"id": "attempt_001", "status": "completed"}]
+    candidate = detail["candidate_outcomes"]["attempt_001"]
+    assert candidate["file_write_count"] == 1
+    assert candidate["changed_files"] == ["example.py"]
+    assert candidate["candidate_configuration"] == configuration
+    assert candidate["candidate_configuration_acknowledged"] is True
+    assert candidate["failure_category"] == "implementation_failure"
+
+
 def test_api_rejects_cross_tenant_routing_metadata(session, principal) -> None:
     client = client_for(session)
     event = load_v2_fixture("telemetry-envelope.json")

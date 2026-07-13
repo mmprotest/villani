@@ -363,9 +363,20 @@ class VillaniVerifierAdapter:
         attempt_context: AttemptContext,
         attempt_result: AttemptResult,
     ) -> Verification:
+        original_event_count = len(attempt_result.runtime_events)
         attempt_result = _execute_configured_repository_validation(
             attempt_context, attempt_result
         )
+        repository_validation_events = [
+            {
+                "event_type": event.event_type,
+                "timestamp": event.timestamp.isoformat().replace("+00:00", "Z"),
+                "payload": dict(event.payload),
+                "source_event_id": event.source_event_id,
+            }
+            for event in attempt_result.runtime_events[original_event_count:]
+            if event.payload.get("command_role") == "repository_validation"
+        ]
         run_dir = Path(attempt_context.run_directory).resolve()
         raw_dir = run_dir / "verification" / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
@@ -576,6 +587,7 @@ class VillaniVerifierAdapter:
                 if self._no_llm
                 else "llm_verifier",
                 "authority_source": authority_source,
+                "repository_validation_events": repository_validation_events,
             },
             llm_usage=self._llm_usage(
                 trace_dir,

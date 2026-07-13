@@ -93,6 +93,7 @@ temp/
 .pip-cache/
 .release-smoke/
 .test-temp/
+.test-temp*/
 build-smoke/
 root-*-temp-*/
 release-verification/artifacts/

@@ -107,6 +107,79 @@ export interface RunDetail extends RunSummary {
   redaction_status?: Record<string, unknown> | null;
   terminal_reason?: string | null;
   candidate_outcomes?: Record<string, Record<string, unknown>>;
+  selection_reason?: string | null;
+  selection_rankings?: Record<string, unknown>[];
+  verification_status?: string | null;
+  verification_authority?: string | null;
+  materialization_status?: string | null;
+  failure_category?: string | null;
+  redacted_field_count?: number;
+  withheld_artifact_count?: number;
+  withheld_artifact_categories?: string[];
+}
+
+export interface CanonicalAttemptSnapshot {
+  attempt_id: string;
+  status: string | null;
+  backend: string | null;
+  model: string | null;
+  eligible: boolean | null;
+  selected: boolean;
+  verification_outcome: string | null;
+  verification_authority: string | null;
+  verifier_identity: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  cost_usd: number | null;
+  duration_ms: number | null;
+  changed_files: string[];
+  file_write_count: number | null;
+  failure_category: string | null;
+}
+
+export interface CanonicalRunSnapshot {
+  run_id: string;
+  trace_id: string | null;
+  status: string | null;
+  task: string | null;
+  success_criteria: string | null;
+  repository: string | null;
+  agent_name: string | null;
+  agent_version: string | null;
+  raw_classification: Record<string, unknown> | null;
+  effective_classification: Record<string, unknown> | null;
+  classification_confidence: number | null;
+  classification_adjustments: Record<string, unknown>[];
+  policy_version: string | null;
+  selected_backend: string | null;
+  selected_model: string | null;
+  selected_attempt_id: string | null;
+  attempts: CanonicalAttemptSnapshot[];
+  escalation_count: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  coding_cost_usd: number | null;
+  verifier_cost_usd: number | null;
+  total_cost_usd: number | null;
+  duration_ms: number | null;
+  verification_outcome: string | null;
+  verification_authority: string | null;
+  verifier_identity: string | null;
+  candidate_eligibility: Record<string, boolean | null>;
+  candidate_rankings: Record<string, unknown>[];
+  selection_reason: string | null;
+  file_write_count: number | null;
+  attempt_changed_files: Record<string, string[]>;
+  selected_materialized_files: string[];
+  materialization_status: string | null;
+  failure_category: string | null;
+  terminal_reason: string | null;
+  redaction_status: Record<string, unknown> | null;
+  redacted_field_count: number | null;
+  withheld_artifact_count: number | null;
+  withheld_artifact_categories: string[] | null;
 }
 
 export interface RunSpan {

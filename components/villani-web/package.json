@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build",
+    "build": "npm run typecheck && npm run build:model && vite build",
+    "build:model": "tsc -p tsconfig.model.json --pretty false",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.app.json --pretty false && tsc --noEmit -p tsconfig.node.json --pretty false",
     "e2e": "playwright test",

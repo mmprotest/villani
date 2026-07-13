@@ -15,7 +15,7 @@ from .models import (
     ReliabilityAccounting,
     ReliabilityStrategyConfiguration,
 )
-from .planner import adaptive_stop, diversity_summary
+from .planner import acknowledged_diversity_summary, adaptive_stop
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,7 +259,11 @@ class CandidateScheduler:
         finally:
             pool.shutdown(wait=True, cancel_futures=True)
 
-        diversity_claimed, distinct = diversity_summary(plans)
+        diversity_claimed, distinct = acknowledged_diversity_summary(
+            execution.result
+            for execution in executions
+            if not execution.cancelled and execution.result is not None
+        )
         avoided = max(len(plans) - started, 0)
         avoided_costs = [item.estimated_cost_usd for item in plans[started:]]
         estimated_avoided = (

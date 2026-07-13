@@ -12,6 +12,15 @@ from .durable_io import append_jsonl_durable, read_jsonl_tolerant, write_json_at
 from .interfaces import ClosedLoopRunRequest, ClosedLoopRunResult
 from .failure_classification import FailureCategory, classify_failure
 from .policy import BootstrapPolicyConfiguration, BootstrapPolicyEngine
+from .verifier_routing import (
+    VerifierCascade,
+    VerifierPolicyEntry,
+    VerifierRoute,
+    VerifierRoutingContext,
+    VerifierRoutingPolicy,
+    required_capability,
+    select_routes,
+)
 from .protocol import (
     AttemptSnapshot,
     ClassificationSnapshot,
@@ -90,6 +99,11 @@ __all__ = [
     "VerifierCapabilityV2",
     "VillaniCodeAttemptAdapter",
     "VillaniVerifierAdapter",
+    "VerifierCascade",
+    "VerifierPolicyEntry",
+    "VerifierRoute",
+    "VerifierRoutingContext",
+    "VerifierRoutingPolicy",
     "append_jsonl_durable",
     "actual_attempt_cost",
     "classify_failure",
@@ -100,6 +114,8 @@ __all__ = [
     "legacy_trace_id_to_w3c",
     "normalized_v2_jsonl",
     "read_jsonl_tolerant",
+    "required_capability",
+    "select_routes",
     "translate_v1_event",
     "translate_v1_events",
     "translate_v1_run",

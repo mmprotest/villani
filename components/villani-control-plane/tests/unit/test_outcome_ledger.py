@@ -3,6 +3,7 @@ from __future__ import annotations
 from conftest import TEST_TOKEN, load_v2_fixture
 from fastapi.testclient import TestClient
 
+from villani_control_plane import models
 from villani_control_plane.database import get_session
 from villani_control_plane.main import create_app
 
@@ -131,3 +132,49 @@ def test_fake_git_provider_signals_and_shadow_metrics_use_verified_labels(
     assert metrics["choice_match_rate"] == 1.0
     assert metrics["verified_success_rate_when_matched"] == 1.0
     assert metrics["operational_or_unverifiable_outcomes_excluded"] is True
+
+
+def test_outcome_reconciles_terminal_duration_without_erasing_withholding_notice(
+    session, principal
+) -> None:
+    client = _client(session)
+    headers = {"Authorization": f"Bearer {TEST_TOKEN}"}
+    _seed_run(client, headers)
+    run = session.get(models.Run, (principal.organization_id, "run_001"))
+    assert run is not None
+    run.canonical_projection = {
+        **dict(run.canonical_projection or {}),
+        "duration_ms": 100,
+        "withheld_artifact_count": 1,
+        "withheld_artifact_categories": ["registered_secret"],
+    }
+    session.commit()
+    outcome = load_v2_fixture("outcome.json")
+    outcome["attempt_id"] = None
+    outcome["latency_ms"] = 4321
+    outcome["provenance"] = {
+        **dict(outcome.get("provenance") or {}),
+        "withheld_artifact_count": 0,
+        "withheld_artifact_categories": [],
+    }
+
+    response = client.post(
+        "/v1/outcome-ledger/outcomes",
+        headers=headers,
+        json={
+            "outcome": outcome,
+            "provenance": {
+                "source": "agentd",
+                "source_event_id": "duration-reconciliation",
+                "observed_at": "2026-07-11T00:02:00Z",
+            },
+            "confidence": 1.0,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    session.refresh(run)
+    assert run.duration_ms == 4321
+    assert run.canonical_projection["duration_ms"] == 4321
+    assert run.canonical_projection["withheld_artifact_count"] == 1
+    assert run.canonical_projection["withheld_artifact_categories"] == ["registered_secret"]

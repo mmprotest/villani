@@ -14,10 +14,25 @@ from villani_ops.execution_environment import (
     inspect_repository,
 )
 from villani_ops.cli.unified import _doctor_report
+from villani_ops.execution_environment.secrets import registered_secret_values
 
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def test_explicit_registered_secret_environment_names_are_resolved_at_use_time(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("RELEASE_CANARY", "runtime-only-secret-value")
+    monkeypatch.setenv(
+        "VILLANI_REGISTERED_SECRET_ENV_VARS", " RELEASE_CANARY,UNSET_SECRET "
+    )
+
+    values = registered_secret_values()
+
+    assert "runtime-only-secret-value" in values
+    assert "RELEASE_CANARY" not in values
 
 
 def test_inherit_preserves_repository_and_user_toolchains_but_removes_private_and_secrets(

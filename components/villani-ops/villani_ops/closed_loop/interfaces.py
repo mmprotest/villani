@@ -259,6 +259,7 @@ class AttemptContext:
     execution_provider: str | None = None
     guarded_task_route: Mapping[str, Any] = field(default_factory=dict)
     candidate_dimensions: Mapping[str, Any] = field(default_factory=dict)
+    classification: Mapping[str, Any] = field(default_factory=dict)
     baseline_sha256: str | None = None
     repair_source_attempt_id: str | None = None
     cancellation_event: Any | None = field(

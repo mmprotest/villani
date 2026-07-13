@@ -8,6 +8,7 @@ from .models import (
     StrategyName,
 )
 from .planner import (
+    acknowledged_diversity_summary,
     adaptive_stop,
     build_candidate_plans,
     configuration_from_policy,
@@ -25,6 +26,7 @@ __all__ = [
     "ReliabilityStrategyConfiguration",
     "StrategyName",
     "adaptive_stop",
+    "acknowledged_diversity_summary",
     "build_candidate_plans",
     "configuration_from_policy",
     "diversity_summary",

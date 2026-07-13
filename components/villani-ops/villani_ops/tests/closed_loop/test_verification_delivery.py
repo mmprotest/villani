@@ -304,7 +304,11 @@ def test_patch_export_delivers_exact_verified_digest_and_retry_is_idempotent(
 ) -> None:
     digest = hashlib.sha256(PATCH.encode()).hexdigest()
     candidate = EligibleCandidate(
-        attempt=SimpleNamespace(attempt_id="attempt", patch_sha256=digest),
+        attempt=SimpleNamespace(
+            attempt_id="attempt",
+            patch_sha256=digest,
+            metadata={"changed_files": ["a.txt"]},
+        ),
         verification=SimpleNamespace(),
         patch=PATCH,
     )
@@ -335,4 +339,5 @@ def test_patch_export_delivers_exact_verified_digest_and_retry_is_idempotent(
         == PATCH
     )
     assert hashlib.sha256(destination.read_bytes()).hexdigest() == digest
+    assert first.changed_files == retry.changed_files == ("a.txt",)
     assert retry.metadata["idempotent_replay"] is True

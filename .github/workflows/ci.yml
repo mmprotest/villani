@@ -96,7 +96,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: pip
           cache-dependency-path: |
             components/villani-ops/pyproject.toml
@@ -267,10 +267,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: "20"
       - run: python -m pip install build pytest
       - run: python -m build --wheel --outdir "$RUNNER_TEMP/villani-wheels" components/villani-code
       - run: python -m build --wheel --outdir "$RUNNER_TEMP/villani-wheels" components/villani-ops
@@ -321,10 +321,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: "20"
           cache: npm
           cache-dependency-path: components/villani-flight-recorder/package-lock.json
       - uses: oven-sh/setup-bun@v2
@@ -353,7 +353,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.12"}
+        with: {python-version: "3.11"}
       - run: python -m pip install -e "components/villani-ops" -e "components/villani-control-plane[test]"
       - run: python -m pytest -q
         working-directory: components/villani-control-plane
@@ -374,19 +374,19 @@ jobs:
 
   packaged-release-gate:
     needs: node-engine-contract
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.11"}
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
-      - run: python -m pip install build
-      - run: python release-verification/run_release_gate.py
+      - run: python -m pip install build pip-audit
+      - run: npm ci
+        working-directory: components/villani-web
+      - run: npx playwright install --with-deps chromium
+        working-directory: components/villani-web
+      - run: python release-verification/run_release_gate.py --mode ci
       - uses: actions/upload-artifact@v4
         if: always()
         with:

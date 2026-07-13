@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from villani_ops.execution_environment.secrets import registered_secret_values
+from villani_ops.closed_loop.event_sink import artifact_withholding_categories
 
 REDACTED = "[REDACTED]"
 _SENSITIVE_KEYS = {
@@ -108,9 +109,4 @@ def redact_remote_document(value: Any) -> RedactionResult:
 
 
 def unsafe_artifact_categories(content: bytes) -> tuple[str, ...]:
-    try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        return ()
-    result = redact_sensitive_text(text)
-    return result.categories if result.count else ()
+    return artifact_withholding_categories(content)

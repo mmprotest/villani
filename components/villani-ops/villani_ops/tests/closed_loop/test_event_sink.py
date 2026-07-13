@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -215,14 +216,22 @@ def test_agentd_absent_keeps_run_local_and_successful(tmp_path: Path) -> None:
 def test_event_sink_records_no_raw_registered_secret(tmp_path: Path) -> None:
     from villani_ops.execution_environment.secrets import register_secret_values
 
-    secret = "sink-secret-canary-7f98"
-    register_secret_values([secret])
+    canary = "-".join(("sink", "secret", "canary", "7f98"))
+    register_secret_values([canary])
     sink = RecordingSink()
-    result = _controller(sink).run(_request(tmp_path))
+    result = _controller(sink).run(
+        replace(_request(tmp_path), task=f"Apply the deterministic change. {canary}")
+    )
 
     serialized = json.dumps(
         [event.model_dump(mode="json") for event in sink.events.values()],
         default=str,
     ) + "".join(content.decode("utf-8") for content in sink.artifacts.values())
-    assert secret not in serialized
+    assert canary not in serialized
     assert result.terminal_state == "COMPLETED"
+    outcome = sink.outcomes[result.run_id]
+    assert outcome.provenance["withheld_artifact_count"] == 0
+    assert outcome.provenance["withheld_artifact_categories"] == []
+    assert canary not in (result.run_directory / "task.json").read_text(
+        encoding="utf-8"
+    )

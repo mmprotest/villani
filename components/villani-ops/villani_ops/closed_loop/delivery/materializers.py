@@ -4,9 +4,10 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from ..durable_io import write_json_atomic
 from ..interfaces import (
     DependencyFailure,
@@ -28,6 +29,7 @@ class DeliveryReceipt(BaseModel):
     materializer_version: str
     patch_sha256: str
     artifact: str | None = None
+    changed_files: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = {}
 
 
@@ -84,11 +86,28 @@ class DeliveryMaterializerAdapter:
             raise ValueError("delivery patch does not match verified snapshot digest")
         return patch, digest
 
+    @staticmethod
+    def _captured_changed_files(context: MaterializationContext) -> tuple[str, ...]:
+        metadata = getattr(context.selected_candidate.attempt, "metadata", {})
+        captured = metadata.get("changed_files") if isinstance(metadata, Mapping) else None
+        if captured is None:
+            return ()
+        if not isinstance(captured, (list, tuple)) or not all(
+            isinstance(item, str)
+            and item
+            and not Path(item).is_absolute()
+            and ".." not in Path(item).parts
+            for item in captured
+        ):
+            raise ValueError("candidate changed-file capture is malformed or unsafe")
+        return tuple(sorted(set(captured)))
+
     def materialize(
         self, selection: Selection, context: MaterializationContext
     ) -> Materialization:
         try:
             patch, digest = self._validated_patch(selection, context)
+            changed_files = self._captured_changed_files(context)
             config = context.policy_configuration.get("delivery", {})
             config = config if isinstance(config, dict) else {}
             kind = str(config.get("materialization_type") or "local_patch_apply")
@@ -121,6 +140,7 @@ class DeliveryMaterializerAdapter:
                     status="succeeded",
                     final_patch=patch,
                     final_report="Delivery already completed.",
+                    changed_files=tuple(receipt.changed_files),
                     metadata={
                         "delivery_receipt": receipt.model_dump(mode="json"),
                         "idempotent_replay": True,
@@ -143,6 +163,7 @@ class DeliveryMaterializerAdapter:
                 materializer_version=self.version,
                 patch_sha256=digest,
                 artifact=artifact,
+                changed_files=list(changed_files),
                 metadata=metadata,
             )
             result_metadata: dict[str, Any] = {
@@ -196,6 +217,7 @@ class DeliveryMaterializerAdapter:
                 status="succeeded",
                 final_patch=patch,
                 final_report=f"Delivered exact patch digest {digest} using {kind}.",
+                changed_files=changed_files,
                 metadata=result_metadata,
             )
         except Exception as error:

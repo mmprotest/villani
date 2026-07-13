@@ -115,12 +115,19 @@ heuristic verifier predictions are advisory; only structured repository validati
 configured authoritative verification source can authorize materialization.
 
 Run `python release-verification/run_release_gate.py --mode local` for the cross-platform packaged
-artifact check. Evidence is written beneath `release-verification/artifacts/latest/`. The gate is
-fail-closed: clean package builds, non-editable wheel installation, compatibility, and frontend
-asset validation pass, but connected control-plane scenarios, reconciliation, Playwright, and
-screenshots are not yet implemented and therefore the current gate verdict remains failed.
-`--mode release` also requires every official security scanner to execute; unavailable scanners
-are never reported as passed.
+connected-product check. It builds wheels, source distributions, and packed Node packages; consumes
+them from clean environments without editable installs; migrates PostgreSQL; starts the control
+plane, Agentd, and deterministic fixture model service; executes all eight release scenarios; and
+reconciles the canonical bundle, spool, database, API, Web model, and Flight Recorder model.
+Playwright then checks the connected applications at 1280, 1440, and 1920 pixel widths and writes
+17 real-data screenshots beneath `release-verification/artifacts/latest/screenshots/`.
+
+`--mode ci` adds mandatory Python and Node vulnerability audits. `--mode release` additionally
+requires the repository-secret, external SBOM, and release-container scanners. A required scanner
+that fails, is missing, or is unavailable fails the gate; only local optional scanners may be
+reported unavailable. Reports, API/canonical snapshots, hashes, migration proof, redaction proof,
+browser evidence, and supply-chain manifests are written beneath
+`release-verification/artifacts/latest/` and are regenerated on every run.
 
 `villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.
 

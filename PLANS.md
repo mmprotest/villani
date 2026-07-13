@@ -1777,7 +1777,7 @@ Status: complete
 
 Changed files:
 - Extended `components/villani-control-plane` models, strict request schemas, API routes, settings, service exports, and documentation with workers, heartbeat history, immutable remote tasks, task leases, capability/residency admission, cancellation, retry/dead-letter, and idempotent completion.
-- Added Alembic revision `f3a1c2d4e5f6_remote_dispatch.py`, including tenant foreign keys, claim/expiration indexes, a PostgreSQL partial unique index allowing one active lease per task, and a trigger that prevents mutation of task input, repository reference, policy, constraints, priority, deadline, retry budget, and idempotency identities.
+- Added Alembic revision `f3a1c2d4e5f6_remote_dispatch.py`, including tenant foreign-key constraints, claim and expiration indexes, a PostgreSQL partial unique index allowing one active lease per task, and a trigger that prevents mutation of task input, repository reference, policy, constraints, priority, deadline, retry budget, and idempotency identities.
 - Added `villani_control_plane/services/remote_dispatch.py` and unit/API/PostgreSQL tests for authority separation, capability/residency filtering, lease recovery, concurrent claims, normalized evidence, cancellation, retry/dead-letter, and exactly-once completion.
 - Added `villani_agentd/remote_worker.py`, explicit worker enable/disable/one-shot CLI commands, worker lifecycle integration, capability discovery from the actual Villani configuration, scoped checkout-secret brokering, outbound pull/renew/complete behavior, managed remote workspaces, and child cancellation monitoring.
 - Hardened the existing Windows process-tree termination path to verify `taskkill` completion and force-kill a process that remains alive. Updated agent daemon status/doctor output, component documentation, tests, and this progress section only.
@@ -2671,3 +2671,89 @@ Remaining release failures and external limits:
   implementation remains unfinished.
 
 No later milestone was started; this remains the release-readiness milestone.
+
+#### 2026-07-13: Connected packaged product and release-certification completion
+
+Status: complete. The current release-readiness milestone now exercises the packaged connected
+product, six-source reconciliation, PostgreSQL migration path, real browser surfaces, and strict
+supply-chain policy. No later milestone or unrelated product feature was started.
+
+Changed areas:
+- `release-verification/{run_release_gate.py,connected_product.py,canonical_reconciliation.py,postgres_migration_proof.py,supply_chain.py,browser_server.mjs,derive_ui_models.mjs,fixtures/}` now builds and consumes clean Python/Node packages, starts the PostgreSQL control plane and Agentd, enrolls/synchronizes the daemon, runs eight deterministic temporary-repository scenarios, reconciles six canonical representations, serves both browser applications, captures screenshots, and writes complete fail-closed evidence.
+- Villani Ops gained independent typed verifier routing, recovery-safe verifier accounting,
+  acknowledgement-only candidate configuration diversity, auditable classification adjustments,
+  structured repository-validation authority, selected-patch-only materialization, and canonical
+  event/file/redaction metadata. Production routing remains independent of fixture identities.
+- Agentd and the Control Plane now preserve spool v4 and tenant/run/attempt identity, project
+  canonical runs without exposing scoped internal identifiers, synchronize safe artifacts while
+  withholding unsafe content, and retain redaction/withholding metadata without dead-lettering a
+  run solely because redaction was required.
+- `components/villani-ui` is the reusable monochrome terminal-control-plane system. Villani Web,
+  Flight Recorder, and offline export consume its tokens and shell language; Web and Flight
+  Recorder derive connected views from `@villani/run-model`. Legacy light/cream and green/blue
+  primary surfaces were removed.
+- Flight Recorder Git replay tests now use isolated repositories, bounded subprocesses, and
+  deterministic cleanup. CI uses Python 3.11, Node 20, PostgreSQL 16, real Playwright, clean package
+  consumption, mandatory CI audits, and artifact upload on failure or success. Distribution smoke
+  accepts an explicit pinned Bun command for hosts without a global Bun installation.
+- Release documentation, compatibility metadata, `.dockerignore`, `.gitignore`, and historical
+  final-foundation/theme/release-policy regressions now match the connected implementation.
+
+Architectural decisions:
+- The local canonical run bundle remains the execution truth. Telemetry failure cannot change the
+  coding result; every projection preserves unknown values and synchronization is idempotent.
+- Failed or absent authoritative repository validation blocks acceptance. Heuristics remain
+  advisory. Verifier routing selects the cheapest eligible authority first and escalates on
+  malformed, ambiguous, timed-out, unavailable, or disagreeing evidence; all invocations and costs
+  are persisted separately from coding cost and are not rebilled during recovery.
+- Raw classification is immutable. Effective classification is produced only by versioned policy
+  rules with field/before/after/rule/reason/authority/timestamp evidence and controls routing.
+- Candidate diversity counts only runner-acknowledged applied dimensions and their effective
+  digest. Requested-but-unsupported seed values and unacknowledged plans never create diversity.
+- Release security scans the exact source-archive manifest, not ignored environments or test
+  caches. Gitleaks reports are redacted; Syft and Trivy write hashed JSON evidence; strict mode
+  removes the scanned image. Missing, unavailable, or failed required scanners cannot pass.
+
+Verification:
+- Villani Code: 671 passed, 1 explicit opt-in skip. Villani Ops: 901 passed, 2 host-capability
+  skips, 114 benchmark deselections. Agentd: 60 passed. Required Ruff and mypy gates passed for
+  every edited Python component.
+- Control Plane SQLite: 80 passed, 9 expected PostgreSQL-gated skips. PostgreSQL 16 with current
+  Alembic head and the 100,000-event load smoke: 89 passed, zero skips. Populated upgrade from
+  `f9a0b1c2d3e4` to `0a1b2c3d4e5f` preserved all seeded organizations, runs, attempts, events,
+  outcomes, artifacts, and policy records; 15/15 migration assertions passed.
+- Root closed loop: 10 passed. Final foundation, including fail-closed release scanner, scanner
+  output-decoding, exact source-scope, zero-sync, screenshot, shared-shell, and theme regressions:
+  23 passed. Villani distribution: 15 passed.
+- Shared UI: 3 passed and build/pack passed. Run model: 3 passed, typecheck/build/pack passed.
+  Villani Web: 5 passed, typecheck/build/format passed, and 10 ordinary Playwright tests passed.
+  Flight Recorder: 20 files/105 tests passed; typecheck/build/format/pack passed. Git replay passed
+  three repeated isolated executions in the full suite.
+- Packaged local, CI, and strict release gates each passed 8/8 connected scenarios, 233/233 scenario
+  assertions, 8 synchronized runs, 7 completed runs, 1 intentionally exhausted heuristic-only run,
+  zero dead letters, six-source reconciliation for every run, and 17 connected screenshots at
+  1280x800, 1440x900, and 1920x1080. Playwright records and enforces the actual viewport and PNG
+  dimensions, and the Flight Recorder summary layout has no text collision or overflow. Mandatory
+  pip-audit and all three Node production-lock audits passed; strict release mode reported official
+  certification.
+- The separate Windows distribution smoke passed standalone VFR compilation with pinned Bun
+  1.2.20, clean wheel installation, public entry points, service lifecycle, archive extraction, and
+  SHA-256 verification. The generated Windows archive was 233,592,199 bytes.
+- Official certification used checksum-verified gitleaks 8.30.1, Syft 1.46.0, and Trivy 0.72.0:
+  the exact tracked-plus-nonignored 1,753-file source manifest found zero leaks, Syft emitted a
+  valid 47-component CycloneDX document, and the release control-plane image had zero
+  HIGH/CRITICAL findings. All five required external scanners passed; none was missing or
+  unavailable.
+
+Remaining unsupported integrations and risks:
+- Production cloud KMS/BYOK, production SAML/SCIM, deployment-supplied production OIDC
+  verification, production SLO claims, and economic claims without a qualifying locked live
+  evaluation remain outside this release-readiness milestone. Deterministic release fixtures are
+  product evidence, not economic evidence.
+- Two expected Villani Ops skips describe Windows host capabilities, and one Villani Code skip is
+  an explicit paid-provider smoke; none is a PostgreSQL, connected-product, browser, or release
+  scenario skip.
+
+Next permitted milestone:
+- None. This pass completed the current release-readiness milestone and did not start a later
+  milestone.

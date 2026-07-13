@@ -7,6 +7,7 @@ import {
   type RunSpan,
 } from "@villani/run-model";
 import { ApiError, RunClient } from "./api";
+import { deriveVillaniWebRunModel } from "./connectedRunModel";
 
 export function useRun(runId: string, client: RunClient) {
   const [detail, setDetail] = useState<RunDetail>();
@@ -91,12 +92,17 @@ export function useRun(runId: string, client: RunClient) {
     () => (detail ? deriveRun(detail, events) : undefined),
     [detail, events],
   );
+  const canonical = useMemo(
+    () => (detail ? deriveVillaniWebRunModel(detail) : undefined),
+    [detail],
+  );
   return {
     detail,
     events,
     spans,
     artifacts,
     derived,
+    canonical,
     connection,
     error,
     spanCursor,

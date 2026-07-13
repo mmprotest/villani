@@ -62,5 +62,9 @@ describe("offline export", () => {
     expect(html).toContain("safe");
     expect(html).not.toContain("secret-log");
     expect(html).not.toContain('src="http');
+    expect(html).toContain('data-villani-theme="shared"');
+    expect(html).toContain("--v-bg-root: #050505");
+    expect(html).toContain('class="v-app-shell"');
+    expect(html).not.toMatch(/#f8fafc|#f7f3ea|system-ui|#22c55e|#2563eb/i);
   });
 });

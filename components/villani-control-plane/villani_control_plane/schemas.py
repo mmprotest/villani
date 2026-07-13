@@ -273,6 +273,11 @@ class RunDetail(RunSummary):
     failure_category: str | None = None
     terminal_reason: str | None = None
     redaction_status: dict[str, Any] | None = None
+    redaction_applied: bool = False
+    redacted_field_count: int = 0
+    redaction_categories: list[str] = Field(default_factory=list)
+    withheld_artifact_count: int = 0
+    withheld_artifact_categories: list[str] = Field(default_factory=list)
 
 
 class RunList(BaseModel):

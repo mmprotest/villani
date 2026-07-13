@@ -64,3 +64,63 @@ def test_attempt_identity_is_scoped_by_run_and_replay_is_idempotent(
         assert len(timeline.events) == 1
         assert timeline.events[0]["attempt_id"] == "attempt_001"
         assert f"{run_id}:attempt_001" not in str(detail.model_dump(mode="json"))
+
+
+def test_one_batch_accepts_multiple_events_for_the_same_scoped_attempt(
+    session, principal
+) -> None:
+    events = []
+    for sequence in (1, 2):
+        event = load_v2_fixture("telemetry-envelope.json")
+        event.update(
+            event_id=f"evt_same_attempt_{sequence}",
+            idempotency_key=f"same-attempt:{sequence}",
+            run_id="run_same_attempt_batch",
+            attempt_id="attempt_001",
+            sequence_scope="run:run_same_attempt_batch",
+            sequence=sequence,
+            trace_id="a" * 32,
+            span_id=f"{sequence}" * 16,
+        )
+        events.append(event)
+
+    result = IngestionService(session).ingest_batch(
+        "batch_same_attempt", events, principal
+    )
+
+    assert result.inserted == 2
+    assert RunQueryService(session).get_run(
+        "run_same_attempt_batch", principal
+    ).attempts == [{"id": "attempt_001", "status": "ok"}]
+
+
+def test_one_batch_accepts_repeated_canonical_attempt_ids_across_runs(
+    session, principal
+) -> None:
+    events = []
+    ordinal = 0
+    for run_index, run_id in enumerate(("run_repeated_a", "run_repeated_b"), start=1):
+        for sequence in (1, 2):
+            ordinal += 1
+            event = load_v2_fixture("telemetry-envelope.json")
+            event.update(
+                event_id=f"evt_repeated_batch_{ordinal}",
+                idempotency_key=f"repeated-batch:{ordinal}",
+                run_id=run_id,
+                attempt_id="attempt_001",
+                sequence_scope=f"run:{run_id}",
+                sequence=sequence,
+                trace_id=f"{run_index}" * 32,
+                span_id=f"{ordinal:x}".zfill(16),
+            )
+            events.append(event)
+
+    result = IngestionService(session).ingest_batch(
+        "batch_repeated_attempt_ids", events, principal
+    )
+
+    assert result.inserted == 4
+    for run_id in ("run_repeated_a", "run_repeated_b"):
+        assert RunQueryService(session).get_run(run_id, principal).attempts == [
+            {"id": "attempt_001", "status": "ok"}
+        ]

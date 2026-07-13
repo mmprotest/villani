@@ -53,7 +53,7 @@ def test_absent_agentd_run_is_backfilled_with_original_identity_and_no_duplicate
 
     first = importer.run_once()
     assert first["counts"]["imported"] == 1
-    assert counts(paths.database) == (1, 24, 4, 1)
+    assert counts(paths.database) == (1, 24, 6, 1)
     with sqlite3.connect(paths.database) as connection:
         run = connection.execute("SELECT run_id,final_payload_json FROM runs").fetchone()
         assert run[0] == "run_protocol_fixture"
@@ -67,7 +67,7 @@ def test_absent_agentd_run_is_backfilled_with_original_identity_and_no_duplicate
 
     second = importer.run_once()
     assert second["counts"]["already_imported"] == 1
-    assert counts(paths.database) == (1, 24, 4, 1)
+    assert counts(paths.database) == (1, 24, 6, 1)
 
 
 def test_partial_run_resumes_sequences_under_one_run_identity(tmp_path: Path) -> None:
@@ -127,7 +127,11 @@ def test_registered_secret_artifact_never_enters_spool(tmp_path: Path) -> None:
     report = LocalRunImporter(paths, Limits()).run_once()
     assert report["counts"]["imported"] == 1
     assert report["diagnostics"][0]["imported_events"] > 0
-    assert report["diagnostics"][0]["imported_artifacts"] == 3
+    assert report["diagnostics"][0]["imported_artifacts"] == 5
+    assert report["diagnostics"][0]["withheld_artifacts"] == 1
+    assert report["diagnostics"][0]["withheld_artifact_categories"] == [
+        "registered_secret"
+    ]
     assert canary.encode() not in paths.database.read_bytes()
     for artifact in paths.artifacts.rglob("*"):
         if artifact.is_file():
@@ -169,6 +173,7 @@ def test_absent_agentd_offline_backfill_then_control_plane_sync_is_exactly_once(
     sync.random = random.Random(1)
 
     assert sync.sync_once() == {"events": 24, "artifacts": 2, "outcomes": 1}
+    assert sync.sync_once() == {"events": 0, "artifacts": 2, "outcomes": 0}
     assert sync.sync_once() == {"events": 0, "artifacts": 2, "outcomes": 0}
     assert sync.sync_once() == {"events": 0, "artifacts": 0, "outcomes": 0}
     assert len(remote.events) == 24

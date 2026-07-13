@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 
 from villani_ops.core.backend import Backend
-from villani_ops.runners.base import RunnerAdapter, RunnerContext, RunnerResult
+from villani_ops.runners.base import (
+    CandidateExecutionAcknowledgement,
+    RunnerAdapter,
+    RunnerContext,
+    RunnerResult,
+)
 from villani_ops.runners.villani_code import (
     VillaniCodeAdapter,
     provider_for_villani_code_cli,
@@ -367,6 +372,13 @@ class VillaniCodeAttemptAdapter:
             if runner_result.exit_code == 0 and not capture.failure_reason
             else "failed"
         )
+        structured_file_writes = sum(
+            event.event_type in {"file_write", "file_patch_applied"}
+            for event in runtime_events
+        )
+        total_file_writes = max(
+            int(runner_result.total_file_writes or 0), structured_file_writes
+        )
         telemetry = redact_data(
             {
                 **dict(runner_result.telemetry or {}),
@@ -383,7 +395,7 @@ class VillaniCodeAttemptAdapter:
                 "total_tool_calls": runner_result.total_tool_calls,
                 "tool_calls_by_name": runner_result.tool_calls_by_name,
                 "total_file_reads": runner_result.total_file_reads,
-                "total_file_writes": runner_result.total_file_writes,
+                "total_file_writes": total_file_writes,
                 "commands_executed": runner_result.commands_executed,
                 "commands_failed": runner_result.commands_failed,
                 "first_substantive_file_read_tool_index": runner_result.first_substantive_file_read_tool_index,
@@ -414,7 +426,7 @@ class VillaniCodeAttemptAdapter:
         metadata = {
             "worktree": worktree_metadata,
             "changed_files": capture.changed_files,
-            "total_file_writes": runner_result.total_file_writes,
+            "total_file_writes": total_file_writes,
             "patch_capture": capture.model_dump(mode="json"),
             "failure_classification": failure_classification,
             "cost_breakdown": cost_breakdown.as_dict(),
@@ -425,7 +437,7 @@ class VillaniCodeAttemptAdapter:
                 "total_tool_calls": runner_result.total_tool_calls,
                 "tool_calls_by_name": runner_result.tool_calls_by_name,
                 "total_file_reads": runner_result.total_file_reads,
-                "total_file_writes": runner_result.total_file_writes,
+                "total_file_writes": total_file_writes,
                 "commands_executed": runner_result.commands_executed,
                 "commands_failed": runner_result.commands_failed,
             },
@@ -434,14 +446,26 @@ class VillaniCodeAttemptAdapter:
         }
         effective_config_path = attempt_dir / "effective_candidate_configuration.json"
         if effective_config_path.is_file():
-            effective_config = json.loads(effective_config_path.read_text(encoding="utf-8"))
-            metadata["effective_candidate_configuration"] = effective_config
-            metadata["runner_acknowledged_candidate_configuration"] = bool(
-                effective_config.get("runner_acknowledged")
-            )
-            metadata["effective_configuration_sha256"] = effective_config.get(
-                "effective_configuration_digest"
-            )
+            try:
+                effective_config = CandidateExecutionAcknowledgement.model_validate_json(
+                    effective_config_path.read_text(encoding="utf-8")
+                )
+            except (ValueError, json.JSONDecodeError) as error:
+                metadata["runner_acknowledged_candidate_configuration"] = False
+                metadata["candidate_configuration_acknowledgement_error"] = (
+                    type(error).__name__
+                )
+            else:
+                effective_document = effective_config.model_dump(mode="json")
+                metadata["effective_candidate_configuration"] = effective_document
+                metadata["runner_acknowledged_candidate_configuration"] = bool(
+                    effective_config.runner_acknowledged
+                )
+                metadata["effective_configuration_sha256"] = (
+                    effective_config.effective_configuration_digest
+                    if effective_config.runner_acknowledged
+                    else None
+                )
 
         encoded_patch = patch.encode("utf-8")
         protocol_error = (

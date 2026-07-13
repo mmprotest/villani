@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from villani_control_plane.errors import AuthenticationError, AuthorizationError, ConflictError
 from villani_control_plane.models import Event, IngestBatch, Outbox
-from villani_control_plane.security import hash_token, verify_token
+from villani_control_plane.security import hash_token, mask_sensitive_fields, verify_token
 from villani_control_plane.services import AuthenticationService, IngestionService, RunQueryService
 
 
@@ -34,6 +34,25 @@ def test_tokens_are_salted_and_verified_without_plaintext() -> None:
     assert not verify_token(token + "x", first)
 
 
+def test_response_masking_preserves_harmless_token_metrics_and_statuses() -> None:
+    value = mask_sensitive_fields(
+        {
+            "token": "test-token",
+            "numeric_token_metric": 42,
+            "input_tokens": 20,
+            "token_accounting_status": "complete",
+            "access_token": "unsafe",
+            "message": "Bearer abcdefghijklmnop",
+        }
+    )
+    assert value["token"] == "test-token"
+    assert value["numeric_token_metric"] == 42
+    assert value["input_tokens"] == 20
+    assert value["token_accounting_status"] == "complete"
+    assert value["access_token"] == "********"
+    assert value["message"] == "********"
+
+
 def test_authentication_is_scoped_and_rejects_unknown_token(session, principal) -> None:
     authenticated = AuthenticationService(session).authenticate(TEST_TOKEN)
     assert authenticated.organization_id == principal.organization_id
@@ -52,6 +71,48 @@ def test_duplicate_batches_and_events_are_idempotent(session, principal) -> None
     assert (third.inserted, third.duplicates) == (0, 1)
     assert session.scalar(select(func.count()).select_from(Event)) == 1
     assert session.scalar(select(func.count()).select_from(Outbox)) == 1
+
+
+def test_redaction_projection_aggregates_inserted_events_once(session, principal) -> None:
+    service = IngestionService(session)
+    first = event(
+        1,
+        name="run_created",
+        body={
+            "task_instruction": "safe task",
+            "villani_redaction": {
+                "status": "redacted",
+                "count": 2,
+                "categories": ["registered_secret", "bearer_token"],
+            },
+        },
+    )
+    second = event(
+        2,
+        event_id="evt_2",
+        idempotency_key="test:2",
+        body={
+            "villani_redaction": {
+                "status": "redacted",
+                "count": 1,
+                "categories": ["registered_secret"],
+            }
+        },
+    )
+    service.ingest_batch("redaction-1", [first, second], principal)
+    service.ingest_batch("redaction-2", [first, second], principal)
+
+    run = RunQueryService(session).get_run(first["run_id"], principal)
+    assert run.redaction_applied is True
+    assert run.redacted_field_count == 3
+    assert run.redaction_categories == ["bearer_token", "registered_secret"]
+    assert run.redaction_status == {
+        "status": "redacted",
+        "applied": True,
+        "count": 3,
+        "redacted_field_count": 3,
+        "categories": ["bearer_token", "registered_secret"],
+    }
 
 
 def test_batch_id_and_event_identity_collisions_fail(session, principal) -> None:

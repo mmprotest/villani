@@ -87,6 +87,26 @@ class PatchMaterializerAdapter:
             changed_files = tuple(
                 str(item) for item in apply_artifact.get("changed_files") or []
             )
+            if not changed_files:
+                # The exact selected attempt snapshot is produced from Git's
+                # cached name-status output for these same patch bytes.  Some
+                # platform Git builds can successfully apply a patch while the
+                # lightweight header parser in the shared apply helper reports
+                # no paths.  Preserve the authoritative capture in that case;
+                # never infer names from the target repository after mutation.
+                captured = selected.attempt.metadata.get("changed_files")
+                if isinstance(captured, (list, tuple)) and all(
+                    isinstance(item, str)
+                    and item
+                    and not Path(item).is_absolute()
+                    and ".." not in Path(item).parts
+                    for item in captured
+                ):
+                    changed_files = tuple(sorted(set(captured)))
+                    apply_artifact["changed_files"] = list(changed_files)
+                    apply_artifact[
+                        "changed_files_source"
+                    ] = "selected_attempt_git_capture"
             final_patch = patch_text
             final_report = (
                 "# Materialization report\n\n"

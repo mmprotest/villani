@@ -7,16 +7,19 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-SENSITIVE_FIELD_PARTS = (
-    "secret",
-    "token",
-    "password",
-    "credential",
+SENSITIVE_FIELDS = {
     "authorization",
+    "password",
+    "passwd",
+    "secret",
     "api_key",
+    "apikey",
     "private_key",
-)
-TOKEN_METRIC_FIELDS = {"input_tokens", "output_tokens", "total_tokens"}
+    "credential",
+    "credentials",
+    "access_token",
+    "refresh_token",
+}
 SENSITIVE_TEXT = re.compile(
     r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{12,}|"
     r"\b(?:sk|pk|api)[-_][A-Za-z0-9_-]{16,}\b"
@@ -33,8 +36,7 @@ def mask_sensitive_fields(value: Any) -> Any:
         return value
     return {
         key: "********"
-        if key.lower() not in TOKEN_METRIC_FIELDS
-        and any(part in key.lower() for part in SENSITIVE_FIELD_PARTS)
+        if key.lower().replace("-", "_") in SENSITIVE_FIELDS
         else mask_sensitive_fields(item)
         for key, item in value.items()
     }

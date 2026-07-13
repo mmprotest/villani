@@ -15,21 +15,33 @@ from villani_ops.execution_environment.secrets import registered_secret_values
 
 
 _SECRET_PATTERNS = (
-    re.compile(r"(?i)(api[_-]?key|token|password|secret)(\s*[:=]\s*)\S+"),
-    re.compile(r"(?i)bearer\s+\S+"),
-    re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
+    re.compile(
+        r"(?i)\b(api[_-]?key|access[_-]?token|password|secret)"
+        r"(\s*[:=]\s*[\"']?)[A-Za-z0-9._~+/-]{16,}"
+    ),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{16,}"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
 )
 
 
-def redact_message(message: str, *, limit: int = 500) -> str:
-    redacted = message.replace("\r", " ").replace("\n", " ")
+def _redact_text(value: str, *, secrets: tuple[str, ...] = ()) -> str:
+    redacted = value
     for secret in registered_secret_values():
-        redacted = redacted.replace(secret, "[REDACTED]")
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
     for pattern in _SECRET_PATTERNS:
         if pattern.pattern.lower().startswith("(?i)(api"):
             redacted = pattern.sub(r"\1\2[REDACTED]", redacted)
         else:
             redacted = pattern.sub("[REDACTED]", redacted)
+    return redacted
+
+
+def redact_message(message: str, *, limit: int = 500) -> str:
+    redacted = _redact_text(message.replace("\r", " ").replace("\n", " "))
     return redacted[:limit] or "dependency failed without a message"
 
 
@@ -50,13 +62,9 @@ def redact_data(value: Any, *, secrets: tuple[str, ...] = ()) -> Any:
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, str):
-        redacted = value
-        for secret in (*registered_secret_values(), *secrets):
-            if secret:
-                redacted = redacted.replace(secret, "[REDACTED]")
-        if not redacted:
-            return ""
-        return redact_message(redacted, limit=max(500, len(redacted)))
+        # Canonical data must retain exact line endings and whitespace.  Log
+        # messages use ``redact_message`` separately to remain single-line.
+        return _redact_text(value, secrets=secrets)
     if isinstance(value, list):
         return [redact_data(item, secrets=secrets) for item in value]
     if isinstance(value, tuple):
@@ -113,7 +121,7 @@ class EventWriter:
             parent_event_id=parent_event_id,
             source="controller",
             event_type=event_type,
-            payload=payload or {},
+            payload=redact_data(dict(payload or {})),
         )
         if self._delivery is not None:
             self._delivery.event_persisted(event)

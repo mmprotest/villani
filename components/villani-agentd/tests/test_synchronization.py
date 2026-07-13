@@ -155,6 +155,25 @@ def test_offline_finalization_retries_and_uploads_one_outcome(tmp_path) -> None:
         )
 
 
+def test_finalization_waits_until_its_run_events_are_acknowledged(tmp_path) -> None:
+    paths = AgentdPaths(tmp_path / "agentd")
+    spool = SQLiteSpool(paths, Limits())
+    outcome = json.loads((FIXTURE / "outcome.json").read_text(encoding="utf-8"))
+    run_id = outcome["run_id"]
+    spool.ingest_events([event(1)])
+    spool.finalize_run(run_id, {"outcome": outcome}, "2026-07-12T00:00:00Z")
+    client = FakeClient(["events"])
+    sync = worker(paths, client)
+
+    first = sync.sync_once()
+    assert first == {"events": 0, "artifacts": 0, "outcomes": 0}
+    assert client.outcomes == []
+
+    second = sync.sync_once()
+    assert second == {"events": 1, "artifacts": 0, "outcomes": 1}
+    assert client.outcomes == [outcome]
+
+
 def test_backoff_is_exponential_with_full_jitter_and_retry_after_wins(tmp_path) -> None:
     sync = worker(AgentdPaths(tmp_path / "agentd"), FakeClient())
     assert 0 <= sync._delay(3, None) <= 8

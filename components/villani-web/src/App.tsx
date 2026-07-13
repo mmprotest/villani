@@ -4,12 +4,22 @@ import {
   deriveRun,
   maskSensitive,
   type ArtifactDescriptor,
+  type CanonicalRunSnapshot,
   type DerivedRun,
   type RunDetail,
   type RunEvent,
   type RunSpan,
 } from "@villani/run-model";
+import {
+  DataTable,
+  KeyValueGrid,
+  MetricCard,
+  Panel,
+  PanelHeader,
+  StatusBadge,
+} from "@villani/ui/react";
 import { RunClient } from "./api";
+import { ProductShell } from "./ProductShell";
 import { downloadStaticExport } from "./staticExport";
 import { useRun } from "./useRun";
 
@@ -537,6 +547,228 @@ function Policy({ derived }: { derived: DerivedRun }) {
   );
 }
 
+const canonicalText = (value: unknown) => {
+  if (value == null) return "Unknown";
+  if (typeof value === "object") return JSON.stringify(maskSensitive(value));
+  return String(value);
+};
+
+function CanonicalEvidence({ snapshot }: { snapshot: CanonicalRunSnapshot }) {
+  const raw = snapshot.raw_classification ?? {};
+  const effective = snapshot.effective_classification ?? {};
+  const adjustments = snapshot.classification_adjustments;
+  const redactionVisible =
+    snapshot.redaction_status != null ||
+    (snapshot.redacted_field_count ?? 0) > 0 ||
+    (snapshot.withheld_artifact_count ?? 0) > 0;
+  return (
+    <div className="canonical-evidence" data-testid="canonical-run-model">
+      <div className="v-grid v-grid--metrics" aria-label="Canonical run metrics">
+        <MetricCard
+          label="Coding cost"
+          value={fmtMoney(snapshot.coding_cost_usd)}
+          detail="Candidate execution"
+        />
+        <MetricCard
+          label="Verifier cost"
+          value={fmtMoney(snapshot.verifier_cost_usd)}
+          detail={snapshot.verifier_identity ?? "No verifier call"}
+        />
+        <MetricCard
+          label="Total cost"
+          value={fmtMoney(snapshot.total_cost_usd)}
+          detail="Coding + verifier"
+        />
+        <MetricCard
+          label="Tokens"
+          value={fmtTokens(snapshot.total_tokens)}
+          detail={`${fmtTokens(snapshot.input_tokens)} in / ${fmtTokens(snapshot.output_tokens)} out`}
+        />
+        <MetricCard
+          label="Attempts"
+          value={String(snapshot.attempts.length)}
+          detail={`${snapshot.escalation_count ?? "Unknown"} escalations`}
+        />
+        <MetricCard
+          label="File writes"
+          value={canonicalText(snapshot.file_write_count)}
+          detail={`${snapshot.selected_materialized_files.length} materialized files`}
+        />
+      </div>
+      <div className="v-grid v-grid--2">
+        <Panel id="run-overview" data-testid="run-overview">
+          <PanelHeader title="RUN / CANONICAL TRUTH" meta={snapshot.run_id} />
+          <KeyValueGrid
+            items={[
+              ["Task", snapshot.task ?? "Unknown"],
+              ["Success criteria", snapshot.success_criteria ?? "Unknown"],
+              ["Repository", snapshot.repository ?? "Unknown"],
+              [
+                "Agent",
+                [snapshot.agent_name, snapshot.agent_version]
+                  .filter(Boolean)
+                  .join(" / ") || "Unknown",
+              ],
+              ["Policy", snapshot.policy_version ?? "Unknown"],
+              [
+                "Backend / model",
+                [snapshot.selected_backend, snapshot.selected_model]
+                  .filter(Boolean)
+                  .join(" / ") || "Unknown",
+              ],
+              ["Selected attempt", snapshot.selected_attempt_id ?? "None"],
+              ["Materialization", snapshot.materialization_status ?? "Unknown"],
+              [
+                "Duration",
+                snapshot.duration_ms == null ? "Unknown" : `${snapshot.duration_ms} ms`,
+              ],
+              ["Terminal reason", snapshot.terminal_reason ?? "Unknown"],
+            ]}
+          />
+        </Panel>
+        <Panel id="classification" data-testid="classification-adjustment">
+          <PanelHeader
+            title="CLASSIFICATION / RAW → EFFECTIVE"
+            meta={`${adjustments.length} adjustment(s)`}
+          />
+          <div className="v-panel__body classification-grid">
+            <div>
+              <span className="field-label">RAW / IMMUTABLE</span>
+              <pre className="v-code">
+                {JSON.stringify(maskSensitive(raw), null, 2)}
+              </pre>
+            </div>
+            <div>
+              <span className="field-label">EFFECTIVE / ROUTING</span>
+              <pre className="v-code">
+                {JSON.stringify(maskSensitive(effective), null, 2)}
+              </pre>
+            </div>
+            {adjustments.length ? (
+              <ol className="adjustment-list">
+                {adjustments.map((adjustment, index) => (
+                  <li key={`${String(adjustment.rule_id ?? "rule")}-${index}`}>
+                    <strong>{canonicalText(adjustment.field)}</strong>:{" "}
+                    {canonicalText(adjustment.before)} →{" "}
+                    {canonicalText(adjustment.after)}
+                    <span>
+                      {canonicalText(adjustment.rule_id)} /{" "}
+                      {canonicalText(adjustment.reason)} /{" "}
+                      {canonicalText(adjustment.authority)}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="empty">No semantic classification adjustment applied.</p>
+            )}
+          </div>
+        </Panel>
+      </div>
+      <Panel id="verification-evidence" data-testid="verification-evidence">
+        <PanelHeader
+          title="VERIFICATION / AUTHORITY"
+          actions={<StatusBadge status={snapshot.verification_outcome ?? "unknown"} />}
+        />
+        <KeyValueGrid
+          items={[
+            ["Outcome", snapshot.verification_outcome ?? "Unknown"],
+            [
+              "Authority",
+              snapshot.verification_authority ?? "No acceptance-grade authority",
+            ],
+            ["Verifier", snapshot.verifier_identity ?? "No LLM verifier call"],
+            ["Selection reason", snapshot.selection_reason ?? "Unknown"],
+            ["Failure category", snapshot.failure_category ?? "None"],
+            ["Policy version", snapshot.policy_version ?? "Unknown"],
+          ]}
+        />
+      </Panel>
+      <Panel id="canonical-candidates" data-testid="candidate-comparison">
+        <PanelHeader
+          title="CANDIDATE / COMPARISON"
+          meta={`${snapshot.attempts.length} unique canonical attempts`}
+        />
+        <DataTable
+          caption="Canonical candidate comparison"
+          rows={snapshot.attempts}
+          getRowKey={(attempt) => attempt.attempt_id}
+          columns={[
+            { key: "attempt_id", header: "Candidate" },
+            {
+              key: "route",
+              header: "Backend / model",
+              render: (attempt) =>
+                [attempt.backend, attempt.model].filter(Boolean).join(" / ") ||
+                "Unknown",
+            },
+            {
+              key: "status",
+              header: "Status",
+              render: (attempt) => (
+                <StatusBadge
+                  status={attempt.selected ? "selected" : (attempt.status ?? "unknown")}
+                  label={
+                    attempt.selected
+                      ? `SELECTED / ${attempt.status ?? "unknown"}`
+                      : undefined
+                  }
+                />
+              ),
+            },
+            {
+              key: "eligible",
+              header: "Eligibility",
+              render: (attempt) =>
+                attempt.eligible == null
+                  ? "Unknown"
+                  : attempt.eligible
+                    ? "ELIGIBLE"
+                    : "INELIGIBLE",
+            },
+            {
+              key: "authority",
+              header: "Authority",
+              render: (attempt) => attempt.verification_authority ?? "None",
+            },
+            {
+              key: "tokens",
+              header: "Tokens",
+              render: (attempt) => fmtTokens(attempt.total_tokens),
+            },
+            {
+              key: "cost",
+              header: "Cost",
+              render: (attempt) => fmtMoney(attempt.cost_usd),
+            },
+            {
+              key: "files",
+              header: "Files",
+              render: (attempt) => String(attempt.changed_files.length),
+            },
+          ]}
+        />
+      </Panel>
+      {redactionVisible && (
+        <div
+          className="v-notice redaction-notice"
+          data-kind="redaction"
+          data-testid="redaction-withholding-notice"
+          role="status"
+        >
+          <StatusBadge status="redacted" /> Safe run metadata remains visible.{" "}
+          {snapshot.redacted_field_count ?? 0} field(s) redacted;{" "}
+          {snapshot.withheld_artifact_count ?? 0} unsafe artifact(s) withheld
+          {snapshot.withheld_artifact_categories?.length
+            ? ` (${snapshot.withheld_artifact_categories.join(", ")})`
+            : ""}
+          .
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Failure({ derived }: { derived: DerivedRun }) {
   if (!derived.failure) return null;
   return (
@@ -584,25 +816,48 @@ export default function App() {
   const run = useRun(runId, client);
   if (!runId)
     return (
-      <main id="main" className="center">
-        <h1>Run ID required</h1>
-        <p>
-          Open <code>/runs/&lt;run_id&gt;</code>.
-        </p>
-      </main>
+      <ProductShell
+        surface="run"
+        title="RUN DETAIL"
+        status="unknown"
+        statusText="RUN / UNSELECTED"
+      >
+        <div className="center v-panel">
+          <h1>Run ID required</h1>
+          <p>
+            Open <code>/runs/&lt;run_id&gt;</code>.
+          </p>
+        </div>
+      </ProductShell>
     );
   if (run.error)
     return (
-      <main id="main" className="center">
-        <h1>Unable to open run</h1>
-        <p role="alert">{run.error}</p>
-      </main>
+      <ProductShell
+        surface="run"
+        title="RUN DETAIL"
+        detail={runId}
+        status="failed"
+        statusText="API / UNAVAILABLE"
+      >
+        <div className="center v-panel">
+          <h1>Unable to open run</h1>
+          <p role="alert">{run.error}</p>
+        </div>
+      </ProductShell>
     );
   if (!run.detail || !run.derived)
     return (
-      <main id="main" className="center" aria-busy="true">
-        <h1>Loading run…</h1>
-      </main>
+      <ProductShell
+        surface="run"
+        title="RUN DETAIL"
+        detail={runId}
+        status="running"
+        statusText="SYNC / LOADING"
+      >
+        <div className="center v-panel" aria-busy="true">
+          <h1>Loading run…</h1>
+        </div>
+      </ProductShell>
     );
   const exportRun = async () => {
     const events: RunEvent[] = [];
@@ -636,23 +891,21 @@ export default function App() {
     });
   };
   return (
-    <>
-      <nav aria-label="Run sections">
-        <a href="#timeline">Timeline</a>
-        <a href="#graph">Graph</a>
-        <a href="#candidates">Candidates</a>
-        <a href="#cost">Cost</a>
-        <a href="#files">Files</a>
-        <a href="#policy">Policy</a>
-        {run.derived.failure && <a href="#failure">Failure</a>}
-      </nav>
-      <main id="main">
+    <ProductShell
+      surface="run"
+      title="RUN DETAIL"
+      detail={runId}
+      status={run.derived.status.status}
+      statusText={`RUN / ${run.derived.status.label.toUpperCase()}`}
+    >
+      <div className="run-page" data-run-id={runId}>
         <Header
           detail={run.detail}
           derived={run.derived}
           connection={run.connection}
           onExport={exportRun}
         />
+        {run.canonical && <CanonicalEvidence snapshot={run.canonical} />}
         <Timeline events={run.events} />
         <Graph
           spans={run.spans}
@@ -670,7 +923,7 @@ export default function App() {
         />
         <Policy derived={run.derived} />
         <Failure derived={run.derived} />
-      </main>
-    </>
+      </div>
+    </ProductShell>
   );
 }
