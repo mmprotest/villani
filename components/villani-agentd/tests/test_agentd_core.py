@@ -211,6 +211,39 @@ def test_identical_event_batches_are_idempotent(paths: AgentdPaths) -> None:
     assert spool.status()["events"] == 2
 
 
+def test_event_redaction_preserves_safe_metadata_and_numeric_token_metrics(
+    paths: AgentdPaths,
+) -> None:
+    from villani_ops.execution_environment.secrets import register_secret_values
+
+    secret = "registered-release-secret-91c4"
+    register_secret_values([secret])
+    spool = SQLiteSpool(paths, Limits())
+    document = _event(
+        1,
+        body={
+            "task_instruction": "Repair authentication using a variable named token",
+            "fixture": "test-token",
+            "authorization": f"Bearer {secret}",
+            "registered": secret,
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "total_tokens": 18,
+        },
+    )
+    assert spool.ingest_events([document]).inserted == 1
+    raw = paths.database.read_bytes()
+    assert secret.encode() not in raw
+    with sqlite3.connect(paths.database) as connection:
+        payload = json.loads(connection.execute("SELECT payload_json FROM events").fetchone()[0])
+    assert payload["body"]["task_instruction"].endswith("named token")
+    assert payload["body"]["fixture"] == "test-token"
+    assert payload["body"]["authorization"] == "[REDACTED]"
+    assert payload["body"]["registered"] == "[REDACTED]"
+    assert payload["body"]["total_tokens"] == 18
+    assert payload["body"]["villani_redaction"]["status"] == "redacted"
+
+
 def test_canonical_event_writer_spools_same_run_identity(running_server, tmp_path) -> None:
     _server, client, _endpoint, spool = running_server
     store = RunStore(tmp_path / "runs", "run_canonical_1")

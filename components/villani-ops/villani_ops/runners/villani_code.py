@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 import os
 import subprocess
 import json
@@ -20,7 +21,15 @@ class VillaniCodeRunner:
     name = "villani_code"
 
     def build_prompt(self, c: RunnerContext) -> str:
-        return f"""Objective:\n{c.task_instruction}\n\nSuccess criteria:\n{c.success_criteria or "Not provided"}\n\nAttempt: {c.attempt_id}\nWork only in repo: {c.repo_path}\n"""
+        strategy = str(c.candidate_dimensions.get("prompt_strategy_id") or "direct")
+        instructions = {
+            "direct": "Solve the objective directly and validate the result.",
+            "plan_first": "Inspect the repository and form a concise plan before editing, then validate the result.",
+            "test_first": "Reproduce the issue or establish validation evidence before editing, then validate the result after editing.",
+        }
+        if strategy not in instructions:
+            raise ValueError(f"unsupported prompt_strategy_id: {strategy}")
+        return f"""Strategy: {strategy}\n{instructions[strategy]}\n\nObjective:\n{c.task_instruction}\n\nSuccess criteria:\n{c.success_criteria or "Not provided"}\n\nAttempt: {c.attempt_id}\nWork only in repo: {c.repo_path}\n"""
 
     def run(self, context: RunnerContext) -> RunnerResult:
         command_name = context.backend.command_name or "villani-code"
@@ -36,6 +45,23 @@ class VillaniCodeRunner:
             )
         api_key = context.backend.resolved_api_key() or ""
         prompt = self.build_prompt(context)
+        requested = dict(context.candidate_dimensions)
+        applied = {
+            "agent": str(requested.get("agent") or "villani-code"),
+            "backend_name": str(requested.get("backend_name") or context.backend.name),
+            "model": requested.get("model") or context.backend.model,
+            "prompt_strategy_id": str(requested.get("prompt_strategy_id") or "direct")
+        }
+        unsupported = {
+            key: value
+            for key, value in requested.items()
+            if key not in {"agent", "backend_name", "model", "prompt_strategy_id"}
+            and value not in {None, "default"}
+        }
+        prompt_digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        effective_digest = hashlib.sha256(
+            json.dumps(applied, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
         max_tokens = str(context.backend.max_tokens or 50000)
         cli_provider = provider_for_villani_code_cli(context.backend.provider)
         provider_warning = None
@@ -50,6 +76,21 @@ class VillaniCodeRunner:
         telemetry_path = Path(context.run_dir) / "runner_telemetry.json"
         prompt_path = Path(context.run_dir) / "villani_code_prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
+        (Path(context.run_dir) / "effective_candidate_configuration.json").write_text(
+            json.dumps(
+                {
+                    "requested_dimensions": requested,
+                    "applied_dimensions": applied,
+                    "unsupported_dimensions": unsupported,
+                    "effective_prompt_digest": prompt_digest,
+                    "effective_configuration_digest": effective_digest,
+                    "runner_acknowledged": True,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
         safe_inline_limit = int(
             os.environ.get("VILLANI_CODE_INLINE_PROMPT_LIMIT", "12000")
         )

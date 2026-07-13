@@ -215,6 +215,16 @@ Normalized verification includes:
 - The patch exists and is non-empty unless the task explicitly requires no file change.
 - No acceptance blocker is present.
 
+Verification records its authority source. Heuristic-only deterministic output can extract
+evidence and reject clear failures but cannot authorize materialization. Structured repository
+validation is authoritative only when it completes in the isolated candidate after the final
+relevant mutation, exits zero, has no later failing validation, and has no missing blocker.
+
+Candidate dimensions cross the runner boundary as typed `RunnerContext` data. Supported prompt
+strategies are `direct`, `plan_first`, and `test_first`; rendered prompts and effective
+configuration acknowledgements are stored with each attempt. Unsupported dimensions remain
+auditable but do not contribute to the effective diversity fingerprint.
+
 Selection is deterministic by default. It ranks only eligible candidates using direct behavioral evidence, repository test evidence, critical requirement coverage, lower risk, and then lower actual cost when costs are known. Stable `attempt_id` is the final tie-breaker. An LLM comparison may be recorded as advisory, but it may not override a stronger deterministic evidence result in version 1.
 
 ## Architectural invariants

@@ -25,15 +25,25 @@ class CandidateDimensions(FrozenModel):
     agent: str = "villani-code"
     backend_name: str | None = None
     model: str | None = None
-    prompt_strategy_id: str = "canonical"
+    prompt_strategy_id: str = "direct"
     seed: int | None = None
     planning_mode: str = "default"
     tool_budget: int | None = Field(default=None, ge=1)
 
     @property
     def effective_fingerprint(self) -> str:
+        # Only behavior-affecting dimensions acknowledged by the runner may
+        # contribute. Requested seed/planning/tool-budget values are retained
+        # for audit but are unsupported until a provider applies them.
         encoded = json.dumps(
-            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            {
+                "agent": self.agent,
+                "backend_name": self.backend_name,
+                "model": self.model,
+                "prompt_strategy_id": self.prompt_strategy_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
         ).encode()
         return hashlib.sha256(encoded).hexdigest()
 

@@ -260,6 +260,9 @@ class Run(Base, TimestampMixin, SoftDeleteMixin):
     verifier_cost_usd: Mapped[float | None] = mapped_column(Float)
     verifier_disagreement: Mapped[bool | None] = mapped_column(Boolean)
     rejected_cost_usd: Mapped[float | None] = mapped_column(Float)
+    canonical_projection: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False, default=dict
+    )
     tags: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, default=list)
     tags_text: Mapped[str] = mapped_column(Text, default="")
     first_occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -323,8 +326,8 @@ class Run(Base, TimestampMixin, SoftDeleteMixin):
 class Attempt(Base, TimestampMixin):
     __tablename__ = "attempts"
     organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="unknown")
     __table_args__ = (
         ForeignKeyConstraint(
@@ -333,7 +336,7 @@ class Attempt(Base, TimestampMixin):
             ondelete="CASCADE",
             name="fk_attempts_run_tenant",
         ),
-        Index("ix_attempts_run", "organization_id", "run_id"),
+        Index("ix_attempts_run", "organization_id", "run_id", "id"),
     )
 
 

@@ -4,6 +4,7 @@ from conftest import load_v2_fixture
 
 from villani_control_plane.models import Attempt
 from villani_control_plane.services import IngestionService
+from villani_control_plane.services.query import RunQueryService
 
 
 def test_daemon_exact_telemetry_artifact_and_outcome_fixtures(session, principal) -> None:
@@ -29,3 +30,37 @@ def test_daemon_exact_telemetry_artifact_and_outcome_fixtures(session, principal
     session.commit()
     stored_outcome = IngestionService(session).record_outcome(outcome, principal)
     assert stored_outcome == outcome
+
+
+def test_attempt_identity_is_scoped_by_run_and_replay_is_idempotent(
+    session, principal
+) -> None:
+    service = IngestionService(session)
+    query = RunQueryService(session)
+    outcome_fixture = load_v2_fixture("outcome.json")
+    for index, run_id in enumerate(("run_a", "run_b"), start=1):
+        event = load_v2_fixture("telemetry-envelope.json")
+        event.update(
+            event_id=f"evt_attempt_scope_{index}",
+            idempotency_key=f"attempt-scope:{index}",
+            run_id=run_id,
+            attempt_id="attempt_001",
+            sequence_scope=f"run:{run_id}",
+            trace_id=f"{index}" * 32,
+            span_id=f"{index}" * 16,
+        )
+        first = service.ingest_batch(f"batch_{run_id}", [event], principal)
+        replay = service.ingest_batch(f"batch_{run_id}", [event], principal)
+        assert (first.inserted, first.duplicates, first.replayed) == (1, 0, False)
+        assert (replay.inserted, replay.duplicates, replay.replayed) == (0, 1, True)
+
+        outcome = dict(outcome_fixture)
+        outcome["run_id"] = run_id
+        assert service.record_outcome(outcome, principal)["attempt_id"] == "attempt_001"
+        detail = query.get_run(run_id, principal)
+        assert detail.attempts == [{"id": "attempt_001", "status": "ok"}]
+        assert detail.outcomes[0]["attempt_id"] == "attempt_001"
+        timeline = query.events(run_id, principal, cursor=None, limit=10)
+        assert len(timeline.events) == 1
+        assert timeline.events[0]["attempt_id"] == "attempt_001"
+        assert f"{run_id}:attempt_001" not in str(detail.model_dump(mode="json"))

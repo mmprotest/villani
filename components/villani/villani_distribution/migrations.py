@@ -7,11 +7,17 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from villani_agentd.spool_schema import (
+    CURRENT_SPOOL_SCHEMA_VERSION,
+    SpoolSchemaError,
+    inspect_spool_schema,
+    migrate_spool_schema,
+)
 
 from villani_ops.closed_loop.durable_io import write_json_atomic
 
 SUPPORTED_CONFIG_VERSION = 1
-SUPPORTED_SPOOL_VERSION = 1
+SUPPORTED_SPOOL_VERSION = CURRENT_SPOOL_SCHEMA_VERSION
 SUPPORTED_PROTOCOL_MAJORS = {1, 2}
 
 
@@ -54,25 +60,10 @@ def _spool_version(home: Path, *, apply: bool) -> tuple[int | None, int | None]:
         return None, None
     try:
         with sqlite3.connect(path) as connection:
-            before = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if before > SUPPORTED_SPOOL_VERSION:
-                raise MigrationError(
-                    f"spool version {before} is newer than supported version {SUPPORTED_SPOOL_VERSION}"
-                )
-            tables = {
-                str(row[0])
-                for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-            }
-            if before == 0 and tables and not {"runs", "events", "artifacts"}.issubset(tables):
-                raise MigrationError("legacy spool has an unsupported table layout")
-            after = before
-            if apply and before == 0 and tables:
-                connection.execute(f"PRAGMA user_version={SUPPORTED_SPOOL_VERSION}")
-                connection.commit()
-                after = SUPPORTED_SPOOL_VERSION
-            return before, after
+            report = migrate_spool_schema(connection) if apply else inspect_spool_schema(connection)
+            return report.version_before, report.version_after
+    except SpoolSchemaError as error:
+        raise MigrationError(str(error)) from error
     except sqlite3.Error as error:
         raise MigrationError(f"spool migration check failed: {error}") from error
 

@@ -61,11 +61,20 @@ class RunQueryService:
             mask_sensitive_fields(outcome.document)
             for outcome in self.repository.outcomes(principal.organization_id, run_id)
         ]
+        projection = mask_sensitive_fields(run.canonical_projection or {})
         return RunDetail(
             **summary.model_dump(),
             attempts=attempts,
             outcomes=outcomes,
             artifact_count=self.repository.artifact_count(principal.organization_id, run_id),
+            canonical_projection=projection,
+            **{
+                key: value
+                for key, value in projection.items()
+                if key in RunDetail.model_fields
+                and key not in RunSummary.model_fields
+                and key != "canonical_projection"
+            },
         )
 
     def events(

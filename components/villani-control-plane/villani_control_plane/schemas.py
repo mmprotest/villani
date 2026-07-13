@@ -237,6 +237,42 @@ class RunDetail(RunSummary):
     attempts: list[dict[str, Any]]
     outcomes: list[dict[str, Any]]
     artifact_count: int
+    canonical_projection: dict[str, Any] = Field(default_factory=dict)
+    task_instruction: str | None = None
+    success_criteria: str | None = None
+    repository: str | None = None
+    agent_name: str | None = None
+    agent_version: str | None = None
+    raw_classification: dict[str, Any] | None = None
+    effective_classification: dict[str, Any] | None = None
+    classification_confidence: float | None = None
+    classification_adjustments: list[dict[str, Any]] = Field(default_factory=list)
+    policy_version: str | None = None
+    policy_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    selected_attempt_id: str | None = None
+    selected_backend: str | None = None
+    selected_model: str | None = None
+    attempt_count: int = 0
+    escalation_count: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    token_accounting_status: str = "unknown"
+    coding_cost_usd: float | None = None
+    verifier_cost_usd: float | None = None
+    total_cost_usd: float | None = None
+    cost_accounting_status: str = "unknown"
+    duration_ms: int | None = None
+    verification_status: str | None = None
+    verification_authority: str | None = None
+    candidate_outcomes: dict[str, Any] = Field(default_factory=dict)
+    selection_reason: str | None = None
+    changed_files: list[str] = Field(default_factory=list)
+    file_write_count: int = 0
+    materialization_status: str | None = None
+    failure_category: str | None = None
+    terminal_reason: str | None = None
+    redaction_status: dict[str, Any] | None = None
 
 
 class RunList(BaseModel):

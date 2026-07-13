@@ -22,7 +22,7 @@ CI uses redirected service-definition roots and dry-run platform commands as the
 
 ## Upgrade safety
 
-Before managed commands and normal product execution, Villani checks the configuration version, SQLite `user_version`, and canonical run protocol major versions. Legacy daemon spools with the known table layout migrate from SQLite version 0 to 1 without rewriting events. Configuration and run bundles are read and preserved. A newer unsupported config, spool, or protocol version stops the older executable instead of downgrading data.
+Before managed commands and normal product execution, Villani checks the configuration version, SQLite `user_version`, and canonical run protocol major versions. Agentd is the single source of truth for the spool contract. Legacy daemon spools with the known table layout migrate idempotently from versions 0 through 3 to version 4 without rewriting runs, events, artifacts, retry state, dead letters, or local-import records. Dry-run checks never mutate the spool, and an existing version 4 spool opens unchanged. A newer unsupported config, spool, or protocol version stops the older executable instead of downgrading data.
 
 ## Checksums and signing
 

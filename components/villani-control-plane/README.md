@@ -50,6 +50,11 @@ bounded queue fills. Outcome requests are the exact v2 outcome document.
 Telemetry is ordered for pagination by server-visible `observed_at` plus a database identity,
 while retaining both source `occurred_at` and receiver `observed_at` unchanged.
 
+Canonical attempt IDs are run-local. The database identity is
+`(organization_id, run_id, attempt_id)`; APIs always return the original attempt ID and never a
+concatenated surrogate. Run detail exposes the durable canonical projection assembled from
+structured lifecycle events.
+
 Governance policies resolve project over workspace over organization. They control data-class
 retention, metadata-only capture, exclusions, redaction/DLP, residency, legal holds, deletion,
 and governed exports. Quotas use the same precedence for runs, events, artifact bytes, model

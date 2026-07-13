@@ -77,8 +77,9 @@ class UnavailableEventSink:
 
 
 _SECRET_BYTES = re.compile(
-    rb"(?i)(?:api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+|"
-    rb"bearer\s+[^\s]+|\bsk-[A-Za-z0-9_-]{8,}\b"
+    rb"(?i)(?:api[_-]?key|password|secret|private[_-]?key)\s*[:=]\s*"
+    rb"(?!test(?:-|_|\b))[^\s,;]+|bearer\s+[A-Za-z0-9._~+/-]{12,}|"
+    rb"\b(?:sk|pk|api)[-_][A-Za-z0-9_-]{16,}\b"
 )
 SAFE_CANONICAL_ARTIFACTS = (
     "manifest.json",

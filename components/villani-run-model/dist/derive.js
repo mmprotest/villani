@@ -139,7 +139,7 @@ function metrics(events, selected) {
 }
 export function deriveRun(detail, events) {
     const values = events.map(data);
-    const selected = text(...values.map((v) => v.selected_attempt_id), ...values.map((v) => v.selected_candidate), ...detail.outcomes.map((v) => v.selected_attempt_id));
+    const selected = text(detail.selected_attempt_id, ...values.map((v) => v.selected_attempt_id), ...values.map((v) => v.selected_candidate), ...detail.outcomes.map((v) => v.selected_attempt_id));
     const attempts = attemptsFrom(detail, events);
     const candidates = attempts.map((attempt) => {
         const related = events
@@ -163,6 +163,7 @@ export function deriveRun(detail, events) {
         };
     });
     const changed = new Set();
+    strings(detail.changed_files).forEach((file) => changed.add(file));
     const evolution = [];
     for (const event of events) {
         const value = data(event);
@@ -184,13 +185,13 @@ export function deriveRun(detail, events) {
     const terminalReason = text(...[...values].reverse().map((v) => v.terminal_reason), ...[...values].reverse().map((v) => v.reason));
     return {
         status: deriveRunStatus(events, detail.status),
-        task: text(...values.map((v) => v.task), ...values.map((v) => v.instruction)) ??
+        task: text(detail.task_instruction, ...values.map((v) => v.task_instruction), ...values.map((v) => v.task), ...values.map((v) => v.instruction)) ??
             "Task not captured",
-        repository: text(...values.map((v) => v.repository), ...values.map((v) => v.repository_path), detail.repository_id) ?? "Repository not captured",
-        policy: text(...values.map((v) => v.policy_version), ...values.map((v) => v.policy)) ?? "Policy not captured",
-        agent: text(...values.map((v) => v.agent), ...values.map((v) => v.agent_name)) ??
+        repository: text(detail.repository, ...values.map((v) => v.repository), ...values.map((v) => v.repository_path), detail.repository_id) ?? "Repository not captured",
+        policy: text(detail.policy_version, ...values.map((v) => v.policy_version), ...values.map((v) => v.policy)) ?? "Policy not captured",
+        agent: text(detail.agent_name, ...values.map((v) => v.agent), ...values.map((v) => v.agent_name)) ??
             "Agent not captured",
-        model: text(...values.map((v) => v.model), ...values.map((v) => v.model_name)) ??
+        model: text(detail.selected_model, ...values.map((v) => v.model), ...values.map((v) => v.model_name)) ??
             "Model not captured",
         selectedCandidate: selected,
         terminalReason,
@@ -198,9 +199,22 @@ export function deriveRun(detail, events) {
         metrics: metrics(events, selected),
         changedFiles: [...changed].sort(),
         patchEvolution: evolution,
-        policyDecisions: events
+        policyDecisions: (detail.policy_decisions?.length ? detail.policy_decisions : events
             .filter((e) => /policy|retry|escalat|budget|experiment/.test(`${e.kind ?? ""} ${eventName(e)}`.toLowerCase()))
-            .map(data),
+            .map(data)),
+        aggregate: {
+            inputTokens: number(detail.input_tokens) ?? null,
+            outputTokens: number(detail.output_tokens) ?? null,
+            totalTokens: number(detail.total_tokens) ?? null,
+            codingCostUsd: number(detail.coding_cost_usd) ?? null,
+            verifierCostUsd: number(detail.verifier_cost_usd) ?? null,
+            totalCostUsd: number(detail.total_cost_usd) ?? null,
+            durationMs: number(detail.duration_ms) ?? null,
+            fileWriteCount: number(detail.file_write_count) ?? 0,
+            attemptCount: number(detail.attempt_count) ?? attempts.length,
+            escalationCount: number(detail.escalation_count) ?? 0,
+        },
+        redaction: detail.redaction_status ?? undefined,
         failure: failureEvent
             ? {
                 rootCause: text(failureData?.root_cause, failureData?.classification, failureEvent.name, failureEvent.title) ?? "Unclassified failure",

@@ -32,6 +32,10 @@ villani-agentd doctor
 
 Backfill validates the canonical protocol, preserves the original run/trace/event/attempt and
 sequence identities, imports only approved metadata artifacts, and records progress in SQLite.
+Safe run metadata continues to import when redaction is required. Registered secrets and
+high-confidence credential fragments are redacted before spool persistence; unsafe artifact
+contents are withheld individually. Numeric token counters and harmless authentication source text
+do not cause whole-run rejection.
 The command reports `imported`, `already_imported`, `incomplete`, `malformed`,
 `unsupported_protocol`, `sensitive_content_rejected`, and `temporarily_failed`; `doctor` exposes
 the persistent `local_run_imports` records. Repair the local bundle or remove prohibited content

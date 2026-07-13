@@ -104,6 +104,19 @@ Backfill diagnostics are shown by `villani-agentd backfill` and under `local_run
 `villani-agentd doctor`. Correct an incomplete/corrupt local bundle or remove prohibited sensitive
 content at its source, then rerun `backfill`; stable identities make that retry idempotent.
 
+Agentd and the distribution share spool schema version 4. Compatible versions 0 through 3 migrate
+forward idempotently; dry-run checks do not mutate the database. Control-plane attempt identity is
+the tenant-scoped tuple `(organization_id, run_id, attempt_id)`, while public APIs continue to show
+the canonical run-local value such as `attempt_001`.
+
+Remote synchronization redacts registered secrets, credential-shaped text, and sensitive object
+fields without hiding the run. Unsafe artifact contents are withheld individually. Deterministic
+heuristic verifier predictions are advisory; only structured repository validation or another
+configured authoritative verification source can authorize materialization.
+
+Run `python release-verification/run_release_gate.py` for the cross-platform packaged artifact
+check. Evidence is written beneath `release-verification/artifacts/latest/`.
+
 `villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.
 
 The public execution path is `villani run`. `villani-ops run --orchestrator ...`, `villani-ops viewer ...`, and `villani-ops cost-run ...` remain compatibility-only interfaces and are not reachable from the public run command.

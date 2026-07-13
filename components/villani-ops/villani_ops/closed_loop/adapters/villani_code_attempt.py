@@ -211,6 +211,7 @@ class VillaniCodeAttemptAdapter:
             cleanup_command=list(controls.get("cleanup_command") or []),
             secure_secret_injection=True,
             cancellation_event=attempt_context.cancellation_event,
+            candidate_dimensions=dict(attempt_context.candidate_dimensions),
         )
 
         environment_report = prepared_environment.durable_report()
@@ -406,6 +407,7 @@ class VillaniCodeAttemptAdapter:
         metadata = {
             "worktree": worktree_metadata,
             "changed_files": capture.changed_files,
+            "total_file_writes": runner_result.total_file_writes,
             "patch_capture": capture.model_dump(mode="json"),
             "failure_classification": failure_classification,
             "cost_breakdown": cost_breakdown.as_dict(),
@@ -423,6 +425,16 @@ class VillaniCodeAttemptAdapter:
             "execution_environment_fingerprint": prepared_environment.fingerprint,
             "execution_environment_preflight": "preflight.json",
         }
+        effective_config_path = attempt_dir / "effective_candidate_configuration.json"
+        if effective_config_path.is_file():
+            effective_config = json.loads(effective_config_path.read_text(encoding="utf-8"))
+            metadata["effective_candidate_configuration"] = effective_config
+            metadata["runner_acknowledged_candidate_configuration"] = bool(
+                effective_config.get("runner_acknowledged")
+            )
+            metadata["effective_configuration_sha256"] = effective_config.get(
+                "effective_configuration_digest"
+            )
 
         encoded_patch = patch.encode("utf-8")
         protocol_error = (

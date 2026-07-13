@@ -97,9 +97,10 @@ class OutcomeLedgerService:
         run = self._locked_run(principal, parsed.run_id)
         if parsed.attempt_id:
             attempt = self.session.get(
-                models.Attempt, (principal.organization_id, parsed.attempt_id)
+                models.Attempt,
+                (principal.organization_id, parsed.run_id, parsed.attempt_id),
             )
-            if attempt is None or attempt.run_id != parsed.run_id:
+            if attempt is None:
                 raise AuthorizationError("outcome attempt_id is not part of run_id")
         normalized = parsed.model_dump(mode="json")
         attempt_key = parsed.attempt_id or ""

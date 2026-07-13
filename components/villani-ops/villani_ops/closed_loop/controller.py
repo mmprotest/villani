@@ -1610,6 +1610,12 @@ class ClosedLoopController:
             {
                 "task_id": runtime.task_id,
                 "max_attempts": runtime.request.max_attempts,
+                "task_instruction": runtime.request.task,
+                "success_criteria": runtime.request.success_criteria,
+                "repository_id": str(runtime.request.repository_path),
+                "repository": runtime.request.repository_path.name,
+                "agent_name": "villani-ops",
+                "agent_version": "0.2.0",
             },
         )
         runtime.last_event = event
@@ -1811,7 +1817,27 @@ class ClosedLoopController:
             runtime,
             "CLASSIFIED",
             "classification_completed",
-            {"classification_id": classification.classification_id},
+            {
+                "classification_id": classification.classification_id,
+                "raw_classification": {
+                    "difficulty": classification.difficulty,
+                    "risk": classification.risk,
+                    "category": classification.category,
+                    "required_capabilities": classification.required_capabilities,
+                },
+                "effective_classification": {
+                    "difficulty": classification.difficulty,
+                    "risk": classification.risk,
+                    "category": classification.category,
+                    "required_capabilities": classification.required_capabilities,
+                },
+                "confidence": classification.confidence,
+                "classification_adjustments": classification.metadata.get(
+                    "classification_adjustments", []
+                ),
+                "category": classification.category,
+                "required_capabilities": classification.required_capabilities,
+            },
         )
         return True
 
@@ -2157,9 +2183,25 @@ class ClosedLoopController:
     ) -> None:
         payload = {
             "decision_id": snapshot.decision_id,
+            "policy_version": snapshot.policy_version,
             "action": decision.action,
             "reason": decision.reason,
             "chosen_backend": decision.chosen_backend,
+            "chosen_model": next(
+                (
+                    item.model
+                    for item in snapshot.considered_backends
+                    if item.backend_name == decision.chosen_backend
+                ),
+                None,
+            ),
+            "considered_backends": [
+                item.model_dump(mode="json") for item in snapshot.considered_backends
+            ],
+            "required_capability_score": snapshot.metadata.get(
+                "required_capability_score"
+            ),
+            "attempt_id": snapshot.attempt_id,
         }
         current = runtime.machine.state
         if decision.action in {"exhaust", "fail"}:
@@ -2712,7 +2754,30 @@ class ClosedLoopController:
             runtime,
             "ATTEMPT_COMPLETED",
             completion_type,
-            {"status": snapshot.status, "exit_code": snapshot.exit_code},
+            {
+                "status": snapshot.status,
+                "exit_code": snapshot.exit_code,
+                "backend_name": snapshot.backend_name,
+                "model": snapshot.model,
+                "duration_ms": snapshot.duration_ms,
+                "input_tokens": snapshot.input_tokens,
+                "output_tokens": snapshot.output_tokens,
+                "total_tokens": (
+                    snapshot.input_tokens + snapshot.output_tokens
+                    if snapshot.input_tokens is not None
+                    and snapshot.output_tokens is not None
+                    else None
+                ),
+                "token_accounting_status": snapshot.token_accounting_status,
+                "cost_usd": snapshot.cost_usd,
+                "cost_accounting_status": snapshot.cost_accounting_status,
+                "file_write_count": snapshot.metadata.get(
+                    "total_file_writes",
+                    returned.runner_telemetry.get("total_file_writes", 0),
+                ),
+                "changed_files": snapshot.metadata.get("changed_files", []),
+                "failure_category": snapshot.metadata.get("failure_category"),
+            },
             attempt_id=attempt_id,
             parent_event_id=started.event_id,
         )
@@ -2886,7 +2951,9 @@ class ClosedLoopController:
             {
                 "candidate_dimensions": _mapping_copy(context.candidate_dimensions),
                 "effective_configuration_sha256": (
-                    candidate_plan.effective_configuration_sha256
+                    attempt_metadata.get("effective_configuration_sha256")
+                    if attempt_metadata.get("runner_acknowledged_candidate_configuration")
+                    else candidate_plan.effective_configuration_sha256
                     if candidate_plan is not None
                     else None
                 ),
@@ -3134,9 +3201,17 @@ class ClosedLoopController:
                 failure_payload(final_error, operation="verification")
                 if final_error is not None
                 else {
-                    "outcome": normalized.outcome,
-                    "acceptance_eligible": normalized.acceptance_eligible,
+                    **normalized.model_dump(mode="json"),
                     "verifier_retry_count": retry_count,
+                    "verification_mode": normalized.metadata.get(
+                        "verification_mode", "unspecified"
+                    ),
+                    "authority_source": normalized.metadata.get(
+                        "authority_source", "unspecified"
+                    ),
+                    "verifier_cost_usd": sum(
+                        item.cost or 0 for item in normalized.llm_usage
+                    ),
                 }
             ),
             attempt_id=context.attempt_id,
@@ -3359,7 +3434,11 @@ class ClosedLoopController:
                 "candidate_selected",
                 {
                     "selection_id": selection.selection_id,
-                    "attempt_id": returned.selected_attempt_id,
+                    "selected_attempt_id": returned.selected_attempt_id,
+                    "eligible_candidate_ids": selection.eligible_candidate_ids,
+                    "selection_strategy": selection.strategy,
+                    "selection_reason": selection.reason,
+                    "rankings": [item.model_dump(mode="json") for item in selection.rankings],
                 },
             )
         except Exception as error:
@@ -3444,13 +3523,73 @@ class ClosedLoopController:
         self._emit_state_event(
             runtime,
             "materialization_completed",
-            {"materialization_id": materialization.materialization_id},
+            {
+                "materialization_id": materialization.materialization_id,
+                "selected_attempt_id": materialization.selected_attempt_id,
+                "materialization_status": materialization.status,
+                "changed_files": materialization.changed_files,
+                "patch_digest": materialization.patch_sha256,
+            },
+        )
+        stage_metrics = self._stage_metrics(runtime)
+        total = stage_metrics["total"]
+        coding = stage_metrics["coding"]
+        verification = stage_metrics["verification"]
+        selected_attempt = next(
+            item for item in runtime.attempts if item.attempt_id == runtime.selected_attempt_id
         )
         self._transition(
             runtime,
             "COMPLETED",
             "run_completed",
-            {"selected_attempt_id": runtime.selected_attempt_id},
+            {
+                "status": "completed",
+                "selected_attempt_id": runtime.selected_attempt_id,
+                "selected_backend": selected_attempt.backend_name,
+                "selected_model": selected_attempt.model,
+                "attempt_count": len(runtime.attempts),
+                "escalation_count": sum(
+                    event.event_type == "escalation_selected"
+                    for event in runtime.committed_events
+                ),
+                "input_tokens": total.input_tokens,
+                "output_tokens": total.output_tokens,
+                "total_tokens": (
+                    total.input_tokens + total.output_tokens
+                    if total.input_tokens is not None and total.output_tokens is not None
+                    else None
+                ),
+                "token_accounting_status": total.token_accounting_status,
+                "coding_cost_usd": coding.cost,
+                "verifier_cost_usd": verification.cost,
+                "total_cost_usd": total.cost,
+                "cost_accounting_status": total.cost_accounting_status,
+                "duration_ms": max(
+                    runtime.wall_clock_offset_ms
+                    + int((self._monotonic() - runtime.started_monotonic) * 1000),
+                    0,
+                ),
+                "changed_files": materialization.changed_files,
+                "file_write_count": sum(
+                    int(
+                        item.metadata.get(
+                            "total_file_writes",
+                            runtime.attempt_results[item.attempt_id].runner_telemetry.get(
+                                "total_file_writes", 0
+                            ),
+                        )
+                        or 0
+                    )
+                    for item in runtime.attempts
+                ),
+                "verification_status": next(
+                    item.outcome
+                    for item in runtime.verifications
+                    if item.attempt_id == runtime.selected_attempt_id
+                ),
+                "materialization_status": materialization.status,
+                "terminal_reason": runtime.terminal_reason or "accepted_and_materialized",
+            },
         )
 
     def _label_unselected_accepted_candidates(self, runtime: _Runtime) -> None:

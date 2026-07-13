@@ -78,6 +78,35 @@ export interface RunDetail extends RunSummary {
   artifact_count: number;
   spans?: RunSpan[];
   artifacts?: ArtifactDescriptor[];
+  canonical_projection?: Record<string, unknown>;
+  task_instruction?: string | null;
+  success_criteria?: string | null;
+  repository?: string | null;
+  agent_name?: string | null;
+  agent_version?: string | null;
+  raw_classification?: Record<string, unknown> | null;
+  effective_classification?: Record<string, unknown> | null;
+  classification_confidence?: number | null;
+  classification_adjustments?: Record<string, unknown>[];
+  policy_version?: string | null;
+  policy_decisions?: Record<string, unknown>[];
+  selected_attempt_id?: string | null;
+  selected_backend?: string | null;
+  selected_model?: string | null;
+  attempt_count?: number;
+  escalation_count?: number;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+  coding_cost_usd?: number | null;
+  verifier_cost_usd?: number | null;
+  total_cost_usd?: number | null;
+  duration_ms?: number | null;
+  changed_files?: string[];
+  file_write_count?: number;
+  redaction_status?: Record<string, unknown> | null;
+  terminal_reason?: string | null;
+  candidate_outcomes?: Record<string, Record<string, unknown>>;
 }
 
 export interface RunSpan {
@@ -141,6 +170,19 @@ export interface DerivedRun {
     files: string[];
   }[];
   policyDecisions: Record<string, unknown>[];
+  aggregate?: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+    codingCostUsd: number | null;
+    verifierCostUsd: number | null;
+    totalCostUsd: number | null;
+    durationMs: number | null;
+    fileWriteCount: number;
+    attemptCount: number;
+    escalationCount: number;
+  };
+  redaction?: Record<string, unknown>;
   failure?: {
     rootCause: string;
     evidence: string[];

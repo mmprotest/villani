@@ -182,3 +182,7 @@ Villani Flight Recorder shows token counts when the source transcript contains p
 Some events, especially command, file, hook, and other non-model events, do not have token usage because providers typically do not log model token telemetry for those records. The app stays honest in those cases and reports token usage as unavailable rather than inventing values.
 
 Cost remains unavailable unless reliable pricing or captured cost metadata is present; token telemetry alone is not used to estimate cost.
+
+For canonical Villani bundles, file-write operations come from structured runner telemetry and the
+unique changed-file set comes from selected materialization. Repeated writes can increase the write
+count without duplicating changed files.

@@ -116,5 +116,7 @@ class VerificationGraphVerifierAdapter:
                 "flaky_nodes": list(result.flaky_nodes),
                 "total_executions": result.total_executions,
                 "total_reruns": result.total_reruns,
+                "verification_mode": "authoritative_verification_graph",
+                "authority_source": "authoritative_verification_graph",
             },
         )

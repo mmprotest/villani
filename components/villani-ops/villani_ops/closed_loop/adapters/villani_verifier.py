@@ -109,6 +109,31 @@ def _has_acceptance_blocker(risks: tuple[str, ...]) -> bool:
     return any(any(blocker in risk.lower() for blocker in blockers) for risk in risks)
 
 
+def _repository_validation_authority(
+    attempt_result: AttemptResult,
+) -> tuple[bool, bool]:
+    """Return (authoritative pass, active failure) from structured runtime events."""
+
+    mutations = [
+        event.timestamp for event in attempt_result.runtime_events if event.event_type == "file_write"
+    ]
+    final_mutation = max(mutations) if mutations else None
+    validations = [
+        event
+        for event in attempt_result.runtime_events
+        if event.event_type in {"command_completed", "command_failed"}
+        and event.payload.get("command_role") == "validation"
+        and (final_mutation is None or event.timestamp >= final_mutation)
+    ]
+    if not validations:
+        return False, False
+    active_failure = any(
+        event.event_type == "command_failed" or event.payload.get("exit_code") not in {None, 0}
+        for event in validations
+    )
+    return not active_failure, active_failure
+
+
 class VillaniVerifierAdapter:
     plugin_manifest = VERIFIER_MANIFEST
 
@@ -352,6 +377,18 @@ class VillaniVerifierAdapter:
             attempt_result.patch and attempt_result.patch.strip()
         ):
             blockers.append("empty_patch")
+        repository_pass, repository_failure = _repository_validation_authority(attempt_result)
+        if repository_failure:
+            blockers.append("repository_validation_failed")
+        authority_source = (
+            "authoritative_repository_validation"
+            if repository_pass
+            else "heuristic_only"
+            if self._no_llm
+            else "llm_authoritative"
+        )
+        if self._no_llm and not repository_pass:
+            blockers.append("non_authoritative_heuristic")
 
         eligible = not blockers
         infrastructure_failure = (
@@ -372,7 +409,7 @@ class VillaniVerifierAdapter:
         else:
             outcome = "rejected"
 
-        if raw_action == "accept":
+        if raw_action == "accept" and eligible:
             recommended = "accept"
         elif raw_action in {"retry_higher_model", "escalate"}:
             recommended = "escalate"
@@ -419,6 +456,12 @@ class VillaniVerifierAdapter:
                 "raw_result": result_value,
                 "raw_verdict": verdict,
                 "raw_recommended_action": raw_action,
+                "verification_mode": "authoritative_repository_validation"
+                if repository_pass
+                else "deterministic_heuristic"
+                if self._no_llm
+                else "llm_verifier",
+                "authority_source": authority_source,
             },
             llm_usage=self._llm_usage(
                 trace_dir,

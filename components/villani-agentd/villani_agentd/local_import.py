@@ -13,7 +13,6 @@ from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
 from villani_ops.closed_loop.event_sink import (
     SAFE_CANONICAL_ARTIFACTS,
     build_canonical_outcome,
-    contains_registered_secret,
 )
 from villani_ops.closed_loop.protocol_v2 import ArtifactDescriptorV2, DigestV2
 from villani_ops.closed_loop.schema_validation import (
@@ -24,6 +23,7 @@ from villani_ops.closed_loop.schema_validation import (
 from villani_ops.closed_loop.translate_v2 import translate_v1_event
 
 from .config import AgentdPaths, Limits
+from .redaction import unsafe_artifact_categories
 from .spool import CollisionError, LimitError, SQLiteSpool, SpoolError
 
 
@@ -54,10 +54,6 @@ class ImportDiagnostic:
             "imported_artifacts": self.imported_artifacts,
             "finalized": self.finalized,
         }
-
-
-class SensitiveContentError(ValueError):
-    """A canonical input contains a locally registered secret."""
 
 
 def _utc_now() -> str:
@@ -160,12 +156,7 @@ class LocalRunImporter:
                 return ImportDiagnostic(run_id, "incomplete")
             manifest, manifest_bytes = _object(required[0], self.limits.event_body_bytes)
             state, state_bytes = _object(required[1], self.limits.event_body_bytes)
-            events_bytes = _bounded_bytes(required[2], self.limits.spool_bytes)
-            if any(
-                contains_registered_secret(content)
-                for content in (manifest_bytes, state_bytes, events_bytes)
-            ):
-                raise SensitiveContentError("registered secret found in canonical run input")
+            _bounded_bytes(required[2], self.limits.spool_bytes)
             canonical_id = str(manifest.get("run_id") or "")
             if not canonical_id or canonical_id != str(state.get("run_id") or ""):
                 raise ValueError("manifest and state run identities do not match")
@@ -204,14 +195,12 @@ class LocalRunImporter:
             result = self.spool.ingest_events(translated)
 
             artifact_count = 0
-            rejected_sensitive = False
             for relative in SAFE_CANONICAL_ARTIFACTS if terminal else ():
                 path = run_directory / relative
                 if not path.exists():
                     continue
                 content = _bounded_bytes(path, self.limits.artifact_file_bytes)
-                if contains_registered_secret(content):
-                    rejected_sensitive = True
+                if unsafe_artifact_categories(content):
                     continue
                 digest = hashlib.sha256(content).hexdigest()
                 descriptor = ArtifactDescriptorV2(
@@ -245,8 +234,6 @@ class LocalRunImporter:
                 or (terminal and prior.get("finalization_digest") != final_digest)
             )
             category = "imported" if imported else "already_imported"
-            if rejected_sensitive:
-                category = "sensitive_content_rejected"
             self._record(run_id, category, highest, final_digest)
             return ImportDiagnostic(
                 run_id,
@@ -255,8 +242,6 @@ class LocalRunImporter:
                 imported_artifacts=artifact_count,
                 finalized=terminal,
             )
-        except SensitiveContentError:
-            category = "sensitive_content_rejected"
         except ProtocolValidationError as error:
             category = "unsupported_protocol" if _unsupported(error) else "malformed"
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:

@@ -43,6 +43,102 @@ def _first(mapping: dict[str, Any], *names: str):
 
 def project_run_observability(run: models.Run, event: TelemetryEnvelopeV2) -> None:
     values = {**event.attributes, **event.body}
+    projection = dict(run.canonical_projection or {})
+    projection.setdefault("run_id", run.id)
+    projection.setdefault("trace_id", run.trace_id)
+    if event.name == "run_created":
+        for key in (
+            "task_instruction",
+            "success_criteria",
+            "repository_id",
+            "repository",
+            "agent_name",
+            "agent_version",
+        ):
+            if values.get(key) is not None:
+                projection[key] = values[key]
+    elif event.name == "classification_completed":
+        projection.update(
+            raw_classification=values.get("raw_classification"),
+            effective_classification=values.get("effective_classification"),
+            classification_confidence=values.get("confidence"),
+            classification_adjustments=values.get("classification_adjustments", []),
+        )
+    elif event.name in {"policy_selected", "retry_selected", "escalation_selected"}:
+        decisions = list(projection.get("policy_decisions") or [])
+        decisions.append(
+            {
+                key: values.get(key)
+                for key in (
+                    "policy_version",
+                    "action",
+                    "reason",
+                    "chosen_backend",
+                    "chosen_model",
+                    "considered_backends",
+                    "required_capability_score",
+                    "attempt_id",
+                )
+                if values.get(key) is not None
+            }
+        )
+        projection["policy_decisions"] = decisions
+        for source, target in (
+            ("policy_version", "policy_version"),
+            ("chosen_backend", "selected_backend"),
+            ("chosen_model", "selected_model"),
+        ):
+            if values.get(source) is not None:
+                projection[target] = values[source]
+    elif event.name in {"attempt_completed", "attempt_failed"}:
+        candidates = dict(projection.get("candidate_outcomes") or {})
+        candidates[str(event.attempt_id)] = {
+            key: values.get(key)
+            for key in (
+                "status", "backend_name", "model", "exit_code", "duration_ms",
+                "input_tokens", "output_tokens", "total_tokens",
+                "token_accounting_status", "cost_usd", "cost_accounting_status",
+                "file_write_count", "changed_files", "failure_category",
+            )
+        }
+        projection["candidate_outcomes"] = candidates
+    elif event.name in {"verification_completed", "verification_failed"}:
+        candidates = dict(projection.get("candidate_outcomes") or {})
+        candidate = dict(candidates.get(str(event.attempt_id)) or {})
+        candidate["verification"] = dict(event.body)
+        candidate["candidate_eligibility"] = values.get("acceptance_eligible", False)
+        candidates[str(event.attempt_id)] = candidate
+        projection["candidate_outcomes"] = candidates
+        projection["verification_status"] = values.get("outcome")
+        projection["verification_authority"] = values.get("authority_source")
+    elif event.name == "candidate_selected":
+        projection.update(
+            selected_attempt_id=values.get("selected_attempt_id"),
+            selection_reason=values.get("selection_reason"),
+            selection_strategy=values.get("selection_strategy"),
+            selection_rankings=values.get("rankings", []),
+        )
+    elif event.name == "materialization_completed":
+        projection.update(
+            materialization_status=values.get("materialization_status"),
+            changed_files=values.get("changed_files", []),
+            patch_digest=values.get("patch_digest"),
+        )
+    if event.name in {"run_completed", "run_failed", "run_exhausted"}:
+        for key in (
+            "status", "selected_attempt_id", "selected_backend", "selected_model",
+            "attempt_count", "escalation_count", "input_tokens", "output_tokens",
+            "total_tokens", "token_accounting_status", "coding_cost_usd",
+            "verifier_cost_usd", "total_cost_usd", "cost_accounting_status",
+            "duration_ms", "changed_files", "file_write_count", "verification_status",
+            "materialization_status", "terminal_reason", "failure_category",
+        ):
+            if values.get(key) is not None:
+                projection[key] = values[key]
+    redaction = values.get("villani_redaction")
+    if isinstance(redaction, dict):
+        projection["redaction_status"] = redaction
+    run.canonical_projection = projection
     text_fields = {
         "agent_name": ("agent_name", "agent"),
         "model_name": ("model_name", "model"),
@@ -394,7 +490,8 @@ class IngestionService:
 
             if event.attempt_id:
                 attempt = self.session.get(
-                    models.Attempt, (principal.organization_id, event.attempt_id)
+                    models.Attempt,
+                    (principal.organization_id, event.run_id, event.attempt_id),
                 )
                 if attempt is None:
                     self.ingestion.add(
@@ -406,8 +503,6 @@ class IngestionService:
                         )
                     )
                     run.attempt_count += 1
-                elif attempt.run_id != event.run_id:
-                    raise AuthorizationError("attempt_id belongs to another run")
                 else:
                     attempt.status = event.status
 

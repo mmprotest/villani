@@ -341,7 +341,10 @@ def _controller(
         attempt_runner=VillaniCodeAttemptAdapter(
             backends={"real": coding_backend}, runner=runner
         ),
-        verifier=VillaniVerifierAdapter(raw_verifier=raw_verifier),
+        verifier=VillaniVerifierAdapter(
+            raw_verifier=raw_verifier,
+            no_llm=raw_verifier is None,
+        ),
         selector=selector or EvidenceSelectorAdapter(),
         materializer=materializer or PatchMaterializerAdapter(),
         now=FixedNow(),

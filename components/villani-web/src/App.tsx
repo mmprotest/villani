@@ -47,14 +47,19 @@ function Header({
   connection: string;
   onExport: () => Promise<void>;
 }) {
-  const totalCost = derived.metrics.reduce<number | null>(
-    (sum, row) => (row.costUsd == null ? sum : (sum ?? 0) + row.costUsd),
-    null,
-  );
-  const tokens = derived.metrics.reduce(
-    (sum, row) => sum + (row.inputTokens ?? 0) + (row.outputTokens ?? 0),
-    0,
-  );
+  const aggregate = derived.aggregate;
+  const totalCost =
+    aggregate?.totalCostUsd ??
+    derived.metrics.reduce<number | null>(
+      (sum, row) => (row.costUsd == null ? sum : (sum ?? 0) + row.costUsd),
+      null,
+    );
+  const tokens =
+    aggregate?.totalTokens ??
+    derived.metrics.reduce(
+      (sum, row) => sum + (row.inputTokens ?? 0) + (row.outputTokens ?? 0),
+      0,
+    );
   return (
     <header className="run-header">
       <div className="eyebrow">
@@ -98,7 +103,11 @@ function Header({
         </div>
         <div>
           <dt>Elapsed</dt>
-          <dd>{fmtDuration(detail.first_occurred_at, detail.last_observed_at)}</dd>
+          <dd>
+            {aggregate?.durationMs == null
+              ? fmtDuration(detail.first_occurred_at, detail.last_observed_at)
+              : `${aggregate.durationMs.toLocaleString()} ms`}
+          </dd>
         </div>
         <div>
           <dt>Cost</dt>
@@ -116,6 +125,23 @@ function Header({
           <dt>Terminal reason</dt>
           <dd>{derived.terminalReason ?? derived.status.reason}</dd>
         </div>
+        <div>
+          <dt>File writes</dt>
+          <dd>{aggregate?.fileWriteCount ?? derived.status.fileEdits}</dd>
+        </div>
+        <div>
+          <dt>Attempts / escalations</dt>
+          <dd>
+            {aggregate?.attemptCount ?? detail.attempts.length} /{" "}
+            {aggregate?.escalationCount ?? 0}
+          </dd>
+        </div>
+        {derived.redaction && (
+          <div>
+            <dt>Redaction</dt>
+            <dd>Remote data redacted</dd>
+          </div>
+        )}
       </dl>
     </header>
   );

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,17 +16,25 @@ SENSITIVE_FIELD_PARTS = (
     "api_key",
     "private_key",
 )
+TOKEN_METRIC_FIELDS = {"input_tokens", "output_tokens", "total_tokens"}
+SENSITIVE_TEXT = re.compile(
+    r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{12,}|"
+    r"\b(?:sk|pk|api)[-_][A-Za-z0-9_-]{16,}\b"
+)
 
 
 def mask_sensitive_fields(value: Any) -> Any:
     """Mask named sensitive fields without changing the surrounding contract."""
     if isinstance(value, list):
         return [mask_sensitive_fields(item) for item in value]
+    if isinstance(value, str):
+        return SENSITIVE_TEXT.sub("********", value)
     if not isinstance(value, dict):
         return value
     return {
         key: "********"
-        if any(part in key.lower() for part in SENSITIVE_FIELD_PARTS)
+        if key.lower() not in TOKEN_METRIC_FIELDS
+        and any(part in key.lower() for part in SENSITIVE_FIELD_PARTS)
         else mask_sensitive_fields(item)
         for key, item in value.items()
     }

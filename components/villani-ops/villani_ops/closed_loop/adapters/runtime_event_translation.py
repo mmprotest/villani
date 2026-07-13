@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 from ..event_writer import redact_data
 from ..interfaces import RuntimeEvent
+from villani_ops.verifier.extract import is_validation_command
 
 
 _CANONICAL_RUNTIME_TYPES = {
@@ -61,6 +62,27 @@ def _source_id(row: dict[str, Any], source: str, index: int) -> str:
         if row.get(key):
             return str(row[key])
     return f"{source}:{index}"
+
+
+def _file_activity(row: dict[str, Any]) -> dict[str, Any]:
+    raw_args = row.get("normalized_args_summary") or row.get("args_summary") or row.get("args")
+    args = raw_args if isinstance(raw_args, dict) else {}
+    path = next(
+        (
+            value
+            for value in (
+                row.get("path"), row.get("file_path"), row.get("file"),
+                args.get("path"), args.get("file_path"), args.get("file"),
+            )
+            if isinstance(value, str) and value
+        ),
+        None,
+    )
+    return {
+        "operation": "write",
+        "path": path,
+        "mutation": True,
+    }
 
 
 def _read_jsonl(path: Path) -> Iterable[tuple[int, dict[str, Any]]]:
@@ -119,6 +141,19 @@ def translate_runtime_events(
                 continue
             event_type = _event_type(source, row)
             if event_type is not None:
+                activity = _file_activity(row) if event_type == "file_write" else {}
+                command = row.get("command")
+                command_evidence = (
+                    {
+                        "command": command,
+                        "command_role": "validation"
+                        if isinstance(command, str) and is_validation_command(command)
+                        else "execution",
+                        "exit_code": row.get("exit_code"),
+                    }
+                    if event_type in {"command_completed", "command_failed"}
+                    else {}
+                )
                 events.append(
                     RuntimeEvent(
                         event_type=event_type,
@@ -126,6 +161,8 @@ def translate_runtime_events(
                         payload={
                             "source_file": source,
                             "source_payload": redact_data(row, secrets=secrets),
+                            **activity,
+                            **command_evidence,
                         },
                         source_event_id=_source_id(row, source, index),
                     )
@@ -143,6 +180,7 @@ def translate_runtime_events(
                             payload={
                                 "source_file": source,
                                 "source_payload": redact_data(row, secrets=secrets),
+                                **(_file_activity(row) if file_type == "file_write" else {}),
                             },
                             source_event_id=_source_id(row, source, index),
                         )

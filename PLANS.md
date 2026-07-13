@@ -2588,3 +2588,45 @@ Remaining unsupported integrations and risks:
 Next permitted milestone:
 - None. This surgical pass fixed only the three named release-truth issues and did not start a
   feature, unrelated cleanup, or later milestone.
+
+#### 2026-07-13: End-to-end release-blocker repair pass
+
+Status: incomplete; release gate failed. This pass implemented focused spool compatibility,
+composite attempt identity, structured remote projection/redaction, file activity, verifier
+authority, effective candidate acknowledgement, run-model/Web consumption, compatibility metadata,
+and a fail-closed packaged gate. It did not claim release readiness.
+
+Changed areas:
+- Agentd owns the v4 spool schema contract and field-level remote redaction.
+- Control Plane uses `(organization_id, run_id, attempt_id)`, adds Alembic revision
+  `0a1b2c3d4e5f`, and persists a canonical run projection.
+- Closed loop emits structured lifecycle aggregates, distinguishes heuristic from repository/graph
+  authority, records structured file activity, and sends typed candidate dimensions to the runner.
+- Run model and Web prefer explicit API aggregates; generated run-model and Web output was rebuilt.
+- Release verification, CI protection, component compatibility metadata, and component docs were
+  added or updated.
+
+Verification:
+- Villani Ops: 869 passed, 2 host-capability skips, 114 deselected.
+- Villani Code: 671 passed, 1 opt-in skip; Agentd: 57 passed; Control Plane local: 74 passed,
+  9 PostgreSQL-gated skips; distribution: 15 passed; root closed-loop/foundation: 23 passed.
+- Run model: 3 passed, typecheck/build passed. Flight Recorder: 103 passed, typecheck/build/format
+  passed. Web: 5 passed, typecheck/build/format passed.
+- Offline PostgreSQL migration SQL and Python Ruff checks passed.
+- Clean wheels/sdists built and installed; Agentd started before the packaged public CLI and the v4
+  spool compatibility smoke passed.
+
+Remaining release failures:
+- The packaged gate intentionally fails because connected control-plane synchronization, canonical
+  API reconciliation, browser/API parity, and packaged scenarios A-F are not implemented in the
+  new gate. Its report records zero synchronized runs and `api_reconciliation=not_executed`.
+- No in-app browser target was available, so fresh Playwright screenshots were not produced.
+- Live PostgreSQL migration of the new revision was not executed on this host.
+
+Assumptions and risks:
+- Existing raw/effective classification is identical when no configured adjustment applies;
+  configured classification floor/demotion rules still need a dedicated first-class adjustment
+  engine and regression matrix.
+- The verifier cascade distinguishes authority, but a complete cheapest-eligible multi-backend
+  verifier escalation policy remains unfinished.
+- The next milestone was not started; this remains the current release-blocker milestone.

@@ -20,6 +20,7 @@ class RunnerContext(BaseModel):
     cleanup_command: list[str] = Field(default_factory=list)
     secure_secret_injection: bool = False
     command: str | None = None
+    candidate_dimensions: dict[str, Any] = Field(default_factory=dict)
     cancellation_event: Any | None = Field(default=None, exclude=True)
 
 

@@ -15,6 +15,8 @@ from villani_ops.closed_loop.protocol_v2 import ArtifactDescriptorV2, OutcomeV2,
 from villani_ops.closed_loop.schema_validation import parse_protocol_document
 
 from .config import AgentdPaths, Limits
+from .redaction import redact_remote_document
+from .spool_schema import SpoolSchemaError, migrate_spool_schema
 
 
 class SpoolError(RuntimeError):
@@ -58,110 +60,10 @@ class SQLiteSpool:
         with self._connect() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=FULL")
-            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if version > 4:
-                raise SpoolError(
-                    f"spool schema version {version} is newer than supported version 4"
-                )
-            existing_tables = {
-                str(row[0])
-                for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-            }
-            if (
-                version == 0
-                and existing_tables
-                and not {
-                    "runs",
-                    "events",
-                    "artifacts",
-                }.issubset(existing_tables)
-            ):
-                raise SpoolError("legacy spool has an unsupported table layout")
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS runs (
-                    run_id TEXT PRIMARY KEY,
-                    trace_id TEXT,
-                    created_at TEXT NOT NULL,
-                    finalized_at TEXT,
-                    final_payload_json TEXT,
-                    upload_state TEXT NOT NULL DEFAULT 'offline',
-                    retry_count INTEGER NOT NULL DEFAULT 0,
-                    next_retry_at TEXT,
-                    last_error TEXT,
-                    dead_lettered_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS events (
-                    event_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    sequence_scope TEXT NOT NULL,
-                    sequence INTEGER NOT NULL,
-                    occurred_at TEXT NOT NULL,
-                    observed_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL,
-                    upload_state TEXT NOT NULL DEFAULT 'offline',
-                    retry_count INTEGER NOT NULL DEFAULT 0,
-                    next_retry_at TEXT,
-                    UNIQUE(run_id, sequence_scope, sequence)
-                );
-                CREATE INDEX IF NOT EXISTS events_upload_state ON events(upload_state, next_retry_at);
-                CREATE TABLE IF NOT EXISTS artifacts (
-                    artifact_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    digest TEXT NOT NULL,
-                    size_bytes INTEGER NOT NULL,
-                    descriptor_json TEXT NOT NULL,
-                    storage_reference TEXT NOT NULL,
-                    upload_state TEXT NOT NULL DEFAULT 'offline',
-                    UNIQUE(run_id, digest)
-                );
-                CREATE TABLE IF NOT EXISTS local_run_imports (
-                    run_id TEXT PRIMARY KEY,
-                    highest_event_sequence INTEGER NOT NULL DEFAULT 0,
-                    finalization_digest TEXT,
-                    last_attempt_at TEXT NOT NULL,
-                    last_error_category TEXT,
-                    completion_status TEXT NOT NULL
-                );
-                """
-            )
-            if version < 2:
-                event_columns = {row[1] for row in connection.execute("PRAGMA table_info(events)")}
-                artifact_columns = {
-                    row[1] for row in connection.execute("PRAGMA table_info(artifacts)")
-                }
-                for name, definition in (
-                    ("last_error", "TEXT"),
-                    ("dead_lettered_at", "TEXT"),
-                ):
-                    if name not in event_columns:
-                        connection.execute(f"ALTER TABLE events ADD COLUMN {name} {definition}")
-                for name, definition in (
-                    ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
-                    ("next_retry_at", "TEXT"),
-                    ("last_error", "TEXT"),
-                    ("dead_lettered_at", "TEXT"),
-                ):
-                    if name not in artifact_columns:
-                        connection.execute(f"ALTER TABLE artifacts ADD COLUMN {name} {definition}")
-                connection.execute("PRAGMA user_version=2")
-            if version < 3:
-                run_columns = {row[1] for row in connection.execute("PRAGMA table_info(runs)")}
-                for name, definition in (
-                    ("upload_state", "TEXT NOT NULL DEFAULT 'offline'"),
-                    ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
-                    ("next_retry_at", "TEXT"),
-                    ("last_error", "TEXT"),
-                    ("dead_lettered_at", "TEXT"),
-                ):
-                    if name not in run_columns:
-                        connection.execute(f"ALTER TABLE runs ADD COLUMN {name} {definition}")
-                connection.execute("PRAGMA user_version=3")
-            if version < 4:
-                connection.execute("PRAGMA user_version=4")
+            try:
+                migrate_spool_schema(connection)
+            except SpoolSchemaError as error:
+                raise SpoolError(str(error)) from error
 
     def record_local_import(
         self,
@@ -233,7 +135,17 @@ class SQLiteSpool:
     def ingest_events(self, documents: Iterable[Mapping[str, Any]]) -> BatchResult:
         prepared: list[tuple[TelemetryEnvelopeV2, str, str]] = []
         for document in documents:
-            parsed = parse_protocol_document(dict(document))
+            redacted = redact_remote_document(dict(document))
+            remote_document = redacted.value
+            if redacted.count and isinstance(remote_document, dict):
+                body = dict(remote_document.get("body") or {})
+                body["villani_redaction"] = {
+                    "status": "redacted",
+                    "count": redacted.count,
+                    "categories": list(redacted.categories),
+                }
+                remote_document["body"] = body
+            parsed = parse_protocol_document(remote_document)
             if not isinstance(parsed, TelemetryEnvelopeV2):
                 raise SpoolError("event batches accept only villani.telemetry_envelope.v2")
             body_size = len(_normalized_json(parsed.body).encode("utf-8"))

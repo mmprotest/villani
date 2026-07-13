@@ -12,6 +12,8 @@ from typer.testing import CliRunner
 from villani_distribution import services, vfr
 from villani_distribution.cli import app
 from villani_distribution.migrations import MigrationError, check_upgrade
+from villani_agentd.config import AgentdPaths, Limits
+from villani_agentd.spool import SQLiteSpool
 
 
 def test_public_help_lists_distribution_service_commands() -> None:
@@ -95,13 +97,49 @@ def test_previous_package_fixture_migrates_without_rewriting_config_or_runs(
     spool = home / "agentd" / "spool.sqlite3"
     _legacy_spool(spool)
     report = check_upgrade(home, apply=True)
-    assert (report.spool_version_before, report.spool_version_after) == (0, 1)
+    assert (report.spool_version_before, report.spool_version_after) == (0, 4)
     assert report.protocol_majors == (1,)
     assert config.read_text(encoding="utf-8") == original_config
     assert manifest.read_text(encoding="utf-8") == original_manifest
     with sqlite3.connect(spool) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
         assert connection.execute("SELECT event_id FROM events").fetchone()[0] == "evt-old"
+
+
+@pytest.mark.parametrize("version", [0, 1, 2, 3, 4])
+def test_distribution_and_agentd_share_spool_v4_contract(
+    version: int, tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    spool = home / "agentd" / "spool.sqlite3"
+    _legacy_spool(spool)
+    with sqlite3.connect(spool) as connection:
+        connection.execute(f"PRAGMA user_version={version}")
+        connection.execute("INSERT INTO runs(run_id) VALUES('preserved-run')")
+        connection.commit()
+
+    dry_run = check_upgrade(home, apply=False)
+    assert (dry_run.spool_version_before, dry_run.spool_version_after) == (version, version)
+    with sqlite3.connect(spool) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == version
+
+    applied = check_upgrade(home, apply=True)
+    assert (applied.spool_version_before, applied.spool_version_after) == (version, 4)
+    repeated = check_upgrade(home, apply=True)
+    assert (repeated.spool_version_before, repeated.spool_version_after) == (4, 4)
+    SQLiteSpool(AgentdPaths(home / "agentd"), Limits())
+    with sqlite3.connect(spool) as connection:
+        assert connection.execute("SELECT run_id FROM runs").fetchone()[0] == "preserved-run"
+
+
+def test_distribution_rejects_future_agentd_spool(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    spool = home / "agentd" / "spool.sqlite3"
+    _legacy_spool(spool)
+    with sqlite3.connect(spool) as connection:
+        connection.execute("PRAGMA user_version=5")
+    with pytest.raises(MigrationError, match="newer than supported version 4"):
+        check_upgrade(home)
 
 
 def test_newer_upgrade_versions_are_refused(tmp_path: Path) -> None:

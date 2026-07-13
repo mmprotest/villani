@@ -125,7 +125,9 @@ def test_registered_secret_artifact_never_enters_spool(tmp_path: Path) -> None:
     paths = AgentdPaths(home / "agentd")
 
     report = LocalRunImporter(paths, Limits()).run_once()
-    assert report["counts"]["sensitive_content_rejected"] == 1
+    assert report["counts"]["imported"] == 1
+    assert report["diagnostics"][0]["imported_events"] > 0
+    assert report["diagnostics"][0]["imported_artifacts"] == 3
     assert canary.encode() not in paths.database.read_bytes()
     for artifact in paths.artifacts.rglob("*"):
         if artifact.is_file():
