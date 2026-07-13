@@ -1,27 +1,29 @@
-export const themeCss = () => `
+import { villaniThemeCss } from "@villani/ui";
+
+export const themeCss = () => `${villaniThemeCss}
 /* =========================================================
    Design tokens
    ========================================================= */
 :root {
-  --bg-0: #101820;
-  --bg-1: #f3f0e8;
-  --panel: rgba(255, 252, 246, 0.96);
-  --panel-strong: rgba(248, 244, 236, 0.98);
+  --bg-0: var(--villani-bg-deepest);
+  --bg-1: var(--villani-bg-panel);
+  --panel: var(--villani-bg-panel);
+  --panel-strong: var(--villani-bg-elevated);
   --border: rgba(77, 91, 105, 0.18);
   --border-active: rgba(105, 157, 214, 0.75);
   --border-success: rgba(126, 226, 139, 0.62);
   --border-warning: rgba(255, 204, 77, 0.72);
   --border-muted: rgba(155, 177, 202, 0.26);
-  --text: #17202a;
-  --text-soft: #334155;
-  --text-muted: #64748b;
-  --text-dim: #7a8796;
+  --text: var(--villani-text-primary);
+  --text-soft: var(--villani-text-secondary);
+  --text-muted: var(--villani-text-muted);
+  --text-dim: var(--villani-text-muted);
   --blue: #58748f;
-  --green: #91d39a;
+  --status-success: var(--villani-text-primary);
   --amber: #e8c66b;
   --red: #f08080;
   --glow-blue: 0 0 28px rgba(59, 153, 255, 0.34);
-  --glow-green: 0 0 20px rgba(126, 226, 139, 0.20);
+  --glow-success: 0 0 16px rgba(255, 255, 255, 0.10);
   --glow-amber: 0 0 20px rgba(255, 210, 77, 0.20);
 }
 
@@ -40,8 +42,8 @@ body {
 
 body {
   color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
-  background: linear-gradient(180deg, #eef1f3, #f7f3ea 56%, #efe9dc);
+  font-family: var(--villani-font);
+  background: var(--villani-bg-deepest);
 }
 
 body::before {
@@ -49,7 +51,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at 20% 0%, rgba(88, 116, 143, 0.08), transparent 34%);
+  background: radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.04), transparent 34%);
 }
 
 svg {
@@ -88,7 +90,7 @@ h1 { margin: 0; font-size: clamp(20px, 3vw, 26px); }
 .panel p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.45; }
 .run-summary { padding: 22px; display: grid; grid-template-columns: minmax(280px, 1.1fr) minmax(320px, 1fr); gap: 18px 24px; }
 .outcome-card { border-left: 5px solid var(--blue); padding-left: 18px; }
-.run-summary.success .outcome-card { border-left-color: var(--green); }
+.run-summary.success .outcome-card { border-left-color: var(--status-success); }
 .run-summary.warning .outcome-card { border-left-color: var(--amber); }
 .run-summary.error .outcome-card { border-left-color: var(--red); }
 .outcome-kicker, .metadata-row dt { color: var(--text-muted); text-transform: uppercase; letter-spacing: .12em; font-size: 11px; font-weight: 800; }
@@ -111,7 +113,7 @@ h1 { margin: 0; font-size: clamp(20px, 3vw, 26px); }
 .rail { display:grid; place-items:center; }
 .rail i { width:24px; height:24px; border-radius:8px; border:1px solid var(--border-muted); display:grid; place-items:center; background:#f7f3ea; }
 .rail svg { width:14px; }
-.completed .rail i { color:#06130d; background:var(--green); }
+.completed .rail i { color:var(--villani-bg-deepest); background:var(--status-success); }
 .warning .rail i, .severity-minor-warning .rail i { color:var(--amber); border-color:var(--border-warning); }
 .failed .rail i { color:var(--red); border-color:rgba(255,107,107,.7); }
 .timeline-row article { min-height:56px; display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:12px; align-items:center; padding:13px 14px; border:1px solid rgba(154,178,205,.10); border-radius:12px; background:rgba(255,255,255,.36); }
@@ -187,4 +189,24 @@ h1 { margin: 0; font-size: clamp(20px, 3vw, 26px); }
 
 @media (max-width: 900px) { .app-shell{padding:14px; gap:14px;} .topbar{position:static; align-items:flex-start; flex-direction:column;} .run-summary{grid-template-columns:1fr; padding:18px;} .metadata-row{grid-template-columns:1fr 1fr;} .investigation-grid-main{grid-template-columns:1fr;} .detail-panel{min-height:320px;} .metadata-strip .meta-grid{grid-template-columns:1fr 1fr;} .compact-facts,.aggregate-facts{grid-template-columns:1fr 1fr;} }
 @media (max-width: 520px) { .app-shell{padding:10px; gap:10px;} .topbar{gap:8px; padding:6px 0;} .brand-mark{width:28px; height:28px; border-radius:8px;} .replay-chip{padding:3px 7px;} .transport{display:none;} .run-summary{padding:12px; gap:10px;} .outcome-card{padding-left:10px; border-left-width:4px;} .outcome-card h2{font-size:24px; margin:4px 0;} .outcome-card p,.summary-note{font-size:12px;} .summary-facts{grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px;} .summary-facts article{padding:5px 0 5px 8px;} .summary-facts b{font-size:13px;} .summary-facts span{font-size:10px;} .metadata-row{grid-template-columns:1fr 1fr; gap:6px; font-size:11px;} .summary-note{display:none;} .investigation-grid,.metadata-strip .meta-grid,.warning-groups,.compact-facts,.aggregate-facts{grid-template-columns:1fr;} .timeline-row{grid-template-columns:1fr;} .timeline-row time,.rail{display:none;} .timeline-row article{grid-template-columns:30px minmax(0,1fr); min-height:48px; padding:10px;} .timeline-row em{display:none;} .panel{padding:12px;} .artifact-list li{grid-template-columns:1fr;} }
+
+/* Shared Villani dark-surface enforcement. Local component rules may define
+   layout, but never reintroduce a light canvas or a separate color system. */
+.panel,.run-summary,.session-group-header,.session-row,.timeline-row article,
+.investigation-card,.meta-item,.compact-facts div,.attempt-detail,
+.panel-actions button,.transport,.open,.provider-badge,.outcome-pill,
+.control-line input,.control-line select,.filter-button,.clear-button,.show-more {
+  color:var(--villani-text-primary);
+  background:var(--villani-bg-panel) !important;
+  border-color:var(--villani-border-subtle) !important;
+  box-shadow:none;
+}
+.timeline-row:hover article,.timeline-row.selected article,.session-row:hover,
+.session-row.selected,.selected-candidate,.panel-actions button.active {
+  background:var(--villani-bg-selected) !important;
+  border-color:var(--villani-border-strong);
+}
+.detail-content pre,.attempt-detail pre,.villani-panel details pre,.copy-command,
+.rail i { background:var(--villani-bg-elevated) !important; color:var(--villani-text-secondary) !important; }
+.replay-chip,.transport,.transport a,.selected-label { color:var(--villani-text-secondary); }
 `;

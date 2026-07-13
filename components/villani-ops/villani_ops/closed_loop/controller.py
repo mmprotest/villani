@@ -19,6 +19,7 @@ from villani_ops.materialize import inspect_patch_application
 from .event_writer import EventWriter, failure_payload, redact_data, redact_message
 from .event_sink import RunEventSink
 from .failure_classification import classify_failure, material_progress
+from .classification_adjustments import apply_classification_policy
 from .interfaces import (
     AttemptContext,
     AttemptResult,
@@ -113,7 +114,6 @@ from .candidate_strategies import (
     adaptive_stop,
     build_candidate_plans,
     configuration_from_policy,
-    diversity_summary,
     immutable_baseline_digest,
 )
 
@@ -630,21 +630,26 @@ class ClosedLoopController:
             dimensions_value = attempt.metadata.get("candidate_dimensions")
             if isinstance(dimensions_value, Mapping):
                 dimensions = CandidateDimensions.model_validate(dimensions_value)
-                fingerprint = str(
-                    attempt.metadata.get("effective_configuration_sha256")
-                    or dimensions.effective_fingerprint
+                fingerprint_value = attempt.metadata.get(
+                    "effective_configuration_sha256"
                 )
                 baseline = str(
                     attempt.metadata.get("baseline_sha256")
                     or runtime.reliability_baseline_sha256
                     or ""
                 )
-                if baseline:
+                if (
+                    baseline
+                    and attempt.metadata.get(
+                        "runner_acknowledged_candidate_configuration"
+                    )
+                    and isinstance(fingerprint_value, str)
+                ):
                     runtime.candidate_plans[attempt_id] = CandidatePlan(
                         candidate_id=attempt_id,
                         ordinal=attempt.ordinal,
                         dimensions=dimensions,
-                        effective_configuration_sha256=fingerprint,
+                        effective_configuration_sha256=fingerprint_value,
                         baseline_sha256=baseline,
                         sandbox_id=str(
                             attempt.metadata.get("sandbox_id")
@@ -1749,23 +1754,49 @@ class ClosedLoopController:
             returned = self._classifier.classify(runtime.request.task, context)
             if not isinstance(returned, Classification):
                 raise TypeError("classifier returned an invalid Classification")
+            classified_at = self._now()
+            effective, adjustments, classification_policy_version = (
+                apply_classification_policy(
+                    returned,
+                    runtime.request.policy_configuration,
+                    timestamp=classified_at,
+                )
+            )
             classification = ClassificationSnapshot(
                 schema_version="villani.classification.v1",
                 classification_id="classification_001",
                 run_id=runtime.run_id,
                 task_id=runtime.task_id,
-                classified_at=self._now(),
-                difficulty=returned.difficulty,
-                risk=returned.risk,
-                category=returned.category,
-                required_capabilities=list(returned.required_capabilities),
-                estimated_attempts_needed=returned.estimated_attempts_needed,
-                needs_tests=returned.needs_tests,
-                confidence=returned.confidence,
-                reasoning_summary=returned.reasoning_summary,
-                signals=_mapping_copy(returned.signals),
+                classified_at=classified_at,
+                difficulty=effective.difficulty,
+                risk=effective.risk,
+                category=effective.category,
+                required_capabilities=list(effective.required_capabilities),
+                estimated_attempts_needed=effective.estimated_attempts_needed,
+                needs_tests=effective.needs_tests,
+                confidence=effective.confidence,
+                reasoning_summary=effective.reasoning_summary,
+                signals=_mapping_copy(effective.signals),
                 metadata={
                     **_mapping_copy(returned.metadata),
+                    "raw_classification": {
+                        "difficulty": returned.difficulty,
+                        "risk": returned.risk,
+                        "category": returned.category,
+                        "required_capabilities": list(returned.required_capabilities),
+                        "confidence": returned.confidence,
+                    },
+                    "effective_classification": {
+                        "difficulty": effective.difficulty,
+                        "risk": effective.risk,
+                        "category": effective.category,
+                        "required_capabilities": list(effective.required_capabilities),
+                        "confidence": effective.confidence,
+                    },
+                    "classification_adjustments": [
+                        item.model_dump(mode="json") for item in adjustments
+                    ],
+                    "classification_policy_version": classification_policy_version,
                     "classification_backend": (
                         _mapping_copy(returned.metadata).get("classification_backend")
                         or {
@@ -1820,20 +1851,17 @@ class ClosedLoopController:
             {
                 "classification_id": classification.classification_id,
                 "raw_classification": {
-                    "difficulty": classification.difficulty,
-                    "risk": classification.risk,
-                    "category": classification.category,
-                    "required_capabilities": classification.required_capabilities,
+                    **classification.metadata["raw_classification"],
                 },
                 "effective_classification": {
-                    "difficulty": classification.difficulty,
-                    "risk": classification.risk,
-                    "category": classification.category,
-                    "required_capabilities": classification.required_capabilities,
+                    **classification.metadata["effective_classification"],
                 },
                 "confidence": classification.confidence,
                 "classification_adjustments": classification.metadata.get(
                     "classification_adjustments", []
+                ),
+                "policy_version": classification.metadata.get(
+                    "classification_policy_version"
                 ),
                 "category": classification.category,
                 "required_capabilities": classification.required_capabilities,
@@ -2370,7 +2398,14 @@ class ClosedLoopController:
             remaining_attempt_budget=budget.remaining_attempts,
             remaining_cost_budget_usd=budget.remaining_cost_usd,
         )
-        diversity_claimed, distinct = diversity_summary(tuple(merged))
+        acknowledged_fingerprints = {
+            str(item.metadata["effective_configuration_sha256"])
+            for item in runtime.attempts
+            if item.metadata.get("runner_acknowledged_candidate_configuration")
+            and isinstance(item.metadata.get("effective_configuration_sha256"), str)
+        }
+        distinct = len(acknowledged_fingerprints)
+        diversity_claimed = distinct > 1
         accounting = ReliabilityAccounting(
             strategy=configuration.strategy,
             planned_attempts=len(merged),
@@ -2953,8 +2988,6 @@ class ClosedLoopController:
                 "effective_configuration_sha256": (
                     attempt_metadata.get("effective_configuration_sha256")
                     if attempt_metadata.get("runner_acknowledged_candidate_configuration")
-                    else candidate_plan.effective_configuration_sha256
-                    if candidate_plan is not None
                     else None
                 ),
                 "baseline_sha256": context.baseline_sha256,

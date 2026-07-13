@@ -43,6 +43,8 @@ wheelhouse/
 dist/
 !components/villani-run-model/dist/
 !components/villani-run-model/dist/**
+!components/villani-web/dist/
+!components/villani-web/dist/**
 build/
 
 # Node, JavaScript, and TypeScript dependencies/build output
@@ -93,3 +95,4 @@ temp/
 .test-temp/
 build-smoke/
 root-*-temp-*/
+release-verification/artifacts/

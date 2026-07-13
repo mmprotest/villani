@@ -6,6 +6,7 @@ import json
 import signal
 import time
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from .base import RunnerContext, RunnerResult
 from .villani_code_debug import write_runner_telemetry
@@ -79,12 +80,18 @@ class VillaniCodeRunner:
         (Path(context.run_dir) / "effective_candidate_configuration.json").write_text(
             json.dumps(
                 {
+                    "candidate_id": context.attempt_id,
                     "requested_dimensions": requested,
                     "applied_dimensions": applied,
                     "unsupported_dimensions": unsupported,
+                    "rejected_dimensions": {},
                     "effective_prompt_digest": prompt_digest,
                     "effective_configuration_digest": effective_digest,
                     "runner_acknowledged": True,
+                    "acknowledgement_timestamp": datetime.now(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "provider_acknowledgement": None,
                 },
                 indent=2,
                 sort_keys=True,

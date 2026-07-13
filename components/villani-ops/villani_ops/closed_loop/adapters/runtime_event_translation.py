@@ -10,9 +10,6 @@ from typing import Any, Iterable
 
 from ..event_writer import redact_data
 from ..interfaces import RuntimeEvent
-from villani_ops.verifier.extract import is_validation_command
-
-
 _CANONICAL_RUNTIME_TYPES = {
     "model_call_started",
     "model_call_completed",
@@ -26,6 +23,29 @@ _CANONICAL_RUNTIME_TYPES = {
     "file_read",
     "file_write",
 }
+
+_COMMAND_ROLES = {
+    "discovery",
+    "inspection",
+    "mutation",
+    "repository_validation",
+    "candidate_authored_validation",
+    "environment_setup",
+    "materialization_check",
+    "unknown",
+}
+
+
+def _command_role(row: dict[str, Any]) -> str:
+    """Return only a structured role supplied by the runner.
+
+    Command text is deliberately ignored.  Older traces remain displayable but
+    are non-authoritative because their role normalizes to ``unknown``.
+    """
+
+    raw = row.get("command_role") or row.get("commandRole") or row.get("role")
+    role = str(raw or "unknown").strip().lower()
+    return role if role in _COMMAND_ROLES else "unknown"
 
 
 def _timestamp(row: dict[str, Any]) -> datetime | None:
@@ -126,6 +146,10 @@ def translate_runtime_events(
     trace_dir: Path,
     *,
     secrets: tuple[str, ...] = (),
+    run_id: str | None = None,
+    attempt_id: str | None = None,
+    worktree_path: str | None = None,
+    baseline_sha256: str | None = None,
 ) -> tuple[RuntimeEvent, ...]:
     events: list[RuntimeEvent] = []
     for source in (
@@ -146,10 +170,15 @@ def translate_runtime_events(
                 command_evidence = (
                     {
                         "command": command,
-                        "command_role": "validation"
-                        if isinstance(command, str) and is_validation_command(command)
-                        else "execution",
+                        "command_role": _command_role(row),
                         "exit_code": row.get("exit_code"),
+                        "run_id": run_id,
+                        "attempt_id": attempt_id,
+                        "worktree_path": worktree_path,
+                        "baseline_sha256": baseline_sha256,
+                        "candidate_state": row.get("candidate_state")
+                        or row.get("candidateState")
+                        or "unknown",
                     }
                     if event_type in {"command_completed", "command_failed"}
                     else {}

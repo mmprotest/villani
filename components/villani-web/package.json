@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@villani/run-model": "file:../villani-run-model",
+    "@villani/ui": "file:../villani-ui",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

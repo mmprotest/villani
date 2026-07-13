@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
+        "--mode", choices=("local", "official"), default="local",
+        help="Official mode requires every external scanner to execute successfully.",
+    )
+    parser.add_argument(
         "--test-signing-key", default="villani-test-signing-key-not-for-release"
     )
     parser.add_argument(
@@ -154,12 +159,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     container = container_policy_scan()
     real_container = real_container_scan(args.container_scan_report.resolve())
+    secret = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/check-secrets.py"), "integration/fixtures"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     os_smoke = all(
         name in workflow for name in ("ubuntu-latest", "macos-latest", "windows-latest")
     )
     report = {
         "schema_version": "villani.supply_chain_gate.v1",
+        "mode": args.mode,
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "official_release_certification": False,
         "dependency_audit": {
             "tool": "pip check",
             "passed": pip.returncode == 0,
@@ -181,6 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         "container_cve_scan": real_container,
         "secret_scan": {
             "command": "scripts/check-secrets.py integration/fixtures",
+            "executed": True,
+            "passed": secret.returncode == 0,
             "required": True,
         },
         "migration_restore_tests": {"required": True},
@@ -194,12 +210,22 @@ def main(argv: list[str] | None = None) -> int:
             "online CVE container scanner when air-gapped",
         ],
     }
-    report["passed"] = bool(
+    deterministic_passed = bool(
         report["dependency_audit"]["passed"]
         and report["artifact_signature"]["verified"]
         and container["passed"]
-        and real_container["passed"]
+        and report["secret_scan"]["passed"]
         and os_smoke
+    )
+    official_passed = deterministic_passed and bool(
+        real_container.get("executed") and real_container.get("passed")
+    )
+    report["official_release_certification"] = bool(
+        args.mode == "official" and official_passed
+    )
+    report["passed"] = official_passed if args.mode == "official" else deterministic_passed
+    report["external_scanners_unavailable"] = (
+        [] if real_container.get("executed") else ["container_cve_scan"]
     )
     (args.output / "supply-chain-report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"

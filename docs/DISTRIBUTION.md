@@ -1,5 +1,13 @@
 # Villani local distribution and lifecycle
 
+## Release verification status
+
+`python release-verification/run_release_gate.py --mode local` rebuilds every Python and Node
+package, installs wheels into a fresh environment without editable installs, checks compatibility,
+and validates frontend asset references. It currently fails closed at the unimplemented connected
+scenario/browser phase, so this revision is not release-certified. Official `--mode release` also
+fails when a required external scanner is absent or did not execute.
+
 ## Architecture
 
 The supported user installation is one platform wheel named `villani`. It depends on the versioned internal `villani-ops`, `villani-code`, and `villani-agentd` Python distributions and owns the user-facing entry points. Release builds compile the existing Flight Recorder TypeScript output with Bun into a platform-native executable and package that executable as `vfr`; Node.js and Bun are build-time tools and are not needed by an installed product.

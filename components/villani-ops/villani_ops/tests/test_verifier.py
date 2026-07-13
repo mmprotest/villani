@@ -44,7 +44,11 @@ def test_loader_success_and_missing():
 def test_evidence_extractor():
     r = load_debug_run(FIX / "verifier_success")
     s, f, _, m, mut, val, *_ = extract_evidence(r)
-    assert is_validation_command("curl -sk https://x")
+    assert not is_validation_command("curl -sk https://x")
+    assert not is_validation_command("cat test-results.txt")
+    assert not is_validation_command("grep pass output.log")
+    assert not is_validation_command("git push origin main")
+    assert not is_validation_command("echo build verification passed")
     assert any("PASS" in e.text for e in s)
     assert any("syntax error" in e.text for e in f)
     assert any("refused" in e.text for e in f)

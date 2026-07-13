@@ -2630,3 +2630,44 @@ Assumptions and risks:
 - The verifier cascade distinguishes authority, but a complete cheapest-eligible multi-backend
   verifier escalation policy remains unfinished.
 - The next milestone was not started; this remains the current release-blocker milestone.
+
+#### 2026-07-13: Release-readiness continuation
+
+Status: incomplete; release gate failed. This continuation repaired build/install foundations and
+several fail-open contracts, but did not complete the mandatory connected/browser/PostgreSQL gate.
+
+Changed areas:
+- Added the tracked compatibility template and cross-platform packaged gate. All five Python
+  distributions build wheels and sdists, all four Node packages build and pack, a fresh venv
+  installs non-editable wheels, entry points resolve, and generated Web asset references validate.
+- Removed command-substring authority from runtime translation. Only explicit
+  `repository_validation` intent with matching run, attempt, worktree, baseline, post-mutation
+  state, and exit status can authorize acceptance. Added controller-configured shell-free argv
+  repository validation for the low-risk no-LLM path.
+- Removed planned-fingerprint fallback, expanded runner acknowledgement artifacts, and added a
+  typed classification adjustment engine with auditable floors, promotions, permitted reductions,
+  confidence changes, rule IDs, policy versions, authorities, and timestamps.
+- Added `components/villani-ui`, moved Web and Flight Recorder onto shared dark monochrome tokens,
+  rebuilt tracked output, and made Web `dist` assets explicitly trackable.
+- Repaired supply-chain local/official modes. Local mode reports unavailable scanners without
+  claiming certification; official mode fails when a required scanner did not execute.
+
+Verification:
+- Villani Ops full suite: 880 passed, 2 host-capability skips, 114 deselected. Focused final
+  adapter/authority suite: 21 passed. Ruff: zero findings.
+- Root closed-loop plus final-foundation: 27 passed. Final-foundation alone: 17 passed.
+- Villani Web: 3 files/5 tests, typecheck, build, and format passed. Flight Recorder: 20 files/103
+  tests, typecheck, build, and format passed. Shared UI: test, syntax build, and pack dry-run passed.
+- Packaged gate build phase passed and produced five wheels, five sdists, and four Node tarballs;
+  clean wheel installation and hashed frontend asset validation passed.
+
+Remaining release failures and external limits:
+- Connected control-plane synchronization, scenarios A-H, canonical reconciliation, real API-backed
+  browser tests, and the required screenshots remain unimplemented in the packaged gate. The gate
+  reports these phases `not_executed` and returns non-zero.
+- The current host cannot access the Docker engine, so live PostgreSQL migration/populated upgrade
+  proof could not run. The installed host Node is 24.13.0 rather than the release Node 20 runtime.
+- A complete cheapest-eligible multi-verifier cascade and separate retry-safe verifier billing
+  implementation remains unfinished.
+
+No later milestone was started; this remains the release-readiness milestone.

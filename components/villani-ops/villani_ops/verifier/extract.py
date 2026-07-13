@@ -3,39 +3,12 @@ import hashlib
 import re
 import json
 import os
+import shlex
 from .types import DeliverableSpec, EvidenceItem, RequirementCheck
 
-VALIDATION = [
-    "test",
-    "pytest",
-    "npm test",
-    "pnpm test",
-    "yarn test",
-    "vitest",
-    "jest",
-    "go test",
-    "cargo test",
-    "mvn test",
-    "gradle test",
-    "tsc",
-    "typecheck",
-    "build",
-    "lint",
-    "curl",
-    "urllib",
-    "requests",
-    "wget",
-    "git clone",
-    "git push",
-    "nginx -t",
-    "openssl x509",
-    "grep",
-    "pass",
-    "verification",
-    "cat ",
-    "eval.py",
-    "rscript",
-]
+_ADVISORY_VALIDATION_EXECUTABLES = {
+    "pytest", "vitest", "jest", "tsc", "mypy", "ruff", "rscript"
+}
 FAIL_RE = re.compile(
     r"\b(error|exception|traceback|not found|refused|timeout|permission denied|connection refused|syntax error|missing file|segmentation fault|core dumped|sigsegv|abort(?:ed)?|fatal error|uncaught exception|unhandled exception|exit code 139|returncode -11|process crashed|assertionerror|assertion failed|test failed|invalid read|invalid write|use[- ]after[- ]free|double free|heap corruption|leak checker failure)\b|(?<!0\s)\bfailed\b|\bfailures?:\s*[1-9]\d*|[1-9]\d*\s+failed\b|\b(definitely|possibly) lost:\s*(?!0\s+bytes)[0-9,]+\s+bytes|ERROR SUMMARY:\s*(?!0\s+errors)[0-9,]+\s+errors",
     re.I,
@@ -76,8 +49,38 @@ PATH_CAND_RE = re.compile(
 
 
 def is_validation_command(cmd: str | None):
-    c = (cmd or "").lower()
-    return any(v in c for v in VALIDATION)
+    """Recognize a small advisory set; never grants acceptance authority.
+
+    The closed-loop authority path uses the structured ``command_role``
+    contract.  This helper exists only to organize legacy verifier evidence.
+    """
+
+    try:
+        parts = shlex.split(cmd or "", posix=os.name != "nt")
+    except ValueError:
+        return False
+    if not parts:
+        return False
+    executable = os.path.basename(parts[0]).lower().removesuffix(".exe")
+    if executable in _ADVISORY_VALIDATION_EXECUTABLES:
+        return True
+    if executable in {"python", "python3", "py"} and len(parts) >= 3:
+        if parts[1:3] in (["-m", "pytest"], ["-m", "mypy"], ["-m", "ruff"]):
+            return True
+    if executable in {"python", "python3", "py"} and len(parts) >= 2:
+        return os.path.basename(parts[1]).lower() == "eval.py"
+    if executable in {"npm", "npm.cmd", "pnpm", "yarn"} and len(parts) >= 2:
+        return parts[1:] == ["test"] or parts[1:3] == ["run", "test"]
+    if executable == "go" and len(parts) >= 2:
+        return parts[1] == "test"
+    if executable == "cargo" and len(parts) >= 2:
+        return parts[1] == "test"
+    for index, token in enumerate(parts[:-1]):
+        nested = os.path.basename(token).lower().removesuffix(".exe")
+        if nested in {"python", "python3", "py"}:
+            if os.path.basename(parts[index + 1]).lower() == "eval.py":
+                return True
+    return False
 
 
 def extract_requirements(objective: str | None):

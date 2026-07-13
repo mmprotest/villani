@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
+import subprocess
 import time
 from typing import Any, Callable, Literal, Mapping
 
@@ -18,6 +21,7 @@ from ..interfaces import (
     EvidenceItem,
     Requirement,
     Verification,
+    RuntimeEvent,
 )
 from ..plugins.builtins import VERIFIER_MANIFEST
 
@@ -110,6 +114,7 @@ def _has_acceptance_blocker(risks: tuple[str, ...]) -> bool:
 
 
 def _repository_validation_authority(
+    attempt_context: AttemptContext,
     attempt_result: AttemptResult,
 ) -> tuple[bool, bool]:
     """Return (authoritative pass, active failure) from structured runtime events."""
@@ -118,13 +123,32 @@ def _repository_validation_authority(
         event.timestamp for event in attempt_result.runtime_events if event.event_type == "file_write"
     ]
     final_mutation = max(mutations) if mutations else None
-    validations = [
-        event
-        for event in attempt_result.runtime_events
-        if event.event_type in {"command_completed", "command_failed"}
-        and event.payload.get("command_role") == "validation"
-        and (final_mutation is None or event.timestamp >= final_mutation)
-    ]
+    expected_worktree = str(Path(attempt_result.worktree_path).resolve())
+    expected_baseline = attempt_context.baseline_sha256
+    validations = []
+    for event in attempt_result.runtime_events:
+        payload = event.payload
+        if event.event_type not in {"command_completed", "command_failed"}:
+            continue
+        if payload.get("command_role") != "repository_validation":
+            continue
+        if payload.get("run_id") != attempt_context.run_id:
+            continue
+        if payload.get("attempt_id") != attempt_context.attempt_id:
+            continue
+        try:
+            event_worktree = str(Path(str(payload.get("worktree_path"))).resolve())
+        except (OSError, TypeError, ValueError):
+            continue
+        if event_worktree != expected_worktree:
+            continue
+        if expected_baseline is None or payload.get("baseline_sha256") != expected_baseline:
+            continue
+        if payload.get("candidate_state") != "post_mutation":
+            continue
+        if final_mutation is not None and event.timestamp < final_mutation:
+            continue
+        validations.append(event)
     if not validations:
         return False, False
     active_failure = any(
@@ -132,6 +156,68 @@ def _repository_validation_authority(
         for event in validations
     )
     return not active_failure, active_failure
+
+
+def _execute_configured_repository_validation(
+    attempt_context: AttemptContext,
+    attempt_result: AttemptResult,
+) -> AttemptResult:
+    """Execute controller-configured argv without shell parsing in the candidate worktree."""
+
+    configured = attempt_context.policy_configuration.get(
+        "repository_validation_commands"
+    )
+    if not isinstance(configured, list):
+        return attempt_result
+    events = list(attempt_result.runtime_events)
+    worktree = str(Path(attempt_result.worktree_path).resolve())
+    for index, item in enumerate(configured, 1):
+        if not isinstance(item, Mapping):
+            continue
+        argv = item.get("argv")
+        if not (
+            isinstance(argv, list)
+            and argv
+            and all(isinstance(value, str) and value for value in argv)
+        ):
+            continue
+        timeout = float(item.get("timeout_seconds") or 120)
+        timestamp = datetime.now(timezone.utc)
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=worktree,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            exit_code = completed.returncode
+            event_type = "command_completed" if exit_code == 0 else "command_failed"
+        except (OSError, subprocess.TimeoutExpired):
+            exit_code = None
+            event_type = "command_failed"
+        events.append(
+            RuntimeEvent(
+                event_type=event_type,
+                timestamp=timestamp,
+                payload={
+                    "command_role": "repository_validation",
+                    "argv": list(argv),
+                    "exit_code": exit_code,
+                    "run_id": attempt_context.run_id,
+                    "attempt_id": attempt_context.attempt_id,
+                    "worktree_path": worktree,
+                    "baseline_sha256": attempt_context.baseline_sha256,
+                    "candidate_state": "post_mutation",
+                    "validation_id": str(
+                        item.get("validation_id") or f"repository_validation_{index:03d}"
+                    ),
+                },
+                source_event_id=f"controller-validation:{attempt_context.attempt_id}:{index}",
+            )
+        )
+    return replace(attempt_result, runtime_events=tuple(events))
 
 
 class VillaniVerifierAdapter:
@@ -277,6 +363,9 @@ class VillaniVerifierAdapter:
         attempt_context: AttemptContext,
         attempt_result: AttemptResult,
     ) -> Verification:
+        attempt_result = _execute_configured_repository_validation(
+            attempt_context, attempt_result
+        )
         run_dir = Path(attempt_context.run_directory).resolve()
         raw_dir = run_dir / "verification" / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
@@ -377,9 +466,34 @@ class VillaniVerifierAdapter:
             attempt_result.patch and attempt_result.patch.strip()
         ):
             blockers.append("empty_patch")
-        repository_pass, repository_failure = _repository_validation_authority(attempt_result)
+        repository_pass, repository_failure = _repository_validation_authority(
+            attempt_context, attempt_result
+        )
         if repository_failure:
             blockers.append("repository_validation_failed")
+        if repository_pass and self._no_llm:
+            # Complete controller-owned repository validation is acceptance
+            # authority on the configured low-risk path. Deterministic legacy
+            # evidence extraction remains visible but cannot veto it merely
+            # because an optional trace projection is absent or ambiguous.
+            authoritative_blockers = {
+                "runner_nonzero_exit",
+                "empty_patch",
+                "repository_validation_failed",
+            }
+            blockers = [item for item in blockers if item in authoritative_blockers]
+            missing = ()
+            success = success + (
+                EvidenceItem(
+                    evidence_id="repository_validation_passed",
+                    kind="repository_validation",
+                    summary=(
+                        "Controller-owned repository validation passed against "
+                        "the post-mutation candidate state."
+                    ),
+                    details={"authority": "repository_validation"},
+                ),
+            )
         authority_source = (
             "authoritative_repository_validation"
             if repository_pass

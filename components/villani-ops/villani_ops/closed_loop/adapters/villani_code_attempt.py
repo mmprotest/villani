@@ -291,7 +291,14 @@ class VillaniCodeAttemptAdapter:
                 attempt_dir / "trace" / "raw",
                 secrets=secrets,
             )
-            runtime_events = translate_runtime_events(raw_trace_path, secrets=secrets)
+            runtime_events = translate_runtime_events(
+                raw_trace_path,
+                secrets=secrets,
+                run_id=attempt_context.run_id,
+                attempt_id=attempt_context.attempt_id,
+                worktree_path=str(isolated.copied.worktree_path),
+                baseline_sha256=attempt_context.baseline_sha256,
+            )
         if (
             debug_root is not None
             and debug_root.exists()

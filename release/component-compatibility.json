@@ -1,0 +1,25 @@
+{
+  "schema_version": "villani.component_compatibility.v1",
+  "release_candidate": "0.3.0rc1",
+  "components": {
+    "villani": "0.3.0rc1",
+    "villani-ops": "0.2.0",
+    "villani-code": "0.1.0rc1",
+    "villani-agentd": "0.1.0",
+    "villani-control-plane": "0.1.0",
+    "shared-protocol": "2",
+    "@villani/run-model": "0.1.0",
+    "@villani/ui": "0.1.0",
+    "villani-web": "0.1.0",
+    "villani-flight-recorder": "0.1.0"
+  },
+  "spool_schema_version": 4,
+  "alembic_head": "0a1b2c3d4e5f",
+  "minimum_python": "3.11",
+  "node": "20",
+  "supported_operating_systems": ["linux", "windows", "macos"],
+  "generated": {
+    "build_timestamp": null,
+    "package_hashes": null
+  }
+}

@@ -107,5 +107,35 @@ def test_deployment_assets_migration_restore_and_supply_chain_gate(tmp_path: Pat
         (output / "supply-chain-report.json").read_text(encoding="utf-8")
     )
     assert report["passed"]
+    assert report["mode"] == "local"
+    assert report["official_release_certification"] is False
+    assert report["container_cve_scan"]["executed"] is False
     assert report["artifact_signature"]["test_key_only"]
     assert (output / "sbom.cdx.json").is_file()
+
+
+def test_official_supply_chain_mode_fails_when_required_scanner_did_not_run(
+    tmp_path: Path,
+):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/supply-chain-gate.py"),
+            "--output",
+            str(tmp_path / "official"),
+            "--mode",
+            "official",
+            "--container-scan-report",
+            str(tmp_path / "missing.sarif"),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode != 0
+    report = json.loads(
+        (tmp_path / "official/supply-chain-report.json").read_text(encoding="utf-8")
+    )
+    assert report["passed"] is False
+    assert report["official_release_certification"] is False
+    assert report["container_cve_scan"]["executed"] is False

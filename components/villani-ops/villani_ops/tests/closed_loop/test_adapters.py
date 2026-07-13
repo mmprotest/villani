@@ -129,6 +129,10 @@ class InjectedVillaniCodeRunner:
                         "event_id": f"command-{len(self.calls)}",
                         "ts": timestamp,
                         "command": command,
+                        "command_role": (
+                            "repository_validation" if quality == "strong" else "inspection"
+                        ),
+                        "candidate_state": "post_mutation",
                         "cwd": context.repo_path,
                         "exit_code": 0,
                         "stdout": stdout,

@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "@villani/ui/theme.css";
 import App from "./App";
 import FleetApp from "./FleetApp";
 import InterrogateApp from "./InterrogateApp";

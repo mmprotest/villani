@@ -1,5 +1,8 @@
 # Villani Flight Recorder
 
+Flight Recorder consumes the same `@villani/ui` monochrome tokens as Villani Web. Its replay and
+session-browser output remain self-contained without establishing a separate light-mode theme.
+
 Villani Flight Recorder turns local coding-agent transcripts into a searchable local session browser and static replay reports.
 
 It is a local flight recorder for coding-agent sessions: it reads transcript files already written by Claude, Codex, Pi, or generic JSONL-style agents, builds a local index, and writes static HTML you can open in a browser.

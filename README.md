@@ -114,8 +114,13 @@ fields without hiding the run. Unsafe artifact contents are withheld individuall
 heuristic verifier predictions are advisory; only structured repository validation or another
 configured authoritative verification source can authorize materialization.
 
-Run `python release-verification/run_release_gate.py` for the cross-platform packaged artifact
-check. Evidence is written beneath `release-verification/artifacts/latest/`.
+Run `python release-verification/run_release_gate.py --mode local` for the cross-platform packaged
+artifact check. Evidence is written beneath `release-verification/artifacts/latest/`. The gate is
+fail-closed: clean package builds, non-editable wheel installation, compatibility, and frontend
+asset validation pass, but connected control-plane scenarios, reconciliation, Playwright, and
+screenshots are not yet implemented and therefore the current gate verdict remains failed.
+`--mode release` also requires every official security scanner to execute; unavailable scanners
+are never reported as passed.
 
 `villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.
 

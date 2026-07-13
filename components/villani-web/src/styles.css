@@ -1,12 +1,12 @@
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #e9eef5;
-  background: #090c10;
+  font-family: var(--villani-font);
+  color: var(--villani-text-primary);
+  background: var(--villani-bg-deepest);
   font-synthesis: none;
-  --panel: #111720;
-  --line: #293342;
-  --muted: #9da9b8;
-  --accent: #74d8b2;
+  --panel: var(--villani-bg-panel);
+  --line: var(--villani-border-subtle);
+  --muted: var(--villani-text-muted);
+  --accent: var(--villani-text-primary);
   --warning: #f0c36a;
   --error: #ff858f;
   --info: #79b8ff;
@@ -19,8 +19,10 @@ html {
 }
 body {
   margin: 0;
-  background: radial-gradient(circle at 70% -20%, #17302f 0, transparent 38%), #090c10;
-  color: #e9eef5;
+  background:
+    radial-gradient(circle at 70% -20%, #1a1a1a 0, transparent 38%),
+    var(--villani-bg-deepest);
+  color: var(--villani-text-primary);
 }
 .skip-link {
   position: fixed;
@@ -114,7 +116,7 @@ h3 {
 button,
 .actions a {
   font: inherit;
-  color: #07110e;
+  color: var(--villani-bg-deepest);
   background: var(--accent);
   border: 0;
   border-radius: 8px;
@@ -155,7 +157,7 @@ button:disabled {
   text-transform: capitalize;
 }
 .success {
-  color: var(--accent);
+  color: var(--villani-text-primary);
 }
 .warning {
   color: var(--warning);

@@ -309,6 +309,12 @@ class _ConcurrentRunner:
                 patch=attempt().patch.replace(
                     "+first", f"+candidate-{context.ordinal}"
                 ),
+                metadata={
+                    "runner_acknowledged_candidate_configuration": True,
+                    "effective_configuration_sha256": CandidateDimensions.model_validate(
+                        context.candidate_dimensions
+                    ).effective_fingerprint,
+                },
             )
         finally:
             with self.lock:

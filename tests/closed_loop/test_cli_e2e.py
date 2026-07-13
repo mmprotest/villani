@@ -567,6 +567,13 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
         assert initialized.returncode == 0, initialized.stdout + initialized.stderr
         config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
         config["budgets"]["max_attempts"] = 1
+        config["repository_validation_commands"] = [
+            {
+                "validation_id": "repository_unittest",
+                "argv": [sys.executable, "-m", "unittest", "-q"],
+                "timeout_seconds": 30,
+            }
+        ]
         config["backends"] = {
             "local-stub": {
                 "provider": "local",

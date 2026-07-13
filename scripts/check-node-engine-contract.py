@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = {
+    "ui": ROOT / "components/villani-ui/package.json",
     "run-model": ROOT / "components/villani-run-model/package.json",
     "flight-recorder": ROOT / "components/villani-flight-recorder/package.json",
     "web": ROOT / "components/villani-web/package.json",
@@ -28,7 +29,7 @@ def _minimum_node(path: Path) -> int:
 def main() -> None:
     minimums = {name: _minimum_node(path) for name, path in PACKAGES.items()}
     run_model_minimum = minimums["run-model"]
-    for consumer in ("flight-recorder", "web"):
+    for consumer in ("ui", "flight-recorder", "web"):
         if minimums[consumer] < run_model_minimum:
             raise SystemExit(
                 f"{consumer} Node minimum {minimums[consumer]} is below "

@@ -88,7 +88,7 @@ describe("session browser", () => {
     expect(html).toContain("\\u003cscript");
     expect(html).not.toContain('<script>alert("x")</script>');
   });
-  it("uses the light forensic report theme and browser interactions", () => {
+  it("uses the shared monochrome Villani theme and browser interactions", () => {
     const html = renderSessionBrowser(
       idx([
         {
@@ -114,7 +114,10 @@ describe("session browser", () => {
       ]),
     );
     expect(html).toContain("Local investigation index");
-    expect(html).toContain("background: linear-gradient(180deg, #eef1f3");
+    expect(html).toContain("--villani-bg-deepest:#050505");
+    expect(html).toContain("background:var(--villani-bg-deepest)");
+    expect(html).toContain("color-scheme:dark");
+    expect(html).not.toContain("background: linear-gradient(180deg, #eef1f3");
     expect(html).not.toContain("#0f172a");
     expect(html).not.toContain("#071020");
     expect(html).not.toContain("linear-gradient(135deg,#09111f,#17213a)");
