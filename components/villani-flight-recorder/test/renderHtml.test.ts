@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
-import fs, { mkdtemp, writeFile } from "node:fs/promises";
-import os from "node:os";
+import fs, { writeFile } from "node:fs/promises";
 import path from "node:path";
 import vm from "node:vm";
-import { JSDOM } from "jsdom";
 import { parseClaudeSession } from "../src/providers/claude.js";
 import { parseCodexSession } from "../src/providers/codex.js";
 import { renderReplayForTest } from "./renderReplayForTest.js";
 import { safeJsonForScript } from "../src/render/safeHtml.js";
 import { deriveTimeline } from "../src/render/deriveTimeline.js";
 import { deriveReplayViewModel } from "../src/render/viewModel.js";
+import { testResources } from "./helpers/testResources.js";
 const fx = (p: string) => path.resolve("test/fixtures", p);
 
 describe("rendered HTML", () => {
@@ -94,7 +93,7 @@ describe("rendered HTML", () => {
   it("renders structured timeline, detail tabs, and interactions without replay coverage", async () => {
     const s = await parseClaudeSession(fx("claude/realistic-transcript.jsonl"));
     const html = await fs.readFile(await renderReplayForTest(s), "utf8");
-    const dom = new JSDOM(html, { runScripts: "dangerously" });
+    const dom = testResources.dom(html, { runScripts: "dangerously" });
     const doc = dom.window.document;
     const times = [...doc.querySelectorAll(".timeline-time")].map(
       (n) => n.textContent ?? "",
@@ -182,7 +181,7 @@ describe("rendered HTML", () => {
       }),
       "utf8",
     );
-    const doc = new JSDOM(html).window.document;
+    const doc = testResources.dom(html).window.document;
     const primarySummary =
       doc.querySelector(".summary-facts")?.textContent ?? "";
     expect(primarySummary).toContain("Generic replay");
@@ -199,7 +198,7 @@ describe("rendered HTML", () => {
 
 describe("timeline correlated command failures", () => {
   it("labels Claude failed Bash tool results as captured command failures", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "vfr-timeline-"));
+    const dir = await testResources.temporaryDirectory("vfr-timeline-");
     const file = path.join(dir, "session.jsonl");
     await writeFile(
       file,
@@ -259,7 +258,7 @@ describe("timeline correlated command failures", () => {
   });
 
   it("groups Claude command start and failed result into one primary item with raw metadata", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "vfr-claude-group-"));
+    const dir = await testResources.temporaryDirectory("vfr-claude-group-");
     const file = path.join(dir, "session.jsonl");
     await writeFile(
       file,
@@ -307,7 +306,9 @@ describe("timeline correlated command failures", () => {
     });
 
     const html = await fs.readFile(await renderReplayForTest(session), "utf8");
-    const doc = new JSDOM(html, { runScripts: "dangerously" }).window.document;
+    const doc = testResources.dom(html, {
+      runScripts: "dangerously",
+    }).window.document;
     const primaryRows = [...doc.querySelectorAll(".timeline-title")].map(
       (n) => n.textContent ?? "",
     );

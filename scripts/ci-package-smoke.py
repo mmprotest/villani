@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import venv
@@ -51,8 +52,20 @@ def main() -> int:
         str(vfr_output),
         "--skip-npm-build",
     ]
-    if args.bun_command:
-        vfr_build.extend(["--bun-command", args.bun_command])
+    bun_command = args.bun_command
+    if not bun_command and not shutil.which("bun"):
+        npx = shutil.which("npx.cmd" if os.name == "nt" else "npx") or shutil.which(
+            "npx"
+        )
+        if not npx:
+            raise SystemExit(
+                "Bun or npx is required to compile the Flight Recorder executable"
+            )
+        bun_command = (
+            "npx.cmd --yes bun@1.2.20" if os.name == "nt" else "npx --yes bun@1.2.20"
+        )
+    if bun_command:
+        vfr_build.extend(["--bun-command", bun_command])
     run(vfr_build)
     run([sys.executable, "scripts/sync-console-assets.py", "--check"])
     for component in ("villani-code", "villani-ops", "villani-agentd", "villani"):

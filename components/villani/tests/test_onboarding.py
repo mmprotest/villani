@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import urllib.error
 from contextlib import contextmanager
@@ -51,10 +52,19 @@ def model_server(
             self.wfile.write(body)
 
         def _authorized(self) -> bool:
-            return expected_key is None or self.headers.get("Authorization") == f"Bearer {expected_key}"
+            return (
+                expected_key is None
+                or self.headers.get("Authorization") == f"Bearer {expected_key}"
+            )
 
         def do_GET(self) -> None:  # noqa: N802
-            requests.append({"method": "GET", "path": self.path, "authorization": self.headers.get("Authorization")})
+            requests.append(
+                {
+                    "method": "GET",
+                    "path": self.path,
+                    "authorization": self.headers.get("Authorization"),
+                }
+            )
             if not self._authorized():
                 self._send({"error": "unauthorized"}, 401)
                 return
@@ -132,7 +142,9 @@ def _patch_setup(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
     monkeypatch.setattr(
         cli,
         "test_backend",
-        lambda *_args, **_kwargs: BackendProbe(True, "connection", "Model is available.", "fixture-coder"),
+        lambda *_args, **_kwargs: BackendProbe(
+            True, "connection", "Model is available.", "fixture-coder"
+        ),
     )
     monkeypatch.setattr(
         cli,
@@ -152,9 +164,7 @@ def test_clean_first_time_setup_creates_runnable_unrated_configuration(
 ) -> None:
     home = tmp_path / "home"
     _patch_setup(monkeypatch, home)
-    result = CliRunner().invoke(
-        app, ["setup", "--yes", "--no-start", "--no-open", "--no-sample"]
-    )
+    result = CliRunner().invoke(app, ["setup", "--yes", "--no-start", "--no-open", "--no-sample"])
     assert result.exit_code == 0, result.output
     configuration = load_configuration(home / "config.yaml")
     parsed = validate_configuration(configuration)
@@ -172,7 +182,9 @@ def test_existing_configuration_is_preserved_when_user_declines(
     home = tmp_path / "home"
     _patch_setup(monkeypatch, home)
     config = home / "config.yaml"
-    write_configuration_atomic(config, build_configuration(detection(), "fixture-coder", repository=None))
+    write_configuration_atomic(
+        config, build_configuration(detection(), "fixture-coder", repository=None)
+    )
     before = config.read_bytes()
     result = CliRunner().invoke(app, ["setup"], input="n\n")
     assert result.exit_code == 0
@@ -351,24 +363,33 @@ def test_unsupported_future_configuration_schema_is_rejected(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize(
-    ("platform", "suffix"),
+    ("platform", "expected_parts"),
     [
-        ("win32", "TaskScheduler\\VillaniAgentd.json"),
-        ("linux", "systemd\\user\\villani-agentd.service"),
-        ("darwin", "LaunchAgents\\com.villani.agentd.plist"),
+        ("win32", ("TaskScheduler", "VillaniAgentd.json")),
+        ("linux", ("systemd", "user", "villani-agentd.service")),
+        ("darwin", ("LaunchAgents", "com.villani.agentd.plist")),
     ],
 )
 def test_windows_and_posix_service_paths_are_user_scoped(
-    platform: str, suffix: str, tmp_path: Path
+    platform: str, expected_parts: tuple[str, ...], tmp_path: Path
 ) -> None:
+    test_root = (tmp_path / "root").resolve()
     env = {
         "VILLANI_HOME": str(tmp_path / "home"),
         "VILLANI_SERVICE_PLATFORM": platform,
-        "VILLANI_SERVICE_TEST_ROOT": str(tmp_path / "root"),
+        "VILLANI_SERVICE_TEST_ROOT": str(test_root),
     }
-    path = services._definition(platform, env)
-    assert str(path).endswith(suffix)
-    assert path.is_relative_to(tmp_path)
+    path = services._definition(platform, env).resolve()
+    assert path.is_relative_to(test_root)
+    assert path.relative_to(test_root).parts == expected_parts
+    assert ".." not in path.relative_to(test_root).parts
+
+
+def test_native_service_definition_is_user_scoped() -> None:
+    platform = sys.platform
+    assert platform in {"linux", "darwin", "win32"}
+    path = services._definition(platform, {}).expanduser().resolve()
+    assert path.is_relative_to(Path.home().resolve())
 
 
 def test_sample_repository_is_temporary_git_repo_and_runner_is_bounded(tmp_path: Path) -> None:
@@ -390,7 +411,9 @@ def test_reset_requires_explicit_confirmation(
     home = tmp_path / "home"
     _patch_setup(monkeypatch, home)
     path = home / "config.yaml"
-    write_configuration_atomic(path, build_configuration(detection(), "fixture-coder", repository=None))
+    write_configuration_atomic(
+        path, build_configuration(detection(), "fixture-coder", repository=None)
+    )
     original = path.read_bytes()
     result = CliRunner().invoke(app, ["setup", "--reset"], input="n\n")
     assert result.exit_code == 0
@@ -419,3 +442,99 @@ def test_generated_configuration_contains_no_direct_secret_fields(tmp_path: Path
     assert "input_cost_per_million" not in backend
     assert "output_cost_per_million" not in backend
     assert yaml.safe_dump(configuration).find("sk-") == -1
+
+    # Configuration validity is structural. The referenced secret is resolved
+    # only by a probe or execution preflight.
+    parsed = validate_configuration(configuration)
+    assert parsed["default"].credential_reference_configured() is True
+    assert parsed["default"].runtime_credential_available({}) is False
+
+    path = tmp_path / "config.yaml"
+    write_configuration_atomic(path, configuration)
+    serialized = path.read_text(encoding="utf-8")
+    assert "api_key_env: OPENAI_API_KEY" in serialized
+    assert "fixture-provider-secret" not in serialized
+
+
+def test_setup_configuration_rejects_direct_and_redacted_credentials() -> None:
+    configuration = build_configuration(detection(), "fixture-coder", repository=None)
+    configuration["backends"]["default"]["provider"] = "openai"
+    configuration["backends"]["default"]["base_url"] = "https://api.openai.com/v1"
+    configuration["backends"]["default"]["api_key"] = "fixture-provider-secret"
+    with pytest.raises(SetupError, match="reference credentials by environment variable"):
+        validate_configuration(configuration)
+
+    configuration["backends"]["default"]["api_key"] = "***REDACTED***"
+    with pytest.raises(SetupError, match="credential reference"):
+        validate_configuration(configuration)
+
+
+def test_authenticated_probes_resolve_secret_only_at_runtime() -> None:
+    secret = "fixture-provider-secret-never-print-28e7"
+    with model_server(expected_key=secret) as (endpoint, requests):
+        selected = ProviderDetection(
+            "openai-compatible",
+            "Fixture",
+            endpoint,
+            "connected",
+            ("fixture-coder",),
+            True,
+            True,
+            {},
+            None,
+            "Fixture endpoint is reachable.",
+            "MODEL_KEY",
+            "present",
+        )
+        missing = onboarding.test_backend(selected, "fixture-coder", environ={}, timeout=1)
+        empty = onboarding.test_backend(
+            selected, "fixture-coder", environ={"MODEL_KEY": "   "}, timeout=1
+        )
+        present = onboarding.test_backend(
+            selected,
+            "fixture-coder",
+            environ={"MODEL_KEY": secret},
+            timeout=1,
+        )
+        capability = onboarding.run_capability_probe(
+            selected,
+            "fixture-coder",
+            environ={"MODEL_KEY": secret},
+            timeout=1,
+        )
+    assert missing.stage == "credential"
+    assert empty.stage == "credential"
+    assert present.succeeded is True
+    assert capability.succeeded is True
+    assert any(item["authorization"] == f"Bearer {secret}" for item in requests)
+    assert secret not in json.dumps(
+        [missing.as_dict(), empty.as_dict(), present.as_dict(), capability.as_dict()]
+    )
+
+
+def test_rejected_runtime_credential_is_reported_without_secret() -> None:
+    secret = "fixture-provider-secret-rejected-c77d"
+    with model_server(expected_key="different-fixture-secret") as (endpoint, _requests):
+        selected = ProviderDetection(
+            "openai-compatible",
+            "Fixture",
+            endpoint,
+            "connected",
+            ("fixture-coder",),
+            True,
+            True,
+            {},
+            None,
+            "Fixture endpoint is reachable.",
+            "MODEL_KEY",
+            "present",
+        )
+        result = onboarding.test_backend(
+            selected,
+            "fixture-coder",
+            environ={"MODEL_KEY": secret},
+            timeout=1,
+        )
+    assert result.succeeded is False
+    assert "HTTP 401" in result.diagnostic_message
+    assert secret not in json.dumps(result.as_dict())

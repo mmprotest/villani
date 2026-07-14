@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   extractTokenUsage,
@@ -12,9 +11,10 @@ import { clientScript } from "../src/render/clientScript.js";
 import { renderSessionBrowser } from "../src/render/sessionBrowser.js";
 import { deriveMetrics } from "../src/render/deriveMetrics.js";
 import { SessionIndex } from "../src/index/sessionTypes.js";
+import { testResources } from "./helpers/testResources.js";
 
 async function fixture(lines: unknown[]) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-tokens-"));
+  const dir = await testResources.temporaryDirectory("vfr-tokens-");
   const file = path.join(dir, "session.jsonl");
   await fs.writeFile(file, lines.map((l) => JSON.stringify(l)).join("\n"));
   return file;

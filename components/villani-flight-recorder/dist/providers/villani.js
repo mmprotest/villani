@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isTestCommand } from "../normalize/events.js";
-import { VillaniSchemaValidator } from "./villaniSchemaValidation.js";
+import { defaultVillaniSchemaValidator, } from "./villaniSchemaValidation.js";
 function record(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value)
         ? value
@@ -393,7 +393,7 @@ async function optionalSnapshot(runDirectory, relative, validator) {
     const file = safeArtifactPath(runDirectory, relative);
     return (await exists(file)) ? readSnapshot(file, validator) : undefined;
 }
-export async function parseVillaniRun(runPath, validator = new VillaniSchemaValidator()) {
+export async function parseVillaniRun(runPath, validator = defaultVillaniSchemaValidator()) {
     const runDirectory = path.resolve(runPath);
     const manifest = await readSnapshot(path.join(runDirectory, "manifest.json"), validator);
     const state = await readSnapshot(path.join(runDirectory, "state.json"), validator);

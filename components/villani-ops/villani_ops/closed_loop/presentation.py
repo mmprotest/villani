@@ -448,10 +448,10 @@ def progress_lines_for_event(
             )
         )
     elif event_type == "run_completed":
-        delivery_state = payload.get("delivery_state")
+        completed_delivery_state = payload.get("delivery_state")
         detail = (
-            f"; delivery is {str(delivery_state).replace('_', ' ')}"
-            if delivery_state
+            f"; delivery is {str(completed_delivery_state).replace('_', ' ')}"
+            if completed_delivery_state
             else ""
         )
         lines.append(("success", "✓", f"Run accepted{detail}"))

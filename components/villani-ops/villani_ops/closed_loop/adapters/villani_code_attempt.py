@@ -39,6 +39,7 @@ from .runtime_event_translation import (
 )
 from ..failure_classification import classify_runner_failure
 from ..plugins.builtins import AGENT_RUNNER_MANIFEST, EXECUTION_PROVIDER_MANIFEST
+from villani_ops.providers import validate_runtime_credentials
 
 
 def _failure_from_runner_output(
@@ -125,6 +126,7 @@ class VillaniCodeAttemptAdapter:
         run_dir = Path(attempt_context.run_directory).resolve()
         attempt_dir.mkdir(parents=True, exist_ok=True)
         backend = self._backend(attempt_context)
+        validate_runtime_credentials(backend)
         isolated = self._isolation.create(attempt_context)
 
         configured_env = attempt_context.policy_configuration.get("runner_env")
@@ -447,14 +449,16 @@ class VillaniCodeAttemptAdapter:
         effective_config_path = attempt_dir / "effective_candidate_configuration.json"
         if effective_config_path.is_file():
             try:
-                effective_config = CandidateExecutionAcknowledgement.model_validate_json(
-                    effective_config_path.read_text(encoding="utf-8")
+                effective_config = (
+                    CandidateExecutionAcknowledgement.model_validate_json(
+                        effective_config_path.read_text(encoding="utf-8")
+                    )
                 )
             except (ValueError, json.JSONDecodeError) as error:
                 metadata["runner_acknowledged_candidate_configuration"] = False
-                metadata["candidate_configuration_acknowledgement_error"] = (
-                    type(error).__name__
-                )
+                metadata["candidate_configuration_acknowledgement_error"] = type(
+                    error
+                ).__name__
             else:
                 effective_document = effective_config.model_dump(mode="json")
                 metadata["effective_candidate_configuration"] = effective_document

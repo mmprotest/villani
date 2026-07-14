@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { buildGitReplay } from "../src/git/gitReplay.js";
 import {
   activeChildProcessCount,
   ChildProcessFailure,
   runChildProcess,
 } from "../src/utils/childProcess.js";
+import { testResources } from "./helpers/testResources.js";
 
 afterEach(() => {
   expect(activeChildProcessCount()).toBe(0);
@@ -17,8 +17,8 @@ describe("git replay", () => {
   it.each([1, 2, 3])(
     "works repeatedly in isolated git repo %i and CLI invalid input exits nonzero",
     async (iteration) => {
-      const d = await fs.mkdtemp(
-        path.join(os.tmpdir(), `vfr-git-replay-${process.pid}-${iteration}-`),
+      const d = await testResources.temporaryDirectory(
+        `vfr-git-replay-${process.pid}-${iteration}-`,
       );
       const boundedExec = (file: string, args: string[]) =>
         runChildProcess(file, args, { cwd: d, timeoutMs: 10_000 });

@@ -14,11 +14,12 @@ def bundled_vfr() -> Path:
 
 
 def _development_command() -> list[str] | None:
-    if os.environ.get("VILLANI_DEVELOPMENT_VFR") != "1":
-        return None
     root = Path(__file__).resolve().parents[3]
     script = root / "components" / "villani-flight-recorder" / "dist" / "cli.js"
-    if script.is_file():
+    # Editable monorepo installations intentionally use the locally built Node
+    # compatibility CLI. Installed wheels do not have this source-tree shape
+    # and continue to require the bundled native Flight Recorder executable.
+    if (root / "PLANS.md").is_file() and script.is_file():
         return ["node", str(script)]
     return None
 

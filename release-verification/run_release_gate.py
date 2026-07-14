@@ -53,6 +53,9 @@ EXCLUDED_SOURCE_DIRECTORIES = frozenset(
         ".next",
         ".nox",
         ".npm",
+        ".onboarding-temp",
+        ".pip-cache",
+        ".pyright",
         ".nyc_output",
         ".parcel-cache",
         ".pytest_cache",
@@ -72,15 +75,42 @@ EXCLUDED_SOURCE_DIRECTORIES = frozenset(
         "htmlcov",
         "node_modules",
         "out",
+        "pip-wheel-metadata",
         "playwright-report",
         "site",
+        "temp",
         "test-results",
         "tmp",
         "venv",
+        "wheelhouse",
     }
 )
 EXCLUDED_DATABASE_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3"})
 COMMAND_RECORDS: list[dict[str, Any]] = []
+PHASE_TIMEOUTS: dict[str, int] = {
+    "source_isolation": 180,
+    "compatibility": 120,
+    "node_package_build": 1_800,
+    "python_package_build": 1_200,
+    "packed_node_install": 600,
+    "wheel_install": 600,
+    "connected_runtime_preparation": 900,
+    "connected_scenarios": 2_400,
+    "canonical_reconciliation": 120,
+    "browser": 180,
+    "screenshots": 120,
+    "redaction": 120,
+    "postgresql": 180,
+    "verifier_routing": 120,
+    "candidate_diversity": 120,
+    "classification_adjustment": 120,
+    "supply_chain": 900,
+    "final_evidence_validation": 180,
+}
+PHASE_STATUSES = frozenset(
+    {"pending", "running", "passed", "failed", "timed_out", "not_applicable"}
+)
+_ACTIVE_REPORTER: Any | None = None
 
 
 def _environment_paths(env: dict[str, str] | None) -> dict[str, str]:
@@ -122,6 +152,10 @@ def run(
     env: dict[str, str] | None = None,
     timeout: int = 1_800,
 ) -> subprocess.CompletedProcess[str]:
+    if _ACTIVE_REPORTER is not None:
+        remaining = _ACTIVE_REPORTER.remaining_timeout()
+        if remaining is not None:
+            timeout = max(1, min(timeout, remaining))
     started = time.monotonic()
     record: dict[str, Any] = {
         "command": command,
@@ -132,6 +166,7 @@ def run(
         "log": str(log.resolve()),
         "timeout_seconds": timeout,
     }
+    log.parent.mkdir(parents=True, exist_ok=True)
     try:
         completed = subprocess.run(
             command,
@@ -143,15 +178,71 @@ def run(
             capture_output=True,
             timeout=timeout,
         )
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout or ""
+        stderr = error.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        elapsed = round(time.monotonic() - started, 3)
+        record.update(
+            {
+                "status": "timed_out",
+                "error": "TimeoutExpired",
+                "failure_type": "subprocess_timeout",
+                "failure_message": f"command exceeded {timeout} seconds",
+                "elapsed_seconds": elapsed,
+                "process_status": "terminated_after_timeout",
+                "partial_stdout_bytes": len(stdout.encode("utf-8")),
+                "partial_stderr_bytes": len(stderr.encode("utf-8")),
+            }
+        )
+        COMMAND_RECORDS.append(record)
+        log.write_text(
+            "$ "
+            + subprocess.list2cmdline(command)
+            + f"\ncwd: {cwd.resolve()}\n"
+            + f"timeout seconds: {timeout}\n"
+            + f"elapsed seconds: {elapsed}\n"
+            + "process status: terminated_after_timeout\n"
+            + "environment paths: "
+            + json.dumps(record["environment_paths"], sort_keys=True)
+            + "\n\n[partial stdout]\n"
+            + stdout
+            + "\n[partial stderr]\n"
+            + stderr,
+            encoding="utf-8",
+        )
+        if _ACTIVE_REPORTER is not None:
+            _ACTIVE_REPORTER.persist()
+        raise
     except Exception as error:
+        elapsed = round(time.monotonic() - started, 3)
         record.update(
             {
                 "status": "failed",
                 "error": type(error).__name__,
-                "elapsed_seconds": round(time.monotonic() - started, 3),
+                "failure_type": "subprocess_start_failure",
+                "failure_message": str(error),
+                "elapsed_seconds": elapsed,
+                "process_status": "not_completed",
             }
         )
         COMMAND_RECORDS.append(record)
+        log.write_text(
+            "$ "
+            + subprocess.list2cmdline(command)
+            + f"\ncwd: {cwd.resolve()}\n"
+            + f"elapsed seconds: {elapsed}\n"
+            + "process status: not_completed\n"
+            + "environment paths: "
+            + json.dumps(record["environment_paths"], sort_keys=True)
+            + f"\n\n{type(error).__name__}: {error}\n",
+            encoding="utf-8",
+        )
+        if _ACTIVE_REPORTER is not None:
+            _ACTIVE_REPORTER.persist()
         raise
     record.update(
         {
@@ -161,7 +252,6 @@ def run(
         }
     )
     COMMAND_RECORDS.append(record)
-    log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(
         "$ "
         + subprocess.list2cmdline(command)
@@ -175,6 +265,8 @@ def run(
         encoding="utf-8",
     )
     if completed.returncode:
+        if _ACTIVE_REPORTER is not None:
+            _ACTIVE_REPORTER.persist()
         raise RuntimeError(f"command failed ({completed.returncode}); see {log}")
     return completed
 
@@ -183,49 +275,205 @@ def _source_path_is_excluded(relative: Path) -> bool:
     lowered = tuple(part.lower() for part in relative.parts)
     if any(part in EXCLUDED_SOURCE_DIRECTORIES for part in lowered):
         return True
-    if any(part.startswith((".release-", ".test-temp")) for part in lowered):
+    if any(part.endswith(".egg-info") for part in lowered):
+        return True
+    if any(
+        part.startswith(
+            (
+                ".m55-",
+                ".npm-cache",
+                ".onboarding-",
+                ".release-",
+                ".test-temp",
+            )
+        )
+        or (part.startswith("root-") and part.endswith("-temp"))
+        for part in lowered
+    ):
         return True
     if relative.suffix.lower() in EXCLUDED_DATABASE_SUFFIXES:
         return True
-    if relative.name.lower().endswith((".pyc", ".pyo", ".tsbuildinfo")):
+    name = relative.name.lower()
+    if name in {
+        ".coverage",
+        ".ds_store",
+        ".env",
+        "coverage.xml",
+        "desktop.ini",
+        "thumbs.db",
+    }:
+        return True
+    if name.startswith((".coverage.", ".env.")) and not name.endswith(".example"):
+        return True
+    if name.endswith(
+        (
+            ".bak",
+            ".cover",
+            ".log",
+            ".pid",
+            ".pid.lock",
+            ".pyc",
+            ".pyo",
+            ".swo",
+            ".swp",
+            ".temp",
+            ".tmp",
+            ".tsbuildinfo",
+        )
+    ):
+        if name.endswith(".log") and lowered[:2] == ("integration", "fixtures"):
+            return False
+        return True
+    if name.endswith("~"):
         return True
     return False
 
 
+def _git_source_manifest(source: Path) -> list[str] | None:
+    git = shutil.which("git") or "git"
+    try:
+        probe = subprocess.run(
+            [git, "-c", "core.quotePath=false", "rev-parse", "--show-toplevel"],
+            cwd=source,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if probe.returncode != 0:
+        return None
+    try:
+        top_level = Path(probe.stdout.strip()).resolve()
+    except OSError:
+        return None
+    if top_level != source.resolve():
+        return None
+    try:
+        listed = subprocess.run(
+            [
+                git,
+                "-c",
+                "core.quotePath=false",
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ],
+            cwd=source,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    log = LATEST / "logs" / "isolated-source-manifest.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        "$ "
+        + subprocess.list2cmdline(listed.args)
+        + f"\ncwd: {source.resolve()}\n\n"
+        + listed.stdout.replace("\0", "\n")
+        + listed.stderr,
+        encoding="utf-8",
+    )
+    if listed.returncode != 0:
+        return None
+    return sorted(value for value in listed.stdout.split("\0") if value)
+
+
+def _filesystem_inventory(
+    source: Path,
+) -> tuple[list[str], dict[str, str], set[str]]:
+    """Return deterministic candidate paths, exclusions, and virtualenv roots."""
+
+    candidates: list[str] = []
+    excluded: dict[str, str] = {}
+    virtual_environments: set[str] = set()
+    for current, directory_names, file_names in os.walk(
+        source, topdown=True, followlinks=False
+    ):
+        current_path = Path(current)
+        relative_current = current_path.relative_to(source)
+        retained_directories: list[str] = []
+        for name in sorted(directory_names):
+            relative = relative_current / name
+            normalized = relative.as_posix()
+            absolute = current_path / name
+            if _source_path_is_excluded(relative):
+                excluded[normalized] = "excluded_directory"
+                continue
+            if (absolute / "pyvenv.cfg").is_file():
+                excluded[normalized] = "python_virtual_environment"
+                virtual_environments.add(normalized)
+                continue
+            if absolute.is_symlink():
+                candidates.append(normalized)
+                continue
+            retained_directories.append(name)
+        directory_names[:] = retained_directories
+        for name in sorted(file_names):
+            relative = relative_current / name
+            normalized = relative.as_posix()
+            if _source_path_is_excluded(relative):
+                excluded[normalized] = "excluded_file"
+            else:
+                candidates.append(normalized)
+    return sorted(set(candidates)), excluded, virtual_environments
+
+
 def create_isolated_source(source: Path, destination: Path) -> dict[str, Any]:
     """Copy only release source inputs into a dependency-free checkout image."""
-    listed = run(
-        [
-            shutil.which("git") or "git",
-            "-c",
-            "core.quotePath=false",
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "-z",
-        ],
-        cwd=source,
-        log=LATEST / "logs/isolated-source-manifest.log",
+    source = source.resolve()
+    destination = destination.resolve()
+    if destination == source or destination.is_relative_to(source):
+        raise RuntimeError(
+            "isolated source destination must be outside the source root"
+        )
+    filesystem_paths, exclusion_reasons, virtual_environments = _filesystem_inventory(
+        source
     )
+    git_paths = _git_source_manifest(source)
+    selection_method = (
+        "git_manifest" if git_paths is not None else "filesystem_manifest"
+    )
+    selected = git_paths if git_paths is not None else filesystem_paths
+    selected_set = {Path(value).as_posix() for value in selected}
+    if git_paths is not None:
+        for normalized in filesystem_paths:
+            if normalized not in selected_set:
+                exclusion_reasons.setdefault(normalized, "not_in_git_manifest")
     destination.mkdir(parents=True, exist_ok=False)
     copied: list[str] = []
-    excluded: list[str] = []
-    for value in listed.stdout.split("\0"):
-        if not value:
-            continue
+    for value in sorted(selected_set):
         relative = Path(value)
         source_path = source / relative
         if not source_path.is_file() and not source_path.is_symlink():
             continue
-        normalized = str(relative).replace("\\", "/")
+        normalized = relative.as_posix()
         if _source_path_is_excluded(relative):
-            excluded.append(normalized)
+            exclusion_reasons.setdefault(normalized, "excluded_file")
             continue
+        if source_path.is_symlink():
+            target = source_path.resolve(strict=False)
+            if not target.is_relative_to(source):
+                raise RuntimeError(
+                    f"source symlink escapes the source root: {normalized} -> {os.readlink(source_path)}"
+                )
         destination_path = destination / relative
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         if source_path.is_symlink():
-            destination_path.symlink_to(os.readlink(source_path))
+            source_target = source_path.resolve(strict=False)
+            destination_target = destination / source_target.relative_to(source)
+            safe_target = os.path.relpath(destination_target, destination_path.parent)
+            destination_path.symlink_to(
+                safe_target, target_is_directory=source_target.is_dir()
+            )
         else:
             shutil.copy2(source_path, destination_path)
         copied.append(normalized)
@@ -242,9 +490,16 @@ def create_isolated_source(source: Path, destination: Path) -> dict[str, Any]:
         "status": "passed",
         "source_root": str(source.resolve()),
         "isolated_root": str(destination.resolve()),
+        "source_selection": selection_method,
         "copied_file_count": len(copied),
-        "excluded_file_count": len(excluded),
-        "excluded_paths": excluded,
+        "excluded_file_count": len(exclusion_reasons),
+        "copied_paths": sorted(copied),
+        "excluded_paths": sorted(exclusion_reasons),
+        "excluded_entries": [
+            {"path": path, "reason": exclusion_reasons[path]}
+            for path in sorted(exclusion_reasons)
+        ],
+        "virtual_environment_roots": sorted(virtual_environments),
         "forbidden_paths_present": [],
         "git_metadata_copied": False,
     }
@@ -580,13 +835,12 @@ def install_packed_node_packages(
     }
 
 
-def build_packages(
+def build_node_packages(
     work: Path, root: Path, release_env: dict[str, str]
 ) -> tuple[list[Path], dict[str, Any]]:
     package_dir = LATEST / "packages"
     package_dir.mkdir(parents=True, exist_ok=True)
     logs = LATEST / "logs"
-    built: list[Path] = []
     npm = "npm.cmd" if os.name == "nt" else "npm"
     boundary_report = validate_node_boundaries(root)
     isolation_proofs: list[dict[str, Any]] = []
@@ -666,9 +920,6 @@ def build_packages(
         env=release_env,
     )
     asset_report["packaged_console_assets"] = "passed"
-    asset_report["packed_node_install"] = install_packed_node_packages(
-        work, package_dir, release_env
-    )
     asset_report["package_boundaries"] = boundary_report
     asset_report["isolated_builds"] = isolation_proofs
     write_json(
@@ -682,6 +933,71 @@ def build_packages(
             "flight_recorder_without_villani_web_dependencies": "passed",
         },
     )
+    return sorted(package_dir.glob("*.tgz")), asset_report
+
+
+def build_python_packages(
+    work: Path, root: Path, release_env: dict[str, str]
+) -> list[Path]:
+    package_dir = LATEST / "packages"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    logs = LATEST / "logs"
+    built: list[Path] = []
+    bun = shutil.which("bun", path=release_env.get("PATH"))
+    if bun:
+        compiler = [bun]
+    else:
+        npx = shutil.which(
+            "npx.cmd" if os.name == "nt" else "npx", path=release_env.get("PATH")
+        )
+        if not npx:
+            raise RuntimeError(
+                "Bun or npx is required to build the Flight Recorder compatibility executable"
+            )
+        compiler = [npx, "--yes", "bun@1.2.20"]
+    vfr_output = (
+        root
+        / "components"
+        / "villani"
+        / "villani_distribution"
+        / "bin"
+        / ("vfr.exe" if os.name == "nt" else "vfr")
+    )
+    flight_root = root / "components" / "villani-flight-recorder"
+    _assert_no_sibling_node_modules(root, "villani-flight-recorder")
+    if (flight_root / "node_modules").exists():
+        raise RuntimeError(
+            "Flight Recorder standalone build did not start from a clean dependency directory"
+        )
+    npm = "npm.cmd" if os.name == "nt" else "npm"
+    run(
+        [npm, "ci", "--no-audit", "--no-fund"],
+        cwd=flight_root,
+        log=logs / "flight-recorder-standalone-install.log",
+        env=release_env,
+        timeout=600,
+    )
+    try:
+        run(
+            [
+                *compiler,
+                "build",
+                str(flight_root / "dist" / "cli.js"),
+                "--compile",
+                "--outfile",
+                str(vfr_output),
+            ],
+            cwd=flight_root,
+            log=logs / "flight-recorder-standalone-build.log",
+            env=release_env,
+            timeout=600,
+        )
+    finally:
+        shutil.rmtree(flight_root / "node_modules", ignore_errors=True)
+    if _node_modules_paths(root):
+        raise RuntimeError("Flight Recorder standalone dependency cleanup failed")
+    if not vfr_output.is_file() or vfr_output.stat().st_size == 0:
+        raise RuntimeError("Flight Recorder compatibility executable was not built")
     for name in PYTHON_COMPONENTS:
         output = work / "python" / name
         output.mkdir(parents=True, exist_ok=True)
@@ -713,9 +1029,21 @@ def build_packages(
         log=logs / "console-wheel-content.log",
         env=release_env,
     )
-    asset_report["packaged_console_wheel"] = "passed"
-    built.extend(sorted(package_dir.glob("*.tgz")))
-    return built, asset_report
+    return built
+
+
+def build_packages(
+    work: Path, root: Path, release_env: dict[str, str]
+) -> tuple[list[Path], dict[str, Any]]:
+    """Compatibility wrapper used by focused packaging callers."""
+
+    node_packages, assets = build_node_packages(work, root, release_env)
+    assets["packed_node_install"] = install_packed_node_packages(
+        work, LATEST / "packages", release_env
+    )
+    python_packages = build_python_packages(work, root, release_env)
+    assets["packaged_console_wheel"] = "passed"
+    return python_packages + node_packages, assets
 
 
 def prepare_connected_node_runtime(
@@ -771,12 +1099,35 @@ def install_wheels(
         log=LATEST / "logs/wheel-install.log",
         env=release_env,
     )
-    for command in ("villani", "villani-code", "villani-agentd"):
+    for command in ("villani", "villani-code", "villani-agentd", "vfr"):
         executable = environment / (
             f"Scripts/{command}.exe" if os.name == "nt" else f"bin/{command}"
         )
         if not executable.is_file():
             raise RuntimeError(f"installed entry point is missing: {command}")
+        run(
+            [str(executable), "--help"],
+            cwd=root,
+            log=LATEST / "logs" / f"wheel-entrypoint-{command}.log",
+            env=release_env,
+            timeout=60,
+        )
+    run(
+        [str(python), "-m", "pip", "check"],
+        cwd=root,
+        log=LATEST / "logs/wheel-pip-check.log",
+        env=release_env,
+    )
+    run(
+        [
+            str(python),
+            "-c",
+            "import villani_distribution, villani_ops, villani_code, villani_agentd, villani_control_plane",
+        ],
+        cwd=root,
+        log=LATEST / "logs/wheel-imports.log",
+        env=release_env,
+    )
     return python
 
 
@@ -960,44 +1311,265 @@ def _markdown(report: dict[str, Any]) -> str:
     )
 
 
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _connected_commands() -> list[dict[str, Any]]:
+    path = LATEST / "connected-command-manifest.json"
+    if not path.is_file():
+        return []
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [
+        {"scope": "connected_product", **item}
+        for item in document.get("commands", [])
+        if isinstance(item, dict)
+    ]
+
+
+def _all_commands() -> list[dict[str, Any]]:
+    return [
+        {"scope": "release_gate", **item} for item in COMMAND_RECORDS
+    ] + _connected_commands()
+
+
+class GateReporter:
+    """Persist an authoritative report at every observable gate transition."""
+
+    def __init__(self, mode: str) -> None:
+        started = _utc_timestamp()
+        self.report: dict[str, Any] = {
+            "schema_version": "villani.release_gate.v1",
+            "mode": mode,
+            "started_at": started,
+            "finished_at": None,
+            "release_verdict": "RELEASE GATE FAILED",
+            "phases": {
+                name: {
+                    "status": "pending",
+                    "started_at": None,
+                    "finished_at": None,
+                    "elapsed_seconds": None,
+                    "timeout_seconds": timeout,
+                    "log_paths": [],
+                    "failure_type": None,
+                    "failure_message": None,
+                }
+                for name, timeout in PHASE_TIMEOUTS.items()
+            },
+            "active_phase": None,
+            "last_completed_phase": None,
+            "synchronized_run_count": 0,
+            "completed_run_count": 0,
+            "exhausted_run_count": 0,
+            "dead_letter_count": 0,
+            "redacted_field_count": 0,
+            "withheld_artifact_count": 0,
+            "api_reconciliation_status": "not_executed",
+            "villani_web_reconciliation_status": "not_executed",
+            "flight_recorder_reconciliation_status": "not_executed",
+            "browser_result": "not_executed",
+            "security_scan_status": "not_executed",
+            "commands": [],
+            "environment_paths": {},
+        }
+        self._started_monotonic: dict[str, float] = {}
+        self.persist()
+
+    def remaining_timeout(self) -> int | None:
+        name = self.report.get("active_phase")
+        if not name:
+            return None
+        started = self._started_monotonic.get(name)
+        if started is None:
+            return int(self.report["phases"][name]["timeout_seconds"])
+        remaining = float(self.report["phases"][name]["timeout_seconds"]) - (
+            time.monotonic() - started
+        )
+        return max(0, int(remaining))
+
+    def start(self, name: str, *, logs: list[Path] | None = None) -> None:
+        if name not in self.report["phases"]:
+            raise RuntimeError(f"unknown release phase: {name}")
+        if self.report["active_phase"] is not None:
+            raise RuntimeError(
+                f"cannot start {name}; {self.report['active_phase']} is still running"
+            )
+        phase = self.report["phases"][name]
+        if phase["status"] != "pending":
+            raise RuntimeError(f"release phase {name} was already started")
+        phase.update(
+            {
+                "status": "running",
+                "started_at": _utc_timestamp(),
+                "log_paths": [str(path.resolve()) for path in (logs or [])],
+            }
+        )
+        self._started_monotonic[name] = time.monotonic()
+        self.report["active_phase"] = name
+        self.persist()
+
+    def finish(
+        self,
+        name: str,
+        status: str = "passed",
+        *,
+        failure_type: str | None = None,
+        failure_message: str | None = None,
+        logs: list[Path] | None = None,
+    ) -> None:
+        if status not in PHASE_STATUSES - {"pending", "running"}:
+            raise RuntimeError(f"invalid terminal phase status: {status}")
+        phase = self.report["phases"][name]
+        started = self._started_monotonic.get(name, time.monotonic())
+        if logs:
+            phase["log_paths"] = sorted(
+                set(phase["log_paths"]) | {str(path.resolve()) for path in logs}
+            )
+        phase.update(
+            {
+                "status": status,
+                "finished_at": _utc_timestamp(),
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+                "failure_type": failure_type,
+                "failure_message": failure_message,
+            }
+        )
+        self.report["active_phase"] = None
+        if status in {"passed", "not_applicable"}:
+            self.report["last_completed_phase"] = name
+        self.persist()
+
+    def fail_active(self, error: BaseException, *, timed_out: bool = False) -> None:
+        name = self.report.get("active_phase")
+        if name:
+            self.finish(
+                name,
+                "timed_out" if timed_out else "failed",
+                failure_type=type(error).__name__,
+                failure_message=str(error),
+            )
+        self.report["failure"] = str(error)
+        self.report["failure_type"] = type(error).__name__
+        self.persist()
+
+    def persist(self, *, final: bool = False) -> None:
+        commands = _all_commands()
+        self.report["commands"] = commands
+        self.report["command_count"] = len(commands)
+        command_status = (
+            "passed"
+            if all(
+                item.get("status") in {"passed", "exited", "terminated"}
+                for item in commands
+            )
+            else "failed"
+        )
+        write_json(
+            LATEST / "command-manifest.json",
+            {
+                "status": command_status,
+                "environment_paths": self.report.get("environment_paths", {}),
+                "commands": commands,
+            },
+        )
+        if final:
+            self.report["finished_at"] = _utc_timestamp()
+        write_json(LATEST / "release-gate-report.json", self.report)
+        (LATEST / "release-gate-report.md").write_text(
+            _markdown(self.report), encoding="utf-8"
+        )
+
+
+def _contains_not_executed(value: Any) -> bool:
+    if value == "not_executed":
+        return True
+    if isinstance(value, dict):
+        return any(_contains_not_executed(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_not_executed(item) for item in value)
+    return False
+
+
+def validate_final_evidence(mode: str, reporter: GateReporter) -> None:
+    required = (
+        "connected-product-summary.json",
+        "canonical-reconciliation.json",
+        "dead-letter-summary.json",
+        "browser-summary.json",
+        "redaction-proof.json",
+        "security-summary.json",
+        "test-summary.json",
+        "postgres-migration-summary.json",
+        "verifier-routing-summary.json",
+        "candidate-diversity-summary.json",
+        "classification-adjustment-summary.json",
+    )
+    for name in required:
+        document = _summary(name)
+        _require(
+            document.get("status") == "passed", f"required evidence failed: {name}"
+        )
+        if mode in {"ci", "release"}:
+            _require(
+                not _contains_not_executed(document),
+                f"required evidence remains not_executed: {name}",
+            )
+    failed_commands = [
+        item
+        for item in _all_commands()
+        if item.get("status") not in {"passed", "exited", "terminated"}
+    ]
+    _require(
+        not failed_commands,
+        f"command manifest contains failed commands: {failed_commands}",
+    )
+    for name, phase in reporter.report["phases"].items():
+        if name == "final_evidence_validation":
+            continue
+        _require(
+            phase["status"] in {"passed", "not_applicable"},
+            f"required phase did not pass: {name} ({phase['status']})",
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("local", "ci", "release"), default="ci")
     args = parser.parse_args(argv)
+    global _ACTIVE_REPORTER
     COMMAND_RECORDS.clear()
     if LATEST.exists():
         shutil.rmtree(LATEST)
     LATEST.mkdir(parents=True)
     evidence_skeleton(args.mode)
-    started = datetime.now(timezone.utc)
-    report: dict[str, Any] = {
-        "schema_version": "villani.release_gate.v1",
-        "mode": args.mode,
-        "started_at": started.isoformat().replace("+00:00", "Z"),
-        "release_verdict": "RELEASE GATE FAILED",
-        "phases": {},
-        "synchronized_run_count": 0,
-        "completed_run_count": 0,
-        "exhausted_run_count": 0,
-        "dead_letter_count": 0,
-        "redacted_field_count": 0,
-        "withheld_artifact_count": 0,
-        "api_reconciliation_status": "not_executed",
-        "villani_web_reconciliation_status": "not_executed",
-        "flight_recorder_reconciliation_status": "not_executed",
-        "browser_result": "not_executed",
-        "security_scan_status": "not_executed",
-        "commands": [],
-        "environment_paths": {},
-    }
+    reporter = GateReporter(args.mode)
+    _ACTIVE_REPORTER = reporter
+    report = reporter.report
     exit_code = 1
     try:
+        reporter.start(
+            "source_isolation",
+            logs=[LATEST / "logs/isolated-source-manifest.log"],
+        )
         temporary_parent_value = os.environ.get("VILLANI_RELEASE_TEMP_ROOT")
         temporary_parent = (
             Path(temporary_parent_value).resolve()
             if temporary_parent_value
-            else (ROOT / ".release-smoke" / "release-gate-temp").resolve()
+            else (Path(tempfile.gettempdir()) / "villani-release-gate").resolve()
         )
+        try:
+            temporary_parent.relative_to(ROOT)
+        except ValueError:
+            pass
+        else:
+            raise RuntimeError(
+                "release temporary root must be outside the source root; "
+                "set VILLANI_RELEASE_TEMP_ROOT to an external writable directory"
+            )
         temporary_parent.mkdir(parents=True, exist_ok=True)
         write_probe = temporary_parent / (
             f".villani-write-probe-{os.getpid()}-{time.time_ns()}"
@@ -1044,13 +1616,60 @@ def main(argv: list[str] | None = None) -> int:
                 for name, path in environment_directories.items()
             }
             report["isolated_source"] = isolation
+            reporter.finish("source_isolation")
+
+            reporter.start("compatibility")
             versions = component_versions(source_root)
             template = validate_compatibility(versions, source_root)
-            packages, assets = build_packages(work, source_root, release_env)
+            write_json(LATEST / "component-versions.json", versions)
+            reporter.finish("compatibility")
+
+            reporter.start(
+                "node_package_build",
+                logs=[
+                    LATEST / "logs" / f"{name}-build.log" for name in NODE_COMPONENTS
+                ],
+            )
+            node_packages, assets = build_node_packages(work, source_root, release_env)
+            reporter.finish("node_package_build")
+
+            reporter.start(
+                "python_package_build",
+                logs=[
+                    LATEST / "logs" / f"{name}-build.log" for name in PYTHON_COMPONENTS
+                ]
+                + [
+                    LATEST / "logs/flight-recorder-standalone-install.log",
+                    LATEST / "logs/flight-recorder-standalone-build.log",
+                ],
+            )
+            python_packages = build_python_packages(work, source_root, release_env)
+            assets["packaged_console_wheel"] = "passed"
+            reporter.finish("python_package_build")
+
+            reporter.start(
+                "packed_node_install",
+                logs=[LATEST / "logs/node-package-install.log"],
+            )
+            assets["packed_node_install"] = install_packed_node_packages(
+                work, LATEST / "packages", release_env
+            )
+            reporter.finish("packed_node_install")
+
+            packages = python_packages + node_packages
+            reporter.start("wheel_install", logs=[LATEST / "logs/wheel-install.log"])
             installed_python = install_wheels(work, packages, source_root, release_env)
+            reporter.finish("wheel_install")
+
+            reporter.start(
+                "connected_runtime_preparation",
+                logs=[LATEST / "logs/playwright-browser-install.log"],
+            )
             connected_node_runtime = prepare_connected_node_runtime(
                 source_root, release_env
             )
+            reporter.finish("connected_runtime_preparation")
+
             hashes = {path.name: sha256(path) for path in sorted(packages)}
             generated = json.loads(json.dumps(template))
             generated["generated"] = {
@@ -1069,7 +1688,6 @@ def main(argv: list[str] | None = None) -> int:
                 ).stdout.strip(),
                 "platform": platform.platform(),
             }
-            write_json(LATEST / "component-versions.json", versions)
             write_json(LATEST / "component-compatibility.json", generated)
             write_json(LATEST / "package-hashes.json", hashes)
             write_json(LATEST / "frontend-asset-validation.json", assets)
@@ -1107,9 +1725,14 @@ def main(argv: list[str] | None = None) -> int:
             report["package_versions"] = versions
             report["package_hashes"] = hashes
             report["build_result"] = "passed"
-            report["phases"]["build"] = "passed"
+            reporter.persist()
+
             connected_work = work / "connected"
             connected_work.mkdir()
+            reporter.start(
+                "connected_scenarios",
+                logs=[LATEST / "logs/connected-product.log"],
+            )
             run(
                 [
                     str(installed_python),
@@ -1126,23 +1749,87 @@ def main(argv: list[str] | None = None) -> int:
                 cwd=source_root,
                 log=LATEST / "logs/connected-product.log",
                 env=release_env,
-                timeout=3_600,
+                timeout=PHASE_TIMEOUTS["connected_scenarios"],
             )
-            connected = json.loads(
-                (LATEST / "connected-product-summary.json").read_text(encoding="utf-8")
-            )
-            reconciliation = json.loads(
-                (LATEST / "canonical-reconciliation.json").read_text(encoding="utf-8")
-            )
-            browser = _summary("browser-summary.json")
-            redaction = _summary("redaction-proof.json")
+            connected = _summary("connected-product-summary.json")
             dead_letters = _summary("dead-letter-summary.json")
+            _validate_connected_summary(connected, dead_letters)
+            reporter.finish("connected_scenarios")
+
+            reporter.start("canonical_reconciliation")
+            reconciliation = _summary("canonical-reconciliation.json")
+            _require(
+                reconciliation.get("status") == "passed",
+                "canonical six-source reconciliation failed",
+            )
+            reporter.finish("canonical_reconciliation")
+
+            reporter.start("browser", logs=[LATEST / "logs/connected-browser.log"])
+            browser = _summary("browser-summary.json")
+            _require(browser.get("status") == "passed", "connected browser gate failed")
+            _require(
+                browser.get("villani_web_reconciliation") == "passed",
+                "Villani Web reconciliation failed",
+            )
+            _require(
+                browser.get("flight_recorder_reconciliation") == "passed",
+                "Flight Recorder reconciliation failed",
+            )
+            reporter.finish("browser")
+
+            reporter.start("screenshots")
+            _validate_screenshots(browser)
+            reporter.finish("screenshots")
+
+            reporter.start("redaction")
+            redaction = _summary("redaction-proof.json")
+            _require(
+                redaction.get("status") == "passed"
+                and redaction.get("registered_secret_absent") is True
+                and redaction.get("unsafe_artifact_rejected") is True
+                and int(redaction.get("withheld_artifact_count") or 0) >= 1,
+                "redaction or artifact-withholding proof failed",
+            )
+            reporter.finish("redaction")
+
+            reporter.start("postgresql")
             postgres = _summary("postgres-migration-summary.json")
+            _require(
+                postgres.get("status") == "passed"
+                and postgres.get("alembic_head") == template["alembic_head"],
+                "PostgreSQL migration proof failed",
+            )
+            _require(
+                postgres.get("fresh_database_upgrade") == "passed"
+                and all(postgres.get("checks", {}).values()),
+                "populated pre-composite PostgreSQL proof is incomplete",
+            )
+            reporter.finish("postgresql")
+
+            reporter.start("verifier_routing")
             verifier = _summary("verifier-routing-summary.json")
+            _require(
+                verifier.get("status") == "passed", "verifier-routing proof failed"
+            )
+            reporter.finish("verifier_routing")
+
+            reporter.start("candidate_diversity")
             diversity = _summary("candidate-diversity-summary.json")
+            _require(
+                diversity.get("status") == "passed"
+                and diversity.get("counted_diversity") == 2,
+                "candidate-diversity proof failed",
+            )
+            reporter.finish("candidate_diversity")
+
+            reporter.start("classification_adjustment")
             classification = _summary("classification-adjustment-summary.json")
-            report["phases"]["connected"] = connected["status"]
-            report["phases"]["reconciliation"] = reconciliation["status"]
+            _require(
+                classification.get("status") == "passed",
+                "classification-adjustment proof failed",
+            )
+            reporter.finish("classification_adjustment")
+
             report["synchronized_run_count"] = connected["synchronized_run_count"]
             report["completed_run_count"] = connected["completed_run_count"]
             report["exhausted_run_count"] = connected["exhausted_run_count"]
@@ -1167,117 +1854,50 @@ def main(argv: list[str] | None = None) -> int:
             report["verifier_routing_result"] = verifier.get("status")
             report["candidate_diversity_result"] = diversity.get("status")
             report["classification_adjustment_result"] = classification.get("status")
-            _validate_connected_summary(connected, dead_letters)
-            _require(
-                reconciliation.get("status") == "passed",
-                "canonical six-source reconciliation failed",
-            )
-            _require(browser.get("status") == "passed", "connected browser gate failed")
-            _require(
-                browser.get("villani_web_reconciliation") == "passed",
-                "Villani Web reconciliation failed",
-            )
-            _require(
-                browser.get("flight_recorder_reconciliation") == "passed",
-                "Flight Recorder reconciliation failed",
-            )
-            _validate_screenshots(browser)
-            _require(
-                redaction.get("status") == "passed"
-                and redaction.get("registered_secret_absent") is True,
-                "redaction or artifact-withholding proof failed",
-            )
-            _require(
-                postgres.get("status") == "passed"
-                and postgres.get("alembic_head") == template["alembic_head"],
-                "PostgreSQL migration proof failed",
-            )
-            _require(
-                postgres.get("fresh_database_upgrade") == "passed"
-                and all(postgres.get("checks", {}).values()),
-                "populated pre-composite PostgreSQL proof is incomplete",
-            )
-            _require(
-                verifier.get("status") == "passed", "verifier-routing proof failed"
-            )
-            _require(
-                diversity.get("status") == "passed"
-                and diversity.get("counted_diversity") == 2,
-                "candidate-diversity proof failed",
-            )
-            _require(
-                classification.get("status") == "passed",
-                "classification-adjustment proof failed",
-            )
-            report["phases"].update(
-                {
-                    "browser": "passed",
-                    "redaction": "passed",
-                    "postgresql": "passed",
-                    "verifier_routing": "passed",
-                    "candidate_diversity": "passed",
-                    "classification_adjustment": "passed",
-                }
-            )
+            reporter.persist()
+
+            reporter.start("supply_chain")
             security = supply_chain.generate(
                 mode=args.mode,
                 installed_python=installed_python,
                 packages=packages,
                 output=LATEST,
                 package_hashes=hashes,
+                source_root=source_root,
             )
             report["security_scan_status"] = security["status"]
             report["official_release_certification"] = security[
                 "official_release_certification"
             ]
             report["certification_note"] = security["certification_note"]
-            report["phases"]["security"] = security["status"]
             _require(
                 security["status"] == "passed",
                 "required supply-chain scanner or deterministic security check failed",
             )
+            reporter.finish("supply_chain")
+
             tests = _test_summary(connected, browser)
             write_json(LATEST / "test-summary.json", tests)
             report["test_summary"] = tests
-            report["phases"]["evidence"] = "passed"
-            report["release_verdict"] = "RELEASE GATE PASSED"
-            exit_code = 0
-    except Exception as error:
-        report["failure"] = str(error)
-    connected_command_path = LATEST / "connected-command-manifest.json"
-    connected_commands: list[dict[str, Any]] = []
-    if connected_command_path.is_file():
-        connected_document = json.loads(
-            connected_command_path.read_text(encoding="utf-8")
-        )
-        connected_commands = [
-            {"scope": "connected_product", **item}
-            for item in connected_document.get("commands", [])
-            if isinstance(item, dict)
-        ]
-    all_commands = [
-        {"scope": "release_gate", **item} for item in COMMAND_RECORDS
-    ] + connected_commands
-    report["commands"] = all_commands
-    report["command_count"] = len(all_commands)
-    write_json(
-        LATEST / "command-manifest.json",
-        {
-            "status": "passed"
-            if all(
-                item.get("status") in {"passed", "exited", "terminated"}
-                for item in all_commands
+
+            reporter.start("final_evidence_validation")
+            validate_final_evidence(args.mode, reporter)
+            reporter.finish("final_evidence_validation")
+            report["release_verdict"] = (
+                "LOCAL GATE PASSED" if args.mode == "local" else "RELEASE GATE PASSED"
             )
-            else "failed",
-            "environment_paths": report.get("environment_paths", {}),
-            "commands": all_commands,
-        },
-    )
-    report["finished_at"] = (
-        datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    )
-    write_json(LATEST / "release-gate-report.json", report)
-    (LATEST / "release-gate-report.md").write_text(_markdown(report), encoding="utf-8")
+            exit_code = 0
+    except KeyboardInterrupt as error:
+        reporter.fail_active(error)
+        report["failure"] = "release gate interrupted by user"
+        exit_code = 130
+    except subprocess.TimeoutExpired as error:
+        reporter.fail_active(error, timed_out=True)
+    except Exception as error:
+        reporter.fail_active(error)
+    finally:
+        reporter.persist(final=True)
+        _ACTIVE_REPORTER = None
     print(LATEST / "release-gate-report.json")
     print(report["release_verdict"])
     return exit_code

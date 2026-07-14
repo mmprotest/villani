@@ -422,23 +422,26 @@ export class VillaniSchemaValidator {
 
 let defaultValidator: VillaniSchemaValidator | undefined;
 
+export function defaultVillaniSchemaValidator(): VillaniSchemaValidator {
+  defaultValidator ??= new VillaniSchemaValidator();
+  return defaultValidator;
+}
+
 export function validateVillaniProtocol(
   value: unknown,
 ): VillaniValidationResult {
-  defaultValidator ??= new VillaniSchemaValidator();
-  return defaultValidator.validate(value);
+  return defaultVillaniSchemaValidator().validate(value);
 }
 
 export function validateVillaniEventStream(
   events: unknown[],
 ): VillaniValidationResult<VillaniEventEnvelope[]> {
-  defaultValidator ??= new VillaniSchemaValidator();
-  return defaultValidator.validateEventStream(events);
+  return defaultVillaniSchemaValidator().validateEventStream(events);
 }
 
 export function readVillaniV2Document(
   path: string,
-  validator = new VillaniSchemaValidator(),
+  validator = defaultVillaniSchemaValidator(),
 ): VillaniProtocolDocumentV2 {
   const value = JSON.parse(readFileSync(path, "utf8")) as unknown;
   const result = validator.validate(value);

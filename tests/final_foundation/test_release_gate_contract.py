@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -201,6 +202,8 @@ def test_isolated_source_copy_removes_dependencies_builds_and_databases(
         "components/villani-web/dist/index.html": "generated",
         "components/villani-flight-recorder/.cache/value": "cache",
         ".venv/pyvenv.cfg": "environment",
+        ".m55-temp/pytest-of-user/pytest-0/current": "generated test output",
+        ".onboarding-debug/session.json": "generated onboarding output",
         "release-verification/artifacts/latest/report.json": "{}",
         "state.sqlite3": "database",
     }
@@ -226,7 +229,237 @@ def test_isolated_source_copy_removes_dependencies_builds_and_databases(
     assert not (destination / "components/villani-web/node_modules").exists()
     assert not (destination / "components/villani-web/dist").exists()
     assert not (destination / ".venv").exists()
+    assert not (destination / ".m55-temp").exists()
+    assert not (destination / ".onboarding-debug").exists()
     assert not (destination / "state.sqlite3").exists()
+
+
+def _initialize_git_source(source: Path) -> None:
+    source.mkdir(parents=True)
+    for command in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.name", "Villani Tests"],
+        ["git", "config", "user.email", "tests@example.invalid"],
+    ):
+        completed = subprocess.run(command, cwd=source, text=True, capture_output=True)
+        assert completed.returncode == 0, completed.stderr
+
+
+def test_source_isolation_supports_git_and_archive_manifests_equivalently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_git_and_archive", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    monkeypatch.setattr(gate, "LATEST", tmp_path / "evidence")
+    checkout = tmp_path / "checkout"
+    _initialize_git_source(checkout)
+    files = {
+        ".gitignore": "*.log\nnode_modules/\n.venv/\n*.sqlite3\n",
+        "src/app.py": "VALUE = 1\n",
+        "untracked-source.py": "VALUE = 2\n",
+        "ignored.log": "generated\n",
+        "node_modules/dependency.js": "generated\n",
+        ".venv/pyvenv.cfg": "home = fixture\n",
+        "runtime.sqlite3": "generated\n",
+    }
+    for relative, contents in files.items():
+        path = checkout / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore", "src/app.py"], cwd=checkout, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=checkout, check=True)
+
+    git_report = gate.create_isolated_source(checkout, tmp_path / "git-isolated")
+    archive = tmp_path / "archive"
+    shutil.copytree(checkout, archive, ignore=shutil.ignore_patterns(".git"))
+    archive_report = gate.create_isolated_source(archive, tmp_path / "archive-isolated")
+
+    assert git_report["source_selection"] == "git_manifest"
+    assert archive_report["source_selection"] == "filesystem_manifest"
+    assert git_report["copied_paths"] == archive_report["copied_paths"]
+    assert "untracked-source.py" in git_report["copied_paths"]
+    assert "ignored.log" not in git_report["copied_paths"]
+    assert not (tmp_path / "archive-isolated/node_modules").exists()
+    assert not (tmp_path / "archive-isolated/.venv").exists()
+    assert not (tmp_path / "archive-isolated/runtime.sqlite3").exists()
+
+
+def test_filesystem_source_manifest_is_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_deterministic_archive", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    monkeypatch.setattr(gate, "LATEST", tmp_path / "evidence")
+    source = tmp_path / "archive"
+    for relative in ("zeta.py", "nested/alpha.py", "alpha.py"):
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative, encoding="utf-8")
+
+    first = gate.create_isolated_source(source, tmp_path / "isolated-one")
+    second = gate.create_isolated_source(source, tmp_path / "isolated-two")
+
+    assert first["source_selection"] == "filesystem_manifest"
+    assert first["copied_paths"] == sorted(first["copied_paths"])
+    assert first["copied_paths"] == second["copied_paths"]
+    assert first["excluded_entries"] == second["excluded_entries"]
+
+
+def test_source_isolation_allows_internal_symlinks_and_rejects_escaping_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_symlink_contract", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    monkeypatch.setattr(gate, "LATEST", tmp_path / "evidence")
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "target.txt"
+    target.write_text("inside", encoding="utf-8")
+    internal = source / "internal-link.txt"
+    external_target = tmp_path / "external.txt"
+    external_target.write_text("outside", encoding="utf-8")
+    escaping = source / "escaping-link.txt"
+    try:
+        internal.symlink_to(target)
+        escaping.symlink_to(external_target)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlinks are unavailable on this host: {error}")
+
+    with pytest.raises(RuntimeError, match="escapes the source root"):
+        gate.create_isolated_source(source, tmp_path / "rejected")
+    escaping.unlink()
+    report = gate.create_isolated_source(source, tmp_path / "isolated")
+
+    copied_link = tmp_path / "isolated/internal-link.txt"
+    assert "internal-link.txt" in report["copied_paths"]
+    assert copied_link.is_symlink()
+    assert copied_link.resolve() == (tmp_path / "isolated/target.txt").resolve()
+    assert copied_link.read_text(encoding="utf-8") == "inside"
+
+
+def test_release_phase_report_is_persisted_at_start_and_finish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_phase_reporting", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    monkeypatch.setattr(gate, "LATEST", tmp_path / "evidence")
+    reporter = gate.GateReporter("ci")
+
+    initial = json.loads(
+        (gate.LATEST / "release-gate-report.json").read_text(encoding="utf-8")
+    )
+    assert set(initial["phases"]) == set(gate.PHASE_TIMEOUTS)
+    assert all(item["status"] == "pending" for item in initial["phases"].values())
+    reporter.start("source_isolation", logs=[gate.LATEST / "logs/source.log"])
+    running = json.loads(
+        (gate.LATEST / "release-gate-report.json").read_text(encoding="utf-8")
+    )
+    assert running["active_phase"] == "source_isolation"
+    assert running["phases"]["source_isolation"]["status"] == "running"
+    assert running["phases"]["source_isolation"]["started_at"] is not None
+
+    reporter.finish("source_isolation")
+    finished = json.loads(
+        (gate.LATEST / "release-gate-report.json").read_text(encoding="utf-8")
+    )
+    phase = finished["phases"]["source_isolation"]
+    assert phase["status"] == "passed"
+    assert phase["finished_at"] is not None
+    assert phase["elapsed_seconds"] >= 0
+    assert phase["timeout_seconds"] == gate.PHASE_TIMEOUTS["source_isolation"]
+    assert finished["last_completed_phase"] == "source_isolation"
+    assert (gate.LATEST / "release-gate-report.md").is_file()
+    assert (gate.LATEST / "command-manifest.json").is_file()
+
+
+def test_timed_out_command_preserves_partial_output_and_command_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_timeout_reporting", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    monkeypatch.setattr(gate, "LATEST", tmp_path / "evidence")
+    reporter = gate.GateReporter("ci")
+    gate._ACTIVE_REPORTER = reporter
+    reporter.start("compatibility")
+    log = gate.LATEST / "logs/timeout.log"
+    with pytest.raises(subprocess.TimeoutExpired) as raised:
+        gate.run(
+            [
+                sys.executable,
+                "-c",
+                "import time; print('partial-output', flush=True); time.sleep(5)",
+            ],
+            cwd=tmp_path,
+            log=log,
+            timeout=1,
+        )
+    reporter.fail_active(raised.value, timed_out=True)
+    gate._ACTIVE_REPORTER = None
+
+    command = gate.COMMAND_RECORDS[-1]
+    assert command["status"] == "timed_out"
+    assert command["process_status"] == "terminated_after_timeout"
+    assert command["cwd"] == str(tmp_path.resolve())
+    assert command["timeout_seconds"] == 1
+    assert "partial-output" in log.read_text(encoding="utf-8")
+    report = json.loads(
+        (gate.LATEST / "release-gate-report.json").read_text(encoding="utf-8")
+    )
+    assert report["phases"]["compatibility"]["status"] == "timed_out"
+    manifest = json.loads(
+        (gate.LATEST / "command-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["status"] == "failed"
+    assert manifest["commands"][-1]["status"] == "timed_out"
+
+
+def test_connected_timeout_preserves_redacted_partial_output(tmp_path: Path) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        connected = _load("release_connected_timeout", "connected_product.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    secret = "release-canary-timeout-secret-123456789"
+    env = {
+        **os.environ,
+        "VILLANI_RELEASE_TEST_SECRET": secret,
+    }
+    log = tmp_path / "connected-timeout.log"
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        connected._run(
+            [
+                sys.executable,
+                "-c",
+                "import os,time; print(os.environ['VILLANI_RELEASE_TEST_SECRET'], flush=True); time.sleep(5)",
+            ],
+            cwd=tmp_path,
+            env=env,
+            log=log,
+            timeout=1,
+        )
+
+    record = connected.COMMAND_RECORDS[-1]
+    assert record["status"] == "timed_out"
+    assert record["process_status"] == "terminated_after_timeout"
+    contents = log.read_text(encoding="utf-8")
+    assert "[REDACTED]" in contents
+    assert secret not in contents
 
 
 def test_node_application_boundaries_use_only_declared_shared_packages(

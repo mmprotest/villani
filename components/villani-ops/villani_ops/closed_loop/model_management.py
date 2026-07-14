@@ -57,7 +57,8 @@ class ModelDetection:
 
 
 class ModelDetector(Protocol):
-    detector_name: str
+    @property
+    def detector_name(self) -> str: ...
 
     def detect(self, *, timeout: float = 1.5) -> ModelDetection: ...
 
@@ -180,7 +181,12 @@ class OpenAICompatibleDetector:
                 try:
                     value = _request_json(tags, api_key=None, timeout=timeout)
                     models, contexts = _models_from_document(value)
-                except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
+                except (
+                    OSError,
+                    ValueError,
+                    json.JSONDecodeError,
+                    urllib.error.URLError,
+                ):
                     return ModelDetection(
                         self.detector_name,
                         self.provider,
@@ -465,7 +471,9 @@ def detect_models(
     detectors: Sequence[ModelDetector] | None = None,
     timeout: float = 1.5,
 ) -> tuple[ModelDetection, ...]:
-    selected = tuple(detectors) if detectors is not None else default_detectors(configuration)
+    selected = (
+        tuple(detectors) if detectors is not None else default_detectors(configuration)
+    )
     return tuple(detector.detect(timeout=timeout) for detector in selected)
 
 
@@ -501,7 +509,9 @@ def test_models(
             diagnostic = "Model is disabled."
         elif not backend.base_url:
             availability = "unsupported"
-            diagnostic = "This provider does not expose a configured model-list endpoint."
+            diagnostic = (
+                "This provider does not expose a configured model-list endpoint."
+            )
         else:
             detector = OpenAICompatibleDetector(
                 backend.provider,
@@ -517,7 +527,9 @@ def test_models(
             detection = detector.detect(timeout=timeout)
             if detection.availability == "available":
                 availability = (
-                    "available" if backend.model in detection.models else "model_not_loaded"
+                    "available"
+                    if backend.model in detection.models
+                    else "model_not_loaded"
                 )
                 diagnostic = (
                     f"Model {backend.model} is available."
@@ -552,8 +564,7 @@ def _pricing_status(backend: Backend) -> str:
     if backend.billing_mode == "token":
         return (
             "known"
-            if backend.input_cost_per_million > 0
-            or backend.output_cost_per_million > 0
+            if backend.input_cost_per_million > 0 or backend.output_cost_per_million > 0
             else "unknown"
         )
     if backend.billing_mode == "compute_time":
@@ -561,8 +572,7 @@ def _pricing_status(backend: Backend) -> str:
     if backend.billing_mode == "fixed":
         return "known" if backend.fixed_cost_per_attempt is not None else "unknown"
     components = (
-        backend.input_cost_per_million > 0
-        or backend.output_cost_per_million > 0,
+        backend.input_cost_per_million > 0 or backend.output_cost_per_million > 0,
         backend.compute_cost_per_hour is not None,
         backend.fixed_cost_per_attempt is not None,
     )
@@ -579,7 +589,11 @@ def _tool_support(value: object) -> str:
 
 def _detection_rows(state: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     raw = state.get("detections")
-    return [item for item in raw if isinstance(item, Mapping)] if isinstance(raw, list) else []
+    return (
+        [item for item in raw if isinstance(item, Mapping)]
+        if isinstance(raw, list)
+        else []
+    )
 
 
 def _availability_for(
@@ -719,7 +733,10 @@ def model_records(
         raw_models = detection.get("models")
         models = raw_models if isinstance(raw_models, list) else []
         for model_value in models:
-            if not isinstance(model_value, str) or (endpoint, model_value) in configured_models:
+            if (
+                not isinstance(model_value, str)
+                or (endpoint, model_value) in configured_models
+            ):
                 continue
             context = context_map.get(model_value)
             context_values = dict(context) if isinstance(context, Mapping) else {}
@@ -733,9 +750,7 @@ def model_records(
                     "endpoint": endpoint,
                     "configured": False,
                     "detected": True,
-                    "availability": str(
-                        detection.get("availability") or "unknown"
-                    ),
+                    "availability": str(detection.get("availability") or "unknown"),
                     "available": detection.get("availability") == "available",
                     "tool_support": _tool_support(detection.get("tool_support")),
                     "context_metadata": context_values,
@@ -772,9 +787,9 @@ def inventory_document(
         "capability_states": [item.value for item in CapabilityStatus],
         "qualification": {
             "minimum_sample_count": _capability_values(configuration)[0],
-            "minimum_conservative_confidence_bound": _capability_values(
-                configuration
-            )[1],
+            "minimum_conservative_confidence_bound": _capability_values(configuration)[
+                1
+            ],
             "policy_version": MODEL_POLICY_VERSION,
         },
     }
@@ -837,7 +852,9 @@ def add_model_to_configuration(
     fixed_cost_per_attempt: float | None = None,
 ) -> None:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", backend_name):
-        raise ValueError("model name must use letters, numbers, dots, underscores, or dashes")
+        raise ValueError(
+            "model name must use letters, numbers, dots, underscores, or dashes"
+        )
     if not model.strip():
         raise ValueError("model identifier must not be empty")
     normalized_provider = canonical_provider(provider)
@@ -846,7 +863,10 @@ def add_model_to_configuration(
             "provider must be one of: " + ", ".join(sorted(CANONICAL_PROVIDERS))
         )
     normalized_endpoint = normalize_endpoint(endpoint) if endpoint else None
-    if normalized_provider in {"local", "openai-compatible"} and not normalized_endpoint:
+    if (
+        normalized_provider in {"local", "openai-compatible"}
+        and not normalized_endpoint
+    ):
         raise ValueError(f"provider {normalized_provider} requires an endpoint")
     if api_key_env and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", api_key_env):
         raise ValueError("credential environment variable name is invalid")
@@ -907,7 +927,10 @@ def remove_model_from_configuration(
         raise ValueError(f"unknown model backend: {backend_name}")
     del raw[backend_name]
     management = configuration.get("model_management")
-    if isinstance(management, dict) and management.get("bootstrap_default") == backend_name:
+    if (
+        isinstance(management, dict)
+        and management.get("bootstrap_default") == backend_name
+    ):
         management["bootstrap_default"] = None
     setup = configuration.get("setup")
     if isinstance(setup, dict) and setup.get("primary_backend") == backend_name:

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 from pydantic import BaseModel
 from villani_ops.core.backend import Backend
+from villani_ops.providers import validate_runtime_credentials
 from .json_extract import extract_json
 from .transport import create_backend_http_client
 
@@ -54,6 +55,7 @@ class LLMClient:
             raise ValueError(
                 f"Backend '{backend.name}' requires base_url for LLM calls"
             )
+        validate_runtime_credentials(backend)
         payload = {
             "model": backend.model,
             "messages": [

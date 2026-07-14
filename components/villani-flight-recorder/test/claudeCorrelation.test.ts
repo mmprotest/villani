@@ -1,12 +1,12 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseClaudeSession } from "../src/providers/claude.js";
 import { deriveCapturedRunStatus } from "../src/render/deriveCapturedRunStatus.js";
+import { testResources } from "./helpers/testResources.js";
 
 async function parseLines(lines: unknown[]) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "vfr-claude-"));
+  const dir = await testResources.temporaryDirectory("vfr-claude-");
   const file = path.join(dir, "session.jsonl");
   await writeFile(file, lines.map((l) => JSON.stringify(l)).join("\n"));
   return parseClaudeSession(file);

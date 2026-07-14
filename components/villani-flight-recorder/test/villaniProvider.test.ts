@@ -1,8 +1,6 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
-import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 
 import { launchVillaniRun } from "../src/commands/launchVillani.js";
@@ -19,6 +17,7 @@ import {
   digestRunFiles,
   snapshotRunFiles,
 } from "./helpers/villaniFixture.js";
+import { testResources } from "./helpers/testResources.js";
 
 async function updateJson(
   file: string,
@@ -39,25 +38,31 @@ describe("native Villani provider", () => {
     const copies = await Promise.all(
       Array.from({ length: 20 }, () => copyVillaniFixture()),
     );
-    const inventories = await Promise.all(
-      copies.map(async ({ run }) => {
-        const session = await parseVillaniRun(run);
-        expect(session.sessionId).toBe("run_protocol_fixture");
-        expect(session.events).toHaveLength(24);
-        return digestRunFiles(run);
-      }),
-    );
-    expect(
-      inventories.every(
-        (inventory) => inventory.join("\n") === before.join("\n"),
-      ),
-    ).toBe(true);
-    expect(await digestRunFiles(canonical)).toEqual(before);
+    try {
+      const inventories = await Promise.all(
+        copies.map(async ({ run }) => {
+          const session = await parseVillaniRun(run);
+          expect(session.sessionId).toBe("run_protocol_fixture");
+          expect(session.events).toHaveLength(24);
+          return digestRunFiles(run);
+        }),
+      );
+      expect(
+        inventories.every(
+          (inventory) => inventory.join("\n") === before.join("\n"),
+        ),
+      ).toBe(true);
+      expect(await digestRunFiles(canonical)).toEqual(before);
+    } finally {
+      await Promise.all(
+        copies.map(({ root }) => fs.rm(root, { recursive: true, force: true })),
+      );
+    }
   });
 
   it("accepts a valid final JSONL object without a trailing newline", async () => {
     const file = path.join(
-      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-jsonl-")),
+      await testResources.temporaryDirectory("vfr-jsonl-"),
       "events.jsonl",
     );
     await fs.writeFile(file, '{"ok":true}');
@@ -69,7 +74,7 @@ describe("native Villani provider", () => {
 
   it("ignores only a genuinely truncated final JSONL object", async () => {
     const file = path.join(
-      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-jsonl-")),
+      await testResources.temporaryDirectory("vfr-jsonl-"),
       "events.jsonl",
     );
     await fs.writeFile(file, '{"ok":true}\n{"partial":');
@@ -81,7 +86,7 @@ describe("native Villani provider", () => {
 
   it("reports a complete malformed final JSON object", async () => {
     const file = path.join(
-      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-jsonl-")),
+      await testResources.temporaryDirectory("vfr-jsonl-"),
       "events.jsonl",
     );
     await fs.writeFile(file, '{"ok":true}\n{"broken":}');
@@ -108,7 +113,7 @@ describe("native Villani provider", () => {
 
   it("uses VILLANI_HOME for the default canonical runs root", async () => {
     const fixture = await copyVillaniFixture();
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), "villani-home-"));
+    const home = await testResources.temporaryDirectory("villani-home-");
     const runs = path.join(home, "runs");
     await fs.mkdir(runs);
     await fs.cp(fixture.run, path.join(runs, "run_protocol_fixture"), {
@@ -163,7 +168,7 @@ describe("native Villani provider", () => {
   it("renders two candidate rows with exact eligibility and selected ID", async () => {
     const { run } = await copyVillaniFixture();
     const html = renderDashboard(await parseVillaniRun(run), null);
-    const document = new JSDOM(html).window.document;
+    const document = testResources.dom(html).window.document;
     const rows = [...document.querySelectorAll(".candidate-table tbody tr")];
     expect(rows).toHaveLength(2);
     expect(rows[0]?.getAttribute("data-attempt-id")).toBe("attempt_001");
@@ -198,16 +203,15 @@ describe("native Villani provider", () => {
 
   it("renders canonical run browser row values without metric inference", async () => {
     const fixture = await copyVillaniFixture();
-    const indexDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "vfr-browser-index-"),
-    );
+    const indexDir =
+      await testResources.temporaryDirectory("vfr-browser-index-");
     const result = await scanToIndex({
       agent: "villani",
       roots: [fixture.root],
       indexDir,
       rebuild: true,
     });
-    const document = new JSDOM(renderSessionBrowser(result.index), {
+    const document = testResources.dom(renderSessionBrowser(result.index), {
       runScripts: "dangerously",
       url: "file:///tmp/villani-runs.html",
     }).window.document;
@@ -243,7 +247,7 @@ describe("native Villani provider", () => {
     await fs.writeFile(path.join(corrupt, "manifest.json"), "{bad json\n");
     await fs.writeFile(path.join(corrupt, "state.json"), "{}\n");
     await fs.writeFile(path.join(corrupt, "events.jsonl"), "");
-    const indexDir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-index-"));
+    const indexDir = await testResources.temporaryDirectory("vfr-index-");
     const result = await scanToIndex({
       agent: "villani",
       roots: [fixture.root],
@@ -313,7 +317,7 @@ describe("native Villani provider", () => {
       content.replace('"exit_code":0}', `"exit_code":0,"api_key":"${secret}"}`),
     );
     const out = path.join(
-      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-redacted-")),
+      await testResources.temporaryDirectory("vfr-redacted-"),
       "run.html",
     );
     await renderReplay(await parseVillaniRun(run), { out });
@@ -326,7 +330,7 @@ describe("native Villani provider", () => {
     const fixture = await copyVillaniFixture();
     const before = await snapshotRunFiles(fixture.run);
     const out = path.join(
-      await fs.mkdtemp(path.join(os.tmpdir(), "vfr-launch-")),
+      await testResources.temporaryDirectory("vfr-launch-"),
       "requested.html",
     );
     const open = vi.fn();

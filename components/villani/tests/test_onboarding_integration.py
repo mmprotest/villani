@@ -41,6 +41,19 @@ def test_recorded_guided_setup_reaches_completed_sample_and_stops_service(
     assert report["sample_final_state"] == "COMPLETED"
     assert report["sample_selected_attempt"] == "attempt_001"
     assert report["sample_validation_exit_code"] == 0
+    assert set(report["delivery_modes"]) == {
+        "suggest",
+        "approve",
+        "reject",
+        "apply",
+        "branch",
+        "pull_request",
+    }
+    assert all(result["status"] == "passed" for result in report["delivery_modes"].values())
+    assert report["doctor"]["ok"] is True
+    assert report["doctor"]["inferred_commands_executed"] is False
+    assert all(item["model_tokens_spent"] == 0 for item in report["doctor"]["backend_connectivity"])
     assert report["service_stopped"] is True
     assert report["screenshots"] == []
-    assert all(command["exit_code"] == 0 for command in report["commands"])
+    assert sorted(command["exit_code"] for command in report["commands"]).count(4) == 1
+    assert all(command["exit_code"] in {0, 4} for command in report["commands"])

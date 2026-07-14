@@ -108,7 +108,10 @@ from .costs import estimate_attempt_cost
 from .approvals import ApprovalRecord, ApprovalScope
 from .adapters.git_isolation import validate_target_lineage
 from villani_ops.isolation.copy_git import remove_tree
-from villani_ops.providers import validate_closed_loop_backend
+from villani_ops.providers import (
+    validate_closed_loop_backend,
+    validate_runtime_credentials,
+)
 from .shadow_routing import (
     CapabilityCatalogSnapshot,
     ShadowRouter,
@@ -414,6 +417,7 @@ class ClosedLoopController:
                 "classification" in backend.roles or "coding" in backend.roles
             ):
                 validate_closed_loop_backend(backend)
+                validate_runtime_credentials(backend)
                 currencies.add(backend.currency)
         if len(currencies) > 1:
             raise ValueError(
@@ -425,6 +429,7 @@ class ClosedLoopController:
             verifier_backend = backends.get(str(verifier.get("backend")))
             if verifier_backend is not None:
                 validate_closed_loop_backend(verifier_backend)
+                validate_runtime_credentials(verifier_backend)
                 if currencies and verifier_backend.currency not in currencies:
                     raise ValueError(
                         "enabled classification/coding/verifier backends must use one currency per run; "
@@ -5280,7 +5285,7 @@ class ClosedLoopController:
             None,
         )
 
-    def _actual_cost(self, runtime: _Runtime) -> tuple[float | None, str]:
+    def _actual_cost(self, runtime: _Runtime) -> tuple[float | None, AccountingStatus]:
         if (
             runtime.classification is None
             and not runtime.attempts

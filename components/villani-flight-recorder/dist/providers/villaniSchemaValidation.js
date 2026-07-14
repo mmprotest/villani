@@ -275,15 +275,17 @@ export class VillaniSchemaValidator {
     }
 }
 let defaultValidator;
-export function validateVillaniProtocol(value) {
+export function defaultVillaniSchemaValidator() {
     defaultValidator ??= new VillaniSchemaValidator();
-    return defaultValidator.validate(value);
+    return defaultValidator;
+}
+export function validateVillaniProtocol(value) {
+    return defaultVillaniSchemaValidator().validate(value);
 }
 export function validateVillaniEventStream(events) {
-    defaultValidator ??= new VillaniSchemaValidator();
-    return defaultValidator.validateEventStream(events);
+    return defaultVillaniSchemaValidator().validateEventStream(events);
 }
-export function readVillaniV2Document(path, validator = new VillaniSchemaValidator()) {
+export function readVillaniV2Document(path, validator = defaultVillaniSchemaValidator()) {
     const value = JSON.parse(readFileSync(path, "utf8"));
     const result = validator.validate(value);
     if (!result.valid) {

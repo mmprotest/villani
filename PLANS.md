@@ -3204,3 +3204,106 @@ Remaining failures, assumptions, and known risks:
 
 Next permitted milestone:
 - None. Milestone 5 is complete, and the next milestone was not started.
+
+#### 2026-07-14: Milestone 5.5, release-green truth and design-partner proof
+
+Status: complete for the repository implementation and executable CI release gate. The full
+`release-verification/run_release_gate.py --mode ci` run exited 0 and wrote the exact verdict
+`RELEASE GATE PASSED`. Eight of eight connected scenarios passed, all 17 required screenshots
+validated, PostgreSQL/browser/reconciliation/security proofs passed, and dead-letter count was
+zero. The local worktree was not published, so the GitHub-hosted `release-green` aggregation job
+was not triggered; the workflow definition was parsed locally and retains every required job as a
+non-optional dependency.
+
+Changed areas:
+- `scripts/{install-local.py,ci-package-smoke.py,postgres-backup-restore-smoke.py,
+  run-component-tests.py}`, `components/villani-control-plane/pyproject.toml`, and
+  `.github/workflows/ci.yml` make clean installation self-bootstrapping, declare test-only
+  dependencies, make component working directories explicit, and give CI clean-install,
+  PostgreSQL, Node-LTS, browser, artifact-upload, and final aggregation coverage.
+- `components/villani/villani_distribution/{cli.py,diagnostics.py,onboarding.py,vfr.py}`,
+  `components/villani-ops/villani_ops/{diagnostics.py,core/backend.py,providers.py,cli/unified.py}`,
+  and the backend execution paths establish one doctor contract and separate structural credential
+  references from runtime secret availability without exposing credential values.
+- Distribution and Ops tests add explicit/saved/current/missing repository diagnostics, service
+  states, backend reachability, zero-token checks, redaction, semantic cross-platform service
+  paths, and a real subprocess clean-installer test.
+- `components/villani-flight-recorder/src/providers/{villani.ts,villaniSchemaValidation.ts}` and
+  its tests share one deterministic schema validator, retain 20 independent concurrent fixture
+  copies, and centrally clean temporary roots, JSDOM windows, environment stubs, servers, watchers,
+  child processes, streams, timers, and promises. Generated `dist` files were rebuilt.
+- `release-verification/{run_release_gate.py,connected_product.py,supply_chain.py}` adds
+  Git/filesystem source manifests, deterministic exclusions and symlink containment, 18 bounded
+  persistent phases, timeout diagnostics, authoritative evidence validation, and complete packaged
+  connected proof. `tests/final_foundation/test_release_gate_contract.py` covers those contracts.
+- `onboarding-verification/{run_onboarding_gate.py,capture_screenshots.mjs}` proves clean packaged
+  setup, doctor, a real coding run, Console/Replay, service shutdown, and suggest/approve/reject/
+  apply/branch/pull-request delivery through public commands and deterministic local fixtures.
+- `components/villani-agentd/villani_agentd/{lifecycle.py,platform_process.py}` fixes Windows PID
+  liveness checks so service shutdown is deterministic. Delivery worktree paths are short,
+  durable, and repository identity is revalidated immediately before materialization.
+
+Architectural decisions:
+- Doctor repository inspection and backend connectivity live in shared Ops diagnostics; both the
+  internal CLI and distribution facade project the stable `villani.doctor.v1` schema. A stopped
+  optional service is a warning for direct CLI readiness, while invalid explicit repositories and
+  corrupt installations still fail with the documented exit codes.
+- Credential configuration validity checks only provider vocabulary and a non-redacted credential
+  reference. Cloud execution and probes resolve `api_key_env` immediately before token-capable
+  transport creation and fail closed with only the environment-variable name in the error.
+- Flight Recorder schema compilation is immutable and shared; callers may inject a validator for
+  isolation. Test-resource ownership is explicit and cleanup is guaranteed in `finally` paths.
+- Source isolation prefers a Git manifest but deterministically falls back to a filesystem
+  manifest for source archives. Both modes use the same exclusion and escaping-symlink policy and
+  record copied/excluded paths in sorted order.
+- Release status is phase-owned and durable. Reports are written at start, phase boundaries,
+  failure, timeout, interruption, and finalization. Required CI evidence cannot remain
+  `not_executed`, and only a fully executed CI/release assertion set may emit
+  `RELEASE GATE PASSED`.
+- Connected and onboarding gates use built wheels, packed Node packages, PostgreSQL 16, real local
+  services, the deterministic OpenAI-compatible fixture, and Playwright. They do not substitute
+  mocked summaries for product behavior or write secrets to configuration/evidence.
+
+Verification:
+- Fresh Python 3.11.15 and 3.13.14 installations each passed installer bootstrapping, `pip check`,
+  imports, and `--help` for `villani`, `villani-code`, `villani-agentd`, and `vfr`.
+- Distribution: 60 passed. Root public CLI/integration: 43 passed, 0 failed, 0 skipped, with two
+  non-failing dependency/cache warnings. Villani Code: 671 passed, 1 opt-in skip. Villani Ops:
+  993 passed, 2 host-capability skips, 114 explicit deselections. Agentd: 76 passed.
+- Control Plane unit: 76 passed. PostgreSQL 16 full suite: 89 passed, 0 skipped; Alembic upgraded to
+  `0a1b2c3d4e5f`, offline SQL generation passed, and backup/restore smoke passed. Final foundation:
+  33 passed.
+- Run Model: 5 tests passed, typecheck and build passed. UI: 3 tests passed and build passed. Web:
+  15 unit tests and 14 Playwright tests passed; typecheck, build, and format passed.
+- Flight Recorder completed three consecutive full runs at 21 files/111 tests each under both
+  Node 20.20.2 and the configured current-LTS Node 24.13.0; typecheck, build, format, and
+  `npm pack --dry-run` passed. Production npm audits reported zero vulnerabilities for all four
+  Node components.
+- Package smoke, node-engine contract, fixture secret scan, Console asset synchronization,
+  evaluation final gate, 10/10 final scenarios, and supply-chain gate passed.
+- Guided onboarding reported `ONBOARDING GATE PASSED`; doctor was healthy/ok with zero model tokens
+  and no inferred commands, the real fixture coding run completed, five onboarding screenshots
+  were captured, all six delivery modes passed, and service shutdown left no process.
+- Local release diagnostics reported `LOCAL GATE PASSED`. The final CI-mode release gate executed
+  154 commands and reported `RELEASE GATE PASSED`: 8 synchronized runs, 7 completed, 1 deliberately
+  exhausted, 0 dead letters, all reconciliations and browser checks passed, 3 values redacted, and
+  1 unsafe artifact withheld.
+- `git diff --check`, workflow YAML parsing, generated Console asset verification, and the
+  onboarding screenshot-harness Prettier check passed after the progress update inputs were final.
+
+Remaining limitations and risks:
+- The changes are local and unpushed, so no claim is made that GitHub Actions has executed the
+  updated `release-green` aggregation job. Its dependency graph is valid and the same authoritative
+  CI gate passed locally; hosted execution requires publishing the change.
+- CI mode does not set the separate official-release-certification flag. The requested full CI
+  assertions and mandatory vulnerability scans passed; release-only optional Gitleaks, Syft, and
+  Trivy certification requires a subsequent explicitly authorized `--mode release` publication
+  run.
+- The in-app browser exposed no controllable target. The repository's real Playwright browser gate,
+  Console and Flight Recorder reconciliation, viewport coverage, PNG validation, hashing, and
+  secret scanning all passed.
+- No Milestone 6 feature, team/enterprise surface, orchestration concept, routing policy, benchmark
+  special case, or later-milestone work was started.
+
+Next permitted milestone:
+- None. Milestone 5.5 is complete, and Milestone 6 was not started.

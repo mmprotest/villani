@@ -23,7 +23,9 @@ def _version(command: list[str], label: str) -> tuple[int, ...]:
     try:
         completed = subprocess.run(command, text=True, capture_output=True, check=True)
     except (OSError, subprocess.CalledProcessError) as error:
-        raise SystemExit(f"{label} is required but was not executable: {error}") from error
+        raise SystemExit(
+            f"{label} is required but was not executable: {error}"
+        ) from error
     text = (completed.stdout or completed.stderr).strip().lstrip("v")
     try:
         return tuple(int(part) for part in text.split(".")[:3])
@@ -31,18 +33,35 @@ def _version(command: list[str], label: str) -> tuple[int, ...]:
         raise SystemExit(f"Could not parse {label} version from {text!r}.") from error
 
 
-def _write_launchers(venv: Path) -> Path:
-    scripts = venv / ("Scripts" if os.name == "nt" else "bin")
-    node = shutil.which("node") or "node"
-    cli = ROOT / "components" / "villani-flight-recorder" / "dist" / "cli.js"
-    if os.name == "nt":
-        launcher = scripts / "vfr.cmd"
-        launcher.write_text(f'@echo off\r\n"{node}" "{cli}" %*\r\n', encoding="utf-8")
-    else:
-        launcher = scripts / "vfr"
-        launcher.write_text(f'#!/bin/sh\nexec "{node}" "{cli}" "$@"\n', encoding="utf-8")
-        launcher.chmod(0o755)
-    return scripts
+def _scripts_directory(venv: Path) -> Path:
+    return venv / ("Scripts" if os.name == "nt" else "bin")
+
+
+def _environment_python(venv: Path) -> Path:
+    return _scripts_directory(venv) / ("python.exe" if os.name == "nt" else "python")
+
+
+def _entry_point(scripts: Path, name: str) -> Path:
+    candidates = (
+        [scripts / f"{name}.exe", scripts / f"{name}.cmd", scripts / name]
+        if os.name == "nt"
+        else [scripts / name]
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise SystemExit(f"Editable installation did not create the {name!r} entry point.")
+
+
+def _pip_available(python: Path) -> bool:
+    completed = subprocess.run(
+        [str(python), "-m", "pip", "--version"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return completed.returncode == 0
 
 
 def main() -> int:
@@ -57,7 +76,9 @@ def main() -> int:
     node_command = shutil.which("node")
     npm_command = shutil.which("npm")
     if node_command is None:
-        raise SystemExit("Node.js 20 or newer is required; `node` was not found on PATH.")
+        raise SystemExit(
+            "Node.js 20 or newer is required; `node` was not found on PATH."
+        )
     if npm_command is None:
         raise SystemExit("npm is required; `npm` was not found on PATH.")
     node_version = _version([node_command, "--version"], "Node.js")
@@ -71,37 +92,76 @@ def main() -> int:
     venv = args.venv.resolve()
     if not (venv / "pyvenv.cfg").is_file():
         _run([sys.executable, "-m", "venv", str(venv)])
-    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    python = _environment_python(venv)
+    if not python.is_file():
+        raise SystemExit(f"Virtual environment Python was not created at {python}.")
+    if not _pip_available(python):
+        _run([str(python), "-m", "ensurepip", "--upgrade"])
     _run(
         [
-            str(python), "-m", "pip", "install",
-            "--no-build-isolation",
-            "-e", str(ROOT / "components" / "villani-code"),
-            "-e", str(ROOT / "components" / "villani-ops"),
-            "-e", str(ROOT / "components" / "villani-agentd"),
-            "-e", str(ROOT / "components" / "villani"),
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+            "setuptools",
+            "wheel",
+            "build",
+            "packaging",
         ]
     )
+    _run(
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            str(ROOT / "components" / "villani-code"),
+            "-e",
+            str(ROOT / "components" / "villani-ops"),
+            "-e",
+            str(ROOT / "components" / "villani-agentd"),
+            "-e",
+            str(ROOT / "components" / "villani"),
+        ]
+    )
+    web = ROOT / "components" / "villani-web"
+    _run([npm_command, "ci"], cwd=web)
+    _run([npm_command, "run", "build"], cwd=web)
+    _run([str(python), str(ROOT / "scripts" / "sync-console-assets.py")])
     flight = ROOT / "components" / "villani-flight-recorder"
     _run([npm_command, "ci"], cwd=flight)
     _run([npm_command, "run", "build"], cwd=flight)
-    scripts = _write_launchers(venv)
+    _run(
+        [
+            str(python),
+            "-c",
+            ("import villani_distribution, villani_ops, villani_code, villani_agentd"),
+        ]
+    )
+    scripts = _scripts_directory(venv)
+    entry_points = {
+        name: _entry_point(scripts, name)
+        for name in ("villani", "villani-code", "villani-agentd", "vfr")
+    }
+    for entry_point in entry_points.values():
+        _run([str(entry_point), "--help"])
+    _run([str(python), "-m", "pip", "check"])
     activation = (
         f"& '{scripts / 'Activate.ps1'}'"
         if os.name == "nt"
         else f"source '{scripts / 'activate'}'"
     )
     print(
-        "Villani local installation complete. The local daemon was installed but not "
-        "started. No telemetry or model download was performed."
+        "Villani local installation complete. No background service was installed or "
+        "started. No API key, telemetry, or model download was required."
     )
     print(f"Activate this installation with:\n  {activation}")
     print(
         "Executables after activation:\n"
-        f"  {scripts / 'villani'}\n"
-        f"  {scripts / 'villani-code'}\n"
-        f"  {scripts / 'villani-agentd'}\n"
-        f"  {scripts / ('vfr.cmd' if os.name == 'nt' else 'vfr')}"
+        + "\n".join(f"  {path}" for path in entry_points.values())
     )
     return 0
 

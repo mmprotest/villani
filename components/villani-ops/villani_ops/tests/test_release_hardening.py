@@ -35,6 +35,7 @@ from villani_ops.closed_loop.adapters.git_isolation import GitIsolationAdapter
 from villani_ops.providers import (
     ProviderConfigurationError,
     validate_closed_loop_backend,
+    validate_runtime_credentials,
     villani_code_provider,
 )
 
@@ -91,7 +92,9 @@ def test_provider_contract_and_villani_code_mapping() -> None:
 
     openai = Backend(name="cloud", provider="openai", model="gpt")
     assert openai.base_url == "https://api.openai.com/v1"
-    with pytest.raises(ProviderConfigurationError, match="requires an API key"):
+    with pytest.raises(
+        ProviderConfigurationError, match="requires a credential reference"
+    ):
         validate_closed_loop_backend(openai)
 
     with pytest.raises(
@@ -100,6 +103,64 @@ def test_provider_contract_and_villani_code_mapping() -> None:
         validate_closed_loop_backend(
             Backend(name="missing-url", provider="openai-compatible", model="stub")
         )
+
+
+def test_credential_reference_is_structural_and_runtime_resolution_fails_closed() -> (
+    None
+):
+    backend = Backend(
+        name="cloud",
+        provider="openai",
+        model="gpt-fixture",
+        api_key_env="OPENAI_API_KEY",
+    )
+    validate_closed_loop_backend(backend)
+    assert backend.credential_reference_configured() is True
+    assert backend.runtime_credential_available({}) is False
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="OPENAI_API_KEY is missing or empty",
+    ) as missing:
+        validate_runtime_credentials(backend, {})
+    assert "fixture-secret" not in str(missing.value)
+
+    with pytest.raises(ProviderConfigurationError, match="OPENAI_API_KEY"):
+        validate_runtime_credentials(backend, {"OPENAI_API_KEY": "   "})
+
+    validate_runtime_credentials(backend, {"OPENAI_API_KEY": "fixture-secret"})
+    assert (
+        backend.resolved_api_key({"OPENAI_API_KEY": "fixture-secret"})
+        == "fixture-secret"
+    )
+
+
+def test_authenticated_compatible_backend_uses_same_runtime_credential_contract() -> (
+    None
+):
+    backend = Backend(
+        name="authenticated-local",
+        provider="openai-compatible",
+        base_url="http://127.0.0.1:8000/v1",
+        model="fixture",
+        api_key_env="LOCAL_MODEL_KEY",
+    )
+    validate_closed_loop_backend(backend)
+    with pytest.raises(ProviderConfigurationError, match="LOCAL_MODEL_KEY"):
+        validate_runtime_credentials(backend, {})
+    validate_runtime_credentials(backend, {"LOCAL_MODEL_KEY": "fixture-secret"})
+
+
+def test_redacted_direct_credentials_are_not_usable() -> None:
+    backend = Backend(
+        name="cloud",
+        provider="openai",
+        model="gpt-fixture",
+        api_key="***REDACTED***",
+    )
+    assert backend.credential_reference_configured() is False
+    with pytest.raises(ProviderConfigurationError, match="credential reference"):
+        validate_closed_loop_backend(backend)
 
 
 def test_local_compute_pricing_preserves_configured_currency() -> None:

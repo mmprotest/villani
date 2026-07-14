@@ -13,6 +13,7 @@ from villani_ops.verifier.service import execute_verifier
 from villani_ops.closed_loop.costs import actual_attempt_cost
 from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
 from villani_ops.core.backend import Backend
+from villani_ops.providers import validate_runtime_credentials
 
 from ..event_writer import redact_data
 from ..interfaces import (
@@ -120,7 +121,9 @@ def _repository_validation_authority(
     """Return (authoritative pass, active failure) from structured runtime events."""
 
     mutations = [
-        event.timestamp for event in attempt_result.runtime_events if event.event_type == "file_write"
+        event.timestamp
+        for event in attempt_result.runtime_events
+        if event.event_type == "file_write"
     ]
     final_mutation = max(mutations) if mutations else None
     expected_worktree = str(Path(attempt_result.worktree_path).resolve())
@@ -142,7 +145,10 @@ def _repository_validation_authority(
             continue
         if event_worktree != expected_worktree:
             continue
-        if expected_baseline is None or payload.get("baseline_sha256") != expected_baseline:
+        if (
+            expected_baseline is None
+            or payload.get("baseline_sha256") != expected_baseline
+        ):
             continue
         if payload.get("candidate_state") != "post_mutation":
             continue
@@ -152,7 +158,8 @@ def _repository_validation_authority(
     if not validations:
         return False, False
     active_failure = any(
-        event.event_type == "command_failed" or event.payload.get("exit_code") not in {None, 0}
+        event.event_type == "command_failed"
+        or event.payload.get("exit_code") not in {None, 0}
         for event in validations
     )
     return not active_failure, active_failure
@@ -211,7 +218,8 @@ def _execute_configured_repository_validation(
                     "baseline_sha256": attempt_context.baseline_sha256,
                     "candidate_state": "post_mutation",
                     "validation_id": str(
-                        item.get("validation_id") or f"repository_validation_{index:03d}"
+                        item.get("validation_id")
+                        or f"repository_validation_{index:03d}"
                     ),
                 },
                 source_event_id=f"controller-validation:{attempt_context.attempt_id}:{index}",
@@ -392,6 +400,8 @@ class VillaniVerifierAdapter:
             suffix += 1
         trace_value = attempt_result.metadata.get("debug_trace_path")
         trace_path = (run_dir / str(trace_value)).resolve() if trace_value else None
+        if not self._no_llm and self._backend_config is not None:
+            validate_runtime_credentials(self._backend_config)
         started = time.monotonic()
         execution = execute_verifier(
             debug_root=trace_path,

@@ -26,7 +26,7 @@ from villani_agentd import wrapper as wrapper_module
 from villani_agentd.cli import build_parser
 from villani_agentd.client import ClientError, LocalClient
 from villani_agentd.config import AgentdPaths, Limits, ServerConfig
-from villani_agentd.lifecycle import start_background, stop_background, write_token
+from villani_agentd.lifecycle import _pid_exists, start_background, stop_background, write_token
 from villani_agentd.process import CapturedStream, ProcessResult, run_process
 from villani_agentd.server import AgentdHTTPServer, serve
 from villani_agentd.spool import (
@@ -444,9 +444,7 @@ def test_unsafe_artifact_is_withheld_and_only_safe_notice_is_spooled(
     assert spool.status()["artifacts"] == 0
     assert not any(path.is_file() for path in paths.artifacts.rglob("*"))
     with sqlite3.connect(paths.database) as connection:
-        payload = json.loads(
-            connection.execute("SELECT payload_json FROM events").fetchone()[0]
-        )
+        payload = json.loads(connection.execute("SELECT payload_json FROM events").fetchone()[0])
     assert payload["name"] == "artifact_withholding_recorded"
     assert payload["body"]["withheld_artifact_count"] == 1
     assert payload["body"]["withheld_artifact_categories"] == ["bearer_token"]
@@ -698,6 +696,11 @@ def test_token_file_is_user_only_on_posix(paths: AgentdPaths) -> None:
     assert paths.token.read_text(encoding="utf-8").strip() == "unguessable"
     if os.name != "nt":
         assert stat.S_IMODE(paths.token.stat().st_mode) == 0o600
+
+
+def test_pid_exists_uses_a_supported_platform_probe() -> None:
+    assert _pid_exists(os.getpid()) is True
+    assert _pid_exists(2_147_483_647) is False
 
 
 def test_daemon_kill_restart_preserves_pending_events_and_real_wrap_exit(

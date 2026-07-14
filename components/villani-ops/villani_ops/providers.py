@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
+
 from villani_ops.core.backend import Backend
 
 
@@ -34,7 +37,7 @@ def resolved_base_url(provider: str, base_url: str | None) -> str | None:
 
 
 def validate_closed_loop_backend(backend: Backend) -> None:
-    """Validate a backend before the controller can spend a coding attempt."""
+    """Validate backend structure without resolving a credential secret."""
 
     provider = canonical_provider(backend.provider)
     if provider not in CANONICAL_PROVIDERS:
@@ -53,11 +56,32 @@ def validate_closed_loop_backend(backend: Backend) -> None:
     # Villani Code's OpenAI-compatible client accepts an omitted Authorization
     # header.  Local servers commonly run without authentication, so only the
     # cloud OpenAI provider requires a configured key here.
-    if provider == "openai" and not backend.api_key_configured():
+    if backend.api_key_env and not re.fullmatch(
+        r"[A-Za-z_][A-Za-z0-9_]*", backend.api_key_env
+    ):
         raise ProviderConfigurationError(
-            f"backend {backend.name!r} with provider 'openai' requires an API key "
-            "(set api_key_env or api_key)"
+            f"backend {backend.name!r} has an invalid credential environment-variable name"
         )
+    if provider == "openai" and not backend.credential_reference_configured():
+        raise ProviderConfigurationError(
+            f"backend {backend.name!r} with provider 'openai' requires a credential "
+            "reference (set api_key_env or a legacy api_key)"
+        )
+
+
+def validate_runtime_credentials(
+    backend: Backend, environ: Mapping[str, str] | None = None
+) -> None:
+    """Fail closed before an authenticated backend can spend model tokens."""
+
+    provider = canonical_provider(backend.provider)
+    authentication_configured = backend.credential_reference_configured()
+    if provider != "openai" and not authentication_configured:
+        return
+    try:
+        backend.require_runtime_credential(environ)
+    except ValueError as error:
+        raise ProviderConfigurationError(str(error)) from error
 
 
 def villani_code_provider(provider: str) -> str:

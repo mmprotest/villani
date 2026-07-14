@@ -1,14 +1,14 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { scanToIndex } from "../src/index/sessionIndex.js";
 import { readIndex } from "../src/index/sessionStore.js";
 import { renderReplay } from "../src/render/renderReplay.js";
+import { testResources } from "./helpers/testResources.js";
 
 describe("session index launch flow", () => {
   it("scans fixture roots, stores sessions, tasks, and replays an indexed segment", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-index-"));
+    const dir = await testResources.temporaryDirectory("vfr-index-");
     const result = await scanToIndex({
       agent: "claude",
       roots: ["test/fixtures/claude"],
@@ -41,8 +41,8 @@ describe("session index launch flow", () => {
     expect(await fs.readFile(out, "utf8")).toContain("Villani Flight Recorder");
   });
   it("extracts clean title, write-only changed files, duration, and failure summary", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-index-meta-"));
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-project-"));
+    const dir = await testResources.temporaryDirectory("vfr-index-meta-");
+    const root = await testResources.temporaryDirectory("vfr-project-");
     const fixtureDir = path.join(dir, "sessions");
     await fs.mkdir(fixtureDir);
     const file = path.join(fixtureDir, "generic.jsonl");

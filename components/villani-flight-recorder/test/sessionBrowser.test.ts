@@ -1,7 +1,7 @@
-import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import { renderSessionBrowser } from "../src/render/sessionBrowser.js";
 import { SessionIndex } from "../src/index/sessionTypes.js";
+import { testResources } from "./helpers/testResources.js";
 
 function idx(sessions: SessionIndex["sessions"]): SessionIndex {
   return {
@@ -188,7 +188,7 @@ describe("session browser", () => {
       title: `Run ${i}`,
       updatedAt: `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`,
     }));
-    const dom = new JSDOM(renderSessionBrowser(idx(sessions)), {
+    const dom = testResources.dom(renderSessionBrowser(idx(sessions)), {
       runScripts: "dangerously",
       url: "file:///tmp/sessions.html",
     });

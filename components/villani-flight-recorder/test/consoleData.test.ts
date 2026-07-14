@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -14,15 +13,15 @@ import {
   runChildProcess,
 } from "../src/utils/childProcess.js";
 import { copyVillaniFixture } from "./helpers/villaniFixture.js";
+import { testResources } from "./helpers/testResources.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Villani Console data adapter", () => {
   it("indexes canonical runs without exposing parser filesystem paths", async () => {
     const fixture = await copyVillaniFixture();
-    const indexDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "vfr-console-index-"),
-    );
+    const indexDir =
+      await testResources.temporaryDirectory("vfr-console-index-");
     const document = await consoleIndex({
       indexDir,
       roots: [fixture.root],
@@ -45,8 +44,8 @@ describe("Villani Console data adapter", () => {
 
   it("projects canonical replay into every Console panel and stable deep links", async () => {
     const fixture = await copyVillaniFixture();
-    const indexDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "vfr-console-replay-"),
+    const indexDir = await testResources.temporaryDirectory(
+      "vfr-console-replay-",
     );
     await scanToIndex({
       agent: "villani",
@@ -87,8 +86,8 @@ describe("Villani Console data adapter", () => {
   });
 
   it("projects imported provider sessions through the same replay contract", async () => {
-    const indexDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "vfr-console-import-"),
+    const indexDir = await testResources.temporaryDirectory(
+      "vfr-console-import-",
     );
     await scanToIndex({
       agent: "claude",
@@ -115,7 +114,7 @@ describe("Villani Console data adapter", () => {
 
 describe("Flight Recorder compatibility links", () => {
   it("resolve only to the running loopback Villani Console", async () => {
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-console-url-"));
+    const home = await testResources.temporaryDirectory("vfr-console-url-");
     await fs.mkdir(path.join(home, "agentd"));
     await fs.writeFile(
       path.join(home, "agentd", "endpoint.json"),
@@ -130,9 +129,7 @@ describe("Flight Recorder compatibility links", () => {
   });
 
   it("refuses a non-loopback service endpoint", async () => {
-    const home = await fs.mkdtemp(
-      path.join(os.tmpdir(), "vfr-console-unsafe-"),
-    );
+    const home = await testResources.temporaryDirectory("vfr-console-unsafe-");
     await fs.mkdir(path.join(home, "agentd"));
     await fs.writeFile(
       path.join(home, "agentd", "endpoint.json"),
@@ -143,7 +140,7 @@ describe("Flight Recorder compatibility links", () => {
   });
 
   it("routes browse and run launch commands into the single Console", async () => {
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-console-cli-"));
+    const home = await testResources.temporaryDirectory("vfr-console-cli-");
     await fs.mkdir(path.join(home, "agentd"));
     await fs.writeFile(
       path.join(home, "agentd", "endpoint.json"),

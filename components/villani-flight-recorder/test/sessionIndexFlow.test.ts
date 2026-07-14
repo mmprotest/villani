@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { scanToIndex } from "../src/index/sessionIndex.js";
 import { readIndex } from "../src/index/sessionStore.js";
 import { renderReplay } from "../src/render/renderReplay.js";
 import { adaptersFor } from "../src/providers/providerAdapter.js";
+import { testResources } from "./helpers/testResources.js";
 
 const fx = (p: string) => path.join(process.cwd(), "test/fixtures", p);
 
 describe("session index flow", () => {
   it("does not duplicate stable sessions across rescans", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-index-"));
+    const dir = await testResources.temporaryDirectory("vfr-index-");
     const firstResult = await scanToIndex({
       all: true,
       roots: [fx("claude")],
@@ -40,7 +40,7 @@ describe("session index flow", () => {
     expect(rebuildResult.parsedChanged).toBe(first);
   });
   it("uses generic only as fallback during --all scans", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-fallback-"));
+    const dir = await testResources.temporaryDirectory("vfr-fallback-");
     const res = await scanToIndex({
       all: true,
       roots: [fx("")],
@@ -59,7 +59,7 @@ describe("session index flow", () => {
     expect(res.index.sessions.some((s) => s.provider === "generic")).toBe(true);
   });
   it("replays an indexed session by id data", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-replay-id-"));
+    const dir = await testResources.temporaryDirectory("vfr-replay-id-");
     const res = await scanToIndex({
       all: true,
       roots: [fx("claude")],

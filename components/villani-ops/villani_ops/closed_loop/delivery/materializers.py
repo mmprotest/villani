@@ -789,10 +789,17 @@ class DeliveryMaterializerAdapter:
         self._valid_branch(repo, branch)
         source = self._source_patch(patch, digest, context)
         delivery_root = Path(context.run_directory) / "delivery"
+        worktree_key = hashlib.sha256(
+            f"{context.run_id}\0{repo}\0{branch}".encode()
+        ).hexdigest()[:20]
+        # Keep durable delivery worktrees beside the runs root. Deeply nesting a
+        # worktree inside its run bundle can exceed Git's own metadata path limit
+        # on otherwise valid repositories, while this location remains local,
+        # inspectable, and independent of temporary-attempt cleanup.
         worktree = (
-            delivery_root
-            / "worktrees"
-            / hashlib.sha256(branch.encode()).hexdigest()[:16]
+            Path(context.run_directory).parent.parent
+            / "delivery-worktrees"
+            / worktree_key
         )
         state_path = delivery_root / "branch-state.json"
         state: dict[str, Any] = {}
@@ -819,6 +826,14 @@ class DeliveryMaterializerAdapter:
                     "branch_already_exists",
                     "delivery branch state does not match this selected patch",
                 )
+            recorded_worktree = Path(str(state.get("worktree") or "")).resolve()
+            runs_home = Path(context.run_directory).parent.parent.resolve()
+            if not recorded_worktree.is_relative_to(runs_home):
+                raise DeliveryError(
+                    "delivery_synchronization_failure",
+                    "recorded delivery worktree is outside the Villani run home",
+                )
+            worktree = recorded_worktree
         branch_exists = (
             subprocess.run(
                 ["git", "show-ref", "--verify", f"refs/heads/{branch}"],

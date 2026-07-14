@@ -27,7 +27,9 @@ from .protocol import (
 )
 
 
-WORKFLOW_VERSION = "villani.delivery_workflow.v1"
+WORKFLOW_VERSION: Literal["villani.delivery_workflow.v1"] = (
+    "villani.delivery_workflow.v1"
+)
 DeliveryMode = Literal["suggest", "approve", "apply", "branch", "pull-request"]
 DeliveryState = Literal[
     "selected",

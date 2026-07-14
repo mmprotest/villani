@@ -73,6 +73,20 @@ def _environment_paths(env: dict[str, str]) -> dict[str, str]:
     }
 
 
+def _redacted_log_text(value: str, env: dict[str, str]) -> str:
+    redacted = _SENSITIVE_LOG_TEXT.sub("[REDACTED]", value)
+    protected_values = {
+        str(item)
+        for key, item in env.items()
+        if key.startswith("VILLANI_RELEASE_")
+        and any(part in key for part in ("TOKEN", "SECRET", "PASSWORD"))
+    }
+    for secret in protected_values:
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted
+
+
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -97,6 +111,7 @@ def _run(
         "log": str(log.resolve()),
         "timeout_seconds": timeout,
     }
+    log.parent.mkdir(parents=True, exist_ok=True)
     try:
         completed = subprocess.run(
             command,
@@ -108,15 +123,67 @@ def _run(
             capture_output=True,
             timeout=timeout,
         )
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout or ""
+        stderr = error.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        elapsed = round(time.monotonic() - started, 3)
+        record.update(
+            {
+                "status": "timed_out",
+                "error": "TimeoutExpired",
+                "failure_type": "subprocess_timeout",
+                "failure_message": f"command exceeded {timeout} seconds",
+                "elapsed_seconds": elapsed,
+                "process_status": "terminated_after_timeout",
+                "partial_stdout_bytes": len(stdout.encode("utf-8")),
+                "partial_stderr_bytes": len(stderr.encode("utf-8")),
+            }
+        )
+        COMMAND_RECORDS.append(record)
+        log.write_text(
+            "$ "
+            + subprocess.list2cmdline(_safe_command(command))
+            + f"\ncwd: {cwd.resolve()}\n"
+            + f"timeout seconds: {timeout}\n"
+            + f"elapsed seconds: {elapsed}\n"
+            + "process status: terminated_after_timeout\n"
+            + "environment paths: "
+            + json.dumps(record["environment_paths"], sort_keys=True)
+            + "\n\n[partial stdout]\n"
+            + _redacted_log_text(stdout, env)
+            + "\n[partial stderr]\n"
+            + _redacted_log_text(stderr, env),
+            encoding="utf-8",
+        )
+        raise
     except Exception as error:
+        elapsed = round(time.monotonic() - started, 3)
         record.update(
             {
                 "status": "failed",
                 "error": type(error).__name__,
-                "elapsed_seconds": round(time.monotonic() - started, 3),
+                "failure_type": "subprocess_start_failure",
+                "failure_message": str(error),
+                "elapsed_seconds": elapsed,
+                "process_status": "not_completed",
             }
         )
         COMMAND_RECORDS.append(record)
+        log.write_text(
+            "$ "
+            + subprocess.list2cmdline(_safe_command(command))
+            + f"\ncwd: {cwd.resolve()}\n"
+            + f"elapsed seconds: {elapsed}\n"
+            + "process status: not_completed\n"
+            + "environment paths: "
+            + json.dumps(record["environment_paths"], sort_keys=True)
+            + f"\n\n{type(error).__name__}: {error}\n",
+            encoding="utf-8",
+        )
         raise
     record.update(
         {
@@ -126,7 +193,6 @@ def _run(
         }
     )
     COMMAND_RECORDS.append(record)
-    log.parent.mkdir(parents=True, exist_ok=True)
     log_text = (
         "$ "
         + subprocess.list2cmdline(_safe_command(command))
@@ -137,16 +203,7 @@ def _run(
         + completed.stdout
         + completed.stderr
     )
-    protected_values = {
-        str(value)
-        for key, value in env.items()
-        if key.startswith("VILLANI_RELEASE_")
-        and any(part in key for part in ("TOKEN", "SECRET", "PASSWORD"))
-    }
-    for secret in protected_values:
-        if secret:
-            log_text = log_text.replace(secret, "[REDACTED]")
-    log.write_text(_SENSITIVE_LOG_TEXT.sub("[REDACTED]", log_text), encoding="utf-8")
+    log.write_text(_redacted_log_text(log_text, env), encoding="utf-8")
     if completed.returncode not in expected:
         raise RuntimeError(
             f"command returned {completed.returncode}, expected {expected}; see {log}"
@@ -613,8 +670,25 @@ def _configuration(
         ),
     }
     config["verifier"] = {"no_llm": True, "timeout_seconds": 30}
+    if scenario in {"scenario_f", "scenario_g", "scenario_h"}:
+        config["delivery"] = {
+            "default_mode": "apply",
+            "authority_policy": {
+                "policy_version": "release.connected_delivery_authority.v1",
+                "allow_automatic": True,
+                "require_acceptance_eligible": True,
+                "allowed_risks": ["low", "medium", "high"],
+                "allowed_authority_sources": ["authoritative_repository_validation"],
+            },
+        }
     if scenario == "scenario_e":
-        config["repository_validation_commands"] = []
+        config["repository_validation_commands"] = [
+            {
+                "validation_id": "repository_negative_control",
+                "argv": [python, "-c", "raise SystemExit(1)"],
+                "timeout_seconds": 30,
+            }
+        ]
         config["budgets"]["max_attempts"] = 1
     if scenario == "scenario_f":
         config["repository_validation_commands"] = []
@@ -918,9 +992,15 @@ def _scenario_assertions(
         )
     elif scenario == "scenario_e":
         verification = verifications.get("attempt_001") or {}
+        structured = validation_events("attempt_001")
         assertions.update(
             exhausted=state["state"] == "EXHAUSTED",
             not_materialized=not (run_dir / "materialization.json").is_file(),
+            repository_validation_failed=bool(
+                structured
+                and structured[-1].get("event_type") == "command_failed"
+                and (structured[-1].get("payload") or {}).get("exit_code") == 1
+            ),
             heuristic_advisory_positive=(
                 (verification.get("metadata") or {}).get("raw_verdict") == "success"
                 and (verification.get("metadata") or {}).get("authority_source")
@@ -1310,6 +1390,7 @@ def main(argv: list[str] | None = None) -> int:
             "VILLANI_RELEASE_API_TOKEN": api_token,
             "VILLANI_RELEASE_ENROLLMENT_TOKEN": enrollment_token,
             "PYTHONUTF8": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
             "NO_PROXY": "127.0.0.1,localhost",
             "no_proxy": "127.0.0.1,localhost",
         }
@@ -1486,15 +1567,41 @@ def main(argv: list[str] | None = None) -> int:
                     "secrets and unsafe authentication artifacts must never be disclosed."
                 )
             )
+            validation_argv = (
+                [
+                    str(python),
+                    "-c",
+                    "from calculator import add; assert add(2, 3) == 5",
+                ]
+                if scenario == "scenario_e"
+                else [str(python), "-m", "unittest", "-q"]
+            )
             initial_validation = _run(
-                [str(python), "-m", "unittest", "-q"],
+                validation_argv,
                 cwd=repo,
                 env=env,
                 log=logs / f"{scenario}-initial-validation.log",
                 expected=(1,),
                 timeout=60,
             )
+            clean_status = _run(
+                ["git", "status", "--porcelain"],
+                cwd=repo,
+                env=env,
+                log=logs / f"{scenario}-pre-run-status.log",
+                timeout=30,
+            )
+            if clean_status.stdout.strip():
+                raise RuntimeError(
+                    f"{scenario} fixture validation mutated the repository: "
+                    f"{clean_status.stdout.strip()}"
+                )
             expected = (3,) if scenario == "scenario_e" else (0,)
+            success_criteria = (
+                "The calculator add function returns the correct sum."
+                if scenario == "scenario_e"
+                else "python -m unittest -q passes"
+            )
             result = _run(
                 [
                     str(villani),
@@ -1503,7 +1610,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--repo",
                     str(repo),
                     "--success-criteria",
-                    "python -m unittest -q passes",
+                    success_criteria,
                     "--max-attempts",
                     str(config["budgets"]["max_attempts"]),
                 ],
@@ -1572,7 +1679,7 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                 }
             final_validation = _run(
-                [str(python), "-m", "unittest", "-q"],
+                validation_argv,
                 cwd=repo,
                 env=env,
                 log=logs / f"{scenario}-final-validation.log",

@@ -17,7 +17,10 @@ import type {
   VillaniTaskSnapshot,
   VillaniVerificationSnapshot,
 } from "./villaniProtocol.js";
-import { VillaniSchemaValidator } from "./villaniSchemaValidation.js";
+import {
+  defaultVillaniSchemaValidator,
+  VillaniSchemaValidator,
+} from "./villaniSchemaValidation.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -561,7 +564,7 @@ async function optionalSnapshot<T>(
 
 export async function parseVillaniRun(
   runPath: string,
-  validator = new VillaniSchemaValidator(),
+  validator = defaultVillaniSchemaValidator(),
 ): Promise<ParsedSession> {
   const runDirectory = path.resolve(runPath);
   const manifest = await readSnapshot<VillaniRunManifestSnapshot>(

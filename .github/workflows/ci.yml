@@ -107,6 +107,8 @@ jobs:
         working-directory: components/villani-control-plane
       - run: alembic upgrade head --sql > "$RUNNER_TEMP/control-plane-migrations.sql"
         working-directory: components/villani-control-plane
+      - run: python -m pytest tests/unit -q
+        working-directory: components/villani-control-plane
       - run: python -m pytest -q --run-load-smoke --junitxml="$RUNNER_TEMP/control-plane-postgres.xml"
         working-directory: components/villani-control-plane
       - run: python scripts/assert-no-pytest-skips.py "$RUNNER_TEMP/control-plane-postgres.xml"
@@ -116,6 +118,7 @@ jobs:
       - run: mypy --follow-imports=skip --ignore-missing-imports villani_control_plane
         working-directory: components/villani-control-plane
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: control-plane-postgres-evidence
           path: |
@@ -128,12 +131,46 @@ jobs:
       - uses: actions/checkout@v4
       - run: python scripts/check-node-engine-contract.py
 
+  clean-install:
+    needs: node-engine-contract
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            components/villani-web/package-lock.json
+            components/villani-flight-recorder/package-lock.json
+      - name: Install from an untouched new environment
+        run: python scripts/install-local.py --venv "$RUNNER_TEMP/villani-clean"
+      - run: '"$RUNNER_TEMP/villani-clean/bin/python" -m pip check'
+      - name: Validate every public entry point and import
+        run: |
+          set -euo pipefail
+          for command in villani villani-code villani-agentd vfr; do
+            "$RUNNER_TEMP/villani-clean/bin/$command" --help
+          done
+          "$RUNNER_TEMP/villani-clean/bin/python" -c "import villani_distribution, villani_ops, villani_code, villani_agentd"
+
   flight-recorder:
     needs: node-engine-contract
     strategy:
       fail-fast: false
       matrix:
-        node: [20.x, lts/*]
+        include:
+          - node: 20.x
+            label: node-20
+          - node: lts/*
+            label: current-lts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -153,9 +190,14 @@ jobs:
         working-directory: components/villani-flight-recorder
       - name: Run the complete suite three consecutive times
         run: |
+          mkdir -p "$RUNNER_TEMP/flight-recorder-diagnostics"
           for run in 1 2 3; do
             echo "Flight Recorder full-suite run $run/3"
-            npm test
+            set +e
+            npm test 2>&1 | tee "$RUNNER_TEMP/flight-recorder-diagnostics/full-suite-$run.log"
+            status=${PIPESTATUS[0]}
+            set -e
+            test "$status" -eq 0
           done
         working-directory: components/villani-flight-recorder
       - run: npm run typecheck
@@ -166,6 +208,12 @@ jobs:
         working-directory: components/villani-flight-recorder
       - run: npm pack --dry-run
         working-directory: components/villani-flight-recorder
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: flight-recorder-diagnostics-${{ matrix.label }}
+          path: ${{ runner.temp }}/flight-recorder-diagnostics/
+          if-no-files-found: ignore
 
   villani-ui:
     needs: node-engine-contract
@@ -175,6 +223,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: components/villani-ui/package-lock.json
+      - run: npm ci
+        working-directory: components/villani-ui
       - run: npm test
         working-directory: components/villani-ui
       - run: npm run build
@@ -467,15 +519,15 @@ jobs:
         with: {python-version: "3.11"}
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.20
       - run: python -m pip install build pip-audit
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: npx --yes playwright@1.52.0 install-deps chromium
       - name: Verify the checkout has no residual dependency trees
         run: |
           test -z "$(find components -type d -name node_modules -print -quit)"
-      - run: npm ci
-        working-directory: components/villani-web
-      - run: npx playwright install --with-deps chromium
-        working-directory: components/villani-web
       - name: Run isolated package build and connected release gate
         run: python release-verification/run_release_gate.py --mode ci
       - uses: actions/upload-artifact@v4
@@ -494,6 +546,7 @@ jobs:
       - villani-agentd
       - villani-control-plane
       - node-engine-contract
+      - clean-install
       - flight-recorder
       - villani-run-model
       - villani-ui

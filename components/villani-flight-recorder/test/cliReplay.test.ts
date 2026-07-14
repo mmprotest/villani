@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const fx = (p: string) => path.resolve("test/fixtures", p);
+import { testResources } from "./helpers/testResources.js";
 
 describe("CLI replay output workflow", () => {
   it("replay --session --out <dir> writes index.html to the requested directory", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-out-"));
+    const dir = await testResources.temporaryDirectory("vfr-out-");
     const out = path.join(dir, "artifact");
     const { stdout } = await exec("node", [
       "dist/cli.js",
@@ -30,7 +30,7 @@ describe("CLI replay output workflow", () => {
   }, 20000);
 
   it("replay --latest --root searches the custom root", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-latest-"));
+    const dir = await testResources.temporaryDirectory("vfr-latest-");
     const { stdout } = await exec("node", [
       "dist/cli.js",
       "replay",
@@ -53,8 +53,8 @@ describe("CLI replay output workflow", () => {
 
   it("replay --latest --root strictly filters provider sessions", async () => {
     for (const provider of ["codex", "claude", "pi"] as const) {
-      const dir = await fs.mkdtemp(
-        path.join(os.tmpdir(), `vfr-latest-${provider}-`),
+      const dir = await testResources.temporaryDirectory(
+        `vfr-latest-${provider}-`,
       );
       const { stdout } = await exec("node", [
         "dist/cli.js",

@@ -627,6 +627,10 @@ def select_verifier_backend(
     mo = model or b.model
     if not mo or not bu:
         raise VerifierConfigurationError("missing verifier model or base URL")
+    if api_key is None:
+        from villani_ops.providers import validate_runtime_credentials
+
+        validate_runtime_credentials(b)
     key = api_key or b.resolved_api_key() or ("dummy" if _is_local(bu) else "")
     return {
         "name": b.name,

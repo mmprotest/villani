@@ -189,7 +189,9 @@ def _models_from_document(value: Any) -> tuple[tuple[str, ...], dict[str, dict[s
     return tuple(sorted(names)), context
 
 
-def _ollama_models(endpoint: str, timeout: float) -> tuple[tuple[str, ...], dict[str, dict[str, Any]]]:
+def _ollama_models(
+    endpoint: str, timeout: float
+) -> tuple[tuple[str, ...], dict[str, dict[str, Any]]]:
     parsed = urllib.parse.urlsplit(endpoint)
     url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/api/tags", "", ""))
     _status, value = _request_json("GET", url, timeout=timeout)
@@ -208,16 +210,10 @@ def _detect_endpoint(
     tool_use_support: bool | None = None,
 ) -> ProviderDetection:
     credential = (
-        environ.get(credential_environment_variable, "")
-        if credential_environment_variable
-        else ""
+        environ.get(credential_environment_variable, "") if credential_environment_variable else ""
     )
     credential_status = (
-        "present"
-        if credential
-        else "missing"
-        if authentication_required
-        else "not_required"
+        "present" if credential else "missing" if authentication_required else "not_required"
     )
     if authentication_required and not credential:
         return ProviderDetection(
@@ -356,7 +352,9 @@ def detect_providers(
                 tool_use_support=tools,
                 diagnostic_message=f"{name} detection failed; check its endpoint and logs.",
                 credential_environment_variable=credential_env,
-                credential_status=("present" if credential_env and env.get(credential_env) else "missing"),
+                credential_status=(
+                    "present" if credential_env and env.get(credential_env) else "missing"
+                ),
             )
         results.append(result)
     return tuple(results)
@@ -527,9 +525,7 @@ def build_configuration(
         "capability_status": "unrated",
         "bootstrap_policy": True,
         "repository": str(repository) if repository else None,
-        "session_sources": [
-            item.source_identifier for item in session_sources if item.installed
-        ],
+        "session_sources": [item.source_identifier for item in session_sources if item.installed],
     }
     validate_configuration(configuration)
     return configuration
@@ -557,6 +553,10 @@ def validate_configuration(configuration: Mapping[str, Any]) -> dict[str, Backen
     raw_backends = configuration.get("backends")
     if not isinstance(raw_backends, Mapping) or not raw_backends:
         raise SetupError("no coding backend is configured")
+    setup = configuration.get("setup")
+    setup_generated = (
+        isinstance(setup, Mapping) and setup.get("schema_version") == "villani.setup.v1"
+    )
     parsed: dict[str, Backend] = {}
     for name, value in raw_backends.items():
         if not isinstance(value, Mapping):
@@ -566,7 +566,7 @@ def validate_configuration(configuration: Mapping[str, Any]) -> dict[str, Backen
             validate_closed_loop_backend(backend)
         except (ValidationError, ProviderConfigurationError) as error:
             raise SetupError(f"backend {name!r} is invalid: {error}") from error
-        if backend.api_key not in {None, "", "***REDACTED***"}:
+        if setup_generated and backend._usable_direct_credential(backend.api_key):
             raise SetupError("configuration must reference credentials by environment variable")
         parsed[str(name)] = backend
     if not any(item.enabled and "coding" in item.roles for item in parsed.values()):
@@ -588,7 +588,13 @@ def write_configuration_atomic(
     path: Path,
     configuration: Mapping[str, Any],
     *,
-    replace: Callable[[str | bytes | os.PathLike[str] | os.PathLike[bytes], str | bytes | os.PathLike[str] | os.PathLike[bytes]], None] = os.replace,
+    replace: Callable[
+        [
+            str | bytes | os.PathLike[str] | os.PathLike[bytes],
+            str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        ],
+        None,
+    ] = os.replace,
 ) -> ConfigurationWrite:
     """Validate, back up, fsync, and atomically activate configuration."""
 
@@ -622,7 +628,8 @@ def write_configuration_atomic(
 
 def _api_key(detection: ProviderDetection, environ: Mapping[str, str]) -> str | None:
     name = detection.credential_environment_variable
-    return environ.get(name) if name else None
+    value = environ.get(name) if name else None
+    return value if value and value.strip() else None
 
 
 def test_backend(
@@ -633,6 +640,15 @@ def test_backend(
     timeout: float = 5,
 ) -> BackendProbe:
     env = dict(os.environ if environ is None else environ)
+    if detection.authentication_required:
+        credential_name = detection.credential_environment_variable
+        if not _api_key(detection, env):
+            return BackendProbe(
+                False,
+                "credential",
+                f"Credential environment variable {credential_name or 'configured name'} is missing or empty.",
+                model,
+            )
     try:
         _status, value = _request_json(
             "GET",
@@ -654,7 +670,9 @@ def test_backend(
                 False, "connection", f"Backend test returned HTTP {error.code}.", model
             )
     except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
-        return BackendProbe(False, "connection", "Backend test could not reach the endpoint.", model)
+        return BackendProbe(
+            False, "connection", "Backend test could not reach the endpoint.", model
+        )
     if not models:
         return BackendProbe(False, "model", "The endpoint returned no available models.", model)
     if model not in models:
@@ -675,6 +693,16 @@ def run_capability_probe(
 
     env = dict(os.environ if environ is None else environ)
     started = time.monotonic()
+    if detection.authentication_required:
+        credential_name = detection.credential_environment_variable
+        if not _api_key(detection, env):
+            return BackendProbe(
+                False,
+                "credential",
+                f"Credential environment variable {credential_name or 'configured name'} is missing or empty.",
+                model,
+                round(time.monotonic() - started, 3),
+            )
     body = {
         "model": model,
         "messages": [
@@ -729,7 +757,9 @@ def create_sample_repository(*, root: Path | None = None) -> SampleRepository:
     parent = root.expanduser().resolve() if root else None
     if parent:
         parent.mkdir(parents=True, exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="villani-sample-", dir=str(parent) if parent else None))
+    directory = Path(
+        tempfile.mkdtemp(prefix="villani-sample-", dir=str(parent) if parent else None)
+    )
     (directory / "calculator.py").write_text(
         '"""Tiny disposable Villani setup sample."""\n\n\ndef add(left: int, right: int) -> int:\n    return left + right\n',
         encoding="utf-8",

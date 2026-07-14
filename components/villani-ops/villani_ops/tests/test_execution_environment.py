@@ -216,10 +216,12 @@ def test_doctor_report_has_stable_v1_shape_and_fails_missing_requirements(
     assert set(report) == {
         "schema_version",
         "repository",
+        "healthy",
         "ok",
         "required_capabilities",
         "git",
         "disk",
+        "service",
         "daemon",
         "adapters",
         "coding_commands",

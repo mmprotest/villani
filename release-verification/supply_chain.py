@@ -141,10 +141,13 @@ def _python_inventory(python: Path) -> tuple[list[dict[str, str]], dict[str, Any
     return sorted(packages, key=lambda item: item["name"].lower()), checked
 
 
-def _node_inventory() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _node_inventory(
+    source_root: Path | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    source_root = (source_root or ROOT).resolve()
     packages: dict[tuple[str, str, str], dict[str, Any]] = {}
     manifests: list[dict[str, Any]] = []
-    for package_json in sorted((ROOT / "components").glob("*/package.json")):
+    for package_json in sorted((source_root / "components").glob("*/package.json")):
         document = json.loads(package_json.read_text(encoding="utf-8"))
         if package_json.parent.name not in {
             "villani-ui",
@@ -157,7 +160,7 @@ def _node_inventory() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
             {
                 "name": document.get("name"),
                 "version": document.get("version"),
-                "path": str(package_json.relative_to(ROOT)).replace("\\", "/"),
+                "path": str(package_json.relative_to(source_root)).replace("\\", "/"),
                 "sha256": _sha256(package_json),
             }
         )
@@ -306,7 +309,7 @@ def _package_secret_scan(packages: Iterable[Path]) -> dict[str, Any]:
     }
 
 
-def _source_manifest() -> dict[str, Any]:
+def _source_manifest(source_root: Path | None = None) -> dict[str, Any]:
     ignored = {
         ".git",
         ".venv",
@@ -328,9 +331,26 @@ def _source_manifest() -> dict[str, Any]:
         "playwright-report",
         "test-results",
     }
+    source_root = (source_root or ROOT).resolve()
     paths: list[Path] = []
+    selection = "filesystem_manifest"
     git = shutil.which("git")
-    if git:
+    git_available = False
+    if git and (source_root / ".git").exists():
+        probe = subprocess.run(
+            [git, "rev-parse", "--show-toplevel"],
+            cwd=source_root,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+        )
+        if probe.returncode == 0:
+            try:
+                git_available = Path(probe.stdout.strip()).resolve() == source_root
+            except OSError:
+                git_available = False
+    if git_available and git:
         listed = subprocess.run(
             [
                 git,
@@ -342,7 +362,7 @@ def _source_manifest() -> dict[str, Any]:
                 "--exclude-standard",
                 "-z",
             ],
-            cwd=ROOT,
+            cwd=source_root,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -356,10 +376,11 @@ def _source_manifest() -> dict[str, Any]:
         paths = sorted(
             path
             for value in listed.stdout.split("\0")
-            if value and (path := ROOT / value).is_file()
+            if value and (path := source_root / value).is_file()
         )
+        selection = "git_manifest"
     else:
-        for directory, directories, names in os.walk(ROOT):
+        for directory, directories, names in os.walk(source_root):
             directories[:] = sorted(
                 value
                 for value in directories
@@ -370,8 +391,15 @@ def _source_manifest() -> dict[str, Any]:
             root = Path(directory)
             paths.extend(root / name for name in sorted(names))
     files: list[dict[str, Any]] = []
-    for path in paths:
-        relative = path.relative_to(ROOT)
+    for path in sorted(set(paths)):
+        relative = path.relative_to(source_root)
+        if any(
+            part in ignored
+            or part.endswith(".egg-info")
+            or part.startswith((".test-", ".release-"))
+            for part in relative.parts[:-1]
+        ):
+            continue
         files.append(
             {
                 "path": str(relative).replace("\\", "/"),
@@ -379,13 +407,21 @@ def _source_manifest() -> dict[str, Any]:
                 "sha256": _sha256(path),
             }
         )
-    return {"status": "passed", "file_count": len(files), "files": files}
+    return {
+        "status": "passed",
+        "selection": selection,
+        "file_count": len(files),
+        "files": files,
+    }
 
 
-def _stage_source_manifest(source: dict[str, Any], destination: Path) -> None:
+def _stage_source_manifest(
+    source: dict[str, Any], destination: Path, source_root: Path | None = None
+) -> None:
+    source_root = (source_root or ROOT).resolve()
     for item in source["files"]:
         relative = Path(item["path"])
-        source_path = ROOT / relative
+        source_path = source_root / relative
         destination_path = destination / relative
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -399,7 +435,9 @@ def _external_scanners(
     site_packages: Path,
     source: dict[str, Any],
     output: Path,
+    source_root: Path | None = None,
 ) -> dict[str, dict[str, Any]]:
+    source_root = (source_root or ROOT).resolve()
     enabled = mode in {"ci", "release"}
     npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
     pip_audit = shutil.which("pip-audit")
@@ -412,7 +450,7 @@ def _external_scanners(
     if enabled and pip_audit:
         scanners["python_vulnerability_scan"] = _capture(
             [pip_audit, "--path", str(site_packages), "--format", "json"],
-            cwd=ROOT,
+            cwd=source_root,
             timeout=300,
         ) | {"scanner": "pip-audit"}
     else:
@@ -425,7 +463,7 @@ def _external_scanners(
         }
     node_results: list[dict[str, Any]] = []
     if enabled and npm:
-        for lock in sorted((ROOT / "components").glob("*/package-lock.json")):
+        for lock in sorted((source_root / "components").glob("*/package-lock.json")):
             result = _capture(
                 [npm, "audit", "--omit=dev", "--json", "--package-lock-only"],
                 cwd=lock.parent,
@@ -455,7 +493,7 @@ def _external_scanners(
     if mode == "release" and (gitleaks or syft):
         with tempfile.TemporaryDirectory(prefix="villani-source-scan-") as temporary:
             staged_source = Path(temporary)
-            _stage_source_manifest(source, staged_source)
+            _stage_source_manifest(source, staged_source, source_root)
             if gitleaks:
                 report_path = output / "repository-secret-scan.json"
                 result = _capture(
@@ -472,7 +510,7 @@ def _external_scanners(
                         "--report-path",
                         str(report_path),
                     ],
-                    cwd=ROOT,
+                    cwd=source_root,
                     timeout=600,
                 )
                 valid_report = False
@@ -492,7 +530,7 @@ def _external_scanners(
                     ).strip()
                 scanners["repository_secret_scan"] = result | {
                     "scanner": "gitleaks",
-                    "version": _capture([gitleaks, "version"], cwd=ROOT)[
+                    "version": _capture([gitleaks, "version"], cwd=source_root)[
                         "stdout"
                     ].strip(),
                     "scope": "source_archive_manifest",
@@ -510,7 +548,7 @@ def _external_scanners(
                         "-o",
                         f"cyclonedx-json={report_path}",
                     ],
-                    cwd=ROOT,
+                    cwd=source_root,
                     timeout=600,
                 )
                 valid_report = False
@@ -532,7 +570,9 @@ def _external_scanners(
                     ).strip()
                 scanners["external_sbom"] = result | {
                     "scanner": "syft",
-                    "version": _capture([syft, "version"], cwd=ROOT)["stdout"].strip(),
+                    "version": _capture([syft, "version"], cwd=source_root)[
+                        "stdout"
+                    ].strip(),
                     "scope": "source_archive_manifest",
                     "source_file_count": source["file_count"],
                     "report": str(report_path) if report_path.is_file() else None,
@@ -550,7 +590,7 @@ def _external_scanners(
                 if mode != "release"
                 else "tool not installed",
             }
-    dockerfile = ROOT / "components" / "villani-control-plane" / "Dockerfile"
+    dockerfile = source_root / "components" / "villani-control-plane" / "Dockerfile"
     docker = shutil.which("docker")
     trivy = shutil.which("trivy")
     if mode == "release" and dockerfile.is_file() and docker and trivy:
@@ -563,9 +603,9 @@ def _external_scanners(
                 str(dockerfile),
                 "--tag",
                 tag,
-                str(ROOT),
+                str(source_root),
             ],
-            cwd=ROOT,
+            cwd=source_root,
             timeout=1200,
         )
         report_path = output / "container-vulnerability-scan.json"
@@ -584,13 +624,15 @@ def _external_scanners(
                     str(report_path),
                     tag,
                 ],
-                cwd=ROOT,
+                cwd=source_root,
                 timeout=1200,
             )
         else:
             scanned = built
         cleanup = _capture(
-            [docker, "image", "rm", "--force", tag], cwd=ROOT, timeout=120
+            [docker, "image", "rm", "--force", tag],
+            cwd=source_root,
+            timeout=120,
         )
         valid_report = False
         if scanned["status"] == "passed" and report_path.is_file():
@@ -613,7 +655,7 @@ def _external_scanners(
             ).strip()
         scanners["container_vulnerability_scan"] = scanned | {
             "scanner": "trivy",
-            "version": _capture([trivy, "version"], cwd=ROOT)["stdout"].strip(),
+            "version": _capture([trivy, "version"], cwd=source_root)["stdout"].strip(),
             "image": tag,
             "report": str(report_path) if report_path.is_file() else None,
             "sha256": _sha256(report_path) if report_path.is_file() else None,
@@ -662,16 +704,18 @@ def generate(
     packages: list[Path],
     output: Path,
     package_hashes: dict[str, str],
+    source_root: Path | None = None,
 ) -> dict[str, Any]:
     """Generate all supply-chain files and return the security summary."""
     output.mkdir(parents=True, exist_ok=True)
     python_inventory, pip_check = _python_inventory(installed_python)
-    node_inventory, node_components = _node_inventory()
+    source_root = (source_root or ROOT).resolve()
+    node_inventory, node_components = _node_inventory(source_root)
     python_manifest, node_manifest = _package_manifests(packages)
     site_packages = _site_packages(installed_python)
     licenses = _license_inventory(site_packages, node_inventory)
     secrets = _package_secret_scan(packages)
-    source = _source_manifest()
+    source = _source_manifest(source_root)
     sbom_components = [
         {
             "type": "library",
@@ -706,9 +750,9 @@ def generate(
         "runtime_versions": {
             "python": platform.python_version(),
             "node": (
-                _capture([shutil.which("node") or "node", "--version"], cwd=ROOT).get(
-                    "stdout"
-                )
+                _capture(
+                    [shutil.which("node") or "node", "--version"], cwd=source_root
+                ).get("stdout")
                 or ""
             ).strip()
             or None,
@@ -718,7 +762,7 @@ def generate(
                         shutil.which("npm.cmd" if os.name == "nt" else "npm") or "npm",
                         "--version",
                     ],
-                    cwd=ROOT,
+                    cwd=source_root,
                 ).get("stdout")
                 or ""
             ).strip()
@@ -747,7 +791,9 @@ def generate(
     _write(output / "secret-scan.json", secrets)
     _write(output / "source-archive-manifest.json", source)
     _write(output / "provenance.json", provenance)
-    external = _external_scanners(mode, site_packages, source, output)
+    external = _external_scanners(
+        mode, site_packages, source, output, source_root=source_root
+    )
     scanner_policy = evaluate_external_scanners(mode, external)
     required = REQUIRED_EXTERNAL_SCANNERS[mode]
     deterministic = {

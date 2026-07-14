@@ -492,6 +492,63 @@ def test_branch_creation_keeps_original_branch_untouched(tmp_path: Path) -> None
     assert metadata["commit"] is None
 
 
+def test_dirty_worktree_fails_before_branch_delivery_and_preserves_patch(
+    tmp_path: Path,
+) -> None:
+    adapter, selection, context, repo = _materialization_fixture(
+        tmp_path, materialization_type="local_branch"
+    )
+    (repo / "unrelated.txt").write_text("user work\n", encoding="utf-8")
+
+    result = adapter.materialize(selection, context)
+
+    assert result.status == "failed"
+    assert result.failure is not None and result.failure.code == "dirty_repository"
+    assert result.failure.details["patch_preserved"] is True
+    assert (
+        context.run_directory / "attempts" / "attempt_001" / "patch.diff"
+    ).is_file()
+    assert (repo / "example.txt").read_text(encoding="utf-8") == "old\n"
+
+
+def test_detached_head_fails_before_branch_delivery_and_preserves_patch(
+    tmp_path: Path,
+) -> None:
+    adapter, selection, context, repo = _materialization_fixture(
+        tmp_path, materialization_type="local_branch"
+    )
+    _git(repo, "checkout", "--detach", "HEAD")
+
+    result = adapter.materialize(selection, context)
+
+    assert result.status == "failed"
+    assert result.failure is not None and result.failure.code == "detached_head"
+    assert result.failure.details["patch_preserved"] is True
+    assert (
+        context.run_directory / "attempts" / "attempt_001" / "patch.diff"
+    ).is_file()
+    assert (repo / "example.txt").read_text(encoding="utf-8") == "old\n"
+
+
+def test_unrelated_existing_delivery_branch_fails_and_preserves_patch(
+    tmp_path: Path,
+) -> None:
+    adapter, selection, context, repo = _materialization_fixture(
+        tmp_path, materialization_type="local_branch"
+    )
+    _git(repo, "branch", "villani/run-fixture")
+
+    result = adapter.materialize(selection, context)
+
+    assert result.status == "failed"
+    assert result.failure is not None and result.failure.code == "branch_already_exists"
+    assert result.failure.details["patch_preserved"] is True
+    assert (
+        context.run_directory / "attempts" / "attempt_001" / "patch.diff"
+    ).is_file()
+    assert (repo / "example.txt").read_text(encoding="utf-8") == "old\n"
+
+
 def test_local_pull_request_fixture_branches_commits_pushes_and_records_body(
     tmp_path: Path,
 ) -> None:
@@ -534,6 +591,32 @@ def test_push_failure_preserves_committed_local_branch_and_patch(
     assert result.failure is not None and result.failure.code == "push_rejected"
     assert result.failure.details["patch_preserved"] is True
     assert (context.run_directory / "delivery" / "branch-state.json").is_file()
+    assert _git(repo, "show-ref", "--verify", "refs/heads/villani/run-fixture")
+
+
+@pytest.mark.parametrize(
+    ("failure_code", "message"),
+    [
+        ("remote_unavailable", "fixture remote is unavailable"),
+        ("authentication_failure", "fixture authentication failed"),
+    ],
+)
+def test_pull_request_transport_failures_preserve_committed_branch_and_patch(
+    tmp_path: Path, failure_code: str, message: str
+) -> None:
+    provider = FakeGitProvider(push_error=DeliveryError(failure_code, message))
+    adapter, selection, context, repo = _materialization_fixture(
+        tmp_path, materialization_type="pull_request", provider=provider
+    )
+
+    result = adapter.materialize(selection, context)
+
+    assert result.status == "failed"
+    assert result.failure is not None and result.failure.code == failure_code
+    assert result.failure.details["patch_preserved"] is True
+    assert (
+        context.run_directory / "attempts" / "attempt_001" / "patch.diff"
+    ).is_file()
     assert _git(repo, "show-ref", "--verify", "refs/heads/villani/run-fixture")
 
 

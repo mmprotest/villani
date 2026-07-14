@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
-import os from "node:os";
 import path from "node:path";
 
 import { resolveVillaniRepositoryRoot } from "../../src/providers/villaniSchemaValidation.js";
+import { testResources } from "./testResources.js";
 
 export const canonicalVillaniFixture = () =>
   path.join(
@@ -19,7 +19,7 @@ export async function copyVillaniFixture(): Promise<{
   root: string;
   run: string;
 }> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-villani-runs-"));
+  const root = await testResources.temporaryDirectory("vfr-villani-runs-");
   const run = path.join(root, "run_protocol_fixture");
   await fs.cp(canonicalVillaniFixture(), run, { recursive: true });
   return { root, run };

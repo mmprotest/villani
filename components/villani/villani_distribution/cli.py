@@ -5,14 +5,20 @@ import sys
 import urllib.error
 import urllib.request
 import webbrowser
+from pathlib import Path
 from typing import Sequence
 
 import typer
 
 from villani_ops.cli.unified import app
+from villani_ops.diagnostics import RepositoryDiagnosticError
 
 from .migrations import MigrationError, check_upgrade
-from .diagnostics import render_human, render_json, run_doctor
+from .diagnostics import (
+    render_human,
+    render_json,
+    run_doctor,
+)
 from .onboarding import (
     ProviderDetection,
     SetupError,
@@ -305,7 +311,9 @@ def setup_command(
     )
 
     if recommend_backend(detections) is None and endpoint is None and not assume_defaults:
-        if typer.confirm("No loaded model was found. Enter an OpenAI-compatible endpoint", default=True):
+        if typer.confirm(
+            "No loaded model was found. Enter an OpenAI-compatible endpoint", default=True
+        ):
             manual = typer.prompt("Endpoint URL")
             detections = detect_providers(explicit_endpoint=manual)
             for detection in detections:
@@ -404,11 +412,18 @@ def setup_command(
 
 @app.command("doctor")
 def doctor_command(
+    repo: Path | None = typer.Option(
+        None, "--repo", help="Repository to inspect without mutation."
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable diagnostics."),
 ) -> None:
     """Check configuration, model, service, storage, repository, and console health."""
 
-    report = run_doctor()
+    try:
+        report = run_doctor(repository=repo)
+    except RepositoryDiagnosticError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(2) from error
     typer.echo(render_json(report) if json_output else render_human(report))
     if not report.healthy:
         raise typer.Exit(1)

@@ -18,7 +18,7 @@ from .client import ClientError, LocalClient, is_loopback_host
 from .config import AgentdPaths, Limits, ServerConfig, SyncConfig
 from .spool import SQLiteSpool
 from .adapters import ADAPTERS
-from .platform_process import windows_creation_flags
+from .platform_process import windows_creation_flags, windows_process_exists
 from .local_import import LocalRunImporter
 
 
@@ -113,6 +113,8 @@ def run_foreground_service(paths: AgentdPaths, limits: Limits | None = None) -> 
 def _pid_exists(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        return windows_process_exists(pid)
     if os.name != "nt":
         try:
             waited, _status = os.waitpid(pid, getattr(os, "WNOHANG", 1))

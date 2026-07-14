@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { JSDOM } from "jsdom";
 import { event } from "../src/normalize/events.js";
 import { renderDashboard } from "../src/render/dashboard.js";
 import {
@@ -7,6 +6,7 @@ import {
   diffFromEvents,
 } from "../src/render/deriveDetails.js";
 import { ParsedSession } from "../src/providers/types.js";
+import { testResources } from "./helpers/testResources.js";
 
 const session = (events: ParsedSession["events"]): ParsedSession => ({
   provider: "git",
@@ -15,7 +15,7 @@ const session = (events: ParsedSession["events"]): ParsedSession => ({
   warnings: [],
 });
 const textForTab = (html: string, tab: string) => {
-  const dom = new JSDOM(html, { runScripts: "dangerously" });
+  const dom = testResources.dom(html, { runScripts: "dangerously" });
   const doc = dom.window.document;
   doc.querySelector<HTMLElement>(`[data-tab="${tab}"]`)?.click();
   return doc.querySelector("#detailContent")?.textContent ?? "";

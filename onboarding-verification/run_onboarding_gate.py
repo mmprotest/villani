@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACTS = ROOT / "onboarding-verification" / "artifacts" / "latest"
@@ -49,7 +51,9 @@ def _safe_artifacts(path: Path) -> Path:
         if "pytest-" not in str(resolved).lower() and not os.environ.get(
             "VILLANI_ONBOARDING_ALLOW_EXTERNAL_ARTIFACTS"
         ):
-            raise GateFailure(f"refusing artifact path outside onboarding-verification: {resolved}")
+            raise GateFailure(
+                f"refusing artifact path outside onboarding-verification: {resolved}"
+            )
     return resolved
 
 
@@ -123,11 +127,382 @@ def _wait_for_endpoint(process: subprocess.Popen[bytes], path: Path) -> str:
     raise GateFailure("fixture model service did not publish its endpoint")
 
 
+def _git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        shell=False,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise GateFailure(
+            f"git {' '.join(arguments)} failed in {repository}: {completed.stderr.strip()}"
+        )
+    return completed
+
+
+def _delivery_repository(root: Path, name: str) -> Path:
+    repository = root / name
+    repository.mkdir(parents=True)
+    _git(repository, "init", "-b", "main")
+    _git(repository, "config", "user.name", "Villani Design Partner Gate")
+    _git(repository, "config", "user.email", "gate@villani.invalid")
+    (repository / "calculator.py").write_text(
+        '"""Tiny disposable Villani delivery sample."""\n\n'
+        "\ndef add(left: int, right: int) -> int:\n"
+        "    return left + right\n",
+        encoding="utf-8",
+    )
+    (repository / "test_calculator.py").write_text(
+        "import unittest\n\n"
+        "from calculator import add\n\n\n"
+        "class CalculatorTests(unittest.TestCase):\n"
+        "    def test_add(self):\n"
+        "        self.assertEqual(add(2, 3), 5)\n\n\n"
+        "if __name__ == '__main__':\n"
+        "    unittest.main()\n",
+        encoding="utf-8",
+    )
+    _git(repository, "add", "calculator.py", "test_calculator.py")
+    _git(repository, "commit", "-m", "delivery fixture baseline")
+    return repository.resolve()
+
+
+def _repository_snapshot(repository: Path) -> dict[str, str]:
+    return {
+        "head": _git(repository, "rev-parse", "HEAD").stdout.strip(),
+        "branch": _git(repository, "symbolic-ref", "--short", "HEAD").stdout.strip(),
+        "status": _git(
+            repository, "status", "--porcelain", "--untracked-files=all"
+        ).stdout,
+    }
+
+
+def _atomic_delivery_configuration(
+    path: Path, *, allow_automatic: bool, provider: str = "fixture"
+) -> None:
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise GateFailure("setup configuration is not a YAML object")
+    delivery = document.setdefault("delivery", {})
+    if not isinstance(delivery, dict):
+        raise GateFailure("setup delivery configuration is not a YAML object")
+    delivery["provider"] = provider
+    authority = delivery.setdefault("authority_policy", {})
+    if not isinstance(authority, dict):
+        raise GateFailure("setup delivery authority is not a YAML object")
+    authority["allow_automatic"] = allow_automatic
+    temporary = path.with_suffix(".yaml.tmp")
+    temporary.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _new_run_directory(home: Path, previous: set[str]) -> Path:
+    runs_root = home / "runs"
+    current = {
+        item.name
+        for item in runs_root.glob("run_*")
+        if item.is_dir() and item.name != ".locks"
+    }
+    created = sorted(current - previous)
+    if len(created) != 1:
+        raise GateFailure(f"expected one new run directory, found {created}")
+    return runs_root / created[0]
+
+
+def _assert_terminal_explanation(output: str) -> None:
+    for marker in (
+        "ACCEPTED",
+        "Delivery:",
+        "Changed:",
+        "Confidence and authority:",
+        "Validation:",
+        "Cost:",
+        "Villani recovery:",
+        "Next:",
+    ):
+        if marker not in output:
+            raise GateFailure(f"terminal result omitted required section: {marker}")
+
+
+def _prove_delivery_modes(
+    *,
+    records: list[CommandRecord],
+    artifacts: Path,
+    prefix: list[str],
+    env: dict[str, str],
+    home: Path,
+    work: Path,
+) -> dict[str, Any]:
+    repositories = work / "delivery-repositories"
+    repositories.mkdir(parents=True)
+    configuration_path = home / "config.yaml"
+    _atomic_delivery_configuration(configuration_path, allow_automatic=True)
+    env["VILLANI_APPROVER"] = "design-partner-gate"
+    task = "Add a typed subtract(left, right) function and a passing unittest."
+    validation = "python -m unittest -q"
+    results: dict[str, Any] = {}
+    sequence = 20
+
+    def execute(
+        name: str,
+        mode: str,
+        *,
+        require_success: bool = True,
+    ) -> tuple[Path, Path, subprocess.CompletedProcess[str], dict[str, str]]:
+        nonlocal sequence
+        repository = _delivery_repository(repositories, name)
+        before = _repository_snapshot(repository)
+        previous = {
+            item.name for item in (home / "runs").glob("run_*") if item.is_dir()
+        }
+        completed = _run(
+            records,
+            artifacts,
+            f"{sequence:02d}-delivery-{name}",
+            [
+                *prefix,
+                "run",
+                task,
+                "--repo",
+                str(repository),
+                "--success-criteria",
+                "subtract(8, 3) returns 5 and repository tests pass",
+                "--validation-command",
+                validation,
+                "--delivery",
+                mode,
+                "--max-attempts",
+                "1",
+            ],
+            env=env,
+            timeout=180,
+            require_success=require_success,
+        )
+        sequence += 1
+        return repository, _new_run_directory(home, previous), completed, before
+
+    suggest_repo, suggest_run, suggest, suggest_before = execute("suggest", "suggest")
+    suggest_delivery = json.loads(
+        (suggest_run / "delivery.json").read_text(encoding="utf-8")
+    )
+    if _repository_snapshot(suggest_repo) != suggest_before:
+        raise GateFailure("suggest delivery changed its target repository")
+    if suggest_delivery.get("state") != "suggested":
+        raise GateFailure("suggest delivery did not persist the suggested state")
+    if not (suggest_run / "delivery" / "selected.patch").is_file():
+        raise GateFailure("suggest delivery did not preserve the selected patch")
+    if not (suggest_run / "verification" / "attempt_001.json").is_file():
+        raise GateFailure("suggest delivery did not preserve verification evidence")
+    _assert_terminal_explanation(suggest.stdout)
+    results["suggest"] = {
+        "status": "passed",
+        "run_id": suggest_run.name,
+        "repository_unchanged": True,
+        "selected_patch_preserved": True,
+        "evidence_preserved": True,
+    }
+
+    approve_repo, approve_run, initial_approval, approve_before = execute(
+        "approve", "approve"
+    )
+    initial_state = json.loads((approve_run / "state.json").read_text(encoding="utf-8"))
+    if initial_state.get("state") != "AWAITING_APPROVAL":
+        raise GateFailure("approve delivery did not reach AWAITING_APPROVAL")
+    if _repository_snapshot(approve_repo) != approve_before:
+        raise GateFailure("approve delivery mutated the repository before approval")
+    approved = _run(
+        records,
+        artifacts,
+        f"{sequence:02d}-delivery-approve-restarted",
+        [*prefix, "approve", approve_run.name, "--reason", "Gate evidence reviewed."],
+        env=env,
+        timeout=120,
+    )
+    sequence += 1
+    approve_delivery = json.loads(
+        (approve_run / "delivery.json").read_text(encoding="utf-8")
+    )
+    approval_audit = (approve_run / "approval-audit.jsonl").read_text(encoding="utf-8")
+    if approve_delivery.get("state") != "applied" or "def subtract" not in (
+        approve_repo / "calculator.py"
+    ).read_text(encoding="utf-8"):
+        raise GateFailure("restarted approval did not apply the selected patch")
+    if (
+        "design-partner-gate" not in approval_audit
+        or '"action":"approve"' not in approval_audit
+    ):
+        raise GateFailure("approval audit did not record the actor and action")
+    _assert_terminal_explanation(approved.stdout)
+    results["approve"] = {
+        "status": "passed",
+        "run_id": approve_run.name,
+        "initial_cli_exit_code": initial_approval.returncode,
+        "persisted_across_process_restart": True,
+        "actor": "design-partner-gate",
+        "applied_after_approval": True,
+    }
+
+    reject_repo, reject_run, _pending_rejection, reject_before = execute(
+        "reject", "approve"
+    )
+    _run(
+        records,
+        artifacts,
+        f"{sequence:02d}-delivery-reject-restarted",
+        [*prefix, "reject", reject_run.name, "--reason", "Gate rejection proof."],
+        env=env,
+        timeout=120,
+    )
+    sequence += 1
+    reject_delivery = json.loads(
+        (reject_run / "delivery.json").read_text(encoding="utf-8")
+    )
+    if _repository_snapshot(reject_repo) != reject_before:
+        raise GateFailure("rejected delivery changed its target repository")
+    if (
+        reject_delivery.get("state") != "rejected"
+        or not (reject_run / "delivery" / "selected.patch").is_file()
+    ):
+        raise GateFailure("rejection did not preserve the selected patch")
+    results["reject"] = {
+        "status": "passed",
+        "run_id": reject_run.name,
+        "repository_unchanged": True,
+        "selected_patch_preserved": True,
+    }
+
+    _atomic_delivery_configuration(configuration_path, allow_automatic=False)
+    denied_repo, denied_run, denied, denied_before = execute(
+        "apply-denied", "apply", require_success=False
+    )
+    denied_delivery = json.loads(
+        (denied_run / "delivery.json").read_text(encoding="utf-8")
+    )
+    if denied.returncode != 4:
+        raise GateFailure(
+            f"authority-denied apply exited {denied.returncode}, expected 4"
+        )
+    if _repository_snapshot(denied_repo) != denied_before:
+        raise GateFailure("authority-denied apply changed its target repository")
+    if (denied_delivery.get("failure") or {}).get(
+        "code"
+    ) != "delivery_authority_insufficient":
+        raise GateFailure("authority-denied apply did not fail closed")
+    if not (denied_run / "delivery" / "selected.patch").is_file():
+        raise GateFailure("authority-denied apply lost its selected patch")
+
+    _atomic_delivery_configuration(configuration_path, allow_automatic=True)
+    apply_repo, apply_run, applied, _apply_before = execute("apply", "apply")
+    apply_delivery = json.loads(
+        (apply_run / "delivery.json").read_text(encoding="utf-8")
+    )
+    if apply_delivery.get("state") != "applied" or not (
+        (apply_delivery.get("authority") or {}).get("permitted")
+    ):
+        raise GateFailure("authority-permitted apply did not apply")
+    if "def subtract" not in (apply_repo / "calculator.py").read_text(encoding="utf-8"):
+        raise GateFailure("authority-permitted apply omitted the selected patch")
+    _assert_terminal_explanation(applied.stdout)
+    results["apply"] = {
+        "status": "passed",
+        "run_id": apply_run.name,
+        "insufficient_authority_failed_closed": True,
+        "denied_run_id": denied_run.name,
+        "permitted_authority_applied": True,
+        "repository_identity_validated": bool(
+            ((apply_delivery.get("result") or {}).get("delivery_receipt") or {})
+            .get("metadata", {})
+            .get("repository_identity_validated")
+        ),
+    }
+
+    branch_repo, branch_run, branched, branch_before = execute("branch", "branch")
+    branch_delivery = json.loads(
+        (branch_run / "delivery.json").read_text(encoding="utf-8")
+    )
+    branch_metadata = (
+        (branch_delivery.get("result") or {}).get("delivery_receipt") or {}
+    ).get("metadata") or {}
+    branch_worktree = Path(str(branch_metadata.get("delivery_worktree") or ""))
+    if _repository_snapshot(branch_repo) != branch_before:
+        raise GateFailure("branch delivery changed the original branch or working tree")
+    if not branch_worktree.is_dir() or "def subtract" not in (
+        branch_worktree / "calculator.py"
+    ).read_text(encoding="utf-8"):
+        raise GateFailure(
+            "branch delivery worktree does not contain the selected patch"
+        )
+    if (
+        not branch_metadata.get("branch")
+        or not (branch_run / "delivery" / "selected.patch").is_file()
+    ):
+        raise GateFailure("branch delivery omitted durable branch or patch metadata")
+    _assert_terminal_explanation(branched.stdout)
+    results["branch"] = {
+        "status": "passed",
+        "run_id": branch_run.name,
+        "original_repository_unchanged": True,
+        "branch": branch_metadata["branch"],
+        "worktree": str(branch_worktree),
+        "selected_patch_preserved": True,
+    }
+
+    pr_repo, pr_run, pull_request, pr_before = execute("pull-request", "pull-request")
+    pr_delivery = json.loads((pr_run / "delivery.json").read_text(encoding="utf-8"))
+    pr_metadata = ((pr_delivery.get("result") or {}).get("delivery_receipt") or {}).get(
+        "metadata"
+    ) or {}
+    pr_body = (pr_run / "delivery" / "pull-request-body.md").read_text(encoding="utf-8")
+    required_body = (
+        "## Task",
+        "## Summary",
+        "## Changed files",
+        "## Validation",
+        "## Verifier authority",
+        "## Attempts and recovery",
+        "## Cost",
+        "generated by an agent",
+    )
+    if _repository_snapshot(pr_repo) != pr_before:
+        raise GateFailure("pull-request delivery changed the original working tree")
+    if not pr_metadata.get("commit") or not str(
+        (pr_metadata.get("pull_request") or {}).get("url") or ""
+    ).startswith("fixture://pull/"):
+        raise GateFailure(
+            "pull-request fixture did not record commit, push, and PR creation"
+        )
+    if any(marker not in pr_body for marker in required_body):
+        raise GateFailure("pull-request body omitted required design-partner content")
+    if "agentd.sqlite" in pr_body.lower() or "database_id" in pr_body.lower():
+        raise GateFailure("pull-request body exposed an internal database identifier")
+    _assert_terminal_explanation(pull_request.stdout)
+    results["pull_request"] = {
+        "status": "passed",
+        "run_id": pr_run.name,
+        "branch": pr_metadata.get("branch"),
+        "commit": pr_metadata.get("commit"),
+        "push": pr_metadata.get("push"),
+        "pull_request": pr_metadata.get("pull_request"),
+        "body_path": str(pr_run / "delivery" / "pull-request-body.md"),
+        "original_repository_unchanged": True,
+        "sensitive_content_absent": not any(
+            marker.lower() in pr_body.lower()
+            for marker in ("authorization: bearer", "api_key=", "sk-villani-")
+        ),
+    }
+    return results
+
+
 def _transcript_html(setup: str, doctor: str, open_output: str) -> str:
     def panel(identifier: str, title: str, command: str, body: str) -> str:
         return (
             f'<section id="{identifier}" class="panel"><header><i></i><b>{html.escape(title)}</b>'
-            f'<span>{html.escape(command)}</span></header><pre>{html.escape(body)}</pre></section>'
+            f"<span>{html.escape(command)}</span></header><pre>{html.escape(body)}</pre></section>"
         )
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -140,9 +515,9 @@ header i{{width:11px;height:11px;border-radius:50%;background:#45dfa7;box-shadow
 pre{{white-space:pre-wrap;word-break:break-word;margin:0;padding:22px;color:#dce6ff}}.stamp{{color:#56e0ae;font:700 14px Inter,system-ui,sans-serif;margin-bottom:12px}}
 </style></head><body><main><div class="stamp">RECORDED INTEGRATION · {html.escape(utc_now())}</div><h1>Villani first-run setup</h1>
 <p class="lede">Detected model → atomic configuration → service → diagnostic → sample task.</p>
-{panel('setup', 'Guided setup and sample task', 'villani setup', setup)}
-{panel('doctor', 'Environment diagnostics', 'villani doctor', doctor)}
-{panel('open', 'Console handoff', 'villani open', open_output)}
+{panel("setup", "Guided setup and sample task", "villani setup", setup)}
+{panel("doctor", "Environment diagnostics", "villani doctor", doctor)}
+{panel("open", "Console handoff", "villani open", open_output)}
 </main></body></html>"""
 
 
@@ -247,23 +622,53 @@ def run_gate(
             env=env,
             cwd=sample_path,
         )
-        if "def subtract" not in (sample_path / "calculator.py").read_text(encoding="utf-8"):
+        if "def subtract" not in (sample_path / "calculator.py").read_text(
+            encoding="utf-8"
+        ):
             raise GateFailure("materialized sample patch does not contain subtract")
+        sample_run_roots = sorted((home / "runs").glob("run_*"))
+        if len(sample_run_roots) != 1:
+            raise GateFailure(
+                f"expected one recorded sample run, found {len(sample_run_roots)}"
+            )
+        sample_run_root = sample_run_roots[0]
+        manifest = json.loads(
+            (sample_run_root / "manifest.json").read_text(encoding="utf-8")
+        )
+        if manifest.get("final_state") != "COMPLETED" or not manifest.get(
+            "selected_attempt_id"
+        ):
+            raise GateFailure("sample run did not reach a selected COMPLETED result")
         doctor_json = _run(
             records,
             artifacts,
             "04-doctor-json",
-            [*prefix, "doctor", "--json"],
+            [*prefix, "doctor", "--repo", str(sample_path), "--json"],
             env=env,
         )
         doctor_document = json.loads(doctor_json.stdout)
-        if not doctor_document.get("healthy") or doctor_document.get("summary", {}).get("failed") != 0:
+        if (
+            not doctor_document.get("healthy")
+            or not doctor_document.get("ok")
+            or doctor_document.get("summary", {}).get("failed") != 0
+        ):
             raise GateFailure("doctor did not report a healthy configured installation")
+        if doctor_document.get("inferred_commands_executed") is not False:
+            raise GateFailure(
+                "doctor executed or misreported inferred validation commands"
+            )
+        connectivity = doctor_document.get("backend_connectivity") or []
+        if not connectivity or any(
+            item.get("model_tokens_spent") != 0
+            for item in connectivity
+            if isinstance(item, dict)
+        ):
+            raise GateFailure("doctor did not prove zero model-token spending")
         doctor_human = _run(
             records,
             artifacts,
             "05-doctor-human",
-            [*prefix, "doctor"],
+            [*prefix, "doctor", "--repo", str(sample_path)],
             env=env,
         )
         opened = _run(
@@ -281,11 +686,21 @@ def run_gate(
             env=env,
         )
         service_document = json.loads(service.stdout)
-        if not service_document.get("running") or not service_document.get("console_url"):
+        if not service_document.get("running") or not service_document.get(
+            "console_url"
+        ):
             raise GateFailure("service did not report a running console")
         console_url = str(service_document["console_url"])
         if console_url not in opened.stdout:
             raise GateFailure("villani open did not return the running console URL")
+        delivery_modes = _prove_delivery_modes(
+            records=records,
+            artifacts=artifacts,
+            prefix=prefix,
+            env=env,
+            home=home,
+            work=work,
+        )
         transcript = artifacts / "setup-flow.html"
         transcript.write_text(
             _transcript_html(setup.stdout, doctor_human.stdout, opened.stdout),
@@ -295,7 +710,9 @@ def run_gate(
         if not skip_screenshots:
             node = shutil.which("node")
             if not node:
-                raise GateFailure("Node.js is required to capture onboarding screenshots")
+                raise GateFailure(
+                    "Node.js is required to capture onboarding screenshots"
+                )
             _run(
                 records,
                 artifacts,
@@ -307,6 +724,8 @@ def run_gate(
                     str(transcript),
                     "--console-url",
                     console_url,
+                    "--run-id",
+                    manifest["run_id"],
                     "--output",
                     str(artifacts),
                 ],
@@ -316,17 +735,15 @@ def run_gate(
                 artifacts / "screenshots" / "01-setup-flow.png",
                 artifacts / "screenshots" / "02-doctor.png",
                 artifacts / "screenshots" / "03-villani-console.png",
+                artifacts / "screenshots" / "04-sample-run.png",
+                artifacts / "screenshots" / "05-sample-replay.png",
             )
             for path in expected:
                 if not path.is_file() or path.stat().st_size < 1_000:
-                    raise GateFailure(f"required screenshot is missing or empty: {path}")
+                    raise GateFailure(
+                        f"required screenshot is missing or empty: {path}"
+                    )
                 screenshots.append(str(path))
-        run_roots = sorted((home / "runs").glob("run_*"))
-        if len(run_roots) != 1:
-            raise GateFailure(f"expected one recorded sample run, found {len(run_roots)}")
-        manifest = json.loads((run_roots[0] / "manifest.json").read_text(encoding="utf-8"))
-        if manifest.get("final_state") != "COMPLETED" or not manifest.get("selected_attempt_id"):
-            raise GateFailure("sample run did not reach a selected COMPLETED result")
         report.update(
             {
                 "verdict": "ONBOARDING GATE PASSED",
@@ -342,6 +759,7 @@ def run_gate(
                 "sample_run_id": manifest["run_id"],
                 "sample_final_state": manifest["final_state"],
                 "sample_selected_attempt": manifest["selected_attempt_id"],
+                "delivery_modes": delivery_modes,
                 "screenshots": screenshots,
             }
         )
@@ -353,15 +771,17 @@ def run_gate(
             stopped = _run(
                 records,
                 artifacts,
-                "09-service-stop",
+                "99-service-stop",
                 [*prefix, "service", "stop", "--json"],
                 env=env,
                 timeout=30,
                 require_success=False,
             )
-            stopped_document = json.loads(stopped.stdout) if stopped.stdout.strip() else {}
-            report["service_stopped"] = stopped.returncode == 0 and not stopped_document.get(
-                "running", True
+            stopped_document = (
+                json.loads(stopped.stdout) if stopped.stdout.strip() else {}
+            )
+            report["service_stopped"] = (
+                stopped.returncode == 0 and not stopped_document.get("running", True)
             )
         except Exception as stop_error:
             report["service_stopped"] = False

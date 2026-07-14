@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+from collections.abc import Mapping
 from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
@@ -75,25 +76,63 @@ class Backend(BaseModel):
         )
         return {**value, "billing_mode": "token" if positive_price else "unknown"}
 
-    def resolved_api_key(self) -> str | None:
-        if self.api_key_env:
-            return os.environ.get(self.api_key_env)
-        return self.api_key if self.api_key != "***REDACTED***" else None
+    @staticmethod
+    def _usable_direct_credential(value: str | None) -> bool:
+        return bool(value and value.strip()) and value.strip() not in {
+            "***REDACTED***",
+            "[REDACTED]",
+            "REDACTED",
+        }
+
+    def credential_reference_configured(self) -> bool:
+        """Return whether configuration contains a usable credential reference.
+
+        This is deliberately structural: it never reads the referenced
+        environment variable. Direct credentials remain readable for legacy
+        configurations, while setup-generated configuration uses ``api_key_env``.
+        """
+
+        return self._usable_direct_credential(self.api_key) or bool(
+            self.api_key_env and self.api_key_env.strip()
+        )
+
+    def resolved_api_key(self, environ: Mapping[str, str] | None = None) -> str | None:
+        values = os.environ if environ is None else environ
+        if self.api_key_env and self.api_key_env.strip():
+            value = values.get(self.api_key_env.strip())
+            return value if value and value.strip() else None
+        return self.api_key if self._usable_direct_credential(self.api_key) else None
+
+    def runtime_credential_available(
+        self, environ: Mapping[str, str] | None = None
+    ) -> bool:
+        return self.resolved_api_key(environ) is not None
+
+    def require_runtime_credential(
+        self, environ: Mapping[str, str] | None = None
+    ) -> str:
+        value = self.resolved_api_key(environ)
+        if value is not None:
+            return value
+        if self.api_key_env and self.api_key_env.strip():
+            raise ValueError(
+                f"backend {self.name!r} credential environment variable "
+                f"{self.api_key_env.strip()} is missing or empty"
+            )
+        raise ValueError(f"backend {self.name!r} has no usable credential reference")
 
     def api_key_configured(self) -> bool:
-        if self.api_key not in {None, "", "***REDACTED***"}:
-            return True
-        if self.api_key_env:
-            return bool(os.environ.get(self.api_key_env))
-        return False
+        """Backward-compatible alias for structural configuration checks."""
+
+        return self.credential_reference_configured()
 
     def api_key_status(self) -> str:
-        if self.api_key not in {None, "", "***REDACTED***"}:
+        if self._usable_direct_credential(self.api_key):
             return "direct_key_configured"
-        if self.api_key_env:
+        if self.api_key_env and self.api_key_env.strip():
             return (
                 "env_var_present"
-                if os.environ.get(self.api_key_env)
+                if self.runtime_credential_available()
                 else "env_var_missing"
             )
         return "missing"

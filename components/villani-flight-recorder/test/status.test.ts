@@ -6,11 +6,11 @@ import { deriveReplayStatus } from "../src/render/deriveReplayStatus.js";
 import { deriveExecutionGraph } from "../src/render/deriveGraph.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const exec = promisify(execFile);
 const fx = (p: string) => path.resolve("test/fixtures", p);
+import { testResources } from "./helpers/testResources.js";
 
 describe("status derivation", () => {
   it("keeps replay status separate from captured failures", async () => {
@@ -38,7 +38,7 @@ describe("status derivation", () => {
   });
 
   it("git-only captured status is not applicable", async () => {
-    const d = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-status-"));
+    const d = await testResources.temporaryDirectory("vfr-status-");
     await exec("git", ["init"], { cwd: d });
     await exec("git", ["config", "user.email", "a@b.c"], { cwd: d });
     await exec("git", ["config", "user.name", "A"], { cwd: d });

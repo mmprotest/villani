@@ -22,9 +22,42 @@ def _run(command: list[str], environment: dict[str, str]) -> None:
     subprocess.run(command, env=environment, check=True, capture_output=True, text=True)
 
 
+def _tool_command(
+    tool: str,
+    arguments: list[str],
+    *,
+    environment: dict[str, str],
+    container: str | None,
+) -> None:
+    if not container:
+        _run([tool, *arguments], environment)
+        return
+    command = ["docker", "exec"]
+    if environment.get("PGPASSWORD"):
+        command.extend(["--env", f"PGPASSWORD={environment['PGPASSWORD']}"])
+    command.extend([container, tool, *arguments])
+    _run(command, environment)
+
+
+def _container_url(source_url: str) -> str:
+    parsed = urllib.parse.urlsplit(source_url)
+    credentials = parsed.username or ""
+    if parsed.password:
+        credentials += ":" + urllib.parse.quote(urllib.parse.unquote(parsed.password))
+    authority = f"{credentials}@127.0.0.1:5432" if credentials else "127.0.0.1:5432"
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, authority, parsed.path, parsed.query, parsed.fragment)
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default=os.environ.get("VILLANI_TEST_POSTGRES_URL"))
+    parser.add_argument(
+        "--docker-container",
+        default=os.environ.get("VILLANI_POSTGRES_DOCKER_CONTAINER"),
+        help="Use PostgreSQL client tools already present in this container.",
+    )
     args = parser.parse_args()
     if not args.url:
         raise SystemExit("--url or VILLANI_TEST_POSTGRES_URL is required")
@@ -37,29 +70,79 @@ def main() -> int:
     environment = os.environ.copy()
     if parsed.password:
         environment["PGPASSWORD"] = urllib.parse.unquote(parsed.password)
+    tool_source_url = (
+        _container_url(source_url) if args.docker_container else source_url
+    )
+    tool_restored_url = (
+        _container_url(restored_url) if args.docker_container else restored_url
+    )
     with tempfile.TemporaryDirectory(prefix="villani-pg-backup-") as temporary:
-        backup = Path(temporary) / "representative.dump"
-        _run(["pg_dump", "--format=custom", "--file", str(backup), source_url], environment)
-        _run(["createdb", "--maintenance-db", source_url, restored_name], environment)
+        backup = (
+            f"/tmp/villani-{uuid.uuid4().hex}.dump"
+            if args.docker_container
+            else str(Path(temporary) / "representative.dump")
+        )
+        _tool_command(
+            "pg_dump",
+            ["--format=custom", "--file", backup, tool_source_url],
+            environment=environment,
+            container=args.docker_container,
+        )
+        _tool_command(
+            "createdb",
+            ["--maintenance-db", tool_source_url, restored_name],
+            environment=environment,
+            container=args.docker_container,
+        )
         try:
-            _run(["pg_restore", "--dbname", restored_url, str(backup)], environment)
+            _tool_command(
+                "pg_restore",
+                ["--dbname", tool_restored_url, backup],
+                environment=environment,
+                container=args.docker_container,
+            )
             source = create_engine(args.url)
             restored = create_engine(args.url.rsplit("/", 1)[0] + f"/{restored_name}")
-            with source.connect() as source_connection, restored.connect() as restored_connection:
+            with (
+                source.connect() as source_connection,
+                restored.connect() as restored_connection,
+            ):
                 source_tables = source_connection.scalar(
-                    text("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+                    text(
+                        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+                    )
                 )
                 restored_tables = restored_connection.scalar(
-                    text("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+                    text(
+                        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+                    )
                 )
-                source_runs = source_connection.scalar(text("SELECT count(*) FROM runs"))
-                restored_runs = restored_connection.scalar(text("SELECT count(*) FROM runs"))
+                source_runs = source_connection.scalar(
+                    text("SELECT count(*) FROM runs")
+                )
+                restored_runs = restored_connection.scalar(
+                    text("SELECT count(*) FROM runs")
+                )
             source.dispose()
             restored.dispose()
             if source_tables != restored_tables or source_runs != restored_runs:
-                raise SystemExit("restored database does not match representative source counts")
+                raise SystemExit(
+                    "restored database does not match representative source counts"
+                )
         finally:
-            _run(["dropdb", "--maintenance-db", source_url, restored_name], environment)
+            _tool_command(
+                "dropdb",
+                ["--maintenance-db", tool_source_url, restored_name],
+                environment=environment,
+                container=args.docker_container,
+            )
+            if args.docker_container:
+                _tool_command(
+                    "rm",
+                    ["-f", backup],
+                    environment=environment,
+                    container=args.docker_container,
+                )
     print("PostgreSQL representative backup/restore: passed")
     return 0
 

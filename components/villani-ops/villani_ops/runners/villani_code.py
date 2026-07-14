@@ -11,7 +11,7 @@ from pathlib import Path
 from .base import CandidateExecutionAcknowledgement, RunnerContext, RunnerResult
 from .villani_code_debug import write_runner_telemetry
 from villani_ops.subprocess_utils import resolve_command_prefix
-from villani_ops.providers import villani_code_provider
+from villani_ops.providers import validate_runtime_credentials, villani_code_provider
 
 
 def provider_for_villani_code_cli(provider: str) -> str:
@@ -33,6 +33,7 @@ class VillaniCodeRunner:
         return f"""Strategy: {strategy}\n{instructions[strategy]}\n\nObjective:\n{c.task_instruction}\n\nSuccess criteria:\n{c.success_criteria or "Not provided"}\n\nAttempt: {c.attempt_id}\nWork only in repo: {c.repo_path}\n"""
 
     def run(self, context: RunnerContext) -> RunnerResult:
+        validate_runtime_credentials(context.backend)
         command_name = context.backend.command_name or "villani-code"
         command_prefix = (
             [command_name]
@@ -51,7 +52,7 @@ class VillaniCodeRunner:
             "agent": str(requested.get("agent") or "villani-code"),
             "backend_name": str(requested.get("backend_name") or context.backend.name),
             "model": requested.get("model") or context.backend.model,
-            "prompt_strategy_id": str(requested.get("prompt_strategy_id") or "direct")
+            "prompt_strategy_id": str(requested.get("prompt_strategy_id") or "direct"),
         }
         unsupported = {
             key: value

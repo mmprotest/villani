@@ -16,12 +16,14 @@ from typing import Any, Mapping
 
 from villani_agentd.config import AgentdPaths, Limits
 from villani_agentd.spool import SQLiteSpool
+from villani_ops.diagnostics import (
+    build_repository_diagnostics,
+    resolve_doctor_repository,
+)
 
 from .onboarding import (
-    ProviderDetection,
     SetupError,
     load_configuration,
-    test_backend,
     utc_now,
     validate_configuration,
 )
@@ -45,12 +47,14 @@ class DiagnosticReport:
     generated_at: str
     healthy: bool
     checks: tuple[DiagnosticCheck, ...]
+    details: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema_version": "villani.doctor.v1",
             "generated_at": self.generated_at,
             "healthy": self.healthy,
+            "ok": self.healthy,
             "summary": {
                 "passed": sum(item.status == "pass" for item in self.checks),
                 "warnings": sum(item.status == "warn" for item in self.checks),
@@ -58,6 +62,17 @@ class DiagnosticReport:
             },
             "checks": [item.as_dict() for item in self.checks],
         }
+        value.update(self.details)
+        value["schema_version"] = "villani.doctor.v1"
+        value["healthy"] = self.healthy
+        value["ok"] = self.healthy
+        value["summary"] = {
+            "passed": sum(item.status == "pass" for item in self.checks),
+            "warnings": sum(item.status == "warn" for item in self.checks),
+            "failed": sum(item.status == "fail" for item in self.checks),
+        }
+        value["checks"] = [item.as_dict() for item in self.checks]
+        return value
 
 
 _COMPONENTS = {
@@ -130,41 +145,20 @@ def _package_health_check() -> DiagnosticCheck:
     )
 
 
-def _repository_check(configuration: Mapping[str, Any] | None) -> DiagnosticCheck:
-    setup = configuration.get("setup") if isinstance(configuration, Mapping) else None
-    configured = setup.get("repository") if isinstance(setup, Mapping) else None
-    candidate = Path(str(configured)).expanduser() if configured else Path.cwd()
-    try:
-        resolved = candidate.resolve()
-        completed = subprocess.run(
-            ["git", "-C", str(resolved), "rev-parse", "--is-inside-work-tree"],
-            text=True,
-            capture_output=True,
-            check=False,
-            shell=False,
-            timeout=5,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+def _repository_check(repository: Path | None, source: str, *, explicit: bool) -> DiagnosticCheck:
+    if repository is None:
         return DiagnosticCheck(
             "repository_access",
-            "fail",
-            f"Repository cannot be inspected at {candidate}.",
-            "Open a terminal in an accessible Git repository, then run: villani setup",
-            {"path": str(candidate)},
-        )
-    if completed.returncode != 0:
-        return DiagnosticCheck(
-            "repository_access",
-            "fail",
-            f"No accessible Git repository was found at {resolved}.",
-            "Open a terminal in a Git repository, then run: villani setup",
-            {"path": str(resolved)},
+            "fail" if explicit else "warn",
+            "No accessible Git repository is available for inspection.",
+            "Supply one with: villani doctor --repo PATH" if not explicit else None,
+            {"path": None, "source": source, "requested": explicit},
         )
     return DiagnosticCheck(
         "repository_access",
         "pass",
-        f"Repository is accessible at {resolved}.",
-        details={"path": str(resolved)},
+        f"Repository is accessible at {repository}.",
+        details={"path": str(repository), "source": source, "requested": explicit},
     )
 
 
@@ -197,27 +191,6 @@ def _git_check() -> DiagnosticCheck:
         )
     return DiagnosticCheck(
         "git", "pass", completed.stdout.strip(), details={"executable": executable}
-    )
-
-
-def _provider_detection(name: str, backend: Any) -> ProviderDetection:
-    metadata = backend.metadata if isinstance(backend.metadata, dict) else {}
-    identifier = str(metadata.get("setup_provider_identifier") or backend.provider)
-    display = {
-        "lm-studio": "LM Studio",
-        "ollama": "Ollama",
-        "llama-cpp": "llama.cpp",
-        "vllm": "vLLM",
-        "openai": "OpenAI",
-    }.get(identifier, name)
-    return ProviderDetection(
-        identifier,
-        display,
-        str(backend.base_url or ""),
-        "configured",
-        authentication_required=str(backend.provider) == "openai",
-        credential_environment_variable=backend.api_key_env,
-        credential_status=backend.api_key_status(),
     )
 
 
@@ -267,7 +240,9 @@ def _configuration_checks(
     return checks, configuration, backends
 
 
-def _backend_checks(backends: Mapping[str, Any]) -> list[DiagnosticCheck]:
+def _backend_checks(
+    backends: Mapping[str, Any], reports: list[dict[str, Any]]
+) -> list[DiagnosticCheck]:
     if not backends:
         return [
             DiagnosticCheck(
@@ -290,15 +265,23 @@ def _backend_checks(backends: Mapping[str, Any]) -> list[DiagnosticCheck]:
             },
         )
     ]
+    by_name = {str(item.get("name")): item for item in reports}
     for name, backend in sorted(backends.items()):
-        if str(backend.provider) == "openai" and not backend.api_key_configured():
+        probe = by_name.get(name, {})
+        credential_missing = probe.get("credential_status") in {
+            "missing",
+            "env_var_missing",
+        }
+        recovery = "Check the endpoint, load the selected model, then run: villani doctor"
+        if credential_missing:
+            variable = backend.api_key_env or "the configured credential variable"
             checks.append(
                 DiagnosticCheck(
                     f"model_server_reachability:{name}",
                     "fail",
-                    f"Backend {name} is missing its cloud credential.",
-                    f"Set {backend.api_key_env or 'the configured credential variable'}, then run: villani doctor",
-                    {"provider": str(backend.provider), "model": backend.model},
+                    f"Backend {name} cannot resolve its configured credential.",
+                    f"Set {variable}, then run: villani doctor",
+                    {**probe, "model_tokens_spent": 0},
                 )
             )
             checks.append(
@@ -306,25 +289,32 @@ def _backend_checks(backends: Mapping[str, Any]) -> list[DiagnosticCheck]:
                     f"model_availability:{name}",
                     "fail",
                     f"Model {backend.model} cannot be checked until the credential is configured.",
-                    f"Set {backend.api_key_env or 'the configured credential variable'}, then run: villani doctor",
-                    {"model": backend.model},
+                    f"Set {variable}, then run: villani doctor",
+                    {**probe, "model_tokens_spent": 0},
                 )
             )
             continue
-        detection = _provider_detection(name, backend)
-        probe = test_backend(detection, backend.model, timeout=3)
-        if probe.succeeded:
+        display = {
+            "lm-studio": "LM Studio",
+            "ollama": "Ollama",
+            "llama-cpp": "llama.cpp",
+            "vllm": "vLLM",
+            "openai": "OpenAI",
+        }.get(str(probe.get("setup_provider_identifier") or backend.provider), name)
+        if probe.get("usable") is True:
             checks.append(
                 DiagnosticCheck(
                     f"model_server_reachability:{name}",
                     "pass",
-                    f"{detection.display_name} is reachable.",
+                    f"{display} is reachable.",
                     details={
+                        **probe,
                         "provider": str(backend.provider),
                         "endpoint": backend.base_url,
                         "model": backend.model,
                         "capability": backend.metadata.get("capability_status", "unrated"),
                         "pricing": backend.billing_mode,
+                        "model_tokens_spent": 0,
                     },
                 )
             )
@@ -333,27 +323,22 @@ def _backend_checks(backends: Mapping[str, Any]) -> list[DiagnosticCheck]:
                     f"model_availability:{name}",
                     "pass",
                     f"Model {backend.model} is available.",
-                    details={"model": backend.model},
+                    details={**probe, "model": backend.model, "model_tokens_spent": 0},
                 )
             )
         else:
-            recovery = "Check the endpoint, load the selected model, then run: villani doctor"
-            reachable = probe.stage == "model"
+            reachable = bool(probe.get("endpoint_reachable"))
             checks.append(
                 DiagnosticCheck(
                     f"model_server_reachability:{name}",
                     "pass" if reachable else "fail",
-                    (
-                        f"{detection.display_name} is reachable."
-                        if reachable
-                        else f"{detection.display_name} is not reachable."
-                    ),
+                    (f"{display} is reachable." if reachable else f"{display} is not reachable."),
                     None if reachable else recovery,
-                    {"provider": str(backend.provider), "endpoint": backend.base_url},
+                    {**probe, "model_tokens_spent": 0},
                 )
             )
             message = f"Model {backend.model} is unavailable."
-            if detection.provider_identifier == "lm-studio":
+            if probe.get("setup_provider_identifier") == "lm-studio":
                 message = "LM Studio is reachable but no model is loaded."
                 recovery = "Load a model, then run: villani doctor"
             checks.append(
@@ -366,7 +351,8 @@ def _backend_checks(backends: Mapping[str, Any]) -> list[DiagnosticCheck]:
                         "provider": str(backend.provider),
                         "endpoint": backend.base_url,
                         "model": backend.model,
-                        "probe_stage": probe.stage,
+                        "probe_stage": probe.get("probe_status"),
+                        "model_tokens_spent": 0,
                     },
                 )
             )
@@ -400,11 +386,11 @@ def _storage_check(home: Path) -> DiagnosticCheck:
     )
 
 
-def _console_check(url: str | None) -> DiagnosticCheck:
+def _console_check(url: str | None, *, service_running: bool = False) -> DiagnosticCheck:
     if not url:
         return DiagnosticCheck(
             "browser_ui",
-            "fail",
+            "fail" if service_running else "warn",
             "Villani Console is unavailable because Villani Service is stopped.",
             "Run: villani service start",
         )
@@ -430,7 +416,12 @@ def _console_check(url: str | None) -> DiagnosticCheck:
     )
 
 
-def run_doctor(*, environ: Mapping[str, str] | None = None) -> DiagnosticReport:
+def run_doctor(
+    *,
+    repository: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    cwd: Path | None = None,
+) -> DiagnosticReport:
     env = dict(os.environ if environ is None else environ)
     home = villani_home(env)
     checks: list[DiagnosticCheck] = [
@@ -444,6 +435,13 @@ def run_doctor(*, environ: Mapping[str, str] | None = None) -> DiagnosticReport:
     ]
     configuration_checks, configuration, backends = _configuration_checks(home)
     checks.extend(configuration_checks)
+    setup = configuration.get("setup") if isinstance(configuration, Mapping) else None
+    saved_repository = setup.get("repository") if isinstance(setup, Mapping) else None
+    selected_repository, repository_source = resolve_doctor_repository(
+        explicit=repository,
+        saved=saved_repository,
+        cwd=cwd or Path.cwd(),
+    )
     try:
         status = service_status(env)
     except (OSError, ServiceError) as error:
@@ -467,12 +465,35 @@ def run_doctor(*, environ: Mapping[str, str] | None = None) -> DiagnosticReport:
                     details=status.as_dict(),
                 )
             )
-        else:
+        elif status.pid is not None and not status.stale_pid:
             checks.append(
                 DiagnosticCheck(
                     "service",
                     "fail",
-                    "Villani Service is stopped.",
+                    "Villani Service has an unresponsive process.",
+                    "Run: villani service stop, inspect the log, then run: villani service start",
+                    status.as_dict(),
+                )
+            )
+        elif status.last_error and status.installed:
+            checks.append(
+                DiagnosticCheck(
+                    "service",
+                    "fail",
+                    "Villani Service installation is present but unhealthy.",
+                    "Inspect the service log, then run: villani service restart",
+                    status.as_dict(),
+                )
+            )
+        else:
+            message = "Villani Service is stopped."
+            if status.stale_pid:
+                message = "Villani Service is stopped; a stale PID record was detected."
+            checks.append(
+                DiagnosticCheck(
+                    "service",
+                    "warn",
+                    message,
                     "Run: villani service start",
                     status.as_dict(),
                 )
@@ -515,9 +536,7 @@ def run_doctor(*, environ: Mapping[str, str] | None = None) -> DiagnosticReport:
                 if pending
                 else "No synchronization is pending."
             ),
-            "Leave Villani Service running and run: villani doctor"
-            if pending
-            else None,
+            "Leave Villani Service running and run: villani doctor" if pending else None,
             {"pending": pending},
         )
     )
@@ -537,13 +556,82 @@ def run_doctor(*, environ: Mapping[str, str] | None = None) -> DiagnosticReport:
             {"count": dead_letters},
         )
     )
-    checks.extend(_backend_checks(backends))
+    try:
+        _core_healthy, core = build_repository_diagnostics(
+            selected_repository,
+            configuration or {},
+            repository_required=repository is not None,
+            environ=env,
+            service=status.as_dict() if status else {},
+        )
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+        core = {
+            "schema_version": "villani.doctor.v1",
+            "repository": str(selected_repository) if selected_repository else None,
+            "required_capabilities": {},
+            "git": {"usable": False, "error": error.__class__.__name__},
+            "disk": {},
+            "service": status.as_dict() if status else {},
+            "daemon": {},
+            "adapters": [],
+            "coding_commands": [],
+            "backend_connectivity": [],
+            "credentials": [],
+            "execution_providers": [],
+            "execution_environment_fingerprint": None,
+            "repository_inspection": {
+                "schema_version": "villani.repository_inspection.v1",
+                "repository": str(selected_repository) if selected_repository else None,
+                "detected_test_tools": [],
+                "likely_test_commands": [],
+            },
+            "detected_test_tools": [],
+            "likely_test_commands": [],
+            "inferred_commands_executed": False,
+        }
+        checks.append(
+            DiagnosticCheck(
+                "direct_run_readiness",
+                "fail",
+                f"Direct-run diagnostics could not complete: {error.__class__.__name__}.",
+                "Repair the configuration, then run: villani doctor",
+            )
+        )
+    checks.extend(_backend_checks(backends, core["backend_connectivity"]))
+    capabilities = core.get("required_capabilities", {})
+    recovery_by_capability = {
+        "disk": "Free at least 100 MiB, then run: villani doctor",
+        "execution_provider": "Repair the configured execution environment, then run: villani doctor",
+        "coding_adapter": "Reinstall Villani Code, then run: villani doctor",
+    }
+    for capability, recovery in recovery_by_capability.items():
+        if capabilities.get(capability) is False:
+            checks.append(
+                DiagnosticCheck(
+                    f"required_capability:{capability}",
+                    "fail",
+                    f"Required capability {capability} is unavailable.",
+                    recovery,
+                )
+            )
     checks.append(_git_check())
-    checks.append(_repository_check(configuration))
+    checks.append(
+        _repository_check(
+            selected_repository,
+            repository_source,
+            explicit=repository is not None,
+        )
+    )
     checks.append(_storage_check(home))
-    checks.append(_console_check(status.console_url if status else None))
+    checks.append(
+        _console_check(
+            status.console_url if status else None,
+            service_running=bool(status and status.running),
+        )
+    )
     healthy = not any(item.status == "fail" for item in checks)
-    return DiagnosticReport(utc_now(), healthy, tuple(checks))
+    core["repository_source"] = repository_source
+    return DiagnosticReport(utc_now(), healthy, tuple(checks), core)
 
 
 def render_human(report: DiagnosticReport) -> str:
