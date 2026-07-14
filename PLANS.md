@@ -2959,3 +2959,248 @@ Known remaining issues:
 
 Next permitted milestone:
 - None. Milestone 2 is complete; no later milestone was started.
+
+#### 2026-07-14: Milestone 3, understandable and effortless task runs
+
+Status: complete. A developer can now start from a clean Git repository with
+`villani run "task instruction"`, follow human-readable progress derived from canonical events,
+and answer the outcome, change, authority, validation, recovery, cost, risk, and next-action
+questions without opening JSON. The deterministic controller and all acceptance/materialization
+rules remain unchanged. No later milestone was started.
+
+Changed areas:
+- `components/villani-ops/villani_ops/{cli,closed_loop,execution_environment}` adds current-Git
+  repository defaults, pluggable advisory validation discovery, low-confidence confirmation and
+  manual overrides, a read-only canonical presentation projection, safe Unicode/ASCII progress,
+  complete terminal failure explanations, and lineage-aware `resume`/`rerun` workflows with fresh
+  rerun cost accounting.
+- `components/villani-agentd/villani_agentd/{console.py,server.py}` adds authenticated Console run
+  options, validation discovery, run submission, and presentation polling over the existing local
+  service boundary. Console submission uses the public Ops controller and one preallocated canonical
+  run identity; browser code never receives arbitrary filesystem access.
+- `components/villani-web/{src,test,dist}` replaces the Run placeholder with the repository/task/
+  criteria/validation/delivery/approval/budget/time/policy form, exact validation preview, live
+  explanations, outcome-first result, complete recovery guidance, synchronization failure detail,
+  and previous/current lineage links. The production bundle was rebuilt and synchronized into
+  Agentd package assets.
+- Ops, Agentd, and Web tests cover first-attempt and escalation success, exhausted and heuristic-only
+  results, verifier escalation, redaction, synchronization pending/failure, repository changes,
+  unknown cost, zero file changes, multiple attempts, resume, rerun, low-confidence/manual
+  validation, current-repository defaulting, service offline, packaged assets, and legacy Windows
+  output encoding. Public README usage now documents the minimal run plus resume/rerun flow.
+
+Architectural decisions:
+- Validation discovery is pluggable and advisory. Suggestions and confirmations explicitly carry
+  `authoritative: false`; authority begins only when the exact confirmed shell-free argv emits the
+  canonical post-mutation `repository_validation` event identity and baseline fields. Language
+  markers influence validation suggestions only and never backend routing policy.
+- Human progress and final results are projections over persisted canonical state. Normal CLI and
+  Console output omit raw state/event names; verbose/debug and Replay retain them. Malformed command
+  events remain visible in Replay but cannot be presented as authoritative validation.
+- Resume retains the original run identity and existing controller recovery accounting. Rerun
+  creates a new identity, records parent/root lineage, accepts policy or budget overrides, and
+  accounts only the new run. Only the controller continues, selects, and materializes.
+- Local completion remains authoritative during synchronization degradation. `SYNC FAILED` is
+  explained separately with recovery guidance and does not rewrite an accepted local outcome.
+  Unknown cost remains `null` with its accounting status and is never displayed as numeric zero.
+
+Verification:
+- Villani Ops final full gate: exit code 0; 938 passed, 2 expected Windows host-capability skips,
+  114 slow/integration/e2e deselections. Focused Milestone 3 gate: 57 passed. Ruff reported all
+  edited Ops and Agentd Python files clean.
+- Villani Code: exit code 0; 671 passed, 1 explicit skip, 27 Typer deprecation warnings.
+- Agentd final full gate: exit code 0; 70 passed. Villani distribution final full gate: exit code 0;
+  48 passed, including real service/Console and recorded onboarding lifecycle tests.
+- Root closed-loop integration final gate: exit code 0; 10 passed with one existing Starlette/httpx
+  deprecation warning. The three initially exposed integration regressions (root unittest discovery
+  and CP1252 progress rendering) passed targeted reruns before the full gate passed.
+- Villani Web: 4 files/12 tests passed; typecheck, production build (51 modules), format check,
+  three-file packaged asset synchronization, and byte-for-byte asset verification passed.
+- Flight Recorder: 21 files/111 tests passed; typecheck, build, and format check passed.
+- `git diff --check`: exit code 0; no whitespace errors.
+
+Remaining failures, assumptions, and known risks:
+- No test or build failures remain. Initial timeout and OneDrive sandbox-denial runs were incomplete
+  environment checks, not product failures; each affected suite was rerun to a successful final
+  result with sufficient timeout/filesystem access.
+- Automatic apply assumes a clean Git baseline; dirty or changed repositories fail closed and retain
+  any recorded patch. Medium/high-confidence declared validation is selected automatically; low-
+  confidence convention-only discovery requires confirmation, and no suggestion requires a manual
+  command.
+- Console submission runs in the local service process. A service loss is reported as offline and
+  canonical bundles remain recoverable once `run_created` is persisted; the very small pre-creation
+  in-memory queue window is not a durable scheduler and remains intentionally outside closed-loop-v1.
+- No task decomposition, additional coding runner, learned/language router, additional Console page,
+  SaaS/team workflow, or later milestone was started.
+
+Next permitted milestone:
+- None. Milestone 3 is complete, and the next milestone was not started.
+
+#### 2026-07-14: Milestone 4, simple model and policy configuration
+
+Status: complete. A normal user can detect and test models, select an explicit bootstrap default,
+choose one of five public policy presets, preview coding and verifier routing, and run a task without
+entering capability scores or editing YAML. Unknown capability and pricing remain explicit. No
+later milestone was started.
+
+Changed areas:
+- `components/villani-ops/villani_ops/closed_loop/{model_management.py,
+  policy_presets.py,policy_preview.py,policy.py}` adds pluggable zero-inference model discovery,
+  the `UNRATED`/`BOOTSTRAP`/`OBSERVED`/`QUALIFIED`/`DISABLED` lifecycle, conservative empirical
+  qualification, truthful route provenance, five public presets, read-only route preview, and
+  evidence-limited historical simulation.
+- `components/villani-ops/villani_ops/cli/unified.py` and the Ops README expose `villani models`,
+  `models detect/test/add/remove/default`, `policy list/use/explain/simulate`, and per-run preset
+  selection. Normal add/setup paths require no capability or price guess; internal routing modes
+  remain hidden Advanced controls.
+- `components/villani-agentd/villani_agentd/{console.py,server.py}` exposes the same authenticated
+  local model operations, public policy selection, preview, and simulation through the existing
+  Console boundary. Configuration and advisory model state are written atomically without secret
+  values.
+- `components/villani-run-model/{src,dist}` and `components/villani-web/{src,test,dist}` add the
+  structured model lifecycle contract, complete Models operations, public preset selection,
+  pre-run route explanation, and historical simulation limitations. The production bundle was
+  rebuilt and synchronized into Agentd's packaged assets.
+- `components/villani-ops/villani_ops/tests/test_milestone4_model_policy.py`, Agentd tests, Web
+  tests, and the public README cover the Milestone 4 lifecycle, routes, operations, and normal-user
+  workflow.
+
+Architectural decisions:
+- Model-list detection and availability testing are advisory, pluggable, and use zero model tokens.
+  They never assign capability, price, or validation authority. Detected state lives separately in
+  `models-state.json`; only explicit add/default actions alter configuration.
+- Capability state is derived from the canonical accepted-run observation store. Qualification
+  requires both the configured sample minimum and Wilson lower bound. Manual scores remain
+  Advanced overrides and are labelled separately from observed or qualified evidence.
+- Every selected coding route records one truthful basis: `bootstrap_default`, `manual_override`,
+  `observed_policy`, or `qualified_empirical_policy`. Selecting a preset persists only the public
+  choice; Reliable's stronger recovery tuning is applied to a run-scoped copy and cannot become
+  sticky when the user returns to Balanced.
+- Presets change route ordering and recovery strength only. They do not weaken verifier evidence,
+  acceptance, selection, stopping, isolation, or materialization rules. Local first is based on
+  provider/loopback locality and never on programming language.
+- Preview classifies before selecting a coding route, reports raw/effective classification and
+  verifier authority, and starts no coding attempt. Historical simulation never mutates live
+  policy and explicitly rejects causal savings and counterfactual outcome claims.
+- Observed cost per accepted task remains `null` until the capability store records a complete-cost
+  observation count; a partial mean is not promoted into a fabricated metric.
+
+Verification:
+- Villani Ops final full gate: exit code 0; 949 passed, 2 expected Windows host-capability skips,
+  114 slow/integration/e2e deselections. The focused Milestone 4 gate passed all 11 tests. Ruff
+  reported all edited Ops and Agentd Python files clean.
+- Villani Code: exit code 0; 671 passed, 1 explicit opt-in skip, with 27 existing Typer deprecation
+  warnings. Root closed-loop integration: exit code 0; 10 passed with one existing Starlette/httpx
+  deprecation warning. Public distribution: exit code 0; 48 passed.
+- Agentd: exit code 0; 72 passed. Mypy reported no issues in 25 source files; Ruff passed.
+- Run model: 1 file/5 tests passed; typecheck and build passed.
+- Villani Web: 4 files/14 tests passed; typecheck, production build (51 modules), format check,
+  three-file asset synchronization, and byte-for-byte asset verification passed.
+- Flight Recorder: 21 files/111 tests passed; typecheck, build, and format check passed.
+- Public command smoke checks passed for initialization, score-free model add/default, structured
+  inventory, exact lifecycle states, all five presets, and preset selection. `git diff --check`
+  passed with no whitespace errors.
+
+Remaining failures, assumptions, and known risks:
+- No test, typecheck, build, formatting, or asset-consistency failure remains. Sandboxed Vite,
+  Agentd asset, mypy asset-directory, and distribution service checks initially hit OneDrive access
+  restrictions; each was rerun successfully with generated-asset access.
+- The in-app browser runtime exposed no controllable browser target, so an additional manual visual
+  pass could not be performed. Automated Console DOM tests, the production Vite build, packaged
+  asset verification, and real service/Console distribution tests all passed.
+- Availability reflects the most recent explicit detect/test operation and is time-stamped; it is
+  not a permanent health assertion. Unknown provider metadata remains unknown.
+- Historical simulation uses recorded classifications plus the current model/capability snapshot.
+  It can explain route changes and known estimated-cost deltas only; it cannot establish what an
+  unexecuted route would have cost, validated, or achieved.
+- No controller correctness rule, task decomposition, additional coding runner, learned or
+  language-specific router, new Console page, SaaS/team behavior, or later milestone was started.
+
+Next permitted milestone:
+- None. Milestone 4 is complete, and the next milestone was not started.
+
+#### 2026-07-14: Milestone 5, first-class delivery and approval
+
+Status: complete. Every accepted run now has a persisted, explicit delivery outcome: suggested,
+awaiting approval, rejected, applied, branched, or submitted for review. The selected patch is
+stored before any delivery mutation and remains recoverable after approval rejection, timeout,
+conflict, push/provider failure, repository drift, or process restart. No later milestone was
+started.
+
+Changed areas:
+- `components/villani-ops/villani_ops/closed_loop/{controller.py,state_machine.py,protocol.py,
+  interfaces.py,delivery_workflow.py,delivery}` adds the persisted `AWAITING_APPROVAL` state,
+  review/evidence projection, audited approval actions and timeout policy, automatic-delivery
+  authority checks, restart-safe idempotency, safe local apply/branch/PR materializers, and a
+  provider-neutral Git-host adapter contract with GitHub, GitLab, local-only, and fixture adapters.
+- `components/villani-ops/villani_ops/cli/unified.py` exposes all five `--delivery` modes plus
+  `approve`, `reject`, `request-rerun`, and `choose-candidate`. Fresh configuration explicitly
+  preserves bare-command automatic apply only for low-risk, acceptance-eligible runs; missing or
+  insufficient authority fails closed. CLI presentation reports the exact delivery boundary and
+  actionable delivery failures without hiding canonical events.
+- Root/Ops schemas, `components/villani-flight-recorder/src/providers/villaniProtocol.ts`, and
+  `docs/CLOSED_LOOP.md` carry the new canonical state and durable delivery artifacts through replay
+  without replacing structured state with cosmetic text.
+- `components/villani-agentd/villani_agentd/{console.py,server.py}` and
+  `components/villani-web/{src,test,dist}` add the complete patch-review surface, authenticated
+  connected approval API, approval/reject/rerun/candidate controls, explicit delivery outcomes,
+  and default delivery selection. The rebuilt Web assets are synchronized into the Agentd package.
+- `components/villani-ops/villani_ops/tests/test_milestone5_delivery.py`, CLI tests, Agentd tests,
+  and Web tests cover suggest, approval accept/reject/rerun/candidate selection/timeout, automatic
+  authority, branch and PR delivery, restart recovery, push/conflict/drift/moved-repository safety,
+  connected authentication, patch preservation, and PR redaction.
+
+Architectural decisions:
+- Delivery is a controller-owned workflow layered over the existing acceptance-eligible selection.
+  It cannot make an ineligible candidate acceptable or bypass selection, and only the exact recorded
+  selected patch reaches a materializer. Legacy controller paths remain unchanged unless the
+  versioned delivery workflow is explicitly configured.
+- Suggest is mutation-free. Approval is a durable nonterminal controller state. Automatic apply,
+  branch, and pull-request delivery require both acceptance-grade verifier evidence and an explicit
+  authority policy; authority uncertainty always fails closed.
+- Branch and pull-request modes apply in a separate Git worktree and never switch or edit the
+  original checkout. Branch commits are opt-in; pull requests require a commit, push, and adapter
+  submission. Repository identity, HEAD, cleanliness, branch ownership, and patch applicability are
+  checked before mutation, and delivery receipts make recovery idempotent without duplicating cost.
+- Git-host operations depend on `GitHostAdapter`, not GitHub-specific controller code. PR bodies are
+  generated from a redacted allowlist containing task, summary, files, validation, verifier
+  authority, attempts/recovery, cost, replay link, and the agent-generated disclosure; secrets and
+  internal database identifiers are excluded.
+- Fresh `villani init` configuration makes the established bare `villani run` experience explicit:
+  automatic apply is permitted only for low-risk acceptance-eligible results. Existing or custom
+  configuration without that authority policy fails closed, and every explicit `--delivery` choice
+  overrides the configured default.
+
+Verification:
+- Villani Ops final full gate: exit code 0; 985 passed, 2 expected Windows host-capability skips,
+  114 slow/integration/e2e deselections, with one non-product pytest cache-permission warning.
+  Post-format Milestone 5/CLI gate: 24 passed, 17 deselected. Ruff passed all edited Milestone 5
+  Python files.
+- Villani Code: exit code 0; 671 passed, 1 explicit opt-in skip, with 27 existing Typer deprecation
+  warnings. Root closed-loop integration: exit code 0; 10 passed with one existing Starlette/httpx
+  deprecation warning, including both installed-entry-point quickstarts.
+- Agentd: exit code 0; 75 passed. Ruff passed and mypy reported no issues in 25 source files.
+- Villani Web: 4 files/15 tests passed; typecheck, production build (51 modules), format check,
+  three-file packaged asset synchronization, and byte-for-byte asset verification passed.
+- Flight Recorder: 21 files/111 tests passed; typecheck, build, and format check passed.
+- `git diff --check`: exit code 0; no whitespace errors.
+
+Remaining failures, assumptions, and known risks:
+- No test, typecheck, build, formatting, schema, or asset-consistency failure remains. Initial
+  Agentd HTTP/mypy checks were denied access to packaged assets by the managed OneDrive sandbox and
+  were rerun successfully with read access. An initial Flight Recorder format failure was repaired
+  with Prettier and all four required commands then passed.
+- The in-app browser runtime exposed no controllable browser target, so an additional manual visual
+  pass could not be performed. Automated Console interaction tests, the production build, packaged
+  asset verification, and authenticated HTTP Console tests passed.
+- GitHub/GitLab submission depends on the corresponding installed and authenticated provider CLI.
+  Missing tools, unavailable remotes, rejected pushes, and authentication failures are explicit
+  terminal delivery failures; the committed local branch (when created) and selected patch remain.
+- Automatic delivery intentionally covers only the configured authority envelope. Medium/high or
+  unknown-risk work under the fresh low-risk default must use approval/suggest or a consciously
+  changed Advanced authority policy.
+- No controller acceptance rule, task decomposition, additional coding runner, routing behavior,
+  SaaS/team behavior, or later milestone was started.
+
+Next permitted milestone:
+- None. Milestone 5 is complete, and the next milestone was not started.

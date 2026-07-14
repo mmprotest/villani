@@ -72,8 +72,51 @@ villani-ops run \
   --non-interactive
 ```
 
-The canonical public CLI is `villani run`; interrupted runs can be resumed with
-`villani resume <run_id>` or `villani resume --latest`.
+The canonical public CLI is `villani run "task instruction"`; from inside a Git repository the
+repository defaults to the current repository. Interrupted runs can be resumed with
+`villani resume <run_id>` or `villani resume --latest`. Use `villani rerun <run_id>` to create a
+new, lineage-linked run with fresh cost accounting and optional policy or budget overrides.
+
+Accepted patches have an explicit delivery state. The public choices are:
+
+```bash
+villani run "Fix the failing tests" --delivery suggest
+villani run "Fix the failing tests" --delivery approve
+villani run "Fix the failing tests" --delivery apply
+villani run "Fix the failing tests" --delivery branch
+villani run "Fix the failing tests" --delivery pull-request
+```
+
+Suggest preserves the patch without repository mutation. Apply with approval pauses in the
+persisted `AWAITING_APPROVAL` controller state and resumes through `villani approve <run_id>`;
+`villani reject`, `villani request-rerun`, and `villani choose-candidate` record the other audited
+review outcomes. Automatic apply, branch, and pull-request delivery fail closed unless configured
+authority permits them. Branch delivery uses an isolated delivery worktree so the original branch
+is never switched. GitHub, GitLab, and local-only provider adapters sit behind a provider-neutral
+contract, and all delivery failures preserve the exact selected patch.
+
+New configuration created by `villani init` explicitly defaults a bare `villani run` to automatic
+apply for low-risk, acceptance-eligible results. That compatibility default is still authority
+gated: absent, disabled, or insufficient delivery authority fails closed, and an explicit
+`--delivery` choice takes precedence.
+
+Normal model and policy setup does not require capability scores or YAML editing:
+
+```bash
+villani models detect
+villani models add local-qwen --model qwen --provider local \
+  --endpoint http://127.0.0.1:1234/v1 --default
+villani models test
+villani policy use balanced
+villani policy explain "Fix the failing tests"
+```
+
+Models move through `UNRATED`, `BOOTSTRAP`, `OBSERVED`, `QUALIFIED`, and `DISABLED` without
+presenting bootstrap choices or sparse observations as measured capability. Qualification requires
+the configured sample minimum and Wilson confidence bound. Reliable, Balanced, Local first,
+Cheapest acceptable, and Custom are the public presets; internal controller modes are Advanced
+compatibility controls. `villani policy simulate --preset <preset>` evaluates recorded routing
+decisions without changing live policy or claiming causal savings.
 
 At composition time the public CLI detects an installed, running `villani-agentd` and attaches the
 closed-loop event sink. Local canonical events are committed before daemon delivery, daemon

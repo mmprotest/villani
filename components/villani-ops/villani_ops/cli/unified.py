@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict
 from datetime import datetime, timezone
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -41,7 +41,44 @@ from villani_ops.closed_loop.capabilities.report import backend_score_rows
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.offline_evaluation.replay import replay_file
 from villani_ops.closed_loop.guarded_routing import resolve_routing_configuration
+from villani_ops.closed_loop.classification_adjustments import (
+    apply_classification_policy,
+)
 from villani_ops.closed_loop.event_writer import redact_data
+from villani_ops.closed_loop.model_management import (
+    add_model_to_configuration,
+    configured_backends as configured_model_backends,
+    default_bootstrap_backend,
+    detect_models,
+    inventory_document,
+    load_model_state,
+    remove_model_from_configuration,
+    set_bootstrap_default,
+    test_models,
+    update_detection_state,
+    write_configuration_atomic,
+    write_model_state,
+)
+from villani_ops.closed_loop.policy_presets import (
+    POLICY_PRESETS,
+    PUBLIC_POLICY_VERSION,
+    apply_policy_preset,
+    configure_policy_preset,
+    configured_policy_preset,
+    normalize_policy_preset,
+    policy_preset_rows,
+)
+from villani_ops.closed_loop.policy_preview import (
+    build_policy_preview_document,
+    initial_policy_context,
+    simulate_historical_runs,
+)
+from villani_ops.closed_loop.presentation import (
+    build_run_presentation,
+    failure_experience,
+    infer_failure_code,
+    progress_lines_for_event,
+)
 from villani_ops.closed_loop.interfaces import (
     BudgetContext,
     Classification,
@@ -64,8 +101,13 @@ from villani_ops.providers import (
 from villani_ops.core.task import Task
 from villani_ops.subprocess_utils import resolve_command_prefix
 from villani_ops.execution_environment import (
+    CONFIRMATION_THRESHOLD,
     ExecutionEnvironmentConfig,
+    confirmed_command,
+    discover_repository_validation,
+    display_argv,
     inspect_repository,
+    parse_manual_command,
     preflight_report,
     provider_from_configuration,
 )
@@ -93,21 +135,114 @@ evaluate_app = typer.Typer(
     add_completion=False,
 )
 policy_app = typer.Typer(
-    help="Explain guarded task-level policy resolution.",
+    help="Preview and simulate user-facing policy presets.",
     no_args_is_help=True,
+    add_completion=False,
+)
+models_app = typer.Typer(
+    help="Detect, test, add, and remove models.",
+    invoke_without_command=True,
     add_completion=False,
 )
 app.add_typer(backend_app, name="backend")
 app.add_typer(capability_app, name="capability")
 app.add_typer(evaluate_app, name="evaluate")
 app.add_typer(policy_app, name="policy")
+app.add_typer(models_app, name="models")
 
 
 @policy_app.command("explain")
-def policy_explain(json_output: bool = typer.Option(False, "--json")) -> None:
-    """Show organization-to-repository precedence without executing a task."""
+def policy_explain(
+    task: str | None = typer.Argument(
+        None, help="Task instruction. Omit for legacy configuration precedence."
+    ),
+    repo: Path | None = typer.Option(
+        None, "--repo", help="Git repository; defaults to the current repository."
+    ),
+    success_criteria: str | None = typer.Option(None, "--success-criteria"),
+    preset: str | None = typer.Option(None, "--preset"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Explain task classification and routing without a coding attempt."""
 
     configuration = _load_config()
+    if task is not None:
+        repository = _resolve_run_repository(repo)
+        try:
+            explanation = build_policy_preview(
+                task=task,
+                repository=repository,
+                success_criteria=success_criteria or task,
+                configuration=configuration,
+                preset=preset,
+            )
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            ValidationError,
+            json.JSONDecodeError,
+        ) as error:
+            message = (
+                _validation_message(error)
+                if isinstance(error, ValidationError)
+                else str(error)
+            )
+            _usage_error(f"policy preview failed: {message}")
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    redact_data(explanation),
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return
+        raw = explanation["raw_classification"]
+        effective = explanation["effective_classification"]
+        route = explanation["selected_coding_route"]
+        verifier = explanation["selected_verifier_route"]
+        cost = explanation["estimated_cost"]
+        console.print(
+            f"Raw classification: {raw['difficulty']} difficulty, {raw['risk']} risk, "
+            f"confidence {float(raw['confidence']):.2f}"
+        )
+        console.print(
+            f"Effective classification: {effective['difficulty']} difficulty, "
+            f"{effective['risk']} risk, confidence {float(effective['confidence']):.2f}"
+        )
+        adjustments = explanation["adjustments"]
+        console.print(
+            "Adjustments: "
+            + (
+                "; ".join(
+                    f"{item['field']} {item['before']} -> {item['after']} ({item['rule_id']})"
+                    for item in adjustments
+                )
+                if adjustments
+                else "none"
+            )
+        )
+        console.print(
+            f"Coding route: {route['backend'] or 'none'} / {route['model'] or 'none'} - "
+            f"{route['reason']}"
+        )
+        selected_verifier = verifier.get("selected") or {}
+        console.print(
+            f"Verifier route: {selected_verifier.get('route') or 'none'}; "
+            f"authority={selected_verifier.get('authority') or 'none'}"
+        )
+        console.print(
+            f"Estimated cost: {cost['value'] if cost['value'] is not None else 'unknown'} "
+            f"({cost['status']})"
+        )
+        console.print(
+            "Uncertainty: "
+            + "; ".join(str(item) for item in explanation["uncertainty"])
+        )
+        return
+
     resolved, precedence = resolve_routing_configuration(configuration)
     active = resolved.get("active_policy")
     lkg = resolved.get("last_known_good_policy")
@@ -132,6 +267,87 @@ def policy_explain(json_output: bool = typer.Option(False, "--json")) -> None:
         console.print(f"Mode: {explanation['mode']}")
         console.print(f"Precedence: {' -> '.join(precedence)}")
         console.print(f"Policy source: {source}")
+
+
+@policy_app.command("use")
+def policy_use(preset: str = typer.Argument(...)) -> None:
+    """Select the default public preset for future runs."""
+
+    configuration = _load_config()
+    try:
+        selected = normalize_policy_preset(preset)
+        updated = configure_policy_preset(configuration, selected)
+        _write_config(_config_path(), updated)
+    except (OSError, ValueError) as error:
+        _usage_error(f"cannot select policy preset: {error}")
+    definition = next(item for item in POLICY_PRESETS if item.preset_id == selected)
+    console.print(f"Policy preset: {definition.label} - {definition.description}")
+
+
+@policy_app.command("list")
+def policy_list(json_output: bool = typer.Option(False, "--json")) -> None:
+    """List the public policy presets without internal routing mode names."""
+
+    rows = policy_preset_rows(_load_config())
+    if json_output:
+        typer.echo(json.dumps(rows, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    for row in rows:
+        selected = " (selected)" if row["active"] else ""
+        console.print(f"{row['label']}{selected}: {row['description']}")
+
+
+@policy_app.command("simulate")
+def policy_simulate(
+    preset: str = typer.Option(..., "--preset"),
+    runs_root: Path | None = typer.Option(None, "--runs-root"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Evaluate route changes against recorded runs without changing live policy."""
+
+    configuration = _load_config()
+    try:
+        selected = normalize_policy_preset(preset)
+        backends = _load_backends(configuration)
+        snapshot = _capability_snapshot(refresh=True)
+        report = simulate_historical_runs(
+            runs_root=(runs_root or _runs_root()).expanduser().resolve(),
+            configuration=configuration,
+            backends=backends,
+            snapshot=snapshot,
+            preset=selected,
+        )
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _usage_error(f"policy simulation failed: {message}")
+    if json_output:
+        typer.echo(
+            json.dumps(
+                redact_data(report), ensure_ascii=False, indent=2, sort_keys=True
+            )
+        )
+        return
+    difference = report["estimated_cost_differences"]
+    console.print(
+        f"Historical simulation: evaluated={report['tasks_evaluated']}; "
+        f"affected={report['tasks_affected']}; route changes={len(report['route_changes'])}"
+    )
+    console.print(
+        f"Estimated cost difference status: {difference['status']}; "
+        f"simulated-minus-recorded={difference['simulated_minus_recorded_total'] if difference['simulated_minus_recorded_total'] is not None else 'unknown'}"
+    )
+    console.print("Outcome evidence limitation: simulated routes were not executed.")
+    console.print("No causal savings or counterfactual success claim is supported.")
 
 
 @evaluate_app.command("replay")
@@ -166,6 +382,15 @@ CONFIG_HEADER = """# Villani local-first configuration.
 # variables and put only the variable name in api_key_env.
 """
 DEFAULT_CONFIG: dict[str, Any] = {
+    "public_policy": {
+        "version": PUBLIC_POLICY_VERSION,
+        "preset": "balanced",
+        "selection_preference": "balanced",
+    },
+    "model_management": {
+        "version": "villani-model-lifecycle-v1",
+        "bootstrap_default": None,
+    },
     "routing": {
         "mode": "observe",
         "permissions": {"user_enforce": False, "workspace_enforce": False},
@@ -198,6 +423,18 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_attempts": 3,
         "max_cost": None,
         "max_wall_time": None,
+    },
+    "delivery": {
+        # Preserve the established quickstart: a bare `villani run` applies an
+        # accepted low-risk patch. The controller still fails closed when this
+        # explicit authority policy is absent or its requirements are unmet.
+        "default_mode": "apply",
+        "authority_policy": {
+            "policy_version": "villani.default_delivery_authority.v1",
+            "allow_automatic": True,
+            "require_acceptance_eligible": True,
+            "allowed_risks": ["low"],
+        },
     },
     "verifier": {
         "invocation": "in_process",
@@ -261,13 +498,7 @@ def _validation_message(error: ValidationError) -> str:
 
 
 def _write_config(path: Path, configuration: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = yaml.safe_dump(
-        dict(configuration),
-        sort_keys=False,
-        allow_unicode=True,
-    )
-    path.write_text(CONFIG_HEADER + payload, encoding="utf-8")
+    write_configuration_atomic(path, configuration, header=CONFIG_HEADER)
 
 
 def _load_config() -> dict[str, Any]:
@@ -302,16 +533,289 @@ def _load_backends(configuration: Mapping[str, Any]) -> dict[str, Backend]:
     return parsed
 
 
+def _model_state_path() -> Path:
+    return _home() / "models-state.json"
+
+
+def _capability_snapshot(*, refresh: bool = False):
+    store = CapabilityStore(_home() / "capabilities")
+    if refresh:
+        capabilities = _capability_configuration(_load_config())
+        scorer = str(capabilities.get("scorer_version") or "empirical_wilson_v1")
+        return store.rebuild(_runs_root(), scorer_version=scorer).snapshot
+    return store.load()
+
+
+def model_inventory(*, refresh_capabilities: bool = False) -> dict[str, Any]:
+    configuration = _load_config()
+    try:
+        snapshot = _capability_snapshot(refresh=refresh_capabilities)
+        state = load_model_state(_model_state_path())
+        return inventory_document(configuration, snapshot, state)
+    except (OSError, ValueError, ValidationError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read model inventory: {error}") from error
+
+
+def _render_model_inventory(document: Mapping[str, Any]) -> None:
+    models = document.get("models")
+    rows = models if isinstance(models, list) else []
+    if not rows:
+        console.print("No models configured or detected. Run `villani models detect`.")
+        return
+    for raw in rows:
+        if not isinstance(raw, Mapping):
+            continue
+        default = " [DEFAULT]" if raw.get("bootstrap_default") else ""
+        manual = " [ADVANCED MANUAL OVERRIDE]" if raw.get("manual_override") else ""
+        success = raw.get("observed_success_rate")
+        success_text = (
+            f"{float(success) * 100:.1f}%"
+            if isinstance(success, (int, float))
+            else "unknown"
+        )
+        cost = raw.get("observed_cost_per_accepted_task")
+        cost_text = (
+            f"{float(cost):.4f}" if isinstance(cost, (int, float)) else "unknown"
+        )
+        console.print(
+            f"{raw.get('backend_name') or '(detected)'}: {raw.get('display_name')}"
+            f"{default}{manual}\n"
+            f"  provider={raw.get('provider')}; endpoint={raw.get('endpoint') or 'default'}; "
+            f"availability={raw.get('availability')}; tools={raw.get('tool_support')}; "
+            f"roles={','.join(str(item) for item in raw.get('configured_roles', [])) or 'not configured'}\n"
+            f"  capability={raw.get('capability_status')}; observations={raw.get('observed_task_count')}; "
+            f"success={success_text}; cost/accepted={cost_text}; "
+            f"pricing={raw.get('pricing_status')}; last_tested={raw.get('last_tested_at') or 'never'}",
+            soft_wrap=True,
+        )
+
+
+@models_app.callback(invoke_without_command=True)
+def models_root(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON inventory."),
+) -> None:
+    """List configured and recently detected models."""
+
+    if ctx.invoked_subcommand is not None:
+        return
+    try:
+        document = model_inventory(refresh_capabilities=True)
+    except ValueError as error:
+        _usage_error(str(error))
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+    else:
+        _render_model_inventory(document)
+
+
+@models_app.command("detect")
+def models_detect(
+    timeout: float = typer.Option(1.5, "--timeout", min=0.1, max=30.0),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect configured and common local model endpoints without inference."""
+
+    configuration = _load_config()
+    try:
+        detections = detect_models(configuration, timeout=timeout)
+        state = update_detection_state(
+            load_model_state(_model_state_path()), detections
+        )
+        write_model_state(_model_state_path(), state)
+        snapshot = _capability_snapshot(refresh=True)
+        document = inventory_document(configuration, snapshot, state)
+        document["detections"] = [item.as_dict() for item in detections]
+    except (OSError, ValueError, ValidationError, json.JSONDecodeError) as error:
+        _usage_error(f"model detection failed: {error}")
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+        return
+    for detection in detections:
+        console.print(
+            f"{detection.provider_display_name}: {detection.availability}; "
+            f"models={len(detection.models)}; {detection.diagnostic}",
+            soft_wrap=True,
+        )
+    console.print(
+        "Detection is advisory. Add a model explicitly before Villani routes to it."
+    )
+
+
+@models_app.command("test")
+def models_test(
+    backend_name: str | None = typer.Argument(
+        None, help="Backend name; omit to test all."
+    ),
+    timeout: float = typer.Option(3.0, "--timeout", min=0.1, max=60.0),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Test configured availability with zero model-token use."""
+
+    configuration = _load_config()
+    try:
+        state, results = test_models(
+            configuration,
+            load_model_state(_model_state_path()),
+            backend_names=([backend_name] if backend_name else ()),
+            timeout=timeout,
+        )
+        write_model_state(_model_state_path(), state)
+    except (OSError, ValueError, ValidationError) as error:
+        _usage_error(f"model test failed: {error}")
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {"schema_version": "villani.model_test.v1", "results": results},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return
+    for result in results:
+        console.print(
+            f"{result['backend_name']}: {result['availability']} - {result['diagnostic']} "
+            "(0 model tokens)",
+            soft_wrap=True,
+        )
+
+
+@models_app.command("add")
+def models_add(
+    backend_name: str = typer.Argument(..., help="Short configuration name."),
+    model: str = typer.Option(..., "--model", help="Provider model identifier."),
+    provider: str = typer.Option(..., "--provider"),
+    endpoint: str | None = typer.Option(None, "--endpoint", "--base-url"),
+    display_name: str | None = typer.Option(None, "--display-name"),
+    role: list[str] | None = typer.Option(None, "--role"),
+    api_key_env: str | None = typer.Option(None, "--api-key-env"),
+    make_default: bool = typer.Option(
+        False, "--default", help="Use as bootstrap default."
+    ),
+    tool_support: bool | None = typer.Option(None, "--tool-support/--no-tool-support"),
+    context_window: int | None = typer.Option(None, "--context-window", min=1),
+    manual_capability_score: float | None = typer.Option(
+        None,
+        "--manual-capability-score",
+        min=0,
+        max=100,
+        help="Advanced manual override; never reported as observed capability.",
+    ),
+    billing_mode: str = typer.Option("unknown", "--billing-mode"),
+    input_cost_per_million: float | None = typer.Option(
+        None, "--input-cost-per-million", min=0
+    ),
+    output_cost_per_million: float | None = typer.Option(
+        None, "--output-cost-per-million", min=0
+    ),
+    fixed_cost_per_attempt: float | None = typer.Option(
+        None, "--fixed-cost-per-attempt", min=0
+    ),
+) -> None:
+    """Add or replace a model; capability and pricing remain unknown by default."""
+
+    configuration = _load_config()
+    try:
+        _validate_billing(
+            billing_mode=billing_mode,
+            input_price=input_cost_per_million,
+            output_price=output_cost_per_million,
+            compute_cost=None,
+            fixed_cost=fixed_cost_per_attempt,
+            estimated_input=None,
+            estimated_output=None,
+            estimated_duration=None,
+        )
+        add_model_to_configuration(
+            configuration,
+            backend_name=backend_name,
+            model=model,
+            provider=provider,
+            endpoint=endpoint,
+            display_name=display_name,
+            roles=tuple(role or ["coding", "classification"]),
+            api_key_env=api_key_env,
+            tool_support=tool_support,
+            context_window=context_window,
+            make_default=make_default,
+            manual_capability_score=manual_capability_score,
+            billing_mode=billing_mode,
+            input_cost_per_million=input_cost_per_million,
+            output_cost_per_million=output_cost_per_million,
+            fixed_cost_per_attempt=fixed_cost_per_attempt,
+        )
+        _write_config(_config_path(), configuration)
+    except (OSError, ValueError, ValidationError) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _usage_error(f"model configuration is invalid: {message}")
+    state = "BOOTSTRAP" if make_default else "UNRATED"
+    console.print(
+        f"Added model {backend_name} as {state}; capability was not fabricated."
+    )
+
+
+@models_app.command("remove")
+def models_remove(
+    backend_name: str = typer.Argument(...),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Remove one configured model without deleting historical evidence."""
+
+    configuration = _load_config()
+    if not yes and not typer.confirm(
+        f"Remove configured model {backend_name}? Historical run evidence is retained",
+        default=False,
+    ):
+        console.print("Model was not removed.")
+        return
+    try:
+        remove_model_from_configuration(configuration, backend_name)
+        _write_config(_config_path(), configuration)
+    except (OSError, ValueError) as error:
+        _usage_error(f"model removal failed: {error}")
+    console.print(
+        f"Removed model {backend_name}; historical observations were retained."
+    )
+
+
+@models_app.command("default")
+def models_default(backend_name: str = typer.Argument(...)) -> None:
+    """Select the explicit bootstrap model without assigning a capability score."""
+
+    configuration = _load_config()
+    try:
+        set_bootstrap_default(configuration, backend_name)
+        _write_config(_config_path(), configuration)
+    except (OSError, ValueError) as error:
+        _usage_error(f"cannot select bootstrap default: {error}")
+    console.print(
+        f"Bootstrap default is {backend_name}; this is not a measured capability rating."
+    )
+
+
 def _validate_run_backends(backends: Mapping[str, Backend]) -> None:
     if not any(
         backend.enabled and "classification" in backend.roles
         for backend in backends.values()
     ):
-        _usage_error("an enabled backend with role 'classification' is required")
+        _run_usage_error(
+            "no_backend",
+            "An enabled backend with role 'classification' is required.",
+        )
     if not any(
         backend.enabled and "coding" in backend.roles for backend in backends.values()
     ):
-        _usage_error("an enabled backend with role 'coding' is required")
+        _run_usage_error(
+            "no_backend", "An enabled backend with role 'coding' is required."
+        )
     active = [
         backend
         for backend in backends.values()
@@ -321,7 +825,7 @@ def _validate_run_backends(backends: Mapping[str, Backend]) -> None:
         for backend in active:
             validate_closed_loop_backend(backend)
     except ProviderConfigurationError as error:
-        _usage_error(str(error))
+        _run_usage_error(infer_failure_code(None, str(error)), str(error))
     currencies = {backend.currency for backend in active}
     if len(currencies) > 1:
         _usage_error(
@@ -939,8 +1443,10 @@ def _classify_for_capability_explain(
     ]
     if not eligible:
         raise ValueError("no enabled classification-capable backend is configured")
-    classification_backend = min(
-        eligible, key=lambda item: (-item.capability_score, item.name)
+    default_name = default_bootstrap_backend(configuration)
+    classification_backend = next(
+        (item for item in eligible if item.name == default_name),
+        min(eligible, key=lambda item: (-item.capability_score, item.name)),
     )
     context = ClassificationContext(
         run_id="capability_explain",
@@ -970,6 +1476,87 @@ def _classify_for_capability_explain(
         reasoning_summary=returned.reasoning_summary,
         signals=dict(returned.signals),
         metadata=dict(returned.metadata),
+    )
+
+
+def build_policy_preview(
+    *,
+    task: str,
+    repository: Path,
+    success_criteria: str,
+    configuration: Mapping[str, Any],
+    preset: str | None = None,
+) -> dict[str, Any]:
+    """Classify once and project both coding and verifier routes read-only."""
+
+    effective_configuration = apply_policy_preset(configuration, preset)
+    backends = {
+        backend.name: backend
+        for backend in configured_model_backends(effective_configuration).values()
+    }
+    if not any(
+        item.enabled and "classification" in item.roles for item in backends.values()
+    ):
+        raise ValueError("no enabled classification-capable model is configured")
+    if not any(item.enabled and "coding" in item.roles for item in backends.values()):
+        raise ValueError("no enabled coding model is configured")
+    raw = _classify_for_capability_explain(
+        task,
+        repository,
+        success_criteria,
+        backends,
+        effective_configuration,
+    )
+    raw_value = Classification(
+        difficulty=raw.difficulty,
+        risk=raw.risk,
+        category=raw.category,
+        required_capabilities=tuple(raw.required_capabilities),
+        estimated_attempts_needed=raw.estimated_attempts_needed,
+        needs_tests=raw.needs_tests,
+        confidence=raw.confidence,
+        reasoning_summary=raw.reasoning_summary,
+        signals=dict(raw.signals),
+        metadata=dict(raw.metadata),
+    )
+    effective_value, adjustment_models, adjustment_version = (
+        apply_classification_policy(
+            raw_value,
+            effective_configuration,
+            timestamp=datetime.now(timezone.utc),
+        )
+    )
+    effective = raw.model_copy(
+        update={
+            "difficulty": effective_value.difficulty,
+            "risk": effective_value.risk,
+            "confidence": effective_value.confidence,
+            "metadata": {
+                **dict(raw.metadata),
+                "classification_adjustment_policy_version": adjustment_version,
+            },
+        }
+    )
+    snapshot = _capability_snapshot(refresh=True)
+    decision = BootstrapPolicyEngine(
+        backends,
+        effective_configuration,
+        capability_snapshot=snapshot,
+    ).decide(
+        initial_policy_context(
+            effective,
+            effective_configuration,
+            run_id="policy_preview",
+        )
+    )
+    adjustments = [item.model_dump(mode="json") for item in adjustment_models]
+    return build_policy_preview_document(
+        raw_classification=raw,
+        effective_classification=effective,
+        adjustments=adjustments,
+        decision=decision,
+        configuration=effective_configuration,
+        backends=backends,
     )
 
 
@@ -1424,11 +2011,27 @@ def build_controller(
             key.encode(), key_id=str(provenance.get("key_id") or key_env)
         )
     from villani_ops.closed_loop.approvals import ApprovalGuardedMaterializer
-    from villani_ops.closed_loop.delivery import DeliveryMaterializerAdapter
+    from villani_ops.closed_loop.delivery import (
+        DeliveryMaterializerAdapter,
+        build_git_host_adapter,
+    )
+
+    delivery_configuration = configuration.get("delivery")
+    delivery_values = (
+        dict(delivery_configuration)
+        if isinstance(delivery_configuration, Mapping)
+        else {}
+    )
+    provider_name = str(delivery_values.get("provider") or "auto").lower()
+    git_provider = (
+        None if provider_name == "auto" else build_git_host_adapter(configuration)
+    )
 
     materializer_impl = ApprovalGuardedMaterializer(
         DeliveryMaterializerAdapter(
-            local_apply=PatchMaterializerAdapter(), provenance_signer=signer
+            local_apply=PatchMaterializerAdapter(),
+            git_provider=git_provider,
+            provenance_signer=signer,
         )
     )
 
@@ -1462,36 +2065,293 @@ def _is_git_repository(path: Path) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
-def _run_progress_listener(runs_root: Path) -> Callable[[Any], None]:
-    shown: set[str] = set()
-    state_events = {
-        "classification_started": "CLASSIFYING",
-        "classification_completed": "CLASSIFIED",
-        "policy_selected": "POLICY_SELECTED",
-        "attempt_started": "ATTEMPT_RUNNING",
-        "attempt_completed": "ATTEMPT_COMPLETED",
-        "verification_started": "VERIFYING",
-        "verification_completed": "VERIFIED",
-        "candidate_rejected": "REJECTED",
-        "candidate_selected": "SELECTING",
-        "materialization_started": "MATERIALIZING",
-        "run_completed": "COMPLETED",
-        "run_exhausted": "EXHAUSTED",
-        "run_failed": "FAILED",
-    }
+def _git_repository_root(path: Path) -> Path | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=path,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        return Path(result.stdout.strip()).expanduser().resolve()
+    except OSError:
+        return None
+
+
+def _repository_dirty(path: Path) -> bool | None:
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=path,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return bool(result.stdout.strip())
+
+
+def _print_failure_experience(
+    code: str,
+    message: str | None = None,
+    *,
+    attempts: int = 0,
+    patch_preserved: bool = False,
+) -> None:
+    experience = failure_experience(
+        code,
+        reason=message,
+        attempts=attempts,
+        patch_preserved=patch_preserved,
+    )
+    console.print("FAILED", markup=False)
+    console.print(str(experience["what_failed"]), markup=False)
+    console.print(f"Villani tried: {experience['what_villani_tried']}", markup=False)
+    console.print(f"Missing evidence: {experience['missing_evidence']}", markup=False)
+    console.print(f"Patch: {experience['patch_status']}", markup=False)
+    console.print(f"Next: {experience['next_action']}", markup=False)
+
+
+def _run_usage_error(
+    code: str,
+    message: str,
+    *,
+    attempts: int = 0,
+    patch_preserved: bool = False,
+) -> NoReturn:
+    _print_failure_experience(
+        code,
+        message,
+        attempts=attempts,
+        patch_preserved=patch_preserved,
+    )
+    raise typer.Exit(2)
+
+
+def _resolve_run_repository(repo: Path | None) -> Path:
+    selected = (repo or Path.cwd()).expanduser().resolve()
+    if not selected.exists() or not selected.is_dir():
+        _run_usage_error(
+            "invalid_repository",
+            f"repository does not exist or is not a directory: {selected}",
+        )
+    root = _git_repository_root(selected)
+    if root is None:
+        if not _is_git_repository(selected):
+            _run_usage_error(
+                "invalid_repository", f"repository is not a Git work tree: {selected}"
+            )
+        root = selected
+    dirty = _repository_dirty(root)
+    if dirty is None:
+        _run_usage_error(
+            "invalid_repository", f"repository status could not be inspected: {root}"
+        )
+    if dirty:
+        _run_usage_error(
+            "dirty_repository",
+            f"repository has uncommitted changes: {root}",
+        )
+    return root
+
+
+def _configured_validation_commands(
+    configuration: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    raw = configuration.get("repository_validation_commands")
+    if not isinstance(raw, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for index, item in enumerate(raw, 1):
+        if not isinstance(item, Mapping):
+            continue
+        argv = item.get("argv")
+        if not (
+            isinstance(argv, list)
+            and argv
+            and all(isinstance(value, str) and value for value in argv)
+        ):
+            continue
+        result.append(
+            confirmed_command(
+                argv,
+                source=str(item.get("source") or "configured_override"),
+                confidence=float(item.get("confidence") or 1.0),
+                confirmed_by=str(item.get("confirmed_by") or "configuration"),
+                validation_id=str(
+                    item.get("validation_id") or f"repository_validation_{index:03d}"
+                ),
+                timeout_seconds=float(item.get("timeout_seconds") or 120),
+            )
+        )
+    return result
+
+
+def prepare_repository_validation(
+    configuration: dict[str, Any],
+    repository: Path,
+    *,
+    manual_commands: Sequence[str] = (),
+    confirm_low_confidence: bool = False,
+    allow_prompt: bool = True,
+    confirmed_by: str = "cli",
+) -> dict[str, Any]:
+    """Attach confirmed validation argv while retaining advisory discovery."""
+
+    if manual_commands:
+        commands = [
+            confirmed_command(
+                parse_manual_command(command),
+                source="manual_override",
+                confidence=1.0,
+                confirmed_by=confirmed_by,
+                validation_id=f"repository_validation_{index:03d}",
+            )
+            for index, command in enumerate(manual_commands, 1)
+        ]
+        discovery = discover_repository_validation(repository)
+        discovery["selection"] = {
+            "source": "manual_override",
+            "commands": [item["display_command"] for item in commands],
+            "confirmed": True,
+        }
+        for item in commands:
+            console.print(f"Validation: {item['display_command']} (manual override)")
+    else:
+        configured = _configured_validation_commands(configuration)
+        discovery = discover_repository_validation(repository)
+        if configured:
+            commands = configured
+            discovery["selection"] = {
+                "source": "configured_override",
+                "commands": [item["display_command"] for item in commands],
+                "confirmed": True,
+            }
+            for item in commands:
+                console.print(
+                    f"Validation: {item['display_command']} (configured override)",
+                    markup=False,
+                )
+        else:
+            suggestions = discovery.get("suggestions")
+            selected = (
+                suggestions[0]
+                if isinstance(suggestions, list) and suggestions
+                else None
+            )
+            if not isinstance(selected, Mapping):
+                _run_usage_error(
+                    "no_validation_command",
+                    "no repository validation command was discovered",
+                )
+            argv = selected.get("argv")
+            if not isinstance(argv, list) or not all(
+                isinstance(value, str) and value for value in argv
+            ):
+                _run_usage_error(
+                    "no_validation_command",
+                    "the discovered repository validation command was malformed",
+                )
+            confidence = float(selected.get("confidence") or 0)
+            command_text = display_argv(argv)
+            console.print(
+                f"Validation: {command_text} ({selected.get('confidence_label')} confidence)",
+                markup=False,
+            )
+            if confidence < CONFIRMATION_THRESHOLD and not confirm_low_confidence:
+                if not allow_prompt or not typer.confirm(
+                    "Discovery confidence is low. Run exactly this command for every candidate?",
+                    default=False,
+                ):
+                    _run_usage_error(
+                        "no_validation_command",
+                        "low-confidence validation discovery was not confirmed",
+                    )
+            commands = [
+                confirmed_command(
+                    argv,
+                    source=str(selected.get("source") or "metadata_discovery"),
+                    confidence=confidence,
+                    confirmed_by=confirmed_by,
+                    validation_id="repository_validation_001",
+                )
+            ]
+            discovery["selection"] = {
+                "suggestion_id": selected.get("suggestion_id"),
+                "source": selected.get("source"),
+                "commands": [command_text],
+                "confirmed": True,
+                "confirmed_by": confirmed_by,
+            }
+    configuration["repository_validation_commands"] = commands
+    configuration["repository_validation_discovery"] = discovery
+    return discovery
+
+
+_ASCII_PROGRESS_SYMBOLS = {
+    "·": ".",
+    "●": "*",
+    "✓": "+",
+    "×": "x",
+    "↗": "^",
+    "◆": ">",
+}
+
+
+def _display_progress_symbol(symbol: str, encoding: str | None = None) -> str:
+    selected_encoding = encoding or console.encoding or "utf-8"
+    try:
+        symbol.encode(selected_encoding)
+    except (LookupError, UnicodeEncodeError):
+        return _ASCII_PROGRESS_SYMBOLS.get(symbol, "*")
+    return symbol
+
+
+def _run_progress_listener(
+    runs_root: Path,
+    *,
+    verbose: bool = False,
+    debug: bool = False,
+) -> Callable[[Any], None]:
+    ordinals: dict[str, int] = {}
 
     def listener(event: Any) -> None:
         if event.event_type == "run_created":
             setattr(listener, "run_created", True)
+            setattr(listener, "run_id", event.run_id)
             console.print(f"Run ID: {event.run_id}")
             console.print(f"Run directory: {runs_root / event.run_id}")
-            return
-        state = state_events.get(event.event_type)
-        if state and state not in shown:
-            shown.add(state)
-            console.print(f"State: {state}")
+        if event.event_type == "attempt_started" and event.attempt_id:
+            ordinal = event.payload.get("ordinal")
+            if isinstance(ordinal, int):
+                ordinals[event.attempt_id] = ordinal
+        for line in progress_lines_for_event(
+            event,
+            ordinals=ordinals,
+            include_raw=verbose or debug,
+        ):
+            suffix = f" [{line['raw_event_type']}]" if verbose and not debug else ""
+            console.print(
+                f"{_display_progress_symbol(str(line['symbol']))} {line['message']}{suffix}",
+                markup=False,
+            )
+        if debug:
+            value = event.model_dump(mode="json")
+            console.print(json.dumps(redact_data(value), sort_keys=True), markup=False)
 
     setattr(listener, "run_created", False)
+    setattr(listener, "run_id", None)
     return listener
 
 
@@ -1502,134 +2362,474 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _cost_text(value: Any, status: Any, currency: Any = "USD") -> str:
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _money(value: Any, status: Any, currency: Any = "USD") -> str:
     code = str(currency or "USD").upper()
-    return f"{code} {float(value):.6f}" if value is not None else f"unknown ({status})"
+    return f"{code} {float(value):.2f}" if value is not None else f"Unknown ({status})"
+
+
+def _cost_text(value: Any, status: Any, currency: Any = "USD") -> str:
+    """Compatibility formatter for non-run listing commands."""
+
+    return _money(value, status, currency)
 
 
 def _print_terminal_summary(
     result: ClosedLoopRunResult,
+    *,
+    verbose: bool = False,
 ) -> None:
-    run_dir = Path(result.run_directory)
-    classification = _read_json(run_dir / "classification.json") or {}
-    manifest = _read_json(run_dir / "manifest.json") or {}
-    attempts = []
-    for attempt_id in manifest.get("attempt_ids") or []:
-        attempt = _read_json(run_dir / "attempts" / str(attempt_id) / "attempt.json")
-        if attempt:
-            attempts.append(attempt)
-    verifications = []
-    for attempt in attempts:
-        verification = _read_json(
-            run_dir / "verification" / f"{attempt.get('attempt_id')}.json"
-        )
-        if verification:
-            verifications.append(verification)
-    materialization = _read_json(run_dir / "materialization.json") or {}
-    console.print(f"Terminal state: {result.terminal_state}")
-    if classification:
+    presentation = build_run_presentation(
+        result.run_directory, include_raw_events=verbose
+    )
+    console.print(str(presentation["outcome"]), markup=False)
+    console.print("", markup=False)
+    console.print(str(presentation["summary"]), markup=False)
+
+    delivery = _mapping(presentation.get("delivery"))
+    if delivery:
+        console.print("\nDelivery:", markup=False)
         console.print(
-            "Classification: "
-            f"{classification.get('difficulty')} / {classification.get('risk')} / "
-            f"{classification.get('category')} "
-            f"(confidence {classification.get('confidence')})"
+            f"  {delivery.get('label') or delivery.get('state')} "
+            f"(mode: {delivery.get('mode')})",
+            markup=False,
         )
-    sequence = " -> ".join(
-        f"{item.get('backend_name')}/{item.get('model') or 'unknown-model'}"
-        for item in attempts
+        if delivery.get("target_worktree_modified"):
+            console.print("  The target working tree was modified.", markup=False)
+        elif delivery.get("repository_modified"):
+            console.print(
+                "  A separate delivery branch/worktree was created; the original branch was not switched.",
+                markup=False,
+            )
+        else:
+            console.print("  The target repository was not modified.", markup=False)
+        authority = _mapping(delivery.get("authority"))
+        if authority:
+            console.print(
+                f"  Authority: {'permitted' if authority.get('permitted') else 'not permitted'} "
+                f"({authority.get('policy_version') or 'unversioned policy'})",
+                markup=False,
+            )
+        approval_record = _mapping(delivery.get("approval"))
+        if approval_record.get("status") == "pending":
+            deadline = approval_record.get("deadline") or "no deadline"
+            console.print(f"  Approval deadline: {deadline}", markup=False)
+
+    changed = _mapping(presentation.get("changed"))
+    console.print("\nChanged:", markup=False)
+    files = changed.get("files") if isinstance(changed.get("files"), list) else []
+    if files:
+        for path in files:
+            console.print(f"  {path}", markup=False)
+    else:
+        console.print("  No files are in the selected patch.", markup=False)
+    review = _mapping(delivery.get("review"))
+    if review:
+        console.print(
+            f"  {review.get('insertions', 0)} insertions, "
+            f"{review.get('deletions', 0)} deletions",
+            markup=False,
+        )
+        comparison = review.get("candidate_comparison")
+        if isinstance(comparison, list) and comparison:
+            console.print(
+                f"  Compared {len(comparison)} acceptance-eligible candidate"
+                f"{'s' if len(comparison) != 1 else ''}.",
+                markup=False,
+            )
+        for warning in review.get("unrelated_change_warnings") or []:
+            console.print(f"  Warning: {warning}", markup=False)
+        for warning in review.get("sensitive_file_warnings") or []:
+            console.print(f"  Warning: {warning}", markup=False)
+
+    confidence = _mapping(presentation.get("confidence"))
+    validation = _mapping(presentation.get("validation"))
+    console.print("\nConfidence and authority:", markup=False)
+    confidence_text = (
+        f"{float(confidence['value']):.0%}"
+        if confidence.get("value") is not None
+        else "Unknown"
     )
-    console.print(f"Attempts: {sequence or 'none'}")
-    verifier_text = ", ".join(
-        f"{item.get('attempt_id')}={item.get('outcome')}" for item in verifications
-    )
-    console.print(f"Verifier outcomes: {verifier_text or 'none'}")
-    console.print(f"Selected attempt: {result.selected_attempt_id or 'none'}")
     console.print(
-        "Cost: "
-        + _cost_text(
-            manifest.get("total_cost_usd"),
-            manifest.get("cost_accounting_status", result.accounting_status),
-            manifest.get("currency", "USD"),
+        f"  {confidence.get('label')} · {confidence_text} · {confidence.get('authority')}",
+        markup=False,
+    )
+    console.print("\nValidation:", markup=False)
+    console.print(
+        f"  {validation.get('checks_passed', 0)} repository checks passed; "
+        f"{validation.get('checks_failed', 0)} failed",
+        markup=False,
+    )
+    console.print(
+        f"  {validation.get('requirements_verified', 0)} task requirements verified",
+        markup=False,
+    )
+    for command in validation.get("commands") or []:
+        console.print(f"  {command.get('command')}", markup=False)
+
+    console.print("\nRemaining risks:", markup=False)
+    for risk in presentation.get("remaining_risks") or []:
+        console.print(f"  {risk}", markup=False)
+
+    console.print("\nCost:", markup=False)
+    cost = _mapping(presentation.get("cost"))
+    currency = cost.get("currency", "USD")
+    console.print(
+        f"  Coding       {_money(cost.get('coding'), cost.get('coding_status'), currency)}",
+        markup=False,
+    )
+    console.print(
+        f"  Verification {_money(cost.get('verification'), cost.get('verification_status'), currency)}",
+        markup=False,
+    )
+    console.print(
+        f"  Total        {_money(cost.get('total'), cost.get('accounting_status'), currency)}",
+        markup=False,
+    )
+
+    console.print("\nVillani recovery:", markup=False)
+    for item in presentation.get("recovery") or []:
+        console.print(f"  {item}", markup=False)
+
+    failure = presentation.get("failure")
+    if isinstance(failure, Mapping):
+        console.print("\nFailure details:", markup=False)
+        console.print(f"  What failed: {failure.get('what_failed')}", markup=False)
+        console.print(
+            f"  Evidence missing: {failure.get('missing_evidence')}", markup=False
         )
+        console.print(f"  Patch: {failure.get('patch_status')}", markup=False)
+
+    console.print("\nNext:", markup=False)
+    for item in presentation.get("next_actions") or []:
+        console.print(f"  {item.get('label')}: {item.get('action')}", markup=False)
+
+
+_DELIVERY_MODES = {
+    "suggest": "patch_export",
+    "approve": "local_patch_apply",
+    "apply": "local_patch_apply",
+    "branch": "local_branch",
+    "pull-request": "pull_request",
+}
+# Accepted as a compatibility alias, but no longer presented as a public mode.
+_LEGACY_DELIVERY_ALIASES = {"patch": "suggest"}
+_APPROVAL_MODES = {"automatic", "review"}
+_POLICY_SELECTIONS = {"configured", "bootstrap", "active", "last-known-good"}
+
+
+def configure_run_experience(
+    configuration: dict[str, Any],
+    *,
+    delivery_mode: str,
+    approval_mode: str | None,
+    policy_selection: str,
+    routing_mode: str | None,
+) -> None:
+    """Apply user-facing choices without changing acceptance eligibility."""
+
+    delivery_mode = _LEGACY_DELIVERY_ALIASES.get(delivery_mode, delivery_mode)
+    if delivery_mode not in _DELIVERY_MODES:
+        _usage_error(
+            "--delivery must be suggest, approve, apply, branch, or pull-request"
+        )
+    if approval_mode is not None and approval_mode not in _APPROVAL_MODES:
+        _usage_error("--approval must be automatic or review")
+    if policy_selection not in _POLICY_SELECTIONS:
+        _usage_error(
+            "--policy must be configured, bootstrap, active, or last-known-good"
+        )
+    if routing_mode is not None and routing_mode not in {
+        "observe",
+        "recommend",
+        "enforce",
+    }:
+        _usage_error("--mode must be observe, recommend, or enforce")
+
+    if approval_mode == "review" and delivery_mode == "apply":
+        # M3 compatibility: review now means a real persisted approval pause.
+        delivery_mode = "approve"
+    requested_kind = _DELIVERY_MODES[delivery_mode]
+    effective_kind = requested_kind
+    delivery = configuration.setdefault("delivery", {})
+    if not isinstance(delivery, dict):
+        _usage_error("config delivery must be a YAML object")
+    delivery["workflow_version"] = "villani.delivery_workflow.v1"
+    delivery["mode"] = delivery_mode
+    delivery["materialization_type"] = effective_kind
+    delivery["requested_materialization_type"] = requested_kind
+    delivery["approval_mode"] = (
+        "explicit" if delivery_mode == "approve" else "automatic"
     )
-    tokens = (
-        f"{manifest.get('total_input_tokens')} input / "
-        f"{manifest.get('total_output_tokens')} output"
-        if manifest.get("total_input_tokens") is not None
-        and manifest.get("total_output_tokens") is not None
-        else f"unknown ({manifest.get('token_accounting_status', 'unknown')})"
+    if delivery_mode == "branch":
+        # Branch commits are opt-in. Pull-request delivery always commits.
+        delivery.setdefault("commit", False)
+    approval_configuration = delivery.setdefault("approval", {})
+    if not isinstance(approval_configuration, dict):
+        _usage_error("config delivery.approval must be a YAML object")
+    approval_configuration.setdefault("timeout_seconds", 24 * 60 * 60)
+    approval_configuration.setdefault("timeout_policy", "reject")
+
+    routing = configuration.setdefault("routing", {})
+    if not isinstance(routing, dict):
+        _usage_error("config routing must be a YAML object")
+    if routing_mode is not None:
+        routing["mode"] = routing_mode
+    if policy_selection == "bootstrap":
+        for key in ("active_policy", "last_known_good_policy"):
+            value = routing.get(key)
+            if isinstance(value, Mapping):
+                routing[key] = {**dict(value), "state": "paused"}
+    elif policy_selection == "active":
+        value = routing.get("active_policy")
+        if not isinstance(value, Mapping) or value.get("state") != "active":
+            _usage_error("no active advanced routing policy is configured")
+    elif policy_selection == "last-known-good":
+        value = routing.get("last_known_good_policy")
+        if not isinstance(value, Mapping) or value.get("state") != "active":
+            _usage_error("no active last-known-good routing policy is configured")
+        active = routing.get("active_policy")
+        if isinstance(active, Mapping):
+            routing["active_policy"] = {**dict(active), "state": "paused"}
+
+    configuration["run_experience"] = {
+        "delivery_mode": delivery_mode,
+        "effective_materialization_type": effective_kind,
+        "approval_mode": ("explicit" if delivery_mode == "approve" else "automatic"),
+        "policy_preset": configured_policy_preset(configuration),
+        "policy_selection": policy_selection,
+        "routing_mode": routing.get("mode", "observe"),
+    }
+
+
+def resolve_run_budgets(
+    configuration: Mapping[str, Any],
+    *,
+    max_attempts: int | None,
+    max_cost: float | None,
+    max_wall_time: float | None,
+) -> tuple[int, float | None, float | None]:
+    budgets = configuration.get("budgets")
+    values = budgets if isinstance(budgets, Mapping) else {}
+    attempts_value = (
+        max_attempts if max_attempts is not None else values.get("max_attempts", 3)
     )
-    console.print(f"Tokens: {tokens}")
-    duration = (
-        f"{manifest.get('total_duration_ms')} ms"
-        if manifest.get("total_duration_ms") is not None
-        else f"unknown ({manifest.get('duration_accounting_status', 'unknown')})"
+    cost_value = max_cost if max_cost is not None else values.get("max_cost")
+    wall_value = (
+        max_wall_time if max_wall_time is not None else values.get("max_wall_time")
     )
-    console.print(f"Duration: {duration}")
-    wall = manifest.get("run_wall_clock_duration_ms")
-    if wall is not None:
-        console.print(f"Run wall clock: {wall} ms")
-    patch_status = materialization.get("status") or (
-        "recorded" if (run_dir / "final.patch").is_file() else "not materialized"
+    try:
+        attempts = int(attempts_value)
+        cost = float(cost_value) if cost_value is not None else None
+        wall = float(wall_value) if wall_value is not None else None
+    except (TypeError, ValueError):
+        _usage_error("configured budgets must be numeric")
+    if attempts < 1:
+        _usage_error("--max-attempts must be at least 1")
+    if cost is not None and cost < 0:
+        _usage_error("--max-cost must not be negative")
+    if wall is not None and wall < 0:
+        _usage_error("--max-wall-time must not be negative")
+    return attempts, cost, wall
+
+
+def _execute_new_run(
+    *,
+    task: str,
+    repository: Path,
+    success_criteria: str,
+    configuration: dict[str, Any],
+    max_attempts: int,
+    max_cost: float | None,
+    max_wall_time: float | None,
+    requires_file_changes: bool,
+    verbose: bool,
+    debug: bool,
+    lineage: Mapping[str, Any] | None = None,
+    run_id: str | None = None,
+) -> ClosedLoopRunResult:
+    runs_root = _runs_root()
+    runs_root.mkdir(parents=True, exist_ok=True)
+    builder = _controller_builder or build_controller
+    progress_listener = _run_progress_listener(runs_root, verbose=verbose, debug=debug)
+    try:
+        controller = builder(configuration, progress_listener)
+    except typer.Exit:
+        raise
+    except (TypeError, ValueError, ValidationError) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _run_usage_error(
+            infer_failure_code(None, message), f"Invalid run configuration: {message}"
+        )
+    request = ClosedLoopRunRequest(
+        task=task,
+        repository_path=repository,
+        success_criteria=success_criteria,
+        runs_root=runs_root,
+        max_attempts=max_attempts,
+        max_cost=max_cost,
+        max_wall_time=max_wall_time,
+        requires_file_changes=requires_file_changes,
+        policy_configuration=configuration,
+        lineage=dict(lineage or {}),
+        run_id=run_id,
     )
-    console.print(f"Final patch: {patch_status}")
-    if result.failure_or_exhaustion_reason:
-        console.print(f"Reason: {result.failure_or_exhaustion_reason}")
+    try:
+        result = controller.run(request)
+    except KeyboardInterrupt:
+        cancelled_run_id = getattr(progress_listener, "run_id", None)
+        cancelled_directory = (
+            runs_root / str(cancelled_run_id) if cancelled_run_id else None
+        )
+        try:
+            cancelled_manifest = (
+                _read_json(cancelled_directory / "manifest.json")
+                if cancelled_directory is not None
+                else None
+            ) or {}
+        except (OSError, json.JSONDecodeError):
+            cancelled_manifest = {}
+        cancelled_attempt_ids = [
+            str(item)
+            for item in cancelled_manifest.get("attempt_ids", [])
+            if isinstance(item, str)
+        ]
+        patch_preserved = bool(
+            cancelled_directory is not None
+            and (
+                (cancelled_directory / "final.patch").is_file()
+                or any(
+                    (
+                        cancelled_directory / "attempts" / attempt_id / "patch.diff"
+                    ).is_file()
+                    for attempt_id in cancelled_attempt_ids
+                )
+            )
+        )
+        _print_failure_experience(
+            "user_cancelled",
+            "The run was cancelled by the user.",
+            attempts=len(cancelled_attempt_ids),
+            patch_preserved=patch_preserved,
+        )
+        raise typer.Exit(130) from None
+    try:
+        capabilities = _capability_configuration(configuration)
+        scorer = str(capabilities.get("scorer_version") or "empirical_wilson_v1")
+        CapabilityStore(_home() / "capabilities").rebuild(
+            runs_root,
+            scorer_version=scorer,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        console.print(
+            "Capability profile synchronization pending: "
+            f"the run is durable, but observed model statistics could not be refreshed ({error})."
+        )
+    if not bool(getattr(progress_listener, "run_created", False)):
+        console.print(f"Run ID: {result.run_id}")
+        console.print(f"Run directory: {result.run_directory}")
+    return result
+
+
+def _finish_run(
+    result: ClosedLoopRunResult,
+    *,
+    verbose: bool,
+    open_after: bool,
+) -> None:
+    _print_terminal_summary(result, verbose=verbose)
+    if open_after:
+        _open_flight_recorder(result.run_id)
+    if result.terminal_state == "EXHAUSTED":
+        raise typer.Exit(3)
+    if result.terminal_state == "FAILED":
+        raise typer.Exit(4)
 
 
 @app.command("run")
 def run_command(
     task: str = typer.Argument(..., help="Coding task, preserved verbatim."),
-    repo: Path = typer.Option(..., "--repo", help="Existing Git repository."),
+    repo: Path | None = typer.Option(
+        None,
+        "--repo",
+        help="Git repository. Defaults to the current repository.",
+    ),
     success_criteria: str | None = typer.Option(None, "--success-criteria"),
+    validation_command: list[str] | None = typer.Option(
+        None,
+        "--validation-command",
+        help="Exact validation command; repeat for multiple commands.",
+    ),
+    confirm_validation: bool = typer.Option(
+        False,
+        "--confirm-validation",
+        help="Confirm a low-confidence discovered command non-interactively.",
+    ),
+    delivery: str | None = typer.Option(
+        None,
+        "--delivery",
+        help="suggest, approve, apply, branch, or pull-request",
+    ),
+    approval: str | None = typer.Option(None, "--approval", hidden=True),
     max_attempts: int | None = typer.Option(None, "--max-attempts"),
     max_cost: float | None = typer.Option(None, "--max-cost"),
     max_wall_time: float | None = typer.Option(None, "--max-wall-time"),
     accepted_candidates_required: int | None = typer.Option(
         None, "--accepted-candidates-required"
     ),
-    open_after: bool = typer.Option(False, "--open"),
-    mode: str | None = typer.Option(
-        None, "--mode", help="observe, recommend, or enforce"
+    preset: str | None = typer.Option(
+        None,
+        "--preset",
+        help="Reliable, Balanced, Local first, Cheapest acceptable, or Custom.",
     ),
+    policy_selection: str = typer.Option(
+        "configured",
+        "--policy",
+        hidden=True,
+    ),
+    mode: str | None = typer.Option(None, "--mode", hidden=True),
+    allow_no_file_change: bool = typer.Option(False, "--allow-no-file-change"),
+    verbose: bool = typer.Option(False, "--verbose"),
+    debug: bool = typer.Option(False, "--debug"),
+    open_after: bool = typer.Option(False, "--open"),
+    run_id: str | None = typer.Option(None, "--run-id", hidden=True),
 ) -> None:
     """Run one canonical deterministic closed loop."""
 
-    repository = repo.expanduser().resolve()
-    if not repository.exists() or not repository.is_dir():
-        _usage_error(f"repository does not exist or is not a directory: {repository}")
-    if not _is_git_repository(repository):
-        _usage_error(f"repository is not a Git work tree: {repository}")
-    configuration = _load_config()
-    if mode is not None:
-        if mode not in {"observe", "recommend", "enforce"}:
-            _usage_error("--mode must be observe, recommend, or enforce")
-        routing = configuration.setdefault("routing", {})
-        if not isinstance(routing, dict):
-            _usage_error("config routing must be a YAML object")
-        routing["mode"] = mode
-    budgets = configuration.get("budgets")
-    if not isinstance(budgets, Mapping):
-        budgets = {}
-    attempts_budget = (
-        max_attempts if max_attempts is not None else budgets.get("max_attempts", 3)
-    )
-    cost_budget = max_cost if max_cost is not None else budgets.get("max_cost")
-    wall_budget = (
-        max_wall_time if max_wall_time is not None else budgets.get("max_wall_time")
-    )
+    repository = _resolve_run_repository(repo)
     try:
-        attempts_budget = int(attempts_budget)
-        cost_budget = float(cost_budget) if cost_budget is not None else None
-        wall_budget = float(wall_budget) if wall_budget is not None else None
-    except (TypeError, ValueError):
-        _usage_error("configured budgets must be numeric")
-    if attempts_budget < 1:
-        _usage_error("--max-attempts must be at least 1")
-    if cost_budget is not None and cost_budget < 0:
-        _usage_error("--max-cost must not be negative")
-    if wall_budget is not None and wall_budget < 0:
-        _usage_error("--max-wall-time must not be negative")
+        configuration = apply_policy_preset(_load_config(), preset)
+    except ValueError as error:
+        _usage_error(str(error))
+    selected_delivery = delivery or _delivery_mode_from_configuration(configuration)
+    configure_run_experience(
+        configuration,
+        delivery_mode=selected_delivery,
+        approval_mode=approval,
+        policy_selection=policy_selection,
+        routing_mode=mode,
+    )
+    prepare_repository_validation(
+        configuration,
+        repository,
+        manual_commands=validation_command or (),
+        confirm_low_confidence=confirm_validation,
+        allow_prompt=True,
+        confirmed_by="cli",
+    )
+    attempts_budget, cost_budget, wall_budget = resolve_run_budgets(
+        configuration,
+        max_attempts=max_attempts,
+        max_cost=max_cost,
+        max_wall_time=max_wall_time,
+    )
     policy = configuration.setdefault("policy", {})
     if not isinstance(policy, dict):
         _usage_error("config policy must be a YAML object")
@@ -1637,40 +2837,20 @@ def run_command(
         if accepted_candidates_required < 1:
             _usage_error("--accepted-candidates-required must be at least 1")
         policy["accepted_candidates_required"] = accepted_candidates_required
-    runs_root = _runs_root()
-    runs_root.mkdir(parents=True, exist_ok=True)
-    builder = _controller_builder or build_controller
-    progress_listener = _run_progress_listener(runs_root)
-    try:
-        controller = builder(configuration, progress_listener)
-    except (TypeError, ValueError, ValidationError) as error:
-        message = (
-            _validation_message(error)
-            if isinstance(error, ValidationError)
-            else str(error)
-        )
-        _usage_error(f"invalid run configuration: {message}")
-    request = ClosedLoopRunRequest(
+    result = _execute_new_run(
         task=task,
-        repository_path=repository,
+        repository=repository,
         success_criteria=success_criteria if success_criteria is not None else task,
-        runs_root=runs_root,
+        configuration=configuration,
         max_attempts=attempts_budget,
         max_cost=cost_budget,
         max_wall_time=wall_budget,
-        policy_configuration=configuration,
+        requires_file_changes=not allow_no_file_change,
+        verbose=verbose,
+        debug=debug,
+        run_id=run_id,
     )
-    result = controller.run(request)
-    if not bool(getattr(progress_listener, "run_created", False)):
-        console.print(f"Run ID: {result.run_id}")
-        console.print(f"Run directory: {result.run_directory}")
-    _print_terminal_summary(result)
-    if open_after:
-        _open_flight_recorder(result.run_id)
-    if result.terminal_state == "EXHAUSTED":
-        raise typer.Exit(3)
-    if result.terminal_state == "FAILED":
-        raise typer.Exit(4)
+    _finish_run(result, verbose=verbose or debug, open_after=open_after)
 
 
 def _latest_interrupted_run(root: Path) -> str | None:
@@ -1698,8 +2878,10 @@ def _resume_materialization_is_safe(run_dir: Path, state: Mapping[str, Any]) -> 
     task = _read_json(run_dir / "task.json") or {}
     repository = Path(str(task.get("repository_path") or ""))
     if not repository.is_dir() or not _is_git_repository(repository):
-        _usage_error(
-            "recovery error: target repository is missing or is no longer a Git work tree"
+        _run_usage_error(
+            "repository_changed_before_materialization",
+            "The target repository is missing or is no longer a Git work tree.",
+            patch_preserved=(run_dir / "final.patch").is_file(),
         )
     result = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
@@ -1708,8 +2890,10 @@ def _resume_materialization_is_safe(run_dir: Path, state: Mapping[str, Any]) -> 
         capture_output=True,
     )
     if result.returncode != 0 or result.stdout:
-        _usage_error(
-            "recovery error: target repository is dirty; refusing unsafe patch materialization"
+        _run_usage_error(
+            "repository_changed_before_materialization",
+            "The target repository changed before patch materialization; refusing an unsafe apply.",
+            patch_preserved=(run_dir / "final.patch").is_file(),
         )
 
 
@@ -1756,6 +2940,8 @@ def resume_command(
     latest: bool = typer.Option(
         False, "--latest", help="Resume the newest interrupted run."
     ),
+    verbose: bool = typer.Option(False, "--verbose"),
+    debug: bool = typer.Option(False, "--debug"),
 ) -> None:
     """Safely reconcile and continue an interrupted canonical closed-loop run."""
 
@@ -1774,8 +2960,37 @@ def resume_command(
     except ValueError as error:
         _usage_error(f"recovery error: {error}")
     if bool(state.get("terminal")):
-        console.print(f"Run ID: {selected}")
-        console.print(f"State: {state.get('state')}")
+        terminal_state = str(state.get("state") or "FAILED")
+        result = ClosedLoopRunResult(
+            run_id=str(selected),
+            terminal_state=(
+                terminal_state
+                if terminal_state in {"COMPLETED", "EXHAUSTED", "FAILED"}
+                else "FAILED"
+            ),
+            selected_attempt_id=(
+                str(manifest.get("selected_attempt_id"))
+                if manifest.get("selected_attempt_id")
+                else None
+            ),
+            run_directory=directory,
+            actual_known_cost_usd=(
+                float(manifest["total_cost_usd"])
+                if isinstance(manifest.get("total_cost_usd"), (int, float))
+                else None
+            ),
+            accounting_status=str(manifest.get("cost_accounting_status") or "unknown"),
+            failure_or_exhaustion_reason=None,
+        )
+        console.print(
+            "This run is already terminal. No recovery action was taken and no cost was duplicated.",
+            markup=False,
+        )
+        _print_terminal_summary(result, verbose=verbose or debug)
+        console.print(
+            f"To start from the same task with a new identity: villani rerun {selected}",
+            markup=False,
+        )
         return
     _resume_materialization_is_safe(directory, state)
     persisted_configuration = (manifest.get("metadata") or {}).get(
@@ -1791,7 +3006,10 @@ def resume_command(
         _usage_error(f"recovery error: cannot load current credentials: {error}")
     builder = _controller_builder or build_controller
     try:
-        controller = builder(dict(configuration), _run_progress_listener(root))
+        controller = builder(
+            dict(configuration),
+            _run_progress_listener(root, verbose=verbose, debug=debug),
+        )
     except (TypeError, ValueError, ValidationError) as error:
         message = (
             _validation_message(error)
@@ -1803,11 +3021,315 @@ def resume_command(
         result = controller.resume(selected, root)
     except Exception as error:
         _usage_error(f"recovery error: {redact_data(str(error))}")
-    _print_terminal_summary(result)
+    _print_terminal_summary(result, verbose=verbose or debug)
     if result.terminal_state == "EXHAUSTED":
         raise typer.Exit(3)
     if result.terminal_state == "FAILED":
         raise typer.Exit(4)
+
+
+def _approval_controller(
+    run_id: str, *, verbose: bool, debug: bool
+) -> tuple[ClosedLoopController, Path]:
+    root = _runs_root()
+    directory = _run_dir(run_id)
+    if not directory.is_dir():
+        _usage_error(f"run not found: {run_id}")
+    try:
+        manifest = _protocol_document(directory / "manifest.json")
+        state = _protocol_document(directory / "state.json")
+    except ValueError as error:
+        _usage_error(f"approval error: {error}")
+    if str(state.get("state")) != "AWAITING_APPROVAL":
+        _usage_error("approval action requires a run that is awaiting approval")
+    persisted_configuration = _mapping(
+        _mapping(manifest.get("metadata")).get("policy_configuration")
+    )
+    if not persisted_configuration:
+        _usage_error("approval error: run bundle has no usable configuration")
+    try:
+        configuration = _resume_configuration(persisted_configuration)
+        builder = _controller_builder or build_controller
+        controller = builder(
+            configuration,
+            _run_progress_listener(root, verbose=verbose, debug=debug),
+        )
+    except typer.Exit:
+        raise
+    except (TypeError, ValueError, ValidationError) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _usage_error(f"approval error: {message}")
+    return controller, root
+
+
+def _run_approval_action(
+    run_id: str,
+    *,
+    action: str,
+    reason: str,
+    candidate_id: str | None,
+    verbose: bool,
+    debug: bool,
+) -> None:
+    controller, root = _approval_controller(run_id, verbose=verbose, debug=debug)
+    actor = (
+        os.environ.get("VILLANI_APPROVER") or os.environ.get("USERNAME") or "local-user"
+    )
+    try:
+        result = controller.approval_action(
+            run_id,
+            root,
+            action=action,  # type: ignore[arg-type]
+            actor=actor,
+            authenticated=False,
+            authentication_type="local_cli",
+            reason=reason,
+            candidate_id=candidate_id,
+        )
+    except PermissionError as error:
+        _usage_error(f"approval denied: {redact_data(str(error))}")
+    except (OSError, TypeError, ValueError) as error:
+        _usage_error(f"approval error: {redact_data(str(error))}")
+    _finish_run(result, verbose=verbose or debug, open_after=False)
+
+
+@app.command("approve")
+def approve_command(
+    run_id: str = typer.Argument(..., help="Run awaiting delivery approval."),
+    reason: str = typer.Option("Approved after patch review.", "--reason"),
+    verbose: bool = typer.Option(False, "--verbose"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Approve and apply the persisted selected patch."""
+
+    _run_approval_action(
+        run_id,
+        action="approve",
+        reason=reason,
+        candidate_id=None,
+        verbose=verbose,
+        debug=debug,
+    )
+
+
+@app.command("reject")
+def reject_command(
+    run_id: str = typer.Argument(..., help="Run awaiting delivery approval."),
+    reason: str = typer.Option("Delivery rejected after patch review.", "--reason"),
+    verbose: bool = typer.Option(False, "--verbose"),
+) -> None:
+    """Reject delivery while preserving the selected patch and evidence."""
+
+    _run_approval_action(
+        run_id,
+        action="reject",
+        reason=reason,
+        candidate_id=None,
+        verbose=verbose,
+        debug=False,
+    )
+
+
+@app.command("request-rerun")
+def request_rerun_command(
+    run_id: str = typer.Argument(..., help="Run awaiting delivery approval."),
+    reason: str = typer.Option("A new coding attempt is required.", "--reason"),
+    verbose: bool = typer.Option(False, "--verbose"),
+) -> None:
+    """Record a rerun request without applying the selected patch."""
+
+    _run_approval_action(
+        run_id,
+        action="request_rerun",
+        reason=reason,
+        candidate_id=None,
+        verbose=verbose,
+        debug=False,
+    )
+
+
+@app.command("choose-candidate")
+def choose_candidate_command(
+    run_id: str = typer.Argument(..., help="Run awaiting delivery approval."),
+    candidate_id: str = typer.Argument(
+        ..., help="Another acceptance-eligible candidate ID."
+    ),
+    reason: str = typer.Option("Selected during patch review.", "--reason"),
+    verbose: bool = typer.Option(False, "--verbose"),
+) -> None:
+    """Choose another eligible candidate when the active policy permits it."""
+
+    _run_approval_action(
+        run_id,
+        action="choose_candidate",
+        reason=reason,
+        candidate_id=candidate_id,
+        verbose=verbose,
+        debug=False,
+    )
+
+
+def _source_max_attempts(run_directory: Path, default: int) -> int:
+    try:
+        for event in read_jsonl_tolerant(run_directory / "events.jsonl"):
+            if event.get("event_type") != "run_created":
+                continue
+            value = _mapping(event.get("payload")).get("max_attempts")
+            if isinstance(value, int) and value >= 1:
+                return value
+            break
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
+    return default
+
+
+def _delivery_mode_from_configuration(configuration: Mapping[str, Any]) -> str:
+    experience = _mapping(configuration.get("run_experience"))
+    selected = experience.get("delivery_mode")
+    if selected in _DELIVERY_MODES:
+        return str(selected)
+    delivery = _mapping(configuration.get("delivery"))
+    configured_mode = delivery.get("mode")
+    if configured_mode in _DELIVERY_MODES:
+        return str(configured_mode)
+    default_mode = delivery.get("default_mode")
+    if default_mode in _DELIVERY_MODES:
+        return str(default_mode)
+    kind = str(
+        delivery.get("requested_materialization_type")
+        or delivery.get("materialization_type")
+        or "local_patch_apply"
+    )
+    if kind == "local_patch_apply" and str(delivery.get("approval_mode")) == "explicit":
+        return "approve"
+    return next(
+        (name for name, value in _DELIVERY_MODES.items() if value == kind), "suggest"
+    )
+
+
+@app.command("rerun")
+def rerun_command(
+    run_id: str = typer.Argument(..., help="Canonical source run ID."),
+    repo: Path | None = typer.Option(
+        None, "--repo", help="Override the source repository."
+    ),
+    success_criteria: str | None = typer.Option(None, "--success-criteria"),
+    validation_command: list[str] | None = typer.Option(
+        None,
+        "--validation-command",
+        help="Override exact validation command; repeat for multiple commands.",
+    ),
+    confirm_validation: bool = typer.Option(False, "--confirm-validation"),
+    delivery: str | None = typer.Option(None, "--delivery"),
+    approval: str | None = typer.Option(None, "--approval", hidden=True),
+    max_attempts: int | None = typer.Option(None, "--max-attempts"),
+    max_cost: float | None = typer.Option(None, "--max-cost"),
+    max_wall_time: float | None = typer.Option(None, "--max-wall-time"),
+    accepted_candidates_required: int | None = typer.Option(
+        None, "--accepted-candidates-required"
+    ),
+    preset: str | None = typer.Option(None, "--preset"),
+    policy_selection: str | None = typer.Option(None, "--policy", hidden=True),
+    mode: str | None = typer.Option(None, "--mode", hidden=True),
+    verbose: bool = typer.Option(False, "--verbose"),
+    debug: bool = typer.Option(False, "--debug"),
+    open_after: bool = typer.Option(False, "--open"),
+    new_run_id: str | None = typer.Option(None, "--run-id", hidden=True),
+) -> None:
+    """Run the same task again under a new canonical run identity."""
+
+    source_directory = _run_dir(run_id)
+    if not source_directory.is_dir():
+        _usage_error(f"run not found: {run_id}")
+    try:
+        source_manifest = _protocol_document(source_directory / "manifest.json")
+        source_task = _protocol_document(source_directory / "task.json")
+    except ValueError as error:
+        _usage_error(f"rerun error: {error}")
+    source_configuration = _mapping(
+        _mapping(source_manifest.get("metadata")).get("policy_configuration")
+    )
+    try:
+        configuration = _resume_configuration(source_configuration)
+        configuration = apply_policy_preset(configuration, preset)
+    except Exception as error:
+        _usage_error(f"rerun error: cannot load current credentials: {error}")
+
+    repository_value = repo or Path(str(source_task.get("repository_path") or ""))
+    repository = _resolve_run_repository(repository_value)
+    selected_delivery = delivery or _delivery_mode_from_configuration(configuration)
+    selected_approval = approval
+    selected_policy = policy_selection or "configured"
+    configure_run_experience(
+        configuration,
+        delivery_mode=selected_delivery,
+        approval_mode=selected_approval,
+        policy_selection=selected_policy,
+        routing_mode=mode,
+    )
+    prepare_repository_validation(
+        configuration,
+        repository,
+        manual_commands=validation_command or (),
+        confirm_low_confidence=confirm_validation,
+        allow_prompt=True,
+        confirmed_by="cli_rerun",
+    )
+    configured_attempts, configured_cost, configured_wall = resolve_run_budgets(
+        configuration,
+        max_attempts=max_attempts,
+        max_cost=max_cost,
+        max_wall_time=max_wall_time,
+    )
+    attempts_budget = (
+        configured_attempts
+        if max_attempts is not None
+        else _source_max_attempts(source_directory, configured_attempts)
+    )
+    policy = configuration.setdefault("policy", {})
+    if not isinstance(policy, dict):
+        _usage_error("config policy must be a YAML object")
+    if accepted_candidates_required is not None:
+        if accepted_candidates_required < 1:
+            _usage_error("--accepted-candidates-required must be at least 1")
+        policy["accepted_candidates_required"] = accepted_candidates_required
+
+    source_lineage = _mapping(_mapping(source_task.get("metadata")).get("lineage"))
+    root_run_id = str(source_lineage.get("root_run_id") or run_id)
+    lineage = {
+        "relationship": "rerun",
+        "parent_run_id": run_id,
+        "root_run_id": root_run_id,
+        "source_terminal_state": source_manifest.get("final_state"),
+        "cost_accounting": "new_run_only",
+    }
+    console.print(f"Previous run: {run_id}", markup=False)
+    result = _execute_new_run(
+        task=str(source_task.get("instruction") or ""),
+        repository=repository,
+        success_criteria=(
+            success_criteria
+            if success_criteria is not None
+            else str(
+                source_task.get("success_criteria") or source_task.get("instruction")
+            )
+        ),
+        configuration=configuration,
+        max_attempts=attempts_budget,
+        max_cost=configured_cost,
+        max_wall_time=configured_wall,
+        requires_file_changes=bool(source_task.get("requires_file_changes", True)),
+        verbose=verbose,
+        debug=debug,
+        lineage=lineage,
+        run_id=new_run_id,
+    )
+    console.print(f"Current run: {result.run_id}", markup=False)
+    _finish_run(result, verbose=verbose or debug, open_after=open_after)
 
 
 def _protocol_document(path: Path) -> dict[str, Any]:

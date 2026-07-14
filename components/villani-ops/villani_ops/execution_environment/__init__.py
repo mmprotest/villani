@@ -13,6 +13,15 @@ from .providers import (
     preflight_report,
     provider_from_configuration,
 )
+from .validation_discovery import (
+    CONFIRMATION_THRESHOLD,
+    ValidationDiscoveryPlugin,
+    ValidationDiscoveryRegistry,
+    confirmed_command,
+    discover_repository_validation,
+    display_argv,
+    parse_manual_command,
+)
 
 __all__ = [
     "ExecutionEnvironmentConfig",
@@ -31,4 +40,11 @@ __all__ = [
     "lockfile_digests",
     "preflight_report",
     "provider_from_configuration",
+    "CONFIRMATION_THRESHOLD",
+    "ValidationDiscoveryPlugin",
+    "ValidationDiscoveryRegistry",
+    "confirmed_command",
+    "discover_repository_validation",
+    "display_argv",
+    "parse_manual_command",
 ]

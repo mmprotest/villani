@@ -52,6 +52,20 @@ class FakeController:
     def run(self, request: Any) -> ClosedLoopRunResult:
         self.requests.append(request)
         run_dir = _copy_valid_run(Path(request.runs_root))
+        state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+        state["state"] = self.state
+        state["terminal"] = True
+        state["metadata"] = {
+            "terminal_reason": (
+                None if self.state == "COMPLETED" else f"fake {self.state.lower()}"
+            )
+        }
+        (run_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        manifest["final_state"] = self.state
+        if self.state != "COMPLETED":
+            manifest["selected_attempt_id"] = None
+        (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return ClosedLoopRunResult(
             run_id="run_protocol_fixture",
             terminal_state=self.state,  # type: ignore[arg-type]
@@ -74,6 +88,8 @@ def _invoke_fake_run(
     repository = tmp_path / "repo"
     repository.mkdir()
     monkeypatch.setattr(unified, "_is_git_repository", lambda path: True)
+    monkeypatch.setattr(unified, "_git_repository_root", lambda path: repository)
+    monkeypatch.setattr(unified, "_repository_dirty", lambda path: False)
     fake = FakeController(state)
     calls: list[dict[str, Any]] = []
 
@@ -91,6 +107,8 @@ def _invoke_fake_run(
             str(repository),
             "--success-criteria",
             "Exact success criteria.  ",
+            "--validation-command",
+            "python -m pytest -q",
         ],
     )
     assert len(calls) == 1
@@ -106,6 +124,14 @@ def test_init_creates_config_and_does_not_overwrite(isolated_home: Path) -> None
     assert (isolated_home / "runs").is_dir()
     original = config.read_text(encoding="utf-8")
     assert original.startswith("# Villani local-first configuration")
+    initialized = yaml.safe_load(original)
+    assert initialized["delivery"]["default_mode"] == "apply"
+    assert initialized["delivery"]["authority_policy"] == {
+        "policy_version": "villani.default_delivery_authority.v1",
+        "allow_automatic": True,
+        "require_acceptance_eligible": True,
+        "allowed_risks": ["low"],
+    }
     config.write_text(original + "# user value\n", encoding="utf-8")
 
     second = runner.invoke(unified.app, ["init"])
@@ -237,6 +263,116 @@ def test_run_calls_closed_loop_controller_not_legacy_orchestrators(
     assert "VillaniOps(" not in source
 
 
+def test_run_defaults_to_current_git_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init()
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(unified, "_git_repository_root", lambda path: repository)
+    monkeypatch.setattr(unified, "_repository_dirty", lambda path: False)
+    fake = FakeController("COMPLETED")
+    monkeypatch.setattr(
+        unified, "_controller_builder", lambda _configuration, _events: fake
+    )
+
+    result = runner.invoke(
+        unified.app,
+        [
+            "run",
+            "Use the current repository.",
+            "--validation-command",
+            "python -m pytest -q",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake.requests[0].repository_path == repository.resolve()
+
+
+@pytest.mark.parametrize(
+    ("delivery_mode", "materialization_type", "approval_mode"),
+    [
+        ("suggest", "patch_export", "automatic"),
+        ("approve", "local_patch_apply", "explicit"),
+        ("apply", "local_patch_apply", "automatic"),
+        ("branch", "local_branch", "automatic"),
+        ("pull-request", "pull_request", "automatic"),
+    ],
+)
+def test_run_exposes_each_public_delivery_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    delivery_mode: str,
+    materialization_type: str,
+    approval_mode: str,
+) -> None:
+    _init()
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.setattr(unified, "_git_repository_root", lambda path: repository)
+    monkeypatch.setattr(unified, "_repository_dirty", lambda path: False)
+    fake = FakeController("COMPLETED")
+    monkeypatch.setattr(
+        unified, "_controller_builder", lambda _configuration, _events: fake
+    )
+
+    result = runner.invoke(
+        unified.app,
+        [
+            "run",
+            "Exercise delivery selection.",
+            "--repo",
+            str(repository),
+            "--validation-command",
+            "python -m pytest -q",
+            "--delivery",
+            delivery_mode,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    delivery = fake.requests[0].policy_configuration["delivery"]
+    assert delivery["workflow_version"] == "villani.delivery_workflow.v1"
+    assert delivery["mode"] == delivery_mode
+    assert delivery["materialization_type"] == materialization_type
+    assert delivery["approval_mode"] == approval_mode
+
+
+def test_bare_run_uses_initialized_delivery_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init()
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.setattr(unified, "_git_repository_root", lambda path: repository)
+    monkeypatch.setattr(unified, "_repository_dirty", lambda path: False)
+    monkeypatch.setattr(
+        unified, "prepare_repository_validation", lambda *args, **kwargs: None
+    )
+    fake = FakeController("COMPLETED")
+    monkeypatch.setattr(
+        unified, "_controller_builder", lambda _configuration, _events: fake
+    )
+
+    result = runner.invoke(
+        unified.app,
+        ["run", "Exercise the configured default.", "--repo", str(repository)],
+    )
+
+    assert result.exit_code == 0, result.output
+    delivery = fake.requests[0].policy_configuration["delivery"]
+    assert delivery["mode"] == "apply"
+    assert delivery["authority_policy"]["allow_automatic"] is True
+
+
+def test_progress_symbols_fall_back_on_legacy_windows_encoding() -> None:
+    assert unified._display_progress_symbol("●", "cp1252") == "*"
+    assert unified._display_progress_symbol("✓", "cp1252") == "+"
+    assert unified._display_progress_symbol("●", "utf-8") == "●"
+
+
 def test_help_contains_no_architecture_selector() -> None:
     root_help = runner.invoke(unified.app, ["--help"])
     run_help = runner.invoke(unified.app, ["run", "--help"])
@@ -260,11 +396,25 @@ def test_help_contains_no_architecture_selector() -> None:
         "backend",
         "capability",
         "run",
+        "resume",
+        "rerun",
+        "approve",
+        "reject",
+        "request-rerun",
+        "choose-candidate",
         "runs",
         "inspect",
         "open",
     ):
         assert command in root_help.output
+    for delivery_mode in (
+        "suggest",
+        "approve",
+        "apply",
+        "branch",
+        "pull-request",
+    ):
+        assert delivery_mode in run_help.output
 
 
 def test_capability_commands_rebuild_list_and_explain_without_attempt(
@@ -340,15 +490,16 @@ def test_completed_run_exits_zero_and_prints_evidence_summary(
     assert result.exit_code == 0
     assert "Run ID: run_protocol_fixture" in result.output
     assert "Run directory:" in result.output
-    assert "Terminal state: COMPLETED" in result.output
-    assert "Classification:" in result.output
-    assert "Attempts:" in result.output
-    assert "Verifier outcomes:" in result.output
-    assert "Selected attempt: attempt_002" in result.output
-    assert "Cost: USD 0.050000" in result.output
-    assert "Tokens:" in result.output
-    assert "Duration:" in result.output
-    assert "Final patch: succeeded" in result.output
+    assert "ACCEPTED" in result.output
+    assert "Changed:" in result.output
+    assert "calculator.py" in result.output
+    assert "Confidence and authority:" in result.output
+    assert "Validation:" in result.output
+    assert "Remaining risks:" in result.output
+    assert "Villani recovery:" in result.output
+    assert "Total        USD 0.05" in result.output
+    assert "Next:" in result.output
+    assert "Terminal state:" not in result.output
 
 
 def test_exhausted_run_exits_three(
@@ -356,13 +507,15 @@ def test_exhausted_run_exits_three(
 ) -> None:
     result, _ = _invoke_fake_run(tmp_path, monkeypatch, "EXHAUSTED")
     assert result.exit_code == 3
-    assert "Terminal state: EXHAUSTED" in result.output
+    assert "EXHAUSTED" in result.output
+    assert "Failure details:" in result.output
 
 
 def test_failed_run_exits_four(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result, _ = _invoke_fake_run(tmp_path, monkeypatch, "FAILED")
     assert result.exit_code == 4
-    assert "Terminal state: FAILED" in result.output
+    assert "FAILED" in result.output
+    assert "Evidence missing:" in result.output
 
 
 def test_runs_tolerates_one_corrupt_bundle() -> None:

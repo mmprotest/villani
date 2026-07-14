@@ -307,6 +307,8 @@ class ClosedLoopRunRequest:
     max_cost: float | None = None
     max_wall_time: float | None = None
     requires_file_changes: bool = True
+    run_id: str | None = None
+    lineage: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.task:
@@ -319,12 +321,18 @@ class ClosedLoopRunRequest:
             raise ValueError("max_cost must not be negative")
         if self.max_wall_time is not None and self.max_wall_time < 0:
             raise ValueError("max_wall_time must not be negative")
+        if self.run_id is not None and (
+            not self.run_id
+            or Path(self.run_id).name != self.run_id
+            or self.run_id in {".", ".."}
+        ):
+            raise ValueError("run_id must be a single non-empty directory name")
 
 
 @dataclass(frozen=True, slots=True)
 class ClosedLoopRunResult:
     run_id: str
-    terminal_state: Literal["COMPLETED", "EXHAUSTED", "FAILED"]
+    terminal_state: Literal["AWAITING_APPROVAL", "COMPLETED", "EXHAUSTED", "FAILED"]
     selected_attempt_id: str | None
     run_directory: Path
     actual_known_cost_usd: float | None

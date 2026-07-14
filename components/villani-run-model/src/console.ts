@@ -35,14 +35,32 @@ export interface ConsoleHistoryEntry {
 
 export interface ConsoleModel {
   id: string;
+  backend_name: string | null;
+  display_name: string;
+  model: string;
   provider: string;
   endpoint: string | null;
   configured: boolean;
   detected: boolean;
+  availability: string;
   available: boolean | null;
+  tool_support: "supported" | "unsupported" | "unknown";
+  context_metadata: Record<string, unknown>;
+  configured_roles: string[];
   capability: string;
-  context_window: number | null;
+  capability_status: "UNRATED" | "BOOTSTRAP" | "OBSERVED" | "QUALIFIED" | "DISABLED";
+  context_window: number | string | null;
   pricing_status: "known" | "unknown";
+  currency: string | null;
+  observed_task_count: number;
+  observed_success_rate: number | null;
+  observed_cost_per_accepted_task: number | null;
+  bootstrap_default: boolean;
+  manual_override: boolean;
+  manual_override_label: string | null;
+  last_tested_at: string | null;
+  last_test_diagnostic: string | null;
+  capability_policy_version: string;
 }
 
 export interface ConsoleBootstrap {
@@ -79,6 +97,7 @@ export interface ConsoleBootstrap {
   };
   models: ConsoleModel[];
   active_policy: string | null;
+  active_policy_preset?: string;
 }
 
 export interface ConsoleReplayEvent {

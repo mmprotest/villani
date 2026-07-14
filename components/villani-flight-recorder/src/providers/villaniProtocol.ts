@@ -37,6 +37,7 @@ export type VillaniControllerState =
   | "REJECTED"
   | "ESCALATING"
   | "SELECTING"
+  | "AWAITING_APPROVAL"
   | "MATERIALIZING"
   | "COMPLETED"
   | "EXHAUSTED"

@@ -35,7 +35,30 @@ villani setup
 
 Setup detects the repository, supported loopback model servers and their loaded models, cloud credentials, existing coding-session history, and Villani Service. It recommends a model, runs a connection check and a small non-destructive capability probe, writes a validated configuration atomically, and offers to start the service, open Villani Console, and complete a disposable sample task.
 
-You are not asked for a capability score, pricing guess, token estimate, role list, execution environment, or parallelism setting. The selected model starts as `unrated` under the explicit bootstrap policy. Unknown pricing remains unknown until reliable provider metadata is available.
+You are not asked for a capability score, pricing guess, token estimate, role list, execution environment, or parallelism setting. The selected model starts as `BOOTSTRAP`; other new models start as `UNRATED`. Unknown pricing and capability remain unknown until reliable evidence is available.
+
+Manage models without editing YAML:
+
+```console
+villani models
+villani models detect
+villani models test
+villani models add local-qwen --model qwen --provider local --endpoint http://127.0.0.1:1234/v1 --default
+villani models remove local-qwen
+```
+
+Detection is advisory and uses model-list metadata without an inference call. Testing reports availability and uses zero model tokens. Observed outcomes populate local profiles; `QUALIFIED` requires the configured sample minimum and conservative confidence bound. Manual capability scores remain available only as clearly labelled Advanced overrides.
+
+Choose and preview a public routing preset:
+
+```console
+villani policy list
+villani policy use "Local first"
+villani policy explain "Fix calculator addition"
+villani policy simulate --preset balanced
+```
+
+The public presets are Reliable, Balanced, Local first, Cheapest acceptable, and Custom. A preview shows raw and effective classification, adjustments, eligible and excluded models, coding and verifier routes, cost status, uncertainty, and policy version without starting a coding attempt. Historical simulation is read-only and does not claim causal savings or counterfactual success.
 
 Cloud secrets stay outside the configuration. For example, set OpenAI credentials before setup:
 
@@ -79,19 +102,66 @@ Use `villani service start --automatic` to install user-level automatic startup.
 ## Run a coding task
 
 ```console
-villani run "Fix calculator addition" --repo ./calculator --success-criteria "The test suite passes"
+cd calculator
+villani run "Fix calculator addition"
 ```
 
-Inspect or resume recorded runs with:
+Inside a Git repository, Villani selects the current repository, configured policy, available
+backends, and discovered validation command. Use `--success-criteria`,
+`--validation-command`, budget, delivery, approval, or policy options only when you want to
+override those defaults. Use `--preset` to choose a different public preset for one run; internal
+routing modes remain under Advanced controls.
+
+Delivery is explicit for every accepted run:
+
+```console
+villani run "Fix calculator addition" --delivery suggest
+villani run "Fix calculator addition" --delivery approve
+villani run "Fix calculator addition" --delivery apply
+villani run "Fix calculator addition" --delivery branch
+villani run "Fix calculator addition" --delivery pull-request
+```
+
+`suggest` preserves the selected patch and evidence without touching the repository. `approve`
+persists an approval pause that survives process restart. `apply` fails closed unless the active
+authority policy permits automatic mutation. `branch` uses a separate local worktree and never
+switches the original branch; committing that branch is opt-in. `pull-request` branches, commits,
+pushes, and submits through the configured Git-host adapter with a redacted Villani evidence body.
+Fresh `villani init` configuration keeps the established bare-command experience by selecting
+`apply` only for low-risk runs with acceptance-grade evidence. Removing or tightening that explicit
+authority policy makes automatic delivery fail closed; `--delivery` always overrides the default.
+
+Review a paused run with `villani inspect RUN_ID`, then record an audited decision:
+
+```console
+villani approve RUN_ID
+villani reject RUN_ID
+villani request-rerun RUN_ID
+villani choose-candidate RUN_ID ATTEMPT_ID
+```
+
+Candidate changes are accepted only when policy allows them and the candidate already has
+acceptance-grade evidence. Connected Console approvals require an authenticated session. Every
+delivery failure keeps the selected patch in the run bundle.
+
+Inspect, resume, or rerun recorded work with:
 
 ```console
 villani runs
 villani inspect RUN_ID
 villani resume RUN_ID
 villani resume --latest
+villani rerun RUN_ID
 ```
 
-`villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.
+Resume continues the same persisted controller identity only when recovery is safe. Rerun creates
+a new run identity, retains parent/root lineage, and starts fresh cost accounting; policy and budget
+options may be changed on the new run.
+
+`villani run` exits `0` when the accepted run reached its configured delivery boundary, including a
+preserved suggestion or an approval pause; it exits `3` when trustworthy attempts are exhausted
+without an accepted patch, and `4` when the controller or delivery fails and manual inspection is
+required. Invalid command or configuration input exits `2`.
 
 ## Monorepo development
 

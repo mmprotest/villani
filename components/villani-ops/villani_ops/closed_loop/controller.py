@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Literal, Mapping, cast
@@ -81,6 +81,18 @@ from .durable_io import (
     read_jsonl_tolerant,
     repair_truncated_final_jsonl,
 )
+from .delivery_workflow import (
+    ApprovalWorkflow,
+    DeliveryRecord,
+    automatic_authority,
+    build_patch_review,
+    configured_delivery_mode,
+    delivery_configuration,
+    materialization_type_for_mode,
+    patch_digest,
+    successful_delivery_state,
+    workflow_enabled,
+)
 from .schema_validation import (
     parse_protocol_document,
     validate_event_stream,
@@ -93,6 +105,7 @@ from .policy import (
     configured_backends,
 )
 from .costs import estimate_attempt_cost
+from .approvals import ApprovalRecord, ApprovalScope
 from .adapters.git_isolation import validate_target_lineage
 from villani_ops.isolation.copy_git import remove_tree
 from villani_ops.providers import validate_closed_loop_backend
@@ -189,6 +202,7 @@ class _Runtime:
     selected_attempt_id: str | None = None
     selection: SelectionSnapshot | None = None
     materialization: MaterializationSnapshot | None = None
+    delivery: DeliveryRecord | None = None
     committed_events: list[EventEnvelope] = field(default_factory=list)
     loaded_state_terminal: bool = False
     failure: FailureDetail | None = None
@@ -243,9 +257,9 @@ class ClosedLoopController:
             self._failure_injector(boundary)
 
     def run(self, request: ClosedLoopRunRequest) -> ClosedLoopRunResult:
-        """Execute one run to a canonical terminal state and return its summary."""
+        """Execute until terminal state or a persisted approval pause."""
 
-        run_id = self._id_factory("run")
+        run_id = request.run_id or self._id_factory("run")
         trace_id = self._id_factory("trace")
         task_id = self._id_factory("task")
         created_at = self._now()
@@ -303,6 +317,93 @@ class ClosedLoopController:
                 accounting_status="unknown",
                 failure_or_exhaustion_reason=redact_message(str(error)),
             )
+
+    def approval_action(
+        self,
+        run_id: str,
+        runs_root: str | Path,
+        *,
+        action: Literal["approve", "reject", "request_rerun", "choose_candidate"],
+        actor: str,
+        authenticated: bool,
+        authentication_type: str,
+        reason: str = "",
+        candidate_id: str | None = None,
+    ) -> ClosedLoopRunResult:
+        """Apply one authenticated, audited action to a persisted approval pause."""
+
+        store = RunStore(runs_root, run_id)
+        with store.recovery_lock():
+            runtime = self._load_recovery_runtime(store)
+            if runtime.machine.state != "AWAITING_APPROVAL":
+                raise RunStoreError(
+                    "approval action is permitted only while awaiting approval"
+                )
+            self._resume_awaiting_approval(runtime)
+            if runtime.machine.state != "AWAITING_APPROVAL":
+                runtime.events.finalize_delivery()
+                return self._result(runtime)
+            delivery = runtime.delivery
+            if delivery is None:
+                raise RunStoreError("approval state has no delivery record")
+            if delivery.approval.authenticated_required and not authenticated:
+                self._append_approval_audit(
+                    runtime,
+                    action=action,
+                    actor=actor,
+                    authenticated=False,
+                    authentication_type=authentication_type,
+                    result="denied",
+                    reason="authenticated approval is required in connected mode",
+                    candidate_id=candidate_id,
+                )
+                self._emit_state_event(
+                    runtime,
+                    "approval_unauthorized",
+                    {
+                        "action": action,
+                        "authentication_type": authentication_type,
+                        "approval_state_unchanged": True,
+                    },
+                    attempt_id=delivery.selected_attempt_id,
+                )
+                raise PermissionError(
+                    "authenticated approval is required in connected mode"
+                )
+            safe_actor = redact_message(actor or "unknown approver", limit=200)
+            safe_reason = redact_message(reason or action.replace("_", " "), limit=500)
+            if action == "choose_candidate":
+                if not candidate_id:
+                    raise ValueError("candidate_id is required")
+                self._change_approval_candidate(
+                    runtime,
+                    candidate_id=candidate_id,
+                    actor=safe_actor,
+                    authenticated=authenticated,
+                    authentication_type=authentication_type,
+                    reason=safe_reason,
+                )
+                runtime.events.finalize_delivery()
+                return self._result(runtime)
+            if action == "approve":
+                self._approve_delivery(
+                    runtime,
+                    actor=safe_actor,
+                    authenticated=authenticated,
+                    authentication_type=authentication_type,
+                    reason=safe_reason,
+                )
+            else:
+                self._decline_delivery(
+                    runtime,
+                    action=action,
+                    actor=safe_actor,
+                    authenticated=authenticated,
+                    authentication_type=authentication_type,
+                    reason=safe_reason,
+                )
+            runtime.events.finalize_delivery()
+            return self._result(runtime)
 
     @staticmethod
     def _validate_run_configuration(configuration: Mapping[str, Any]) -> None:
@@ -524,6 +625,12 @@ class ClosedLoopController:
             ),
             requires_file_changes=task.requires_file_changes,
             policy_configuration=dict(configuration),
+            run_id=manifest.run_id,
+            lineage=(
+                dict(task.metadata.get("lineage", {}))
+                if isinstance(task.metadata.get("lineage"), Mapping)
+                else {}
+            ),
         )
         runtime = _Runtime(
             request=request,
@@ -706,6 +813,17 @@ class ClosedLoopController:
             if materialization.run_id != runtime.run_id:
                 raise RunStoreError("materialization belongs to another run")
             runtime.materialization = materialization
+        delivery_path = run_dir / "delivery.json"
+        if delivery_path.is_file():
+            delivery = DeliveryRecord.model_validate(
+                json.loads(delivery_path.read_text(encoding="utf-8"))
+            )
+            if (
+                delivery.run_id != runtime.run_id
+                or delivery.trace_id != runtime.trace_id
+            ):
+                raise RunStoreError("delivery state belongs to another run")
+            runtime.delivery = delivery
         return runtime
 
     def _attempt_context_from_snapshot(
@@ -1086,6 +1204,10 @@ class ClosedLoopController:
                 self._drive(runtime)
                 return
 
+            if state == "AWAITING_APPROVAL":
+                self._resume_awaiting_approval(runtime)
+                return
+
             if state == "SELECTING":
                 if runtime.selection is not None:
                     self._reuse_selection(runtime)
@@ -1442,7 +1564,15 @@ class ClosedLoopController:
                     "recovered": True,
                 },
             )
-        self._materialize_reused_selection(runtime, selection)
+        if workflow_enabled(runtime.request.policy_configuration):
+            self._continue_delivery_workflow(
+                runtime,
+                selection,
+                self._selection_interface(selection),
+                self._eligible_candidates(runtime),
+            )
+        else:
+            self._materialize_reused_selection(runtime, selection)
 
     def _materialize_reused_selection(
         self, runtime: _Runtime, selection: SelectionSnapshot
@@ -1501,6 +1631,47 @@ class ClosedLoopController:
             raise RunStoreError(
                 "materialization recovery has no valid recorded selection"
             )
+        if workflow_enabled(runtime.request.policy_configuration):
+            delivery = runtime.delivery
+            if delivery is None:
+                raise RunStoreError(
+                    "delivery workflow recovery has no persisted delivery record"
+                )
+            selected_id = runtime.selection.selected_candidate_ids[0]
+            candidate = next(
+                item
+                for item in self._eligible_candidates(runtime)
+                if item.attempt.attempt_id == selected_id
+            )
+            if runtime.materialization is not None:
+                self._recovery_event(
+                    runtime,
+                    "materialization_snapshot_reused",
+                    {
+                        "materialization_id": (
+                            runtime.materialization.materialization_id
+                        ),
+                        "status": runtime.materialization.status,
+                        "delivery_id": delivery.delivery_id,
+                    },
+                )
+                self._finish_delivery_materialization(
+                    runtime,
+                    delivery,
+                    runtime.materialization,
+                    candidate,
+                    recovered=True,
+                )
+                return
+            self._materialize_delivery_workflow(
+                runtime,
+                runtime.selection,
+                self._selection_interface(runtime.selection),
+                candidate,
+                delivery,
+                already_started=True,
+            )
+            return
         if runtime.materialization is not None:
             self._recovery_event(
                 runtime,
@@ -1632,6 +1803,7 @@ class ClosedLoopController:
                 "repository": Path(runtime.request.repository_path).name,
                 "agent_name": "villani-ops",
                 "agent_version": "0.2.0",
+                "lineage": _mapping_copy(runtime.request.lineage),
             },
         )
         runtime.last_event = event
@@ -1646,9 +1818,38 @@ class ClosedLoopController:
             success_criteria=str(redact_data(runtime.request.success_criteria)),
             constraints=[],
             requires_file_changes=runtime.request.requires_file_changes,
-            metadata={},
+            metadata={"lineage": redact_data(_mapping_copy(runtime.request.lineage))},
         )
         runtime.store.write_protocol("task.json", task)
+        validation_discovery = runtime.request.policy_configuration.get(
+            "repository_validation_discovery"
+        )
+        validation_commands = runtime.request.policy_configuration.get(
+            "repository_validation_commands"
+        )
+        if isinstance(validation_discovery, Mapping) or isinstance(
+            validation_commands, list
+        ):
+            runtime.store.write_json(
+                "validation_plan.json",
+                redact_data(
+                    {
+                        "schema_version": "villani.repository_validation_plan.v1",
+                        "discovery": (
+                            _mapping_copy(validation_discovery)
+                            if isinstance(validation_discovery, Mapping)
+                            else None
+                        ),
+                        "confirmed_commands": (
+                            list(validation_commands)
+                            if isinstance(validation_commands, list)
+                            else []
+                        ),
+                        "discovery_is_authoritative": False,
+                        "authority_begins": "structured_repository_validation_execution",
+                    }
+                ),
+            )
         runtime.reliability_configuration = configuration_from_policy(
             runtime.request.policy_configuration,
             maximum_attempts=runtime.request.max_attempts,
@@ -2409,9 +2610,7 @@ class ClosedLoopController:
             remaining_attempt_budget=budget.remaining_attempts,
             remaining_cost_budget_usd=budget.remaining_cost_usd,
         )
-        diversity_claimed, distinct = acknowledged_diversity_summary(
-            runtime.attempts
-        )
+        diversity_claimed, distinct = acknowledged_diversity_summary(runtime.attempts)
         accounting = ReliabilityAccounting(
             strategy=configuration.strategy,
             planned_attempts=len(merged),
@@ -2835,9 +3034,7 @@ class ClosedLoopController:
                     "effective_candidate_configuration"
                 ),
                 "candidate_configuration_acknowledged": bool(
-                    snapshot.metadata.get(
-                        "runner_acknowledged_candidate_configuration"
-                    )
+                    snapshot.metadata.get("runner_acknowledged_candidate_configuration")
                 ),
                 "effective_configuration_sha256": snapshot.metadata.get(
                     "effective_configuration_sha256"
@@ -3017,7 +3214,9 @@ class ClosedLoopController:
                 "candidate_dimensions": _mapping_copy(context.candidate_dimensions),
                 "effective_configuration_sha256": (
                     attempt_metadata.get("effective_configuration_sha256")
-                    if attempt_metadata.get("runner_acknowledged_candidate_configuration")
+                    if attempt_metadata.get(
+                        "runner_acknowledged_candidate_configuration"
+                    )
                     else None
                 ),
                 "baseline_sha256": context.baseline_sha256,
@@ -3519,6 +3718,923 @@ class ClosedLoopController:
             },
         )
 
+    def _append_approval_audit(
+        self,
+        runtime: _Runtime,
+        *,
+        action: str,
+        actor: str,
+        authenticated: bool,
+        authentication_type: str,
+        result: str,
+        reason: str,
+        candidate_id: str | None,
+    ) -> None:
+        append_jsonl_durable(
+            runtime.store.run_directory / "approval-audit.jsonl",
+            redact_data(
+                {
+                    "schema_version": "villani.approval_audit.v1",
+                    "run_id": runtime.run_id,
+                    "action": action,
+                    "actor": actor,
+                    "authenticated": authenticated,
+                    "authentication_type": authentication_type,
+                    "result": result,
+                    "reason": reason,
+                    "candidate_id": candidate_id,
+                    "timestamp": self._now().isoformat(),
+                }
+            ),
+        )
+
+    def _approval_record(
+        self,
+        runtime: _Runtime,
+        *,
+        decision: Literal["approved", "denied"],
+        actor: str,
+        reason: str,
+    ) -> ApprovalRecord:
+        delivery = runtime.delivery
+        if delivery is None:
+            raise RunStoreError("approval state has no delivery record")
+        candidate = next(
+            item
+            for item in runtime.attempts
+            if item.attempt_id == delivery.selected_attempt_id
+        )
+        configuration = cast(dict[str, Any], runtime.request.policy_configuration)
+        raw_policy = configuration.get("approval_policy")
+        if isinstance(raw_policy, Mapping):
+            policy_version = str(
+                raw_policy.get("policy_version") or "villani.delivery.approval.v1"
+            )
+        else:
+            policy_version = "villani.delivery.approval.v1"
+            configuration["approval_policy"] = {
+                "schema_version": "villani.approval_policy.v1",
+                "policy_version": policy_version,
+                "rules": [
+                    {
+                        "rule_id": "explicit_delivery_approval",
+                        "materialization_types": [
+                            materialization_type_for_mode(delivery.mode)
+                        ],
+                    }
+                ],
+            }
+        now = self._now()
+        expires_at = delivery.approval.deadline or now + timedelta(hours=1)
+        record = ApprovalRecord(
+            approval_id=self._id_factory("approval"),
+            run_id=runtime.run_id,
+            attempt_id=delivery.selected_attempt_id,
+            approver_identity=actor,
+            scope=ApprovalScope(
+                repository=str(Path(runtime.request.repository_path).resolve()),
+                paths=delivery.review.files_changed,
+                tool_actions=(materialization_type_for_mode(delivery.mode),),
+                materialization_type=materialization_type_for_mode(delivery.mode),
+                maximum_cost_usd=candidate.cost_usd,
+            ),
+            decision=decision,
+            reason=reason,
+            issued_at=now,
+            expires_at=expires_at,
+            policy_version=policy_version,
+        )
+        records = configuration.get("approval_records")
+        values = list(records) if isinstance(records, (list, tuple)) else []
+        document = record.model_dump(mode="json")
+        values.append(document)
+        configuration["approval_records"] = values
+        runtime.store.write_json(
+            f"approval-records/{record.approval_id}.json", document
+        )
+        runtime.store.write_json("approval-records.json", values)
+        return record
+
+    def _approve_delivery(
+        self,
+        runtime: _Runtime,
+        *,
+        actor: str,
+        authenticated: bool,
+        authentication_type: str,
+        reason: str,
+    ) -> None:
+        delivery = runtime.delivery
+        selection = runtime.selection
+        if delivery is None or selection is None:
+            raise RunStoreError("approval state is incomplete")
+        record = self._approval_record(
+            runtime, decision="approved", actor=actor, reason=reason
+        )
+        approval = delivery.approval.model_copy(
+            update={
+                "status": "approved",
+                "actor": actor,
+                "authentication_type": authentication_type,
+                "decided_at": self._now(),
+                "reason": reason,
+            }
+        )
+        authority = _mapping_copy(delivery.authority)
+        authority["permitted"] = True
+        authority["reasons"] = [
+            "acceptance-grade evidence is present",
+            "an in-scope explicit approval was persisted",
+        ]
+        approved = delivery.model_copy(
+            update={
+                "state": "approved",
+                "updated_at": self._now(),
+                "approval": approval,
+                "authority": authority,
+                "metadata": {
+                    **delivery.metadata,
+                    "approval_record": f"approval-records/{record.approval_id}.json",
+                },
+            }
+        )
+        self._persist_delivery(runtime, approved)
+        self._append_approval_audit(
+            runtime,
+            action="approve",
+            actor=actor,
+            authenticated=authenticated,
+            authentication_type=authentication_type,
+            result="approved",
+            reason=reason,
+            candidate_id=approved.selected_attempt_id,
+        )
+        self._emit_state_event(
+            runtime,
+            "approval_granted",
+            {
+                "approval_id": record.approval_id,
+                "selected_attempt_id": approved.selected_attempt_id,
+                "authentication_type": authentication_type,
+                "authenticated": authenticated,
+            },
+            attempt_id=approved.selected_attempt_id,
+        )
+        self._materialize_delivery_workflow(
+            runtime,
+            selection,
+            self._selection_interface(selection),
+            next(
+                item
+                for item in self._eligible_candidates(runtime)
+                if item.attempt.attempt_id == approved.selected_attempt_id
+            ),
+            approved,
+        )
+
+    def _complete_without_materialization(
+        self, runtime: _Runtime, delivery: DeliveryRecord, *, reason: str
+    ) -> None:
+        self._persist_delivery(runtime, delivery)
+        self._emit_state_event(
+            runtime,
+            "delivery_completed",
+            {
+                "delivery_id": delivery.delivery_id,
+                "delivery_mode": delivery.mode,
+                "delivery_state": delivery.state,
+                "repository_modified": False,
+                "target_worktree_modified": False,
+                "patch_preserved": True,
+            },
+            attempt_id=delivery.selected_attempt_id,
+        )
+        runtime.terminal_reason = reason
+        self._transition(
+            runtime,
+            "COMPLETED",
+            "run_completed",
+            {
+                **self._terminal_observability_payload(runtime, status="completed"),
+                "changed_files": list(delivery.changed_files),
+                "materialization_status": "not_materialized",
+                "delivery_mode": delivery.mode,
+                "delivery_state": delivery.state,
+                "patch_preserved": True,
+                "terminal_reason": reason,
+            },
+            attempt_id=delivery.selected_attempt_id,
+        )
+
+    def _decline_delivery(
+        self,
+        runtime: _Runtime,
+        *,
+        action: Literal["reject", "request_rerun"],
+        actor: str,
+        authenticated: bool,
+        authentication_type: str,
+        reason: str,
+    ) -> None:
+        delivery = runtime.delivery
+        if delivery is None:
+            raise RunStoreError("approval state has no delivery record")
+        record = self._approval_record(
+            runtime, decision="denied", actor=actor, reason=reason
+        )
+        approval_status = "rejected" if action == "reject" else "rerun_requested"
+        delivery_state = "rejected" if action == "reject" else "rerun_requested"
+        approval = delivery.approval.model_copy(
+            update={
+                "status": approval_status,
+                "actor": actor,
+                "authentication_type": authentication_type,
+                "decided_at": self._now(),
+                "reason": reason,
+            }
+        )
+        completed = delivery.model_copy(
+            update={
+                "state": delivery_state,
+                "updated_at": self._now(),
+                "completed_at": self._now(),
+                "approval": approval,
+                "metadata": {
+                    **delivery.metadata,
+                    "approval_record": f"approval-records/{record.approval_id}.json",
+                },
+            }
+        )
+        self._append_approval_audit(
+            runtime,
+            action=action,
+            actor=actor,
+            authenticated=authenticated,
+            authentication_type=authentication_type,
+            result=approval_status,
+            reason=reason,
+            candidate_id=delivery.selected_attempt_id,
+        )
+        self._emit_state_event(
+            runtime,
+            "approval_rejected" if action == "reject" else "approval_rerun_requested",
+            {
+                "approval_id": record.approval_id,
+                "selected_attempt_id": delivery.selected_attempt_id,
+                "authenticated": authenticated,
+                "authentication_type": authentication_type,
+                "patch_preserved": True,
+            },
+            attempt_id=delivery.selected_attempt_id,
+        )
+        self._complete_without_materialization(
+            runtime,
+            completed,
+            reason=(
+                "accepted_patch_delivery_rejected"
+                if action == "reject"
+                else "accepted_patch_rerun_requested"
+            ),
+        )
+
+    def _change_approval_candidate(
+        self,
+        runtime: _Runtime,
+        *,
+        candidate_id: str,
+        actor: str,
+        authenticated: bool,
+        authentication_type: str,
+        reason: str,
+    ) -> None:
+        delivery = runtime.delivery
+        selection = runtime.selection
+        if delivery is None or selection is None:
+            raise RunStoreError("approval state is incomplete")
+        if not delivery.approval.allow_candidate_change:
+            raise PermissionError(
+                "active delivery policy does not permit candidate choice"
+            )
+        if candidate_id not in runtime.eligible_candidate_ids:
+            raise ValueError("candidate is not acceptance eligible")
+        if candidate_id == delivery.selected_attempt_id:
+            return
+        history_root = runtime.store.run_directory / "selection-history"
+        existing = (
+            list(history_root.glob("selection_*.json")) if history_root.is_dir() else []
+        )
+        runtime.store.write_protocol(
+            f"selection-history/{selection.selection_id}.json", selection
+        )
+        selection_id = f"selection_{len(existing) + 2:03d}"
+        metadata = _mapping_copy(selection.metadata)
+        metadata.update(
+            {
+                "previous_selection_id": selection.selection_id,
+                "previous_selected_attempt_id": delivery.selected_attempt_id,
+                "selection_changed_by_approval": True,
+            }
+        )
+        updated_selection = selection.model_copy(
+            update={
+                "selection_id": selection_id,
+                "selected_at": self._now(),
+                "selected_candidate_ids": [candidate_id],
+                "reason": "An explicit approver selected another acceptance-eligible candidate.",
+                "metadata": metadata,
+            }
+        )
+        runtime.store.write_protocol("selection.json", updated_selection)
+        runtime.selection = updated_selection
+        runtime.selected_attempt_id = candidate_id
+        candidate = next(
+            item
+            for item in self._eligible_candidates(runtime)
+            if item.attempt.attempt_id == candidate_id
+        )
+        replacement = self._new_delivery_record(
+            runtime, updated_selection, candidate
+        ).model_copy(
+            update={
+                "state": "awaiting_approval",
+                "requested_at": delivery.requested_at,
+                "approval": delivery.approval,
+                "metadata": {
+                    **delivery.metadata,
+                    "previous_patch_sha256": delivery.patch_sha256,
+                },
+            }
+        )
+        self._persist_delivery(runtime, replacement)
+        self._label_unselected_accepted_candidates(runtime)
+        self._append_approval_audit(
+            runtime,
+            action="choose_candidate",
+            actor=actor,
+            authenticated=authenticated,
+            authentication_type=authentication_type,
+            result="selected",
+            reason=reason,
+            candidate_id=candidate_id,
+        )
+        self._emit_state_event(
+            runtime,
+            "approval_candidate_changed",
+            {
+                "previous_selected_attempt_id": delivery.selected_attempt_id,
+                "selected_attempt_id": candidate_id,
+                "selection_id": selection_id,
+                "authenticated": authenticated,
+                "authentication_type": authentication_type,
+            },
+            attempt_id=candidate_id,
+        )
+
+    def _resume_awaiting_approval(self, runtime: _Runtime) -> None:
+        delivery = runtime.delivery
+        selection = runtime.selection
+        if delivery is None or selection is None:
+            raise RunStoreError("AWAITING_APPROVAL has no persisted delivery selection")
+        deadline = delivery.approval.deadline
+        if deadline is None or self._now() < deadline:
+            return
+        approval = delivery.approval.model_copy(
+            update={
+                "status": "timed_out",
+                "actor": "villani-timeout-policy",
+                "authentication_type": "controller_policy",
+                "decided_at": self._now(),
+                "reason": f"approval deadline elapsed; policy={delivery.approval.timeout_policy}",
+            }
+        )
+        self._append_approval_audit(
+            runtime,
+            action="timeout",
+            actor="villani-timeout-policy",
+            authenticated=True,
+            authentication_type="controller_policy",
+            result=delivery.approval.timeout_policy,
+            reason="persisted approval deadline elapsed",
+            candidate_id=delivery.selected_attempt_id,
+        )
+        self._emit_state_event(
+            runtime,
+            "approval_timed_out",
+            {
+                "selected_attempt_id": delivery.selected_attempt_id,
+                "timeout_policy": delivery.approval.timeout_policy,
+                "patch_preserved": True,
+            },
+            attempt_id=delivery.selected_attempt_id,
+        )
+        if delivery.approval.timeout_policy == "suggest":
+            configuration = cast(dict[str, Any], runtime.request.policy_configuration)
+            raw_delivery = configuration.setdefault("delivery", {})
+            if not isinstance(raw_delivery, dict):
+                raise RunStoreError("persisted delivery configuration is invalid")
+            raw_delivery["mode"] = "suggest"
+            raw_delivery["materialization_type"] = "patch_export"
+            suggested = delivery.model_copy(
+                update={
+                    "mode": "suggest",
+                    "state": "timed_out",
+                    "updated_at": self._now(),
+                    "approval": approval,
+                    "authority": {
+                        "policy_version": "approval_timeout_policy",
+                        "required": "no repository mutation",
+                        "observed": "accepted patch preserved",
+                        "permitted": True,
+                        "reasons": ["timeout policy permits suggestion only"],
+                    },
+                    "metadata": {
+                        **delivery.metadata,
+                        "requested_mode": "approve",
+                        "materialization_type": "patch_export",
+                    },
+                }
+            )
+            self._persist_delivery(runtime, suggested)
+            self._materialize_delivery_workflow(
+                runtime,
+                selection,
+                self._selection_interface(selection),
+                next(
+                    item
+                    for item in self._eligible_candidates(runtime)
+                    if item.attempt.attempt_id == suggested.selected_attempt_id
+                ),
+                suggested,
+            )
+            return
+        if delivery.approval.timeout_policy == "fail":
+            failure = FailureDetail(
+                code="approval_timeout",
+                message="explicit delivery approval timed out",
+                details={"patch_preserved": True},
+            )
+            self._persist_delivery(
+                runtime,
+                delivery.model_copy(
+                    update={
+                        "state": "failed",
+                        "updated_at": self._now(),
+                        "completed_at": self._now(),
+                        "approval": approval,
+                        "failure": failure,
+                    }
+                ),
+            )
+            self._fail(runtime, failure.code, failure.message)
+            return
+        timed_out = delivery.model_copy(
+            update={
+                "state": "timed_out",
+                "updated_at": self._now(),
+                "completed_at": self._now(),
+                "approval": approval,
+            }
+        )
+        self._complete_without_materialization(
+            runtime, timed_out, reason="accepted_patch_approval_timed_out"
+        )
+
+    def _selected_verification(
+        self, runtime: _Runtime, attempt_id: str
+    ) -> VerificationSnapshot:
+        try:
+            return next(
+                item for item in runtime.verifications if item.attempt_id == attempt_id
+            )
+        except StopIteration as error:
+            raise RunStoreError(
+                "selected candidate has no persisted verification"
+            ) from error
+
+    def _persist_delivery(self, runtime: _Runtime, delivery: DeliveryRecord) -> None:
+        runtime.store.write_json(
+            "delivery.json", redact_data(delivery.model_dump(mode="json"))
+        )
+        runtime.delivery = delivery
+
+    def _new_delivery_record(
+        self,
+        runtime: _Runtime,
+        selection: SelectionSnapshot,
+        candidate: EligibleCandidate,
+    ) -> DeliveryRecord:
+        patch = candidate.patch
+        digest = patch_digest(patch)
+        if not patch or digest != candidate.attempt.patch_sha256:
+            raise RunStoreError("selected patch no longer matches its recorded digest")
+        runtime.store.write_text("delivery/selected.patch", patch)
+        verification = self._selected_verification(
+            runtime, candidate.attempt.attempt_id
+        )
+        total_cost, accounting_status = self._actual_cost(runtime)
+        currency = self._stage_metrics(runtime)["total"].currency
+        review = build_patch_review(
+            attempt=candidate.attempt,
+            verification=verification,
+            selection=selection,
+            patch=patch,
+            total_cost=total_cost,
+            accounting_status=accounting_status,
+            currency=currency,
+        )
+        configuration = delivery_configuration(runtime.request.policy_configuration)
+        mode = configured_delivery_mode(runtime.request.policy_configuration)
+        now = self._now()
+        approval_configuration = configuration.get("approval")
+        approval_values = (
+            dict(approval_configuration)
+            if isinstance(approval_configuration, Mapping)
+            else {}
+        )
+        try:
+            timeout_seconds = max(
+                int(approval_values.get("timeout_seconds", 24 * 60 * 60)), 0
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "delivery approval timeout_seconds must be an integer"
+            ) from error
+        timeout_policy = str(approval_values.get("timeout_policy") or "reject")
+        if timeout_policy not in {"reject", "suggest", "fail"}:
+            raise ValueError("delivery approval timeout_policy is invalid")
+        approval_required = mode == "approve"
+        approval = ApprovalWorkflow(
+            required=approval_required,
+            status="pending" if approval_required else "not_required",
+            request_id="approval_request_001" if approval_required else None,
+            requested_at=now if approval_required else None,
+            deadline=(now + timedelta(seconds=timeout_seconds))
+            if approval_required
+            else None,
+            timeout_policy=cast(Literal["reject", "suggest", "fail"], timeout_policy),
+            authenticated_required=bool(
+                approval_values.get("authenticated_required", False)
+            ),
+            allow_candidate_change=bool(
+                approval_values.get("allow_candidate_change", False)
+            ),
+        )
+        if mode == "suggest":
+            authority = {
+                "policy_version": str(
+                    _mapping_copy(configuration).get("authority_policy_version")
+                    or "not_required"
+                ),
+                "required": "no repository-mutation authority is required",
+                "observed": "acceptance-grade selection",
+                "permitted": True,
+                "reasons": ["suggest mode never mutates the target repository"],
+            }
+        elif mode == "approve":
+            authority = {
+                "policy_version": str(
+                    approval_values.get("policy_version")
+                    or "villani.delivery.approval.v1"
+                ),
+                "required": "acceptance-grade evidence and explicit approval",
+                "observed": str(
+                    verification.metadata.get("authority_source")
+                    or verification.metadata.get("verification_mode")
+                    or "normalized_verifier"
+                ),
+                "permitted": False,
+                "reasons": ["explicit approval is pending"],
+            }
+        else:
+            authority = automatic_authority(
+                runtime.request.policy_configuration,
+                verification,
+                risk=runtime.classification.risk if runtime.classification else None,
+            )
+        delivery = DeliveryRecord(
+            delivery_id="delivery_001",
+            run_id=runtime.run_id,
+            trace_id=runtime.trace_id,
+            selection_id=selection.selection_id,
+            selected_attempt_id=candidate.attempt.attempt_id,
+            mode=mode,
+            state="selected",
+            requested_at=now,
+            updated_at=now,
+            repository_path=str(Path(runtime.request.repository_path).resolve()),
+            patch_artifact="delivery/selected.patch",
+            patch_sha256=digest,
+            changed_files=review.files_changed,
+            review=review,
+            authority=_mapping_copy(authority),
+            approval=approval,
+            metadata={
+                "materialization_type": materialization_type_for_mode(mode),
+                "commit_requested": bool(configuration.get("commit", False)),
+            },
+        )
+        self._persist_delivery(runtime, delivery)
+        return delivery
+
+    def _await_delivery_approval(
+        self, runtime: _Runtime, delivery: DeliveryRecord
+    ) -> None:
+        approval = delivery.approval
+        waiting = delivery.model_copy(
+            update={
+                "state": "awaiting_approval",
+                "updated_at": self._now(),
+            }
+        )
+        self._persist_delivery(runtime, waiting)
+        self._transition(
+            runtime,
+            "AWAITING_APPROVAL",
+            "approval_requested",
+            {
+                "delivery_id": waiting.delivery_id,
+                "selected_attempt_id": waiting.selected_attempt_id,
+                "deadline": (
+                    approval.deadline.isoformat() if approval.deadline else None
+                ),
+                "timeout_policy": approval.timeout_policy,
+                "files_changed": list(waiting.review.files_changed),
+                "insertions": waiting.review.insertions,
+                "deletions": waiting.review.deletions,
+                "verifier_authority": waiting.review.verifier_authority,
+                "remaining_risks": list(waiting.review.remaining_risks),
+                "sensitive_file_warnings": list(waiting.review.sensitive_file_warnings),
+                "unrelated_change_warnings": list(
+                    waiting.review.unrelated_change_warnings
+                ),
+            },
+            attempt_id=waiting.selected_attempt_id,
+        )
+
+    def _continue_delivery_workflow(
+        self,
+        runtime: _Runtime,
+        selection: SelectionSnapshot,
+        returned_selection: Selection,
+        candidates: tuple[EligibleCandidate, ...],
+    ) -> None:
+        selected_id = selection.selected_candidate_ids[0]
+        candidate = next(
+            item for item in candidates if item.attempt.attempt_id == selected_id
+        )
+        delivery = runtime.delivery
+        if delivery is None or delivery.selected_attempt_id != selected_id:
+            delivery = self._new_delivery_record(runtime, selection, candidate)
+        if delivery.mode == "approve" and delivery.approval.status != "approved":
+            if runtime.machine.state != "AWAITING_APPROVAL":
+                self._await_delivery_approval(runtime, delivery)
+            return
+        if delivery.mode not in {"suggest", "approve"} and not bool(
+            delivery.authority.get("permitted")
+        ):
+            reason = (
+                "; ".join(str(item) for item in delivery.authority.get("reasons", []))
+                or "automatic delivery authority is insufficient"
+            )
+            failure = FailureDetail(
+                code="delivery_authority_insufficient",
+                message=reason,
+                details={"patch_preserved": True},
+            )
+            self._persist_delivery(
+                runtime,
+                delivery.model_copy(
+                    update={
+                        "state": "failed",
+                        "updated_at": self._now(),
+                        "completed_at": self._now(),
+                        "failure": failure,
+                    }
+                ),
+            )
+            self._fail(runtime, failure.code, failure.message)
+            return
+        self._materialize_delivery_workflow(
+            runtime, selection, returned_selection, candidate, delivery
+        )
+
+    def _materialize_delivery_workflow(
+        self,
+        runtime: _Runtime,
+        selection: SelectionSnapshot,
+        returned_selection: Selection,
+        candidate: EligibleCandidate,
+        delivery: DeliveryRecord,
+        *,
+        already_started: bool = False,
+    ) -> None:
+        if already_started:
+            started = next(
+                (
+                    event
+                    for event in reversed(runtime.committed_events)
+                    if event.event_type == "materialization_started"
+                ),
+                None,
+            )
+            if started is None:
+                raise RunStoreError(
+                    "delivery recovery has no materialization start event"
+                )
+        else:
+            started = self._transition(
+                runtime,
+                "MATERIALIZING",
+                "materialization_started",
+                {
+                    "selection_id": selection.selection_id,
+                    "selected_attempt_id": candidate.attempt.attempt_id,
+                    "delivery_mode": delivery.mode,
+                    "delivery_id": delivery.delivery_id,
+                },
+                attempt_id=candidate.attempt.attempt_id,
+            )
+            self._checkpoint("after_materialization_start")
+        context = MaterializationContext(
+            run_id=runtime.run_id,
+            trace_id=runtime.trace_id,
+            repository_path=str(runtime.request.repository_path),
+            selected_candidate=candidate,
+            policy_configuration=_read_only_mapping(
+                runtime.request.policy_configuration
+            ),
+            run_directory=runtime.store.run_directory,
+            risk=runtime.classification.risk if runtime.classification else None,
+        )
+        try:
+            returned = self._materializer.materialize(returned_selection, context)
+            self._checkpoint("after_materializer_return")
+            if not isinstance(returned, Materialization):
+                raise TypeError("materializer returned an invalid Materialization")
+            materialization = self._persist_materialization(
+                runtime, selection, candidate, returned, started.timestamp
+            )
+        except Exception as error:
+            failure = FailureDetail(
+                code="delivery_failed",
+                message=redact_message(str(error)),
+                details={"patch_preserved": True},
+            )
+            self._persist_delivery(
+                runtime,
+                delivery.model_copy(
+                    update={
+                        "state": "failed",
+                        "updated_at": self._now(),
+                        "completed_at": self._now(),
+                        "failure": failure,
+                    }
+                ),
+            )
+            self._emit_failure_event(
+                runtime, "materialization_failed", error, "delivery"
+            )
+            self._fail(runtime, failure.code, failure.message, error=error)
+            return
+        if materialization.status != "succeeded":
+            failure = materialization.failure or FailureDetail(
+                code="delivery_failed",
+                message="delivery reported failure",
+                details={"patch_preserved": True},
+            )
+            details = _mapping_copy(failure.details)
+            details["patch_preserved"] = True
+            failure = failure.model_copy(update={"details": details})
+            self._persist_delivery(
+                runtime,
+                delivery.model_copy(
+                    update={
+                        "state": "failed",
+                        "updated_at": self._now(),
+                        "completed_at": self._now(),
+                        "failure": failure,
+                    }
+                ),
+            )
+            self._emit_state_event(
+                runtime,
+                "materialization_failed",
+                {"code": failure.code, "message": failure.message},
+                attempt_id=candidate.attempt.attempt_id,
+            )
+            self._fail(runtime, failure.code, failure.message)
+            return
+        self._finish_delivery_materialization(
+            runtime, delivery, materialization, candidate, recovered=False
+        )
+
+    def _finish_delivery_materialization(
+        self,
+        runtime: _Runtime,
+        delivery: DeliveryRecord,
+        materialization: MaterializationSnapshot,
+        candidate: EligibleCandidate,
+        *,
+        recovered: bool,
+    ) -> None:
+        """Commit the user-facing delivery result after a durable snapshot exists."""
+
+        if materialization.status != "succeeded":
+            failure = materialization.failure or FailureDetail(
+                code="delivery_failed",
+                message="delivery reported failure",
+                details={"patch_preserved": True},
+            )
+            details = _mapping_copy(failure.details)
+            details["patch_preserved"] = True
+            failure = failure.model_copy(update={"details": details})
+            self._persist_delivery(
+                runtime,
+                delivery.model_copy(
+                    update={
+                        "state": "failed",
+                        "updated_at": self._now(),
+                        "completed_at": self._now(),
+                        "failure": failure,
+                    }
+                ),
+            )
+            if not self._has_event(runtime, "materialization_failed"):
+                self._emit_state_event(
+                    runtime,
+                    "materialization_failed",
+                    {
+                        "code": failure.code,
+                        "message": failure.message,
+                        "recovered": recovered,
+                    },
+                    attempt_id=candidate.attempt.attempt_id,
+                )
+            self._fail(runtime, failure.code, failure.message)
+            return
+
+        state = successful_delivery_state(delivery.mode)
+        complete_delivery = delivery.model_copy(
+            update={
+                "state": state,
+                "updated_at": self._now(),
+                "completed_at": self._now(),
+                "repository_modified": delivery.mode != "suggest",
+                "target_worktree_modified": delivery.mode in {"apply", "approve"},
+                "result": _mapping_copy(materialization.metadata),
+                "failure": None,
+            }
+        )
+        self._persist_delivery(runtime, complete_delivery)
+        if not self._has_event(runtime, "delivery_completed"):
+            self._emit_state_event(
+                runtime,
+                "delivery_completed",
+                {
+                    "delivery_id": complete_delivery.delivery_id,
+                    "delivery_mode": complete_delivery.mode,
+                    "delivery_state": complete_delivery.state,
+                    "repository_modified": complete_delivery.repository_modified,
+                    "target_worktree_modified": (
+                        complete_delivery.target_worktree_modified
+                    ),
+                    "patch_preserved": True,
+                    "recovered": recovered,
+                },
+                attempt_id=candidate.attempt.attempt_id,
+            )
+        if not self._has_event(runtime, "materialization_completed"):
+            self._emit_state_event(
+                runtime,
+                "materialization_completed",
+                {
+                    "materialization_id": materialization.materialization_id,
+                    "selected_attempt_id": materialization.selected_attempt_id,
+                    "materialization_status": materialization.status,
+                    "changed_files": materialization.changed_files,
+                    "patch_digest": materialization.patch_sha256,
+                    "delivery_state": complete_delivery.state,
+                    "recovered": recovered,
+                },
+                attempt_id=candidate.attempt.attempt_id,
+            )
+        runtime.terminal_reason = f"accepted_and_{complete_delivery.state}"
+        if runtime.machine.state == "MATERIALIZING":
+            self._transition(
+                runtime,
+                "COMPLETED",
+                "run_completed",
+                {
+                    **self._terminal_observability_payload(runtime, status="completed"),
+                    "delivery_mode": complete_delivery.mode,
+                    "delivery_state": complete_delivery.state,
+                    "patch_preserved": True,
+                    "recovered": recovered,
+                    "terminal_reason": runtime.terminal_reason,
+                },
+                attempt_id=candidate.attempt.attempt_id,
+            )
+
     def _select_and_materialize(self, runtime: _Runtime) -> None:
         if not runtime.eligible_candidate_ids:
             self._transition_to_selecting(runtime)
@@ -3566,7 +4682,9 @@ class ClosedLoopController:
                     "eligible_candidate_ids": selection.eligible_candidate_ids,
                     "selection_strategy": selection.strategy,
                     "selection_reason": selection.reason,
-                    "rankings": [item.model_dump(mode="json") for item in selection.rankings],
+                    "rankings": [
+                        item.model_dump(mode="json") for item in selection.rankings
+                    ],
                 },
             )
         except Exception as error:
@@ -3584,6 +4702,9 @@ class ClosedLoopController:
             for candidate in candidates
             if candidate.attempt.attempt_id == runtime.selected_attempt_id
         )
+        if workflow_enabled(runtime.request.policy_configuration):
+            self._continue_delivery_workflow(runtime, selection, returned, candidates)
+            return
         materialization_started = self._transition(
             runtime,
             "MATERIALIZING",
@@ -3671,7 +4792,9 @@ class ClosedLoopController:
         )
         verification = stage_metrics["verification"]
         selected_attempt = next(
-            item for item in runtime.attempts if item.attempt_id == runtime.selected_attempt_id
+            item
+            for item in runtime.attempts
+            if item.attempt_id == runtime.selected_attempt_id
         )
         self._transition(
             runtime,
@@ -3691,7 +4814,8 @@ class ClosedLoopController:
                 "output_tokens": total.output_tokens,
                 "total_tokens": (
                     total.input_tokens + total.output_tokens
-                    if total.input_tokens is not None and total.output_tokens is not None
+                    if total.input_tokens is not None
+                    and total.output_tokens is not None
                     else None
                 ),
                 "token_accounting_status": total.token_accounting_status,
@@ -3709,9 +4833,9 @@ class ClosedLoopController:
                     int(
                         item.metadata.get(
                             "total_file_writes",
-                            runtime.attempt_results[item.attempt_id].runner_telemetry.get(
-                                "total_file_writes", 0
-                            ),
+                            runtime.attempt_results[
+                                item.attempt_id
+                            ].runner_telemetry.get("total_file_writes", 0),
                         )
                         or 0
                     )
@@ -3723,7 +4847,8 @@ class ClosedLoopController:
                     if item.attempt_id == runtime.selected_attempt_id
                 ),
                 "materialization_status": materialization.status,
-                "terminal_reason": runtime.terminal_reason or "accepted_and_materialized",
+                "terminal_reason": runtime.terminal_reason
+                or "accepted_and_materialized",
             },
         )
 
@@ -4408,6 +5533,12 @@ class ClosedLoopController:
                 ),
                 "terminal_reason": runtime.terminal_reason,
                 "plugins": list(self._plugin_identities),
+                "lineage": redact_data(_mapping_copy(runtime.request.lineage)),
+                "delivery": (
+                    redact_data(runtime.delivery.model_dump(mode="json"))
+                    if runtime.delivery is not None
+                    else None
+                ),
             },
             currency=total.currency,
             stage_metrics=stage_metrics,
@@ -4443,7 +5574,14 @@ class ClosedLoopController:
             attempt_count=len(runtime.attempts),
             accepted_candidate_ids=list(runtime.eligible_candidate_ids),
             failure=runtime.failure,
-            metadata={"terminal_reason": runtime.terminal_reason},
+            metadata={
+                "terminal_reason": runtime.terminal_reason,
+                "delivery": (
+                    redact_data(runtime.delivery.model_dump(mode="json"))
+                    if runtime.delivery is not None
+                    else None
+                ),
+            },
         )
         runtime.store.write_protocol("state.json", state)
 
@@ -4654,7 +5792,7 @@ class ClosedLoopController:
         self, runtime: _Runtime, forced_state: str | None = None
     ) -> ClosedLoopRunResult:
         state = forced_state or runtime.machine.state
-        if state not in TERMINAL_STATES:
+        if state not in {*TERMINAL_STATES, "AWAITING_APPROVAL"}:
             state = "FAILED"
         cost, accounting = self._actual_cost(runtime)
         currency = self._stage_metrics(runtime)["total"].currency

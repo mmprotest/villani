@@ -53,6 +53,7 @@ VERIFIED
 REJECTED
 ESCALATING
 SELECTING
+AWAITING_APPROVAL
 MATERIALIZING
 COMPLETED
 EXHAUSTED
@@ -72,7 +73,8 @@ VERIFYING -> VERIFIED | FAILED
 VERIFIED -> SELECTING | REJECTED | FAILED
 REJECTED -> POLICY_SELECTED | ESCALATING | EXHAUSTED | FAILED
 ESCALATING -> POLICY_SELECTED | EXHAUSTED | FAILED
-SELECTING -> MATERIALIZING | EXHAUSTED | FAILED
+SELECTING -> AWAITING_APPROVAL | MATERIALIZING | EXHAUSTED | FAILED
+AWAITING_APPROVAL -> MATERIALIZING | COMPLETED | FAILED
 MATERIALIZING -> COMPLETED | FAILED
 ```
 
@@ -109,12 +111,26 @@ Every run is stored at `~/.villani/runs/<run_id>/`, or beneath a test-provided r
   candidate_evidence_matrix.json
   selection.json
   selection_report.md
+  delivery.json
+  delivery/
+    selected.patch
+    branch-state.json
+    pull-request-body.md
+  approval-audit.jsonl
+  approval-records/
+    approval_....json
   materialization.json
   final.patch
   final_report.md
 ```
 
 Files that do not yet have data may be absent while a run is active. `manifest.json`, `task.json`, `state.json`, and `events.jsonl` must exist immediately after run creation.
+
+`delivery.json` is the durable user-facing projection of the selected patch, its review evidence,
+the authority decision, approval status, and the explicit delivery result. `delivery/selected.patch`
+is written before any delivery mutation and is never discarded by rejection, timeout, conflict,
+push failure, or recovery. Approval audit records are append-only; authenticated identity is
+required when the run was created in connected mode.
 
 All JSON snapshots are written atomically with temporary file plus replace. JSONL files are append-only. A truncated final JSONL line after a process crash may be ignored during recovery, but earlier valid lines must remain readable.
 
@@ -156,9 +172,17 @@ verification_failed
 retry_selected
 escalation_selected
 candidate_selected
+approval_requested
+approval_granted
+approval_rejected
+approval_rerun_requested
+approval_candidate_changed
+approval_timed_out
+approval_unauthorized
 materialization_started
 materialization_completed
 materialization_failed
+delivery_completed
 run_completed
 run_exhausted
 run_failed

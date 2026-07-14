@@ -30,6 +30,7 @@ ControllerState: TypeAlias = Literal[
     "REJECTED",
     "ESCALATING",
     "SELECTING",
+    "AWAITING_APPROVAL",
     "MATERIALIZING",
     "COMPLETED",
     "EXHAUSTED",

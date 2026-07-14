@@ -20,6 +20,18 @@ from .capabilities.report import profile_key_for
 from .capabilities.scoring import resolve_empirical_score
 from .costs import estimate_attempt_cost
 from .interfaces import BackendOption, BudgetContext, PolicyContext, PolicyDecision
+from .model_management import (
+    capability_status,
+    default_bootstrap_backend,
+    is_local_backend,
+    manual_override,
+    route_basis,
+)
+from .policy_presets import (
+    PUBLIC_POLICY_VERSION,
+    configured_policy_preset,
+    selection_preference,
+)
 
 
 class BootstrapPolicyConfiguration(BaseModel):
@@ -130,6 +142,11 @@ class BootstrapPolicyEngine:
             capability_values if isinstance(capability_values, Mapping) else {}
         )
         self.capability_snapshot = capability_snapshot
+        self.public_preset = configured_policy_preset(self.raw_configuration)
+        self.selection_preference = selection_preference(self.raw_configuration)
+        self.public_policy_enabled = isinstance(
+            self.raw_configuration.get("public_policy"), Mapping
+        )
         if self.configuration.version != "bootstrap_v1":
             raise ValueError("bootstrap policy requires version 'bootstrap_v1'")
 
@@ -270,9 +287,13 @@ class BootstrapPolicyEngine:
                 )
             )
             reasons: list[str] = []
+            bootstrap_default = (
+                default_bootstrap_backend(self.raw_configuration) == backend.name
+            )
+            bootstrap_eligible = bool(bootstrap_default and backend.enabled)
             if not backend.enabled:
                 reasons.append("backend is disabled")
-            if not static_eligible and not empirical_eligible:
+            if not static_eligible and not empirical_eligible and not bootstrap_eligible:
                 reasons.append(
                     f"static capability {backend.capability_score} and empirical qualification "
                     f"do not meet required {minimum:g}"
@@ -301,6 +322,14 @@ class BootstrapPolicyEngine:
                         **estimate.as_dict(),
                         "static_eligible": static_eligible,
                         "empirical_eligible": empirical_eligible,
+                        "bootstrap_eligible": bootstrap_eligible,
+                        "bootstrap_default": bootstrap_default,
+                        "manual_override": manual_override(backend),
+                        "capability_status": capability_status(
+                            backend,
+                            self.raw_configuration,
+                            self.capability_snapshot,
+                        ).value,
                         "capability_score_source": empirical.score_source,
                         "effective_capability_score": empirical.capability_score_used,
                         "minimum_wilson_lower_bound": wilson_threshold,
@@ -313,13 +342,10 @@ class BootstrapPolicyEngine:
         return tuple(alternatives)
 
     @staticmethod
-    def _choose(options: tuple[BackendOption, ...]) -> BackendOption | None:
-        eligible = [option for option in options if option.eligible]
-        if not eligible:
-            return None
+    def _cost_order(options: list[BackendOption]) -> BackendOption:
         known = [
             option
-            for option in eligible
+            for option in options
             if option.cost_accounting_status == "complete"
             and option.estimated_cost_usd is not None
         ]
@@ -333,7 +359,7 @@ class BootstrapPolicyEngine:
                 ),
             )
         return min(
-            eligible,
+            options,
             key=lambda option: (
                 option.capability_score
                 if option.capability_score is not None
@@ -341,6 +367,51 @@ class BootstrapPolicyEngine:
                 option.backend_name,
             ),
         )
+
+    def _choose(self, options: tuple[BackendOption, ...]) -> BackendOption | None:
+        eligible = [option for option in options if option.eligible]
+        if not eligible:
+            return None
+        if self.selection_preference == "strongest_eligible":
+            return min(
+                eligible,
+                key=lambda option: (
+                    -float(
+                        option.cost_components.get("effective_capability_score")
+                        or option.capability_score
+                        or 0
+                    ),
+                    option.estimated_cost_usd is None,
+                    option.estimated_cost_usd
+                    if option.estimated_cost_usd is not None
+                    else float("inf"),
+                    option.backend_name,
+                ),
+            )
+        if self.selection_preference == "local_first":
+            local = [
+                option
+                for option in eligible
+                if is_local_backend(self.backends[option.backend_name])
+            ]
+            eligible = local or eligible
+        if (
+            self.public_policy_enabled
+            and self.selection_preference in {"balanced", "local_first"}
+        ):
+            default = default_bootstrap_backend(self.raw_configuration)
+            selected_default = next(
+                (
+                    option
+                    for option in eligible
+                    if option.backend_name == default
+                    and option.cost_components.get("bootstrap_eligible") is True
+                ),
+                None,
+            )
+            if selected_default is not None:
+                return selected_default
+        return self._cost_order(eligible)
 
     @staticmethod
     def _next_higher(
@@ -439,6 +510,10 @@ class BootstrapPolicyEngine:
                     for key in (
                         "static_eligible",
                         "empirical_eligible",
+                        "bootstrap_eligible",
+                        "bootstrap_default",
+                        "manual_override",
+                        "capability_status",
                         "capability_score_source",
                         "effective_capability_score",
                         "minimum_wilson_lower_bound",
@@ -464,6 +539,11 @@ class BootstrapPolicyEngine:
                 if optimization.optimizer_status == "empirical"
                 else "bootstrap_v1"
             ),
+            "public_policy": {
+                "preset": self.public_preset,
+                "version": PUBLIC_POLICY_VERSION,
+                "selection_preference": self.selection_preference,
+            },
             "budget_consumption": {
                 "actual_attempts_used": context.budget.actual_attempts_used,
                 "actual_known_cost_usd": context.budget.actual_cost_consumed_usd,
@@ -475,6 +555,54 @@ class BootstrapPolicyEngine:
             },
             **dict(metadata or {}),
         }
+        if chosen is not None:
+            selected_resolution = next(
+                (
+                    item
+                    for item in empirical_resolutions
+                    if item.backend_name == chosen.backend_name
+                ),
+                None,
+            )
+            backend = self.backends[chosen.backend_name]
+            bootstrap_default_route = bool(
+                self.public_policy_enabled
+                and self.selection_preference in {"balanced", "local_first"}
+                and optimization.optimizer_status != "empirical"
+                and chosen.cost_components.get("bootstrap_default")
+                and chosen.cost_components.get("bootstrap_eligible")
+            )
+            qualified_route = bool(
+                chosen.cost_components.get("empirical_eligible")
+                and not bootstrap_default_route
+            )
+            basis = route_basis(
+                backend,
+                self.raw_configuration,
+                self.capability_snapshot,
+                qualified_empirical_route=qualified_route,
+            )
+            details["route_provenance"] = {
+                "basis": basis,
+                "bootstrap_default": chosen.cost_components.get(
+                    "bootstrap_default", False
+                ),
+                "manual_override": chosen.cost_components.get(
+                    "manual_override", False
+                ),
+                "capability_status": chosen.cost_components.get(
+                    "capability_status"
+                ),
+                "observed_sample_count": (
+                    selected_resolution.selected_sample_count
+                    if selected_resolution is not None
+                    else 0
+                ),
+                "empirical_evidence_used": qualified_route,
+                "policy_version": PUBLIC_POLICY_VERSION,
+            }
+        else:
+            details["route_provenance"] = None
         return PolicyDecision(
             action=action,  # type: ignore[arg-type]
             reason=reason,
@@ -551,12 +679,17 @@ class BootstrapPolicyEngine:
                 reason="Cost budget exhausted.",
             )
 
-        chosen = self._optimization_choice(alternatives, optimization)
+        chosen = (
+            self._optimization_choice(alternatives, optimization)
+            if self.selection_preference
+            in {"balanced", "custom"}
+            else None
+        )
         empirical_budget_blocked = bool(
             optimization.optimizer_status == "empirical"
             and not optimization.chosen_sequence
         )
-        if optimization.optimizer_status != "empirical":
+        if optimization.optimizer_status != "empirical" or chosen is None:
             chosen = self._choose(alternatives)
         violation = False
         if (
@@ -622,6 +755,14 @@ class BootstrapPolicyEngine:
                     "Selected the first backend in the lowest-expected-cost empirical "
                     "sequence under the configured target probability."
                 )
+            if self.selection_preference == "strongest_eligible":
+                reason = "Reliable preset selected the strongest eligible route."
+            elif self.selection_preference == "local_first" and is_local_backend(
+                self.backends[chosen.backend_name]
+            ):
+                reason = "Local first selected an eligible local route."
+            elif self.selection_preference == "cheapest_acceptable":
+                reason = "Cheapest acceptable selected the lowest known-cost eligible route."
             return self._decision(
                 context,
                 alternatives,

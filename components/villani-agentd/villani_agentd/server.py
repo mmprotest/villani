@@ -22,7 +22,12 @@ from villani_ops.closed_loop.durable_io import write_json_atomic
 
 from .client import is_loopback_host
 from .config import AgentdPaths, ServerConfig
-from .console import ConsoleDataError, ConsoleService
+from .console import (
+    ConsoleAuthorizationError,
+    ConsoleDataError,
+    ConsoleInputError,
+    ConsoleService,
+)
 from .spool import LimitError, SQLiteSpool, SpoolError
 from .structured_log import StructuredLogger
 from .otlp import normalize_otlp_traces
@@ -124,9 +129,7 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         parts = relative.replace("\\", "/").split("/")
         if not parts or any(part in {"", ".", ".."} for part in parts):
             return None
-        target = importlib.resources.files("villani_agentd").joinpath(
-            "console_assets", *parts
-        )
+        target = importlib.resources.files("villani_agentd").joinpath("console_assets", *parts)
         try:
             return target.read_bytes()
         except (FileNotFoundError, IsADirectoryError, OSError):
@@ -137,7 +140,7 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         if content is None:
             self._send_html(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                '<!doctype html><html lang="en"><head><meta charset="utf-8">'
                 "<title>Villani Console unavailable</title></head><body><main>"
                 "<h1>Villani Console is unavailable</h1><p>Run: villani doctor</p>"
                 "</main></body></html>",
@@ -200,9 +203,91 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         return value
 
     def _dispatch_console_api(
-        self, path: str, query: dict[str, list[str]]
+        self,
+        path: str,
+        query: dict[str, list[str]],
+        body: dict[str, Any] | None = None,
     ) -> bool:
         service = self.server.console_service
+        if path == "/v1/console/run-options" and self.command == "GET":
+            self._send(HTTPStatus.OK, service.run_options())
+            return True
+        if path == "/v1/console/validation:discover" and self.command == "POST":
+            repository = (body or {}).get("repository")
+            if not isinstance(repository, str):
+                raise ConsoleInputError("repository is required")
+            self._send(HTTPStatus.OK, service.validation_discovery(repository))
+            return True
+        if path == "/v1/console/models:detect" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.models_detect(body or {}))
+            return True
+        if path == "/v1/console/models:test" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.models_test(body or {}))
+            return True
+        if path == "/v1/console/models:add" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.models_add(body or {}))
+            return True
+        if path == "/v1/console/models:remove" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.models_remove(body or {}))
+            return True
+        if path == "/v1/console/models:default" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.models_default(body or {}))
+            return True
+        if path == "/v1/console/policies:select" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.policy_select(body or {}))
+            return True
+        if path == "/v1/console/policy:preview" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.policy_preview(body or {}))
+            return True
+        if path == "/v1/console/policies:simulate" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.policy_simulation(body or {}))
+            return True
+        if path == "/v1/console/runs" and self.command == "POST":
+            self._send(HTTPStatus.ACCEPTED, service.start_run(body or {}))
+            return True
+        run_status_prefix = "/v1/console/runs/"
+        approval_suffix = "/approval"
+        if (
+            self.command == "POST"
+            and path.startswith(run_status_prefix)
+            and path.endswith(approval_suffix)
+        ):
+            encoded = path[len(run_status_prefix) : -len(approval_suffix)]
+            if not encoded or "/" in encoded:
+                raise ConsoleInputError("run identifier is invalid")
+            sync = SyncConfig.load(self.server.spool.paths.sync_config)
+            actor = (
+                f"connected-console:{sync.installation_id}"
+                if sync is not None
+                else "local-console-session"
+            )
+            self._send(
+                HTTPStatus.OK,
+                service.approval_action(
+                    urllib.parse.unquote(encoded),
+                    body or {},
+                    authenticated=True,
+                    actor=actor,
+                    authentication_type="agentd_authenticated_session",
+                ),
+            )
+            return True
+        run_status_suffix = "/status"
+        if (
+            self.command == "GET"
+            and path.startswith(run_status_prefix)
+            and path.endswith(run_status_suffix)
+        ):
+            encoded = path[len(run_status_prefix) : -len(run_status_suffix)]
+            if not encoded or "/" in encoded:
+                raise ConsoleInputError("run identifier is invalid")
+            self._send(
+                HTTPStatus.OK,
+                service.run_status(urllib.parse.unquote(encoded)),
+            )
+            return True
+        if self.command != "GET":
+            return False
         if path == "/v1/console/bootstrap":
             self._send(HTTPStatus.OK, service.bootstrap())
             return True
@@ -214,33 +299,10 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.OK, service.history(refresh=refresh))
             return True
         if path == "/v1/console/models":
-            bootstrap = service.bootstrap()
-            self._send(
-                HTTPStatus.OK,
-                {
-                    "schema_version": "villani.console.models.v1",
-                    "models": bootstrap["models"],
-                },
-            )
+            self._send(HTTPStatus.OK, service.models())
             return True
         if path == "/v1/console/policies":
-            bootstrap = service.bootstrap()
-            self._send(
-                HTTPStatus.OK,
-                {
-                    "schema_version": "villani.console.policies.v1",
-                    "active_policy": bootstrap["active_policy"],
-                    "presets": [
-                        {"id": "observe", "label": "Observe", "active": False},
-                        {
-                            "id": "bootstrap",
-                            "label": "Bootstrap",
-                            "active": bootstrap["active_policy"] == "bootstrap_v1",
-                        },
-                        {"id": "conservative", "label": "Conservative", "active": False},
-                    ],
-                },
-            )
+            self._send(HTTPStatus.OK, service.policies())
             return True
         if path == "/v1/console/settings":
             bootstrap = service.bootstrap()
@@ -305,7 +367,15 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             self._serve_console(path.removeprefix("/"))
             return
         console_route = path == "/console" or path.startswith("/console/")
-        legacy_route = path in {"/fleet", "/ask", "/history", "/replay", "/models", "/policies", "/settings"} or path.startswith(("/runs/", "/flight/", "/fleet/", "/ask/"))
+        legacy_route = path in {
+            "/fleet",
+            "/ask",
+            "/history",
+            "/replay",
+            "/models",
+            "/policies",
+            "/settings",
+        } or path.startswith(("/runs/", "/flight/", "/fleet/", "/ask/"))
         if (console_route or legacy_route) and self.command == "GET":
             self._serve_console()
             return
@@ -313,12 +383,13 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.OK, {"status": "ok", "version": "v1"})
             return
         if path.startswith("/v1/console/"):
-            if self.command != "GET":
+            if self.command not in {"GET", "POST"}:
                 self._send(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"})
                 return
             if not self._authenticated(allow_console_cookie=True):
                 return
-            if self._dispatch_console_api(path, query):
+            body = self._json_body(maximum=524_288) if self.command == "POST" else None
+            if self._dispatch_console_api(path, query, body):
                 return
             self._send(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
@@ -416,6 +487,16 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         except SpoolError as error:
             self._send(
                 error.status_code, {"error": error.__class__.__name__, "message": str(error)}
+            )
+        except ConsoleInputError as error:
+            self._send(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "invalid_console_request", "message": str(error)},
+            )
+        except ConsoleAuthorizationError as error:
+            self._send(
+                HTTPStatus.FORBIDDEN,
+                {"error": "approval_not_authorized", "message": str(error)},
             )
         except ConsoleDataError as error:
             self._send(

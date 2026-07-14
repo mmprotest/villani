@@ -28,6 +28,284 @@ export interface ConsoleHomeDocument {
   warnings: string[];
 }
 
+export interface RunRepositoryOption {
+  path: string;
+  name: string;
+  valid: boolean;
+  dirty: boolean | null;
+  source: string;
+  failure?: RunFailure | null;
+}
+
+export interface RunChoice {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface ConsoleRunOptions {
+  schema_version: "villani.console.run_options.v1";
+  repositories: RunRepositoryOption[];
+  default_repository: string | null;
+  delivery_modes: RunChoice[];
+  approval_modes: RunChoice[];
+  policies: RunChoice[];
+  policy_presets: PolicyPreset[];
+  advanced_policies: RunChoice[];
+  routing_modes: string[];
+  defaults: {
+    delivery_mode: string;
+    approval_mode: string;
+    policy_preset: string;
+    policy_selection: string;
+    routing_mode: string;
+    max_attempts: number;
+    max_cost: number | null;
+    max_wall_time: number | null;
+  };
+  setup_issues: string[];
+}
+
+export interface PolicyPreset extends RunChoice {
+  active: boolean;
+  advanced: boolean;
+  policy_version: string;
+}
+
+export interface ConsoleModelInventory {
+  schema_version: string;
+  models: ConsoleBootstrap["models"];
+  bootstrap_default: string | null;
+  capability_states: string[];
+  qualification?: {
+    minimum_sample_count: number;
+    minimum_conservative_confidence_bound: number;
+    policy_version: string;
+  };
+  setup_issues?: string[];
+  detections?: Record<string, unknown>[];
+}
+
+export interface ConsolePolicies {
+  schema_version: string;
+  active_preset: string;
+  presets: PolicyPreset[];
+  setup_issues: string[];
+}
+
+export interface PolicyPreview {
+  schema_version: "villani.policy_preview.v1";
+  raw_classification: Record<string, unknown> & {
+    difficulty: string;
+    risk: string;
+    confidence: number;
+  };
+  effective_classification: Record<string, unknown> & {
+    difficulty: string;
+    risk: string;
+    confidence: number;
+  };
+  adjustments: {
+    field: string;
+    before: string | number;
+    after: string | number;
+    rule_id: string;
+    reason: string;
+  }[];
+  eligible_models: Record<string, unknown>[];
+  excluded_models: (Record<string, unknown> & {
+    backend_name?: string;
+    reasons?: string[];
+  })[];
+  selected_coding_route: {
+    backend: string | null;
+    model: string | null;
+    action: string;
+    reason: string;
+    route_provenance: { basis?: string } | null;
+  };
+  selected_verifier_route: Record<string, unknown> & {
+    selected?: Record<string, unknown> | null;
+  };
+  estimated_cost: {
+    value: number | null;
+    status: string;
+    currency: string | null;
+  };
+  uncertainty: string[];
+  policy_version: { public: string; preset: string; controller: string };
+  coding_attempt_executed: false;
+}
+
+export interface PolicySimulation {
+  schema_version: "villani.policy_simulation.v1";
+  preset: string;
+  tasks_evaluated: number;
+  tasks_affected: number;
+  route_changes: Record<string, unknown>[];
+  estimated_cost_differences: {
+    status: string;
+    simulated_minus_recorded_total: number | null;
+    known_task_count: number;
+    unknown_task_count: number;
+  };
+  outcome_evidence_limitations: string[];
+  unsupported_counterfactual_claims: string[];
+  causal_savings_supported: false;
+  live_policy_changed: false;
+}
+
+export interface ValidationSuggestion {
+  suggestion_id: string;
+  argv: string[];
+  display_command: string;
+  confidence: number;
+  confidence_label: string;
+  requires_confirmation: boolean;
+  reason: string;
+  source: string;
+  advisory_only: true;
+  authoritative: false;
+}
+
+export interface ConsoleValidationDiscovery {
+  schema_version: string;
+  repository: RunRepositoryOption;
+  suggestions: ValidationSuggestion[];
+  selected_suggestion_id: string | null;
+  authority: string;
+  failure: RunFailure | null;
+}
+
+export interface RunFailure {
+  code: string;
+  what_failed: string;
+  what_villani_tried: string;
+  missing_evidence: string;
+  patch_preserved: boolean;
+  patch_status: string;
+  next_action: string;
+}
+
+export interface ConsoleRunSubmission {
+  schema_version: "villani.console.run_submission.v1";
+  status: string;
+  run_id: string | null;
+  run_url?: string;
+  replay_url?: string;
+  validation_commands?: string[];
+  failure: RunFailure | null;
+}
+
+export interface RunProgressLine {
+  tone: string;
+  symbol: string;
+  message: string;
+}
+
+export interface RunPatchReview {
+  files_changed: string[];
+  insertions: number;
+  deletions: number;
+  validation_evidence: {
+    evidence_id?: string;
+    kind?: string;
+    summary?: string;
+    artifact_path?: string | null;
+  }[];
+  verifier_authority: string;
+  candidate_comparison: Record<string, unknown>[];
+  remaining_risks: string[];
+  cost: {
+    value: number | null;
+    accounting_status: string;
+    currency: string;
+  };
+  unrelated_change_warnings: string[];
+  sensitive_file_warnings: string[];
+}
+
+export interface RunDelivery {
+  mode: string;
+  state: string;
+  label: string;
+  repository_modified: boolean;
+  target_worktree_modified: boolean;
+  patch_artifact?: string | null;
+  patch_sha256?: string | null;
+  authority: {
+    policy_version?: string;
+    required?: string;
+    observed?: string;
+    permitted?: boolean;
+    reasons?: string[];
+  };
+  approval: {
+    status?: string;
+    deadline?: string | null;
+    timeout_policy?: string;
+    authenticated_required?: boolean;
+    allow_candidate_change?: boolean;
+    actor?: string | null;
+    reason?: string | null;
+  };
+  review: RunPatchReview;
+  result: Record<string, unknown>;
+  failure?: Record<string, unknown> | null;
+  eligible_candidate_ids: string[];
+}
+
+export interface RunPresentation {
+  schema_version: "villani.run_presentation.v1";
+  run_id: string;
+  outcome: "RUNNING" | "AWAITING APPROVAL" | "ACCEPTED" | "EXHAUSTED" | "FAILED";
+  execution_status?: string;
+  summary: string;
+  changed?: {
+    files: string[];
+    file_count: number;
+    zero_file_change: boolean;
+    delivery_status?: string;
+  };
+  confidence?: {
+    value: number | null;
+    label: string;
+    acceptance_eligible: boolean;
+    authority: string;
+  };
+  validation: {
+    commands: { command: string; passed?: boolean; authority: string }[];
+    checks_passed: number;
+    checks_failed: number;
+    requirements_verified: number;
+    authority: string;
+  };
+  remaining_risks?: string[];
+  cost?: {
+    currency: string;
+    coding: number | null;
+    coding_status?: string;
+    verification: number | null;
+    verification_status?: string;
+    total: number | null;
+    accounting_status: string;
+  };
+  recovery?: string[];
+  next_actions?: { label: string; action: string }[];
+  delivery?: RunDelivery;
+  failure?: RunFailure | null;
+  synchronization_state?: string;
+  synchronization_failure?: RunFailure | null;
+  lineage: {
+    relationship?: string;
+    parent_run_id?: string;
+    root_run_id?: string;
+  };
+  progress: RunProgressLine[];
+  attempts?: { attempt_id: string; ordinal: number; backend: string }[];
+  selected_attempt_id?: string | null;
+}
+
 const workspaceFallback = (): ConsoleBootstrap => ({
   schema_version: "villani.console.bootstrap.v1",
   mode: "connected",
@@ -69,6 +347,36 @@ export class ConsoleClient {
     return response.json() as Promise<T>;
   }
 
+  private async post<T>(
+    path: string,
+    value: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        ...this.headers(),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      credentials: "same-origin",
+      body: JSON.stringify(value),
+      signal,
+    });
+    const contentType = response.headers?.get?.("content-type") ?? "";
+    const payload = contentType.includes("json")
+      ? ((await response.json()) as Record<string, unknown>)
+      : null;
+    if (!response.ok)
+      throw new ApiError(
+        response.status,
+        typeof payload?.message === "string"
+          ? payload.message
+          : `Request failed (${response.status})`,
+      );
+    return payload as T;
+  }
+
   async bootstrap(signal?: AbortSignal): Promise<ConsoleBootstrap> {
     try {
       return await this.get<ConsoleBootstrap>("/v1/console/bootstrap", signal);
@@ -92,18 +400,112 @@ export class ConsoleClient {
   }
 
   models(signal?: AbortSignal) {
-    return this.get<{ schema_version: string; models: ConsoleBootstrap["models"] }>(
-      "/v1/console/models",
+    return this.get<ConsoleModelInventory>("/v1/console/models", signal);
+  }
+
+  detectModels(signal?: AbortSignal) {
+    return this.post<ConsoleModelInventory>("/v1/console/models:detect", {}, signal);
+  }
+
+  testModels(backendName?: string, signal?: AbortSignal) {
+    return this.post<{
+      schema_version: string;
+      results: {
+        backend_name: string;
+        availability: string;
+        diagnostic: string;
+        tested_at: string;
+        model_tokens_used: 0;
+      }[];
+      model_tokens_used: 0;
+    }>(
+      "/v1/console/models:test",
+      backendName ? { backend_name: backendName } : {},
+      signal,
+    );
+  }
+
+  addModel(value: Record<string, unknown>, signal?: AbortSignal) {
+    return this.post<ConsoleModelInventory>("/v1/console/models:add", value, signal);
+  }
+
+  removeModel(backendName: string, signal?: AbortSignal) {
+    return this.post<ConsoleModelInventory>(
+      "/v1/console/models:remove",
+      { backend_name: backendName },
+      signal,
+    );
+  }
+
+  setDefaultModel(backendName: string, signal?: AbortSignal) {
+    return this.post<ConsoleModelInventory>(
+      "/v1/console/models:default",
+      { backend_name: backendName },
       signal,
     );
   }
 
   policies(signal?: AbortSignal) {
-    return this.get<{
-      schema_version: string;
-      active_policy: string | null;
-      presets: { id: string; label: string; active: boolean }[];
-    }>("/v1/console/policies", signal);
+    return this.get<ConsolePolicies>("/v1/console/policies", signal);
+  }
+
+  selectPolicy(preset: string, signal?: AbortSignal) {
+    return this.post<ConsolePolicies>(
+      "/v1/console/policies:select",
+      { preset },
+      signal,
+    );
+  }
+
+  previewPolicy(value: Record<string, unknown>, signal?: AbortSignal) {
+    return this.post<PolicyPreview>("/v1/console/policy:preview", value, signal);
+  }
+
+  simulatePolicy(preset: string, signal?: AbortSignal) {
+    return this.post<PolicySimulation>(
+      "/v1/console/policies:simulate",
+      { preset },
+      signal,
+    );
+  }
+
+  runOptions(signal?: AbortSignal) {
+    return this.get<ConsoleRunOptions>("/v1/console/run-options", signal);
+  }
+
+  discoverValidation(repository: string, signal?: AbortSignal) {
+    return this.post<ConsoleValidationDiscovery>(
+      "/v1/console/validation:discover",
+      { repository },
+      signal,
+    );
+  }
+
+  startRun(value: Record<string, unknown>, signal?: AbortSignal) {
+    return this.post<ConsoleRunSubmission>("/v1/console/runs", value, signal);
+  }
+
+  runStatus(runId: string, signal?: AbortSignal) {
+    return this.get<RunPresentation>(
+      `/v1/console/runs/${encodeURIComponent(runId)}/status`,
+      signal,
+    );
+  }
+
+  approvalAction(
+    runId: string,
+    value: {
+      action: "approve" | "reject" | "request_rerun" | "choose_candidate";
+      reason?: string;
+      candidate_id?: string;
+    },
+    signal?: AbortSignal,
+  ) {
+    return this.post<RunPresentation>(
+      `/v1/console/runs/${encodeURIComponent(runId)}/approval`,
+      value,
+      signal,
+    );
   }
 
   settings(signal?: AbortSignal) {
