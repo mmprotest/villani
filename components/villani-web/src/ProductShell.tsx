@@ -8,15 +8,47 @@ import {
   StatusStrip,
   TopHeader,
 } from "@villani/ui/react";
+import { useConsoleEnvironment } from "./consoleContext";
 
-type Surface = "fleet" | "run" | "ask";
+export type Surface =
+  | "home"
+  | "run"
+  | "history"
+  | "replay"
+  | "models"
+  | "policies"
+  | "settings"
+  | "fleet"
+  | "tasks"
+  | "costs"
+  | "alerts"
+  | "audit"
+  | "ask";
+
+const localItems: { id: Surface; label: string; href: string; glyph: string }[] = [
+  { id: "home", label: "Home", href: "/console", glyph: "H" },
+  { id: "run", label: "Run", href: "/console/run", glyph: ">" },
+  { id: "history", label: "History", href: "/console/history", glyph: "=" },
+  { id: "replay", label: "Replay", href: "/console/replay", glyph: "@" },
+  { id: "models", label: "Models", href: "/console/models", glyph: "M" },
+  { id: "policies", label: "Policies", href: "/console/policies", glyph: "P" },
+  { id: "settings", label: "Settings", href: "/console/settings", glyph: "S" },
+];
+
+const teamItems: { id: Surface; label: string; href: string; glyph: string }[] = [
+  { id: "fleet", label: "Fleet", href: "/console/fleet", glyph: "F" },
+  { id: "tasks", label: "Tasks", href: "/console/tasks", glyph: "T" },
+  { id: "costs", label: "Costs", href: "/console/costs", glyph: "$" },
+  { id: "alerts", label: "Alerts", href: "/console/alerts", glyph: "!" },
+  { id: "audit", label: "Audit", href: "/console/audit", glyph: "A" },
+];
 
 export function ProductShell({
   surface,
   title,
   detail,
   status = "running",
-  statusText = "CONTROL PLANE",
+  statusText,
   children,
 }: {
   surface: Surface;
@@ -26,6 +58,9 @@ export function ProductShell({
   statusText?: string;
   children: ReactNode;
 }) {
+  const environment = useConsoleEnvironment();
+  const connected = environment.workspace.connected;
+  const activeSurface = surface === "ask" ? "audit" : surface;
   const sidebar = (
     <Sidebar
       brand={
@@ -35,39 +70,40 @@ export function ProductShell({
       }
       data-testid="shared-sidebar"
     >
-      <SidebarSection title="CONTROL">
-        <SidebarItem href="/fleet" glyph="▦" active={surface === "fleet"}>
-          Fleet
-        </SidebarItem>
-        <SidebarItem href="/fleet#runs" glyph="≡">
-          Runs
-        </SidebarItem>
-        <SidebarItem href="/ask" glyph="?" active={surface === "ask"}>
-          Query
-        </SidebarItem>
+      <SidebarSection title="LOCAL">
+        {localItems.map((item) => (
+          <SidebarItem
+            key={item.id}
+            href={item.href}
+            glyph={item.glyph}
+            active={activeSurface === item.id}
+          >
+            {item.label}
+          </SidebarItem>
+        ))}
       </SidebarSection>
-      <SidebarSection title="OBSERVE">
-        <SidebarItem
-          href={surface === "run" ? location.pathname : "/fleet#runs"}
-          glyph="◎"
-          active={surface === "run"}
-        >
-          Run detail
-        </SidebarItem>
-        <SidebarItem href="/fleet#comparisons" glyph="⇄">
-          Candidates
-        </SidebarItem>
-        <SidebarItem href="/fleet#alerts" glyph="!">
-          Monitoring
-        </SidebarItem>
-      </SidebarSection>
+      {connected && (
+        <SidebarSection title="TEAM" data-testid="team-navigation">
+          {teamItems.map((item) => (
+            <SidebarItem
+              key={item.id}
+              href={item.href}
+              glyph={item.glyph}
+              active={activeSurface === item.id}
+            >
+              {item.label}
+            </SidebarItem>
+          ))}
+        </SidebarSection>
+      )}
       <div className="web-shell-version">
-        CONTROL PLANE / WEB
+        VILLANI CONSOLE
         <br />
-        MONOCHROME SYSTEM
+        {environment.version}
       </div>
     </Sidebar>
   );
+  const mode = connected ? "CONNECTED" : "LOCAL";
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -81,17 +117,22 @@ export function ProductShell({
             data-testid="shared-header"
             title={title}
             detail={detail}
-            actions={<span className="v-muted">LOCAL-FIRST</span>}
+            actions={<span className="v-muted">{mode}</span>}
           />
         }
         statusStrip={
           <StatusStrip>
-            <StatusBadge status={status} label={statusText} />
-            <span>API / CONNECTED</span>
-            <span>SCHEMA / V4</span>
-            <span className="web-status-clock">
-              {new Date().toISOString().slice(0, 19)}Z
-            </span>
+            <StatusBadge
+              status={status}
+              label={
+                statusText ?? `SERVICE / ${environment.service.status.toUpperCase()}`
+              }
+            />
+            <span>MODE / {mode}</span>
+            <span>SYNC / {environment.synchronization.pending} PENDING</span>
+            {environment.synchronization.dead_letters > 0 && (
+              <span>FAILED / {environment.synchronization.dead_letters}</span>
+            )}
           </StatusStrip>
         }
       >

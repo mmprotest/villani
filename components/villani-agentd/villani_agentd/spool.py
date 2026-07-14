@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import tempfile
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -447,6 +448,222 @@ class SQLiteSpool:
             "dead_letters": dead_letters,
             "upload_mode": "offline",
         }
+
+    def console_run_states(self, connected: bool) -> dict[str, str]:
+        """Return the one public synchronization state for every local run."""
+
+        with self._connect() as connection:
+            runs = connection.execute(
+                "SELECT run_id,upload_state,final_payload_json FROM runs"
+            ).fetchall()
+            events = connection.execute(
+                "SELECT run_id,upload_state,payload_json FROM events"
+            ).fetchall()
+            artifacts = connection.execute(
+                "SELECT run_id,upload_state FROM artifacts"
+            ).fetchall()
+            imports = connection.execute("SELECT run_id FROM local_run_imports").fetchall()
+        run_ids = {
+            str(row["run_id"])
+            for row in [*runs, *events, *artifacts, *imports]
+            if row["run_id"]
+        }
+        if not connected:
+            return {run_id: "LOCAL" for run_id in run_ids}
+
+        states: dict[str, list[str]] = {run_id: [] for run_id in run_ids}
+        redacted: set[str] = set()
+        for row in runs:
+            states[str(row["run_id"])].append(str(row["upload_state"]))
+            payload = str(row["final_payload_json"] or "")
+            if "villani_redaction" in payload or "artifact_withholding" in payload:
+                redacted.add(str(row["run_id"]))
+        for row in events:
+            run_id = str(row["run_id"])
+            states[run_id].append(str(row["upload_state"]))
+            payload = str(row["payload_json"] or "")
+            if "villani_redaction" in payload or "artifact_withholding_recorded" in payload:
+                redacted.add(run_id)
+        for row in artifacts:
+            states[str(row["run_id"])].append(str(row["upload_state"]))
+
+        result: dict[str, str] = {}
+        for run_id, upload_states in states.items():
+            if "dead_letter" in upload_states:
+                result[run_id] = "SYNC FAILED"
+            elif run_id in redacted:
+                result[run_id] = "REDACTED"
+            elif any(value in {"offline", "retry"} for value in upload_states):
+                result[run_id] = "SYNC PENDING"
+            elif upload_states and all(value == "acknowledged" for value in upload_states):
+                result[run_id] = "SYNCHRONIZED"
+            else:
+                result[run_id] = "SYNC PENDING"
+        return result
+
+    @staticmethod
+    def _console_value(document: Any, names: tuple[str, ...]) -> Any:
+        def present(value: Any) -> bool:
+            return value is not None and value != ""
+
+        if isinstance(document, Mapping):
+            for name in names:
+                value = document.get(name)
+                if present(value):
+                    return value
+            for value in document.values():
+                found = SQLiteSpool._console_value(value, names)
+                if present(found):
+                    return found
+        elif isinstance(document, list):
+            for value in document:
+                found = SQLiteSpool._console_value(value, names)
+                if present(found):
+                    return found
+        return None
+
+    def console_runs(self, connected: bool) -> list[dict[str, Any]]:
+        """Project redacted spool metadata into the shared Console history schema."""
+
+        with self._connect() as connection:
+            runs = connection.execute(
+                """SELECT run_id,created_at,finalized_at,final_payload_json
+                   FROM runs ORDER BY COALESCE(finalized_at,created_at) DESC"""
+            ).fetchall()
+            events = connection.execute(
+                """SELECT run_id,occurred_at,payload_json FROM events
+                   ORDER BY occurred_at,sequence"""
+            ).fetchall()
+            imports = {
+                str(row["run_id"]): dict(row)
+                for row in connection.execute(
+                    """SELECT run_id,last_attempt_at,completion_status,last_error_category
+                       FROM local_run_imports"""
+                ).fetchall()
+            }
+        by_run: dict[str, list[dict[str, Any]]] = {}
+        for row in events:
+            try:
+                document = json.loads(str(row["payload_json"]))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(document, dict):
+                by_run.setdefault(str(row["run_id"]), []).append(document)
+        states = self.console_run_states(connected)
+        values: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for row in runs:
+            run_id = str(row["run_id"])
+            seen.add(run_id)
+            documents = by_run.get(run_id, [])
+            final: dict[str, Any] = {}
+            if row["final_payload_json"]:
+                try:
+                    loaded = json.loads(str(row["final_payload_json"]))
+                    final = loaded if isinstance(loaded, dict) else {}
+                except json.JSONDecodeError:
+                    pass
+            search_documents: list[Any] = [final, *reversed(documents)]
+            value = lambda names: next(  # noqa: E731
+                (
+                    found
+                    for document in search_documents
+                    if (found := self._console_value(document, names)) is not None
+                    and found != ""
+                ),
+                None,
+            )
+            status = value(("final_state", "completion_status", "status", "state"))
+            task = value(("task_instruction", "instruction", "task_text"))
+            repository = value(("repository_path", "repository", "repo_path"))
+            model = value(("selected_model", "model"))
+            cost = value(("total_cost_usd", "cost_usd"))
+            updated_at = row["finalized_at"]
+            if not updated_at and documents:
+                updated_at = self._console_value(documents[-1], ("observed_at", "occurred_at"))
+            imported = imports.get(run_id, {})
+            values.append(
+                {
+                    "id": run_id,
+                    "logical_id": run_id,
+                    "kind": "run",
+                    "source": "villani",
+                    "source_label": "Villani",
+                    "provider": "villani",
+                    "repository": str(repository) if isinstance(repository, str) else None,
+                    "task": str(task) if isinstance(task, str) else None,
+                    "status": str(status or imported.get("completion_status") or "unknown"),
+                    "model": str(model) if isinstance(model, str) else None,
+                    "started_at": str(row["created_at"] or "") or None,
+                    "updated_at": str(updated_at or imported.get("last_attempt_at") or "") or None,
+                    "duration_ms": None,
+                    "cost": (
+                        cost
+                        if isinstance(cost, (int, float)) and not isinstance(cost, bool)
+                        else None
+                    ),
+                    "currency": "USD" if isinstance(cost, (int, float)) else None,
+                    "cost_available": isinstance(cost, (int, float)) and not isinstance(cost, bool),
+                    "synchronization_state": states.get(run_id, "LOCAL"),
+                    "deep_link": f"/console/runs/{urllib.parse.quote(run_id, safe='')}",
+                }
+            )
+        for run_id, imported in imports.items():
+            if run_id in seen:
+                continue
+            values.append(
+                {
+                    "id": run_id,
+                    "logical_id": run_id,
+                    "kind": "run",
+                    "source": "villani",
+                    "source_label": "Villani",
+                    "provider": "villani",
+                    "repository": None,
+                    "task": None,
+                    "status": str(imported.get("completion_status") or "unknown"),
+                    "model": None,
+                    "started_at": None,
+                    "updated_at": str(imported.get("last_attempt_at") or "") or None,
+                    "duration_ms": None,
+                    "cost": None,
+                    "currency": None,
+                    "cost_available": False,
+                    "synchronization_state": states.get(run_id, "LOCAL"),
+                    "deep_link": f"/console/runs/{urllib.parse.quote(run_id, safe='')}",
+                }
+            )
+        return values
+
+    def console_recovery_events(self, limit: int = 5) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT event_id,run_id,occurred_at,payload_json FROM events
+                   ORDER BY occurred_at DESC LIMIT 500"""
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            name = str(payload.get("name") or payload.get("kind") or "")
+            if not any(word in name.lower() for word in ("recover", "retry", "resume", "restart")):
+                continue
+            result.append(
+                {
+                    "id": str(row["event_id"]),
+                    "run_id": str(row["run_id"]),
+                    "timestamp": str(row["occurred_at"]),
+                    "name": name,
+                    "status": str(payload.get("status") or "recorded"),
+                }
+            )
+            if len(result) >= limit:
+                break
+        return result
 
     def pending_finalizations(self, limit: int, now: str) -> list[dict[str, Any]]:
         with self._connect() as connection:

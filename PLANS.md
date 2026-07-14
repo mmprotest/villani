@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`Authorized release-blocker cleanup pass: complete`
+`Milestone 2, one Villani Console: complete`
 
 ### Milestone status
 
@@ -2757,3 +2757,205 @@ Remaining unsupported integrations and risks:
 Next permitted milestone:
 - None. This pass completed the current release-readiness milestone and did not start a later
   milestone.
+
+#### 2026-07-14: Clean-checkout packaged release-gate repair
+
+Status: complete. The connected packaged release gate passed from an isolated source copy after
+removing the remaining Node package-boundary leak and repairing the Flight Recorder full-suite Git
+replay instability. No onboarding, product feature, architectural redesign, or later milestone was
+started.
+
+Changed areas:
+- Villani Web no longer imports Flight Recorder raw source. Villani Web and Flight Recorder expose
+  their canonical connected-run adapters through the declared `@villani/run-model` dependency, and
+  shared-package parity tests cover identical canonical values, including unknown cost semantics.
+- Flight Recorder Git replay uses one bounded, shell-free child-process helper with drained output,
+  detailed failure diagnostics, Windows process-tree cleanup, unique temporary repositories, and
+  a `prepack` build that guarantees the helper is present in direct package tarballs.
+- The packaged gate copies tracked plus non-ignored source into a disposable clean tree while
+  excluding dependency trees, generated output, caches, environments, databases, and prior release
+  evidence. It installs, builds, and packs each Node component independently, installs all five
+  Python wheels into a clean virtual environment, validates packed frontend assets and package
+  imports, and records command, working-directory, executable, log, timeout, and environment paths.
+- CI now asserts clean dependency preconditions, installs Playwright Chromium explicitly, provides
+  PostgreSQL 16, runs Flight Recorder three consecutive times, executes the isolated connected gate,
+  and uploads the complete release evidence directory on failure.
+
+Verification:
+- Villani Ops: 901 passed, 2 Windows host-capability skips, 114 benchmark deselections. Villani
+  Code: 671 passed, 1 explicit opt-in skip. Agentd: 60 passed.
+- Root closed-loop integration: 10 passed. Final foundation: 27 passed. Villani distribution:
+  15 passed.
+- Control Plane SQLite: 80 passed with 9 PostgreSQL/load tests deselected. PostgreSQL 16 full suite:
+  89 passed, zero skips, including the 100,000-event load smoke (196.7 events/s locally). Live
+  Alembic upgrade and offline SQL rendering reached `0a1b2c3d4e5f`.
+- Shared UI: 3 passed and build/pack passed. Run model: 4 passed and typecheck/build/pack passed.
+  Villani Web: 5 passed plus 10 Playwright tests, with typecheck/build/format passing. Flight
+  Recorder: 20 files/105 tests passed in each of three consecutive full-suite runs; typecheck,
+  build, format, and package-content checks passed.
+- The final isolated local packaged gate passed 8/8 scenarios and 233/233 assertions. It synchronized
+  8 runs (7 completed, 1 intentionally exhausted), produced zero dead letters, preserved repeated
+  canonical `attempt_001` values across runs, passed PostgreSQL/redaction/withholding/verifier-
+  routing/candidate-diversity/classification-adjustment proofs, passed canonical/Web/Flight Recorder
+  reconciliation, and generated all 17 required screenshots.
+- Package output comprised five wheels, five source distributions, and four Node tarballs. Clean
+  wheel and packed-Node consumer installation passed, and both application builds recorded no
+  sibling `node_modules` directories.
+
+Remaining limitations and risks:
+- This workstation executed the final connected gate in `local` mode. Deterministic security checks
+  passed, but official release certification and its externally required scanners were not rerun in
+  this pass. The updated GitHub Actions workflow was syntax/contract checked locally but was not
+  executed on a hosted runner.
+- Two Villani Ops Windows capability skips and one Villani Code paid-provider opt-in skip remain
+  explicit. Existing deprecation and cache-permission warnings do not conceal test failures.
+
+Next permitted milestone:
+- None. The clean-checkout release-blocker milestone is complete, and no onboarding or feature work
+  was started.
+
+#### 2026-07-14: Guided first-run setup and diagnostics
+
+Status: complete. A clean wheel-only environment completed guided setup, selected a detected model,
+started Villani Service, passed diagnostics, opened the single Villani Console, completed and
+materialized a disposable sample task, captured screenshots, and stopped cleanly. The control loop,
+acceptance rules, and user task workflow were not redesigned.
+
+Changed areas:
+- The public distribution now owns `villani setup`, `villani doctor`, `villani service
+  status|start|stop|restart`, and `villani open`. Legacy service-install aliases remain callable but
+  are hidden from normal help, which presents Villani CLI, Villani Service, and Villani Console.
+- Setup independently detects the current Git repository, supported loopback OpenAI-compatible
+  providers and model listings, OpenAI credential presence, supported Claude/Codex/Pi session
+  sources, and service state. It tests the selected model, runs a small non-destructive probe,
+  writes schema-versioned configuration atomically with backup/validation, keeps capability
+  `unrated`, preserves unknown pricing, and offers the service, console, and disposable sample.
+- Doctor emits human-readable recovery actions and stable `villani.doctor.v1` JSON for component,
+  configuration, service, spool, synchronization, dead-letter, model, repository, Git, package,
+  console, and storage health. Service lifecycle is duplicate-safe for repeated invocation,
+  bounded on shutdown, stale-state aware, and supports user-level automatic-start adapters.
+- Agentd serves one loopback Villani Console URL. The deterministic fixture, recorded onboarding
+  gate, Playwright screenshot capture, public documentation, and a clean-wheel CI job cover the
+  complete first-user path without exposing a separate Flight Recorder decision.
+
+Verification:
+- Villani distribution: 48 passed. Agentd: 61 passed. Villani Code: 671 passed with one explicit
+  paid-provider skip. Villani Ops: 901 passed, two Windows host-capability skips, and 114 benchmark
+  deselections. Root closed loop: 10 passed. Final foundation: 27 passed.
+- Flight Recorder: 20 files and 105 tests passed; typecheck, build, and format checks passed. Ruff
+  passed all edited Python/test/gate files. Mypy passed 8 distribution and 24 Agentd source files.
+- Four runtime wheels built, clean installation reported no broken requirements, final Villani wheel
+  content validation passed, and public help contains no internal daemon or legacy install aliases.
+- The recorded clean-wheel onboarding gate reported `ONBOARDING GATE PASSED`: sample run
+  `run_5121629350a547a2a29fc18ff9db9b4d` reached `COMPLETED`, selected `attempt_001`, doctor reported
+  14 passes/one expected offline-sync warning/zero failures, dead letters were zero, the service
+  stopped, and all three required screenshots were generated.
+- The final local packaged release gate reported `RELEASE GATE PASSED`: 8/8 scenarios and 233/233
+  assertions passed, eight runs synchronized, PostgreSQL migrations and repeated `attempt_001`
+  identities passed, dead letters were zero, API/Web/Flight Recorder reconciliation passed, all 17
+  connected screenshots and browser checks passed, and the 1,253-file package secret scan found
+  zero findings.
+
+Remaining limitations and risks:
+- The final packaged gate ran in local mode, so official release certification and release-only
+  external scanners were not rerun. The updated GitHub Actions job was YAML/contract checked but
+  not executed on a hosted runner.
+- Native systemd and launchd manager calls were covered through platform-adapter tests rather than
+  executed on this Windows workstation. Direct Windows service lifecycle and console behavior were
+  exercised with a real process.
+- Provider onboarding matches the public controller's current OpenAI-compatible provider set.
+  Pricing remains unknown when the provider supplies no reliable pricing metadata; no cost is
+  fabricated. The recorded local-only sample intentionally leaves 42 spool items pending and
+  reports that state as a doctor warning, not a failure.
+
+Next permitted milestone:
+- None. This guided-onboarding milestone is complete, and no later onboarding, product-feature,
+  team, enterprise, or control-loop redesign milestone was started.
+
+#### 2026-07-14: Milestone 2, one Villani Console
+
+Status: complete. Villani Web and the Flight Recorder mainstream UI are now one Villani Console
+with one shared shell, navigation system, history, and replay surface. Local use remains available
+without a Control Plane; enrolment adds Team navigation and connected data. No later milestone,
+control-loop redesign, or unrelated feature was started.
+
+Changed areas:
+- `components/villani-run-model/{src,dist,test}` defines the shared Console bootstrap, merged-history,
+  synchronization-state, replay, and deep-link contracts used by both projections.
+- `components/villani-flight-recorder/{src,test,dist,README.md,package.json}` retains discovery,
+  parsing, indexing, and replay data engines, exposes a bounded structured Console adapter, and
+  routes browse/default launch compatibility commands to Console History or Replay.
+- `components/villani-agentd/{villani_agentd,tests,pyproject.toml,MANIFEST.in}` provides the
+  authenticated local Console API, serves the packaged SPA, merges local spool synchronization
+  state, and invokes Flight Recorder without exposing arbitrary filesystem access to the browser.
+- `components/villani-web/{src,test,e2e,dist,README.md,index.html}` provides the single shared-UI
+  shell, LOCAL/conditional TEAM navigation, Home, merged History, embedded Replay, Models,
+  Policies, Settings, connected views, stable deep links, and legacy redirects.
+- `components/villani-ui/react.js`, `.github/workflows/ci.yml`, `release-verification/`, and
+  `scripts/{sync-console-assets.py,validate-console-wheel.py,build-release.py,ci-package-smoke.py}`
+  enforce the shared navigation semantics, clean packaged assets, connected browser behavior, and
+  wheel/package-content validation.
+
+Architectural decisions:
+- Agentd is the local structured Console boundary; browser code reads APIs, never arbitrary paths.
+  Flight Recorder remains the sole parser/index/replay engine and is invoked through a bounded JSON
+  adapter rather than duplicated into Web.
+- One logical replay contract covers local canonical runs, imported sessions, and connected runs.
+  Stable links preserve run/session/event/attempt/file identity; synchronized and local entries are
+  deduplicated by canonical identity.
+- `vfr browse`, `vfr open`, and default `vfr launch` are compatibility routes into Villani Console.
+  Explicit offline evidence export remains available but is not a separate mainstream application.
+- Team navigation is rendered only for an enrolled workspace. Unknown cost remains unknown and no
+  unsupported Home metric is inferred.
+
+Verification:
+- Villani Code, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 671 passed, 1 skipped.
+  Villani Ops, the same command: exit code 0; 901 passed, 2 skipped, 114 deselected.
+- Agentd, `..\..\.venv\Scripts\python.exe -m pytest -q`: exit code 0; 67 passed. Ruff reported all
+  checks passed; mypy reported success for 25 source files.
+- Root closed loop, `.\.venv\Scripts\python.exe -m pytest tests\closed_loop -q`: exit code 0;
+  10 passed. Final foundation: exit code 0; 27 passed. Villani distribution: exit code 0; 48 passed.
+- Run model, `npm.cmd test`: exit code 0; 5 passed. Shared UI: exit code 0; 3 passed. Their
+  typecheck/build/package-content checks passed.
+- Villani Web, `npm.cmd test`: exit code 0; 10 passed in 4 files. `npm.cmd run e2e`: exit code 0;
+  14 passed. Typecheck, production build (51 modules), format, asset sync, and packaged wheel-content
+  validation passed.
+- Flight Recorder, `npm.cmd test`, three consecutive complete runs: exit code 0 each; 111 passed in
+  21 files on each run. Typecheck, build, format, and package-content checks passed; the Git replay
+  subprocess tests left no owned child process running.
+- `.\.venv\Scripts\python.exe release-verification\run_release_gate.py --mode release`: exit code 0;
+  `RELEASE GATE PASSED`. The isolated clean-copy gate recorded 138 commands, passed 8/8 scenarios
+  and 233/233 assertions, synchronized 8 runs (7 completed, 1 intentionally exhausted), produced
+  zero dead letters, and generated all 17 browser screenshots with zero browser errors or failed
+  requests.
+- PostgreSQL migration proof passed at Alembic head `0a1b2c3d4e5f`, including a populated
+  pre-composite upgrade, repeated public `attempt_001` values, tenant isolation, relationship
+  preservation, and no data loss. Canonical, Web, and Flight Recorder reconciliation all passed;
+  redaction (3 fields), artifact withholding (1 artifact), verifier routing, candidate diversity,
+  classification adjustment, and official release security certification all passed.
+
+Acceptance criteria:
+- PASS: `villani open` resolves to the one Agentd-served Villani Console; VFR compatibility commands
+  resolve to that same History or Replay application.
+- PASS: Local Villani runs and Claude, Codex, Pi, and other supported imported sessions share one
+  filtered History contract with exact LOCAL, SYNC PENDING, SYNCHRONIZED, REDACTED, or SYNC FAILED
+  state and no duplicate canonical runs.
+- PASS: Replay is inside the Console and exposes summary, timeline, event stream, attempts, evidence,
+  verification, candidate comparison, files, cost, and logs.
+- PASS: Local mode requires no Control Plane, while enrolment reveals the Team section and connected
+  workspace surfaces in the same shell.
+- PASS: Legacy Web, run, Flight Recorder, session, replay-event, attempt, and file links resolve to
+  stable Console routes. The connected release browser reconciled both former applications to the
+  same logical run view.
+
+Known remaining issues:
+- The in-app interactive browser target was unavailable in this Codex session, so that optional
+  manual browser-control pass could not attach. The packaged release gate's real Playwright run
+  passed all browser assertions and emitted 17 reviewed PNGs, including the unified Console Replay.
+- The hosted GitHub Actions workflow was updated and its referenced scripts were exercised locally,
+  but this workstation did not execute a remote hosted-runner job.
+- Two Villani Ops Windows capability skips and one Villani Code paid-provider opt-in skip remain
+  explicit; none covers Console, replay, PostgreSQL, connected synchronization, or browser behavior.
+
+Next permitted milestone:
+- None. Milestone 2 is complete; no later milestone was started.

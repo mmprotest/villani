@@ -19,9 +19,9 @@ from villani_agentd.spool import SQLiteSpool
 def test_public_help_lists_distribution_service_commands() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "install-service" in result.output
     assert "service" in result.output
-    assert "uninstall-service" in result.output
+    assert "install-service" not in result.output
+    assert "uninstall-service" not in result.output
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])

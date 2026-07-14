@@ -1,11 +1,1 @@
-import {
-  canonicalRunSnapshot,
-  type CanonicalRunSnapshot,
-  type RunDetail,
-} from "@villani/run-model";
-
-export function deriveFlightRecorderRunModel(
-  detail: RunDetail,
-): CanonicalRunSnapshot {
-  return canonicalRunSnapshot(detail);
-}
+export { deriveFlightRecorderRunModel } from "@villani/run-model";

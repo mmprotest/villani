@@ -141,7 +141,7 @@ describe("structured interrogation", () => {
     expect(screen.getByText("unknown_cost")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "run_1" })).toHaveAttribute(
       "href",
-      "/runs/run_1",
+      "/console/runs/run_1",
     );
     expect(screen.getAllByText("<img src=x onerror=alert(1)>").length).toBeGreaterThan(
       0,

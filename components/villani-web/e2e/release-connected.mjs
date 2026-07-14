@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 
 const options = process.argv.slice(2).reduce((result, value, index, values) => {
   if (value.startsWith("--")) result[value.slice(2)] = values[index + 1];
@@ -316,28 +316,34 @@ try {
     `/flight/runs/${encodeURIComponent(runIds.scenario_b)}`,
     "flight_recorder",
   );
-  await assertRunTruth(flight.page, flightSnapshot, "Flight Recorder escalated run");
+  required(
+    new URL(flight.page.url()).pathname ===
+      `/console/runs/${encodeURIComponent(runIds.scenario_b)}/replay`,
+    "Legacy Flight Recorder link did not migrate to Console Replay",
+  );
+  await flight.page.locator('[data-testid="console-replay"]').waitFor();
+  await assertRunTruth(flight.page, flightSnapshot, "Console Replay escalated run");
   const flightHtml = await flight.page.content();
   required(
     !/#f8fafc|#f7f3ea|#334155|rgba\(255,\s*255,\s*255,\s*\.(?:3|4|5|6|7|8|9)/i.test(
       flightHtml,
     ),
-    "Flight Recorder rendered legacy light CSS",
+    "Console Replay rendered legacy light CSS",
   );
   const attemptIds = await flight.page
-    .locator("[data-attempt-id]")
-    .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-attempt-id")));
+    .locator("#attempts tbody tr td:first-child")
+    .allTextContents();
   required(
     attemptIds.length === new Set(attemptIds).size,
-    "Flight Recorder duplicate candidate rows",
+    "Console Replay contains duplicate attempt rows",
   );
   const flightSummaryLayout = await flight.page
-    .locator("#overview .summary-facts")
+    .locator("#summary .v-key-value-grid")
     .evaluate((element) => {
       const columns = getComputedStyle(element)
         .gridTemplateColumns.split(" ")
         .filter(Boolean).length;
-      const articles = [...element.querySelectorAll("article")];
+      const articles = [...element.querySelectorAll(".v-key-value-grid__item")];
       return {
         columns,
         articleCount: articles.length,
@@ -346,7 +352,7 @@ try {
           ...articles.map((article) => article.scrollWidth - article.clientWidth),
         ),
         verticallySeparated: articles.every((article) => {
-          const children = [...article.querySelectorAll("b,span,small")];
+          const children = [...article.querySelectorAll("dt,dd")];
           return children.every((child, index) => {
             if (index === children.length - 1) return true;
             return (
@@ -360,22 +366,18 @@ try {
   required(
     flightSummaryLayout.columns === 3 &&
       flightSummaryLayout.articleCount % flightSummaryLayout.columns === 0,
-    "Flight Recorder overview leaves an incomplete metric-grid row",
+    "Console Replay summary leaves an incomplete metric-grid row",
   );
   required(
     flightSummaryLayout.verticallySeparated && flightSummaryLayout.overflow <= 1,
-    "Flight Recorder overview metric labels overlap or overflow",
+    "Console Replay summary labels overlap or overflow",
   );
   checks.flight_recorder_summary_layout = flightSummaryLayout;
-  await capture(flight.page, "10-flight-recorder-overview.png", "#overview");
-  await capture(
-    flight.page,
-    "11-replay-timeline.png",
-    '[data-testid="replay-timeline"]',
-  );
-  await capture(flight.page, "12-event-stream.png", '[data-testid="event-stream"]');
-  await capture(flight.page, "13-evidence-panel.png", '[data-testid="evidence-panel"]');
-  await capture(flight.page, "14-file-activity.png", '[data-testid="file-activity"]');
+  await capture(flight.page, "10-flight-recorder-overview.png", "#summary");
+  await capture(flight.page, "11-replay-timeline.png", "#timeline");
+  await capture(flight.page, "12-event-stream.png", "#event-stream");
+  await capture(flight.page, "13-evidence-panel.png", "#evidence");
+  await capture(flight.page, "14-file-activity.png", "#files");
   await capture(
     flight.page,
     "15-flight-candidate-comparison.png",

@@ -176,3 +176,19 @@ export function canonicalRunSnapshot(detail: RunDetail): CanonicalRunSnapshot {
         : null,
   };
 }
+
+/**
+ * Named consumer adapters keep the two application boundaries explicit while
+ * guaranteeing that both surfaces use the same presentation-neutral model.
+ */
+export function deriveVillaniWebRunModel(
+  detail: RunDetail,
+): CanonicalRunSnapshot {
+  return canonicalRunSnapshot(detail);
+}
+
+export function deriveFlightRecorderRunModel(
+  detail: RunDetail,
+): CanonicalRunSnapshot {
+  return canonicalRunSnapshot(detail);
+}

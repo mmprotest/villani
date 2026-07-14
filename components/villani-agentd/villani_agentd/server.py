@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import base64
 import binascii
+import http.cookies
+import importlib.resources
 import json
+import mimetypes
 import os
 import secrets
 import signal
 import threading
+import urllib.parse
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +22,7 @@ from villani_ops.closed_loop.durable_io import write_json_atomic
 
 from .client import is_loopback_host
 from .config import AgentdPaths, ServerConfig
+from .console import ConsoleDataError, ConsoleService
 from .spool import LimitError, SQLiteSpool, SpoolError
 from .structured_log import StructuredLogger
 from .otlp import normalize_otlp_traces
@@ -39,11 +44,13 @@ class AgentdHTTPServer(ThreadingHTTPServer):
         spool: SQLiteSpool,
         config: ServerConfig,
         logger: StructuredLogger,
+        console_service: ConsoleService | None = None,
     ) -> None:
         self.token = token
         self.spool = spool
         self.config = config
         self.structured_logger = logger
+        self.console_service = console_service or ConsoleService(spool.paths, spool)
         super().__init__(address, AgentdRequestHandler)
 
 
@@ -69,10 +76,104 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def _authenticated(self) -> bool:
+    def _send_bytes(
+        self,
+        status: int,
+        body: bytes,
+        content_type: str,
+        *,
+        cache_control: str = "no-store",
+        console_cookie: bool = False,
+    ) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", cache_control)
+        if console_cookie:
+            self.send_header(
+                "Set-Cookie",
+                f"villani_console={self.server.token}; HttpOnly; Path=/; SameSite=Strict",
+            )
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+            "connect-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
+            "form-action 'self'",
+        )
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_html(self, status: int, body: str, *, console_cookie: bool = False) -> None:
+        self._send_bytes(
+            status,
+            body.encode("utf-8"),
+            "text/html; charset=utf-8",
+            console_cookie=console_cookie,
+        )
+
+    def _redirect(self, location: str) -> None:
+        self.send_response(HTTPStatus.SEE_OTHER)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def _console_asset(self, relative: str) -> bytes | None:
+        parts = relative.replace("\\", "/").split("/")
+        if not parts or any(part in {"", ".", ".."} for part in parts):
+            return None
+        target = importlib.resources.files("villani_agentd").joinpath(
+            "console_assets", *parts
+        )
+        try:
+            return target.read_bytes()
+        except (FileNotFoundError, IsADirectoryError, OSError):
+            return None
+
+    def _serve_console(self, relative: str = "index.html") -> None:
+        content = self._console_asset(relative)
+        if content is None:
+            self._send_html(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                "<title>Villani Console unavailable</title></head><body><main>"
+                "<h1>Villani Console is unavailable</h1><p>Run: villani doctor</p>"
+                "</main></body></html>",
+            )
+            return
+        if relative == "index.html":
+            self._send_bytes(
+                HTTPStatus.OK,
+                content,
+                "text/html; charset=utf-8",
+                console_cookie=True,
+            )
+            return
+        content_type = mimetypes.guess_type(relative)[0] or "application/octet-stream"
+        self._send_bytes(
+            HTTPStatus.OK,
+            content,
+            content_type,
+            cache_control="public, max-age=31536000, immutable",
+        )
+
+    def _authenticated(self, *, allow_console_cookie: bool = False) -> bool:
         supplied = self.headers.get("Authorization", "")
         expected = f"Bearer {self.server.token}"
-        if not secrets.compare_digest(supplied, expected):
+        authenticated = secrets.compare_digest(supplied, expected)
+        if allow_console_cookie and not authenticated:
+            cookie = http.cookies.SimpleCookie()
+            try:
+                cookie.load(self.headers.get("Cookie", ""))
+                value = cookie.get("villani_console")
+                authenticated = bool(
+                    value and secrets.compare_digest(value.value, self.server.token)
+                )
+            except http.cookies.CookieError:
+                authenticated = False
+        if not authenticated:
             self._send(HTTPStatus.UNAUTHORIZED, {"error": "authentication_required"})
             return False
         return True
@@ -98,13 +199,132 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             raise SpoolError("request body must be an object")
         return value
 
+    def _dispatch_console_api(
+        self, path: str, query: dict[str, list[str]]
+    ) -> bool:
+        service = self.server.console_service
+        if path == "/v1/console/bootstrap":
+            self._send(HTTPStatus.OK, service.bootstrap())
+            return True
+        if path == "/v1/console/home":
+            self._send(HTTPStatus.OK, service.home())
+            return True
+        if path == "/v1/console/history":
+            refresh = query.get("refresh", [""])[0].lower() in {"1", "true", "yes"}
+            self._send(HTTPStatus.OK, service.history(refresh=refresh))
+            return True
+        if path == "/v1/console/models":
+            bootstrap = service.bootstrap()
+            self._send(
+                HTTPStatus.OK,
+                {
+                    "schema_version": "villani.console.models.v1",
+                    "models": bootstrap["models"],
+                },
+            )
+            return True
+        if path == "/v1/console/policies":
+            bootstrap = service.bootstrap()
+            self._send(
+                HTTPStatus.OK,
+                {
+                    "schema_version": "villani.console.policies.v1",
+                    "active_policy": bootstrap["active_policy"],
+                    "presets": [
+                        {"id": "observe", "label": "Observe", "active": False},
+                        {
+                            "id": "bootstrap",
+                            "label": "Bootstrap",
+                            "active": bootstrap["active_policy"] == "bootstrap_v1",
+                        },
+                        {"id": "conservative", "label": "Conservative", "active": False},
+                    ],
+                },
+            )
+            return True
+        if path == "/v1/console/settings":
+            bootstrap = service.bootstrap()
+            self._send(
+                HTTPStatus.OK,
+                {
+                    "schema_version": "villani.console.settings.v1",
+                    "setup": bootstrap["setup"],
+                    "service": bootstrap["service"],
+                    "storage": bootstrap["storage"],
+                    "privacy": {"secrets_exposed": False, "local_first": True},
+                    "synchronization": bootstrap["synchronization"],
+                    "workspace": bootstrap["workspace"],
+                },
+            )
+            return True
+        if path == "/v1/console/service":
+            self._send(HTTPStatus.OK, service.bootstrap()["service"])
+            return True
+        if path == "/v1/console/synchronization":
+            bootstrap = service.bootstrap()
+            self._send(
+                HTTPStatus.OK,
+                {
+                    "schema_version": "villani.console.synchronization.v1",
+                    **bootstrap["synchronization"],
+                    "workspace": bootstrap["workspace"],
+                },
+            )
+            return True
+        if path == "/v1/console/workspace":
+            self._send(HTTPStatus.OK, service.workspace())
+            return True
+        workspace_prefix = "/v1/console/workspace/"
+        if path.startswith(workspace_prefix):
+            surface = urllib.parse.unquote(path[len(workspace_prefix) :])
+            self._send(HTTPStatus.OK, service.workspace(surface))
+            return True
+        for prefix, kind in (
+            ("/v1/console/runs/", "run"),
+            ("/v1/console/sessions/", "session"),
+        ):
+            if path.startswith(prefix):
+                encoded = path[len(prefix) :]
+                if not encoded or "/" in encoded:
+                    return False
+                self._send(
+                    HTTPStatus.OK,
+                    service.replay(urllib.parse.unquote(encoded), kind),
+                )
+                return True
+        return False
+
     def _dispatch(self) -> None:
-        if self.path == "/v1/health" and self.command == "GET":
+        parsed = urllib.parse.urlsplit(self.path)
+        path = parsed.path
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        if path == "/" and self.command == "GET":
+            self._redirect("/console")
+            return
+        if path.startswith("/assets/") and self.command == "GET":
+            self._serve_console(path.removeprefix("/"))
+            return
+        console_route = path == "/console" or path.startswith("/console/")
+        legacy_route = path in {"/fleet", "/ask", "/history", "/replay", "/models", "/policies", "/settings"} or path.startswith(("/runs/", "/flight/", "/fleet/", "/ask/"))
+        if (console_route or legacy_route) and self.command == "GET":
+            self._serve_console()
+            return
+        if path == "/v1/health" and self.command == "GET":
             self._send(HTTPStatus.OK, {"status": "ok", "version": "v1"})
+            return
+        if path.startswith("/v1/console/"):
+            if self.command != "GET":
+                self._send(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"})
+                return
+            if not self._authenticated(allow_console_cookie=True):
+                return
+            if self._dispatch_console_api(path, query):
+                return
+            self._send(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
         if not self._authenticated():
             return
-        if self.path == "/v1/status" and self.command == "GET":
+        if path == "/v1/status" and self.command == "GET":
             sync_config = SyncConfig.load(self.server.spool.paths.sync_config)
             self._send(
                 HTTPStatus.OK,
@@ -125,7 +345,7 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
 
-        otlp_path = self.path in {"/v1/traces", "/v1/otlp/v1/traces"}
+        otlp_path = path in {"/v1/traces", "/v1/otlp/v1/traces"}
         body = self._json_body(self.server.config.limits.otlp_payload_bytes if otlp_path else None)
         if otlp_path:
             events = normalize_otlp_traces(body)
@@ -141,7 +361,7 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
                 },
             )
             return
-        if self.path == "/v1/runs":
+        if path == "/v1/runs":
             created = self.server.spool.register_run(
                 str(body.get("run_id") or ""),
                 str(body["trace_id"]) if body.get("trace_id") is not None else None,
@@ -149,7 +369,7 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(HTTPStatus.CREATED if created else HTTPStatus.OK, {"created": created})
             return
-        if self.path == "/v1/events:batch":
+        if path == "/v1/events:batch":
             batch_events = body.get("events")
             if not isinstance(batch_events, list) or not all(
                 isinstance(item, dict) for item in batch_events
@@ -165,7 +385,7 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
                 },
             )
             return
-        if self.path == "/v1/artifacts/register":
+        if path == "/v1/artifacts/register":
             descriptor = body.get("descriptor")
             content_base64 = body.get("content_base64")
             if not isinstance(descriptor, dict) or not isinstance(content_base64, str):
@@ -181,8 +401,8 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             return
         prefix = "/v1/runs/"
         suffix = "/finalize"
-        if self.path.startswith(prefix) and self.path.endswith(suffix):
-            run_id = self.path[len(prefix) : -len(suffix)]
+        if path.startswith(prefix) and path.endswith(suffix):
+            run_id = path[len(prefix) : -len(suffix)]
             if not run_id or "/" in run_id:
                 raise SpoolError("invalid run_id")
             self.server.spool.finalize_run(run_id, body, utc_now())
@@ -196,6 +416,11 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         except SpoolError as error:
             self._send(
                 error.status_code, {"error": error.__class__.__name__, "message": str(error)}
+            )
+        except ConsoleDataError as error:
+            self._send(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "console_data_unavailable", "message": str(error)},
             )
         except Exception as error:
             self.server.structured_logger.emit(
@@ -250,4 +475,10 @@ def serve(
         server.serve_forever(poll_interval=0.2)
     finally:
         server.server_close()
+        try:
+            endpoint_document = json.loads(paths.endpoint.read_text(encoding="utf-8"))
+            if int(endpoint_document.get("pid", 0)) == os.getpid():
+                paths.endpoint.unlink(missing_ok=True)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
         logger.emit("info", "daemon_stopped", pid=os.getpid())

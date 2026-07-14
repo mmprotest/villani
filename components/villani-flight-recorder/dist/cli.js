@@ -12,95 +12,21 @@ import { buildGitReplay } from "./git/gitReplay.js";
 import { installHooks, appendHook } from "./hooks/installHooks.js";
 import { scanToIndex } from "./index/sessionIndex.js";
 import { readIndex, defaultIndexDir } from "./index/sessionStore.js";
-import { renderSessionBrowser } from "./render/sessionBrowser.js";
 import { formatTokenCount } from "./providers/helpers/tokens.js";
 import { adaptersFor } from "./providers/providerAdapter.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { assertOutsideVillaniRunsRoot, launchVillaniRun, } from "./commands/launchVillani.js";
 import { defaultVillaniRunsRoot } from "./scanners/findVillaniRuns.js";
+import { consoleIndex, consoleReplay } from "./console/consoleData.js";
+import { consoleRedirectHtml, villaniConsoleUrl, } from "./console/consoleUrl.js";
 const program = new Command();
 program
     .name("villani-flight-recorder")
-    .description("Black box recorder for AI coding agents\n\nCommon workflow:\n  vfr scan\n  vfr browse\n  vfr replay --id <session-id>")
+    .description("Villani's internal session parsing and replay-data compatibility CLI.\n\nOpen the product with:\n  villani open\n\nAdvanced diagnostics:\n  vfr scan --all\n  vfr sessions")
     .version("0.1.0");
-const RENDERER_VERSION = "0.1.0-no-coverage-v2";
-async function readManifest(replayDir) {
-    try {
-        return JSON.parse(await fs.readFile(path.join(replayDir, "manifest.json"), "utf8"));
-    }
-    catch {
-        return { version: 1, entries: [] };
-    }
-}
-async function writeManifest(replayDir, manifest) {
-    await fs.writeFile(path.join(replayDir, "manifest.json"), JSON.stringify(manifest, null, 2));
-}
-async function prepareReplayCache(idx, opts) {
-    const replayDir = path.join(opts.base, "replays");
-    await fs.mkdir(replayDir, { recursive: true });
-    const manifest = await readManifest(replayDir);
-    const byId = new Map(manifest.entries.map((e) => [e.sessionId, e]));
-    let reused = 0, generated = 0, skipped = 0;
-    const next = [];
-    const returnHref = path.relative(replayDir, opts.out) || path.basename(opts.out);
-    opts.progress?.("Preparing replay cache...");
-    for (const s of idx.sessions) {
-        const replayPath = path.join(replayDir, `${s.id}.html`);
-        const old = byId.get(s.id);
-        const reusable = !opts.rebuild &&
-            old &&
-            old.sourceHash === s.sourceHash &&
-            old.rendererVersion === RENDERER_VERSION &&
-            (await fs
-                .stat(replayPath)
-                .then(() => true)
-                .catch(() => false));
-        if (reusable) {
-            reused++;
-            next.push(old);
-            continue;
-        }
-        const ad = adaptersFor(String(s.provider))[0];
-        if (!ad) {
-            skipped++;
-            continue;
-        }
-        try {
-            const parsed = await ad.parse({
-                provider: s.provider,
-                sourcePath: s.sourcePath,
-                sourceKind: s.sourceKind,
-                confidence: s.confidence,
-                reason: "browser replay",
-            });
-            await renderReplay(parsed, {
-                out: replayPath,
-                returnHref,
-                returnLabel: "Back to sessions",
-            });
-            generated++;
-            next.push({
-                sessionId: s.id,
-                sourcePath: s.sourcePath,
-                sourceHash: s.sourceHash ?? "",
-                replayPath,
-                generatedAt: new Date().toISOString(),
-                rendererVersion: RENDERER_VERSION,
-            });
-        }
-        catch {
-            skipped++;
-        }
-    }
-    await writeManifest(replayDir, { version: 1, entries: next });
-    return { replayDir, reused, generated, skipped };
-}
 function scanProgress(json, quiet) {
     return json || quiet ? undefined : (m) => console.error(m);
-}
-async function openFile(file) {
-    openBrowser(file);
 }
 program
     .command("scan")
@@ -278,44 +204,57 @@ program
     });
 });
 program
+    .command("console-data")
+    .description("Emit the structured, redacted data contract consumed by Villani Console.")
+    .requiredOption("--kind <kind>", "history, run, or session")
+    .option("--id <id>")
+    .option("--index-dir <path>")
+    .option("--runs-root <path>")
+    .option("--refresh")
+    .option("--root <path>", "explicit discovery root", (value, previous) => [...(previous ?? []), value], [])
+    .action(async (options) => {
+    if (options.kind === "history") {
+        console.log(JSON.stringify(await consoleIndex({
+            indexDir: options.indexDir,
+            refresh: Boolean(options.refresh),
+            roots: options.root?.length ? options.root : undefined,
+        })));
+        return;
+    }
+    if (options.kind !== "run" && options.kind !== "session")
+        throw new Error("console-data --kind must be history, run, or session");
+    if (!options.id)
+        throw new Error(`console-data --kind ${options.kind} requires --id`);
+    console.log(JSON.stringify(await consoleReplay({
+        id: String(options.id),
+        kind: options.kind,
+        indexDir: options.indexDir,
+        runsRoot: options.runsRoot,
+    })));
+});
+program
     .command("browse")
-    .description("Generates a local HTML session browser from the indexed sessions.")
+    .description("Compatibility alias for Villani Console History.")
     .option("--out <path>")
     .option("--index-dir <path>")
     .option("--open")
     .option("--rebuild")
     .option("--quiet")
     .action(async (o) => {
-    const idx = await requireIndex(o.indexDir);
-    if (!idx)
-        return;
-    const base = o.indexDir ?? defaultIndexDir();
-    const out = o.out ?? path.join(base, "session-browser.html");
-    const progress = o.quiet ? undefined : (m) => console.error(m);
-    progress?.(`Reading index: ${idx.sessions.length} sessions.`);
-    const cache = await prepareReplayCache(idx, {
-        base,
-        out,
-        rebuild: o.rebuild,
-        progress,
-    });
-    progress?.(`Reused ${cache.reused} replay files.`);
-    progress?.(`Generated ${cache.generated} replay files.`);
-    progress?.(`Skipped ${cache.skipped} failed replay generations.`);
-    progress?.("Writing session browser...");
-    await fs.mkdir(path.dirname(out), { recursive: true });
-    await fs.writeFile(out, renderSessionBrowser(idx, {
-        replayDir: cache.replayDir,
-        browserOut: out,
-    }));
-    console.log(`Session browser written to ${out}`);
-    console.log("Open it in your browser.");
+    const url = await villaniConsoleUrl("/console/history");
+    if (o.out) {
+        const out = path.resolve(o.out);
+        await fs.mkdir(path.dirname(out), { recursive: true });
+        await fs.writeFile(out, consoleRedirectHtml(url), "utf8");
+        console.log(`Compatibility link written to ${out}`);
+    }
+    console.log(`Compatibility alias: Villani Console History\n${url}`);
     if (o.open)
-        openBrowser(out);
+        openBrowser(url);
 });
 program
     .command("launch")
-    .description("Scan sessions, refresh replay cache, generate the session browser, and open it.")
+    .description("Compatibility alias that refreshes session discovery and opens Villani Console.")
     .option("--provider <provider>")
     .option("--agent <agent>")
     .option("--all")
@@ -331,22 +270,23 @@ program
             throw new Error("--run-id requires --provider villani");
         if (o.root?.length && o.root.length > 1)
             throw new Error("--run-id accepts exactly one --root");
-        const file = await launchVillaniRun({
-            root: o.root?.[0],
-            runId: o.runId,
-            out: o.out ??
-                path.join(o.indexDir ?? defaultIndexDir(), "replays", `${o.runId}.html`),
-            open: o.open,
-        });
-        console.log(`Villani run replay written to ${file}`);
+        if (o.out) {
+            const file = await launchVillaniRun({
+                root: o.root?.[0],
+                runId: o.runId,
+                out: o.out,
+                open: false,
+            });
+            console.log(`Compatibility offline replay written to ${file}`);
+            return;
+        }
+        const url = await villaniConsoleUrl(`/console/runs/${encodeURIComponent(o.runId)}/replay`);
+        console.log(`Villani Console Replay\n${url}`);
+        if (o.open)
+            openBrowser(url);
         return;
     }
-    if (o.provider === "villani") {
-        for (const root of o.root?.length ? o.root : [defaultVillaniRunsRoot()])
-            assertOutsideVillaniRunsRoot(root, o.indexDir, o.out);
-    }
-    console.error("Villani Flight Recorder launch\n");
-    console.error("Scanning local sessions...");
+    console.error("Refreshing local Console history...");
     const result = await scanToIndex({
         agent: o.agent ?? o.provider,
         all: o.all,
@@ -371,43 +311,30 @@ program
     console.error(`Skipped ${result.skippedUnchanged} unchanged sessions.`);
     console.error(`Parsed ${result.parsedNew + result.parsedChanged} new or changed sessions.`);
     console.error(`Indexed ${result.index.sessions.length} sessions.`);
-    const base = o.indexDir ?? defaultIndexDir();
-    const out = o.out ?? path.join(base, "session-browser.html");
-    console.error("\nPreparing session browser...");
-    const cache = await prepareReplayCache(result.index, {
-        base,
-        out,
-        rebuild: o.rebuild,
-        progress: (m) => console.error(m),
-    });
-    console.error(`Reused ${cache.reused} replay files.`);
-    console.error(`Generated ${cache.generated} replay files.`);
-    if (cache.skipped)
-        console.error(`Skipped ${cache.skipped} failed replay generations.`);
-    await fs.mkdir(path.dirname(out), { recursive: true });
-    await fs.writeFile(out, renderSessionBrowser(result.index, {
-        replayDir: cache.replayDir,
-        browserOut: out,
-    }));
-    console.log(`Session browser written to ${out}`);
-    if (o.open) {
-        console.error("Opening browser...");
-        await openFile(out);
+    const url = await villaniConsoleUrl("/console/history");
+    if (o.out) {
+        const out = path.resolve(o.out);
+        await fs.mkdir(path.dirname(out), { recursive: true });
+        await fs.writeFile(out, consoleRedirectHtml(url), "utf8");
+        console.log(`Compatibility link written to ${out}`);
     }
+    console.log(`Villani Console History\n${url}`);
+    if (o.open)
+        openBrowser(url);
 });
 program
     .command("open")
     .option("--out <path>")
     .option("--index-dir <path>")
     .action(async (o) => {
-    const idx = await requireIndex(o.indexDir);
-    if (!idx)
-        return;
-    const out = o.out ?? path.resolve("villani-flight-recorder-index.html");
-    const html = `<!doctype html><meta charset="utf-8"><title>Villani Flight Recorder Index</title><style>body{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;margin:2rem;line-height:1.45;background:#050505;color:#f2f2f2}code{background:#0d0d0d;padding:.15rem .3rem;border-radius:4px}</style><h1>Villani Flight Recorder</h1><p>${idx.sessions.length} sessions · ${idx.taskSegments.length} task segments · ${idx.repos.length} repos · ${idx.sessions.reduce((n, s) => n + s.failedCommandCount, 0)} failed commands</p><h2>Recent sessions</h2><ul>${idx.sessions.map((s) => `<li><b>${s.id}</b> ${s.providerLabel} <code>vfr replay --session ${s.id}</code></li>`).join("")}</ul><h2>Likely task segments</h2><ul>${idx.taskSegments.map((t) => `<li><b>${t.title}</b> ${t.id} <code>vfr replay --segment ${t.id}</code></li>`).join("")}</ul><h2>Repos</h2><ul>${idx.repos.map((r) => `<li><b>${r.name}</b> ${r.root} <code>vfr replay --repo ${r.root}</code></li>`).join("")}</ul>`;
-    const sharedHtml = renderSessionBrowser(idx, { browserOut: out });
-    await fs.writeFile(out, sharedHtml);
-    console.log(`Session browser generated:\n${out}\n\nOpen this file in your browser.`);
+    const url = await villaniConsoleUrl("/console/history");
+    if (o.out) {
+        const out = path.resolve(o.out);
+        await fs.mkdir(path.dirname(out), { recursive: true });
+        await fs.writeFile(out, consoleRedirectHtml(url), "utf8");
+        console.log(`Compatibility link written to ${out}`);
+    }
+    console.log(`Compatibility alias: Villani Console History\n${url}`);
 });
 program
     .command("replay")
@@ -511,17 +438,17 @@ program
                 : defaultVillaniRunsRoot());
         assertOutsideVillaniRunsRoot(runsRoot, o.indexDir, o.out);
     }
+    const consoleHistory = selectedSessionId
+        ? await villaniConsoleUrl("/console/history").catch(() => undefined)
+        : undefined;
     const file = await renderReplay(session, {
         redact: o.redact !== false,
         out: o.out ??
             (selectedSessionId && !selectedSegmentId
                 ? path.join(o.indexDir ?? defaultIndexDir(), "replays", `${selectedSessionId}.html`)
                 : undefined),
-        returnHref: selectedSessionId
-            ? path.relative(path.dirname(o.out ??
-                path.join(o.indexDir ?? defaultIndexDir(), "replays", `${selectedSessionId}.html`)), path.join(o.indexDir ?? defaultIndexDir(), "session-browser.html"))
-            : undefined,
-        returnLabel: selectedSessionId ? "Back to sessions" : undefined,
+        returnHref: consoleHistory,
+        returnLabel: consoleHistory ? "Back to Villani Console" : undefined,
     });
     if (o.latest) {
         console.log(`Provider: ${session.provider}`);

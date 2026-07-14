@@ -1,7 +1,7 @@
 {
   "name": "villani-flight-recorder",
   "version": "0.1.0",
-  "description": "Local-first static replay generator for AI coding agent sessions and git history.",
+  "description": "Villani session parsing, indexing, and replay data engine with a compatibility CLI.",
   "type": "module",
   "bin": {
     "villani-flight-recorder": "dist/cli.js",
@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepack": "npm run build",
     "test": "npm run build && vitest run",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",

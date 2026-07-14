@@ -175,7 +175,9 @@ export default function InterrogateApp() {
                 <ul>
                   {result.supporting_runs.map((run) => (
                     <li key={run.run_id}>
-                      <a href={run.url}>{run.run_id}</a>
+                      <a href={run.url.replace(/^\/runs\//, "/console/runs/")}>
+                        {run.run_id}
+                      </a>
                     </li>
                   ))}
                 </ul>

@@ -1,9 +1,11 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { event } from "../normalize/events.js";
-const exec = promisify(execFile);
+import { runChildProcess } from "../utils/childProcess.js";
 async function git(args, cwd = process.cwd()) {
-    return (await exec("git", args, { cwd, maxBuffer: 30_000_000 })).stdout.trim();
+    return (await runChildProcess("git", args, {
+        cwd,
+        timeoutMs: 10_000,
+        maxOutputBytes: 30_000_000,
+    })).stdout.trim();
 }
 function flags(files, patch) {
     const names = files.split(/\r?\n/).map((l) => l.split(/\s+/).pop() ?? "");

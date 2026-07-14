@@ -612,6 +612,80 @@ code {
   resize: vertical;
 }
 
+.console-stack {
+  display: grid;
+  gap: 10px;
+  max-width: 1680px;
+  margin: 0 auto;
+}
+.console-page-intro {
+  padding: 12px 14px;
+  border: 1px solid var(--v-border-default);
+  background: var(--v-bg-panel);
+}
+.console-page-intro h1 {
+  margin: 0;
+  font-size: clamp(20px, 2.5vw, 34px);
+  font-weight: 550;
+  letter-spacing: -0.03em;
+}
+.console-page-intro p {
+  max-width: 760px;
+  margin: 6px 0 0;
+  color: var(--v-text-secondary);
+}
+.console-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+}
+.history-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 9px;
+  align-items: end;
+}
+.policy-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 9px;
+}
+.policy-preset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid var(--v-border-subtle);
+  background: var(--v-bg-root);
+}
+.policy-preset h2 {
+  margin: 0;
+  font-size: 13px;
+}
+.replay-page .v-code {
+  max-height: 420px;
+}
+.replay-page #summary .v-key-value-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.replay-logs {
+  display: grid;
+  gap: 8px;
+}
+.replay-logs details {
+  border: 1px solid var(--v-border-subtle);
+}
+.replay-logs summary {
+  padding: 7px 9px;
+  cursor: pointer;
+}
+[data-testid="deep-link-target"] {
+  box-shadow: 0 0 0 2px var(--v-focus);
+}
+
 @media (max-width: 1280px) {
   .metric-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -621,6 +695,9 @@ code {
   }
 }
 @media (max-width: 900px) {
+  .replay-page #summary .v-key-value-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .run-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -634,8 +711,14 @@ code {
   .classification-grid .adjustment-list {
     grid-column: auto;
   }
+  .history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 680px) {
+  .replay-page #summary .v-key-value-grid {
+    grid-template-columns: 1fr;
+  }
   .web-shell-version {
     display: none;
   }
@@ -654,5 +737,8 @@ code {
   .event-heading time {
     width: 100%;
     margin-left: 0;
+  }
+  .history-filters {
+    grid-template-columns: 1fr;
   }
 }

@@ -40,6 +40,37 @@ _SENSITIVE_LOG_TEXT = re.compile(
     r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{12,}|"
     r"\b(?:sk|pk|api)[-_][A-Za-z0-9_-]{16,}\b"
 )
+COMMAND_RECORDS: list[dict[str, Any]] = []
+
+
+def _safe_command(command: list[str]) -> list[str]:
+    result: list[str] = []
+    redact_next = False
+    for value in command:
+        if redact_next:
+            result.append("[REDACTED]")
+            redact_next = False
+            continue
+        result.append(_SENSITIVE_LOG_TEXT.sub("[REDACTED]", value))
+        redact_next = value.lower() in {"--password", "--secret", "--token"}
+    return result
+
+
+def _environment_paths(env: dict[str, str]) -> dict[str, str]:
+    return {
+        key: env[key]
+        for key in (
+            "HOME",
+            "PATH",
+            "PIP_CACHE_DIR",
+            "PLAYWRIGHT_BROWSERS_PATH",
+            "TEMP",
+            "TMP",
+            "TMPDIR",
+            "VILLANI_HOME",
+        )
+        if env.get(key)
+    }
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -58,21 +89,51 @@ def _run(
     expected: tuple[int, ...] = (0,),
     timeout: int = 600,
 ) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        timeout=timeout,
+    started = time.monotonic()
+    record: dict[str, Any] = {
+        "command": _safe_command(command),
+        "cwd": str(cwd.resolve()),
+        "environment_paths": _environment_paths(env),
+        "log": str(log.resolve()),
+        "timeout_seconds": timeout,
+    }
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+        )
+    except Exception as error:
+        record.update(
+            {
+                "status": "failed",
+                "error": type(error).__name__,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            }
+        )
+        COMMAND_RECORDS.append(record)
+        raise
+    record.update(
+        {
+            "status": "passed" if completed.returncode in expected else "failed",
+            "returncode": completed.returncode,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+        }
     )
+    COMMAND_RECORDS.append(record)
     log.parent.mkdir(parents=True, exist_ok=True)
     log_text = (
         "$ "
-        + subprocess.list2cmdline(command)
-        + "\n"
+        + subprocess.list2cmdline(_safe_command(command))
+        + f"\ncwd: {cwd.resolve()}\n"
+        + "environment paths: "
+        + json.dumps(record["environment_paths"], sort_keys=True)
+        + "\n\n"
         + completed.stdout
         + completed.stderr
     )
@@ -91,6 +152,36 @@ def _run(
             f"command returned {completed.returncode}, expected {expected}; see {log}"
         )
     return completed
+
+
+def _start_process(
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    stdout: Any,
+    log: Path,
+) -> subprocess.Popen[Any]:
+    record: dict[str, Any] = {
+        "command": _safe_command(command),
+        "cwd": str(cwd.resolve()),
+        "environment_paths": _environment_paths(env),
+        "log": str(log.resolve()),
+        "status": "running",
+        "started_monotonic": time.monotonic(),
+    }
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        stdout=stdout,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    record["pid"] = process.pid
+    COMMAND_RECORDS.append(record)
+    setattr(process, "_villani_release_command_record", record)
+    return process
 
 
 def _free_port() -> int:
@@ -251,14 +342,22 @@ def _exercise_agentd_redaction_and_withholding(
 
 
 def _terminate(process: subprocess.Popen[Any] | None) -> None:
-    if process is None or process.poll() is not None:
+    if process is None:
         return
-    process.terminate()
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=10)
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=10)
+    record = getattr(process, "_villani_release_command_record", None)
+    if isinstance(record, dict):
+        record["status"] = "exited" if process.returncode == 0 else "terminated"
+        record["returncode"] = process.returncode
+        started = record.pop("started_monotonic", None)
+        if isinstance(started, float):
+            record["elapsed_seconds"] = round(time.monotonic() - started, 3)
 
 
 class PostgreSQLService:
@@ -310,8 +409,10 @@ class PostgreSQLService:
         port = int(port_result.stdout.strip().rsplit(":", 1)[1])
         readiness_log: list[str] = []
         deadline = time.monotonic() + 60
+        readiness_attempt = 0
         while time.monotonic() < deadline:
-            ready = subprocess.run(
+            readiness_attempt += 1
+            ready = _run(
                 [
                     docker,
                     "exec",
@@ -324,10 +425,10 @@ class PostgreSQLService:
                 ],
                 cwd=ROOT,
                 env=self.env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
+                log=self.log.with_name(
+                    f"postgres-readiness-{readiness_attempt:03d}.log"
+                ),
+                expected=(0, 1, 2),
                 timeout=10,
             )
             readiness_log.append(ready.stdout + ready.stderr)
@@ -348,14 +449,12 @@ class PostgreSQLService:
         if self.container:
             docker = shutil.which("docker")
             if docker:
-                subprocess.run(
+                _run(
                     [docker, "rm", "--force", self.container],
                     cwd=ROOT,
                     env=self.env,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    capture_output=True,
+                    log=self.log.with_name("postgres-stop.log"),
+                    expected=(0, 1),
                     timeout=30,
                 )
 
@@ -369,7 +468,13 @@ def _entry(python: Path, name: str) -> Path:
     return value
 
 
-def _repository(root: Path, scenario: str, *, authentication: bool = False) -> Path:
+def _repository(
+    root: Path,
+    scenario: str,
+    *,
+    log_directory: Path,
+    authentication: bool = False,
+) -> Path:
     repo = root / scenario
     repo.mkdir(parents=True)
     (repo / "calculator.py").write_text(
@@ -395,24 +500,22 @@ def _repository(root: Path, scenario: str, *, authentication: bool = False) -> P
             encoding="utf-8",
         )
     base_env = os.environ.copy()
-    for command in (
-        ["git", "init"],
-        ["git", "config", "user.email", "release@example.invalid"],
-        ["git", "config", "user.name", "Villani Release Gate"],
-        ["git", "add", "-A"],
-        ["git", "commit", "-m", "failing baseline"],
+    for index, command in enumerate(
+        (
+            ["git", "init"],
+            ["git", "config", "user.email", "release@example.invalid"],
+            ["git", "config", "user.name", "Villani Release Gate"],
+            ["git", "add", "-A"],
+            ["git", "commit", "-m", "failing baseline"],
+        ),
+        start=1,
     ):
-        completed = subprocess.run(
+        _run(
             command,
             cwd=repo,
             env=base_env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            log=log_directory / f"{scenario}-git-{index:02d}.log",
         )
-        if completed.returncode:
-            raise RuntimeError(completed.stdout + completed.stderr)
     return repo
 
 
@@ -1186,6 +1289,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--mode", choices=("local", "ci", "release"), required=True)
     args = parser.parse_args(argv)
+    COMMAND_RECORDS.clear()
     python = args.python.resolve()
     work = args.work.resolve()
     artifacts = args.artifacts.resolve()
@@ -1279,7 +1383,7 @@ def main(argv: list[str] | None = None) -> int:
             "VILLANI_CONTROL_PLANE_SECURE_COOKIES": "false",
         }
         cp_log = (logs / "control-plane.log").open("w", encoding="utf-8")
-        control_plane = subprocess.Popen(
+        control_plane = _start_process(
             [
                 str(python),
                 "-m",
@@ -1293,8 +1397,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=work,
             env=cp_env,
             stdout=cp_log,
-            stderr=subprocess.STDOUT,
-            text=True,
+            log=logs / "control-plane.log",
         )
         cp_log.close()
         control_plane_url = f"http://127.0.0.1:{cp_port}"
@@ -1302,7 +1405,7 @@ def main(argv: list[str] | None = None) -> int:
 
         endpoint_file = work / "fixture-endpoint.json"
         fixture_log = (logs / "fixture-service.log").open("w", encoding="utf-8")
-        fixture = subprocess.Popen(
+        fixture = _start_process(
             [
                 str(python),
                 str(ROOT / "release-verification" / "fixtures" / "model_service.py"),
@@ -1314,8 +1417,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=work,
             env=env,
             stdout=fixture_log,
-            stderr=subprocess.STDOUT,
-            text=True,
+            log=logs / "fixture-service.log",
         )
         fixture_log.close()
         deadline = time.monotonic() + 20
@@ -1360,7 +1462,10 @@ def main(argv: list[str] | None = None) -> int:
             "scenario_h",
         ):
             repo = _repository(
-                repositories, scenario, authentication=scenario == "scenario_d"
+                repositories,
+                scenario,
+                log_directory=logs,
+                authentication=scenario == "scenario_d",
             )
             config = _configuration(
                 original,
@@ -2130,7 +2235,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_json(browser_runs, connected["run_ids"])
         browser_endpoint = work / "browser-endpoint.json"
         browser_log = (logs / "browser-server.log").open("w", encoding="utf-8")
-        browser_server = subprocess.Popen(
+        browser_server = _start_process(
             [
                 node,
                 str(ROOT / "release-verification" / "browser_server.mjs"),
@@ -2148,8 +2253,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=ROOT,
             env=env,
             stdout=browser_log,
-            stderr=subprocess.STDOUT,
-            text=True,
+            log=logs / "browser-server.log",
         )
         browser_log.close()
         deadline = time.monotonic() + 30
@@ -2197,21 +2301,33 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         try:
             if home.exists() and (home / "agentd" / "endpoint.json").exists():
-                subprocess.run(
+                _run(
                     [str(agentd), "stop"],
                     cwd=work,
                     env=env,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    capture_output=True,
+                    log=logs / "agentd-final-stop.log",
+                    expected=(0, 1),
                     timeout=20,
                 )
         finally:
-            _terminate(browser_server)
-            _terminate(fixture)
-            _terminate(control_plane)
-            postgres.stop()
+            try:
+                _terminate(browser_server)
+                _terminate(fixture)
+                _terminate(control_plane)
+                postgres.stop()
+            finally:
+                _write_json(
+                    artifacts / "connected-command-manifest.json",
+                    {
+                        "status": "passed"
+                        if all(
+                            item.get("status") in {"passed", "exited", "terminated"}
+                            for item in COMMAND_RECORDS
+                        )
+                        else "failed",
+                        "commands": COMMAND_RECORDS,
+                    },
+                )
 
 
 if __name__ == "__main__":

@@ -3,10 +3,10 @@
 ## Release verification status
 
 `python release-verification/run_release_gate.py --mode local` rebuilds every Python and Node
-package, installs wheels into a fresh environment without editable installs, checks compatibility,
-and validates frontend asset references. It currently fails closed at the unimplemented connected
-scenario/browser phase, so this revision is not release-certified. Official `--mode release` also
-fails when a required external scanner is absent or did not execute.
+package, installs wheels into fresh environments without editable installs, checks compatibility,
+executes the connected scenarios, applies PostgreSQL migrations, reconciles packaged consumers,
+and runs browser tests. Official `--mode release` also fails when a required external scanner is
+absent or did not execute.
 
 ## Architecture
 
@@ -16,15 +16,36 @@ The intended published command is `pipx install villani`. This pass builds local
 
 Each Windows, macOS, and Linux CI runner builds its own platform wheel and a self-contained ZIP containing `villani`, `villani-code`, `villani-agentd`, and `vfr`. PyInstaller produces the Python runtime executable; the native Flight Recorder executable is included alongside it. A platform is supportable only while its CI build and command smoke remain green.
 
-## User daemon service
+## Guided setup and public service
 
-`villani install-service` installs and starts a user-level daemon definition:
+`villani setup` is the supported first-run path. It detects a Git repository, loopback model
+servers, model listings, cloud credential presence, supported local session sources, and current
+service state. The selected model is written as an unrated bootstrap backend; unknown price stays
+unknown. Configuration is validated, fsynced, backed up when replacing an existing file, and
+activated with an atomic rename. Secret values remain in environment or supported credential
+storage and are never written to the YAML or setup record.
+
+Normal users manage the runtime as Villani Service:
+
+```console
+villani service status
+villani service start
+villani service stop
+villani service restart
+```
+
+`villani service start --automatic` enables the platform user-level startup adapter:
 
 - Linux: `systemd --user` unit under `~/.config/systemd/user`.
 - macOS: launchd user agent under `~/Library/LaunchAgents`.
 - Windows: a per-user Task Scheduler task triggered at logon.
 
-`villani service status` reports definition and active state. `villani uninstall-service` removes only the service definition and preserves configuration, run bundles, artifacts, and the SQLite spool. Data removal requires both `--delete-data` and `--confirm-delete-data`; the deletion target is safety checked. None of these default paths requires administrator privileges.
+Status reports running/installed state, automatic startup, PID health, log path, last error, and the
+one Console URL. Starts and stops are idempotent, stale PID state is recovered, duplicate processes
+are refused, and shutdown is bounded. The compatibility command `villani uninstall-service`
+removes only the service definition and preserves configuration, run bundles, artifacts, and the
+SQLite spool. Data removal requires both `--delete-data` and `--confirm-delete-data`; the deletion
+target is safety checked. None of these default paths requires administrator privileges.
 
 CI uses redirected service-definition roots and dry-run platform commands as the documented VM approximation. This validates exact unit/plist/task generation and command selection without changing the hosted runner's login session.
 

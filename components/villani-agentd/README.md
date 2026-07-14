@@ -14,6 +14,12 @@ villani-agentd doctor
 
 The selected endpoint is written beneath `~/.villani/agentd`. Authentication material is stored separately with user-only permissions. The installer never starts the daemon automatically.
 
+The same loopback service hosts the packaged Villani Console and its authenticated
+`/v1/console/*` data boundary. Local history and replay documents are produced by
+the Flight Recorder engine through a bounded structured adapter; source paths and
+credentials are never returned to browser code. Legacy Web and replay URLs are
+served by the same single-page application.
+
 If the daemon is already running, a normal public `villani run` automatically registers its
 canonical run, events, permitted artifact metadata, and final outcome in this spool. The daemon
 acknowledges events only after its SQLite transaction commits. It uses the public run's existing

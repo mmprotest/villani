@@ -400,7 +400,7 @@ export default function FleetApp() {
                 {runs.map((run) => (
                   <tr key={value(run, "id")}>
                     <td>
-                      <a href={`/runs/${encodeURIComponent(value(run, "id"))}`}>
+                      <a href={`/console/runs/${encodeURIComponent(value(run, "id"))}`}>
                         {value(run, "id")}
                       </a>
                     </td>
@@ -520,7 +520,7 @@ export default function FleetApp() {
           <ul>
             {queue.map((item) => (
               <li key={String(item.id)}>
-                <a href={`/runs/${encodeURIComponent(String(item.run_id))}`}>
+                <a href={`/console/runs/${encodeURIComponent(String(item.run_id))}`}>
                   {String(item.run_id)}
                 </a>{" "}
                 · {String(item.queue)} · priority {String(item.priority)} ·{" "}

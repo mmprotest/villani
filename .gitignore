@@ -92,8 +92,10 @@ temp/
 # Local test and release-smoke artifacts
 .pip-cache/
 .release-smoke/
+.onboarding-temp/
 .test-temp/
 .test-temp*/
 build-smoke/
 root-*-temp-*/
 release-verification/artifacts/
+onboarding-verification/artifacts/

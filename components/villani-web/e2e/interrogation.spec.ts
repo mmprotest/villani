@@ -54,7 +54,7 @@ test("structured query and follow-up expose plans and supporting runs", async ({
   await expect(page.getByLabel("QueryPlan AST")).toContainText("villani.query_plan.v1");
   await expect(page.getByRole("link", { name: "run_123" })).toHaveAttribute(
     "href",
-    "/runs/run_123",
+    "/console/runs/run_123",
   );
 
   await page.getByLabel(/Ask about metrics/).fill("only provider x");

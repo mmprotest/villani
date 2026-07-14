@@ -54,6 +54,7 @@ def main() -> int:
     if args.bun_command:
         vfr_build.extend(["--bun-command", args.bun_command])
     run(vfr_build)
+    run([sys.executable, "scripts/sync-console-assets.py", "--check"])
     for component in ("villani-code", "villani-ops", "villani-agentd", "villani"):
         run(
             [
@@ -66,6 +67,7 @@ def main() -> int:
                 str(ROOT / "components" / component),
             ]
         )
+    run([sys.executable, "scripts/validate-console-wheel.py", str(wheels)])
     isolated = work / "venv"
     venv.EnvBuilder(with_pip=True, clear=True).create(isolated)
     python = executable(isolated, "python")

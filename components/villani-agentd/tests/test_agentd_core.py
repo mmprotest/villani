@@ -147,6 +147,19 @@ def test_health_is_public_but_status_requires_authentication(running_server) -> 
     assert client.status()["upload_mode"] == "offline"
 
 
+def test_single_public_villani_console_is_available_on_the_service(running_server) -> None:
+    _server, _client, endpoint, _spool = running_server
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(f"{endpoint}/console") as response:
+        body = response.read().decode("utf-8")
+    assert response.status == 200
+    assert response.headers["Content-Type"] == "text/html; charset=utf-8"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "Villani Console" in body
+    assert "Villani Service is running" in body
+    assert "Flight Recorder" not in body
+
+
 def test_authenticated_otlp_endpoint_is_idempotent_and_bounded(running_server) -> None:
     _server, client, _endpoint, spool = running_server
     payload = {

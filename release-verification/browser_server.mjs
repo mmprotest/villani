@@ -3,8 +3,6 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 
-import { renderConnectedReplay } from "../components/villani-flight-recorder/dist/render/connectedReplay.js";
-
 const entries = process.argv.slice(2).reduce((result, item, index, values) => {
   if (item.startsWith("--")) result[item.slice(2)] = values[index + 1];
   return result;
@@ -24,14 +22,6 @@ const contentTypes = {
   ".map": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
 };
-
-async function api(pathname) {
-  const response = await fetch(`${controlPlane}${pathname}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-  });
-  if (!response.ok) throw new Error(`Control Plane ${pathname} returned ${response.status}`);
-  return response.json();
-}
 
 async function proxy(request, response, target) {
   const headers = { ...request.headers, authorization: `Bearer ${token}` };
@@ -79,24 +69,27 @@ const server = createServer(async (request, response) => {
       response.writeHead(200, { "Content-Type": "application/json" });
       return response.end('{"status":"ok"}');
     }
+    if (url.pathname === "/v1/console/bootstrap") {
+      response.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      return response.end(JSON.stringify({
+        schema_version: "villani.console.bootstrap.v1",
+        mode: "connected",
+        data_source: "workspace",
+        version: "release-verification",
+        workspace: { connected: true, id: "release-workspace", endpoint: controlPlane },
+        service: { status: "connected", started_at: null, log_path: null, last_error: null },
+        setup: { configured: true, valid: true, schema_version: null, issues: [] },
+        synchronization: { pending: 0, dead_letters: 0 },
+        storage: { home: "", runs: "", spool: "", writable: false },
+        models: [],
+        active_policy: null,
+      }));
+    }
     if (url.pathname.startsWith("/v1/")) {
       return await proxy(request, response, `${controlPlane}${url.pathname}${url.search}`);
-    }
-    const flight = url.pathname.match(/^\/flight\/runs\/([^/]+)$/);
-    if (flight) {
-      const runId = decodeURIComponent(flight[1]);
-      const [detail, eventPage, artifactPage] = await Promise.all([
-        api(`/v1/runs/${encodeURIComponent(runId)}`),
-        api(`/v1/runs/${encodeURIComponent(runId)}/events?limit=1000`),
-        api(`/v1/runs/${encodeURIComponent(runId)}/artifacts?limit=250`),
-      ]);
-      const html = renderConnectedReplay(
-        detail,
-        Array.isArray(eventPage.events) ? eventPage.events : [],
-        Array.isArray(artifactPage.artifacts) ? artifactPage.artifacts : [],
-      );
-      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      return response.end(html);
     }
     return await staticFile(url.pathname, response);
   } catch (error) {

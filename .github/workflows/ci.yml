@@ -145,12 +145,18 @@ jobs:
       - name: Verify standalone clean-checkout precondition
         run: |
           test ! -d components/villani-run-model/node_modules
+          test ! -d components/villani-web/node_modules
           test ! -d components/villani-flight-recorder/node_modules
       - run: npm ci
         working-directory: components/villani-flight-recorder
       - run: npm audit --omit=dev
         working-directory: components/villani-flight-recorder
-      - run: npm test
+      - name: Run the complete suite three consecutive times
+        run: |
+          for run in 1 2 3; do
+            echo "Flight Recorder full-suite run $run/3"
+            npm test
+          done
         working-directory: components/villani-flight-recorder
       - run: npm run typecheck
         working-directory: components/villani-flight-recorder
@@ -209,6 +215,11 @@ jobs:
           node-version: 20.x
           cache: npm
           cache-dependency-path: components/villani-web/package-lock.json
+      - name: Verify standalone clean-checkout precondition
+        run: |
+          test ! -d components/villani-run-model/node_modules
+          test ! -d components/villani-flight-recorder/node_modules
+          test ! -d components/villani-web/node_modules
       - run: npm ci
         working-directory: components/villani-web
       - run: npx playwright install --with-deps chromium
@@ -221,6 +232,7 @@ jobs:
         working-directory: components/villani-web
       - run: npm run build
         working-directory: components/villani-web
+      - run: python scripts/sync-console-assets.py --check
       - run: npm run format:check
         working-directory: components/villani-web
       - run: npm run e2e
@@ -272,6 +284,11 @@ jobs:
         with:
           node-version: "20"
       - run: python -m pip install build pytest
+      - run: npm ci
+        working-directory: components/villani-web
+      - run: npm run build
+        working-directory: components/villani-web
+      - run: python scripts/sync-console-assets.py --check
       - run: python -m build --wheel --outdir "$RUNNER_TEMP/villani-wheels" components/villani-code
       - run: python -m build --wheel --outdir "$RUNNER_TEMP/villani-wheels" components/villani-ops
       - run: python -m build --wheel --outdir "$RUNNER_TEMP/villani-wheels" components/villani-agentd
@@ -335,6 +352,11 @@ jobs:
         working-directory: components/villani-flight-recorder
       - run: npm run build
         working-directory: components/villani-flight-recorder
+      - run: npm ci
+        working-directory: components/villani-web
+      - run: npm run build
+        working-directory: components/villani-web
+      - run: python scripts/sync-console-assets.py --check
       - run: python -m pip install -e components/villani-ops -e components/villani-code -e components/villani-agentd -e "components/villani[test]"
       - run: python -m pytest -q
         working-directory: components/villani
@@ -346,6 +368,53 @@ jobs:
         with:
           name: villani-${{ runner.os }}-${{ runner.arch }}-rc
           path: ${{ runner.temp }}/villani-distribution/release/*
+          if-no-files-found: error
+
+  guided-onboarding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: components/villani-web/package-lock.json
+      - run: python -m pip install build
+      - run: npm ci
+        working-directory: components/villani-web
+      - run: npm run build
+        working-directory: components/villani-web
+      - run: python scripts/sync-console-assets.py --check
+      - name: Build the public distribution and internal runtime wheels
+        run: |
+          mkdir -p "$RUNNER_TEMP/onboarding-wheels"
+          python -m build --wheel --outdir "$RUNNER_TEMP/onboarding-wheels" components/villani-code
+          python -m build --wheel --outdir "$RUNNER_TEMP/onboarding-wheels" components/villani-ops
+          python -m build --wheel --outdir "$RUNNER_TEMP/onboarding-wheels" components/villani-agentd
+          python -m build --wheel --outdir "$RUNNER_TEMP/onboarding-wheels" components/villani
+      - name: Install only built wheels in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/onboarding-env"
+          "$RUNNER_TEMP/onboarding-env/bin/python" -m pip install "$RUNNER_TEMP/onboarding-wheels"/*.whl
+          "$RUNNER_TEMP/onboarding-env/bin/villani" setup --help
+          "$RUNNER_TEMP/onboarding-env/bin/villani" doctor --help
+          "$RUNNER_TEMP/onboarding-env/bin/villani" service --help
+          "$RUNNER_TEMP/onboarding-env/bin/villani" open --help
+      - run: npx playwright install --with-deps chromium
+        working-directory: components/villani-web
+      - name: Run recorded first-user setup through sample completion
+        run: >-
+          "$RUNNER_TEMP/onboarding-env/bin/python"
+          onboarding-verification/run_onboarding_gate.py
+          --python "$RUNNER_TEMP/onboarding-env/bin/python"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guided-onboarding-${{ runner.os }}
+          path: onboarding-verification/artifacts/latest/
           if-no-files-found: error
 
   final-foundation:
@@ -375,6 +444,23 @@ jobs:
   packaged-release-gate:
     needs: node-engine-contract
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: villani
+          POSTGRES_PASSWORD: villani
+          POSTGRES_DB: villani_release
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U villani -d villani_release"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      VILLANI_TEST_POSTGRES_URL: postgresql+psycopg://villani:villani@127.0.0.1:5432/villani_release
+      VILLANI_CONTROL_PLANE_DATABASE_URL: postgresql+psycopg://villani:villani@127.0.0.1:5432/villani_release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -382,16 +468,22 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
       - run: python -m pip install build pip-audit
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Verify the checkout has no residual dependency trees
+        run: |
+          test -z "$(find components -type d -name node_modules -print -quit)"
       - run: npm ci
         working-directory: components/villani-web
       - run: npx playwright install --with-deps chromium
         working-directory: components/villani-web
-      - run: python release-verification/run_release_gate.py --mode ci
+      - name: Run isolated package build and connected release gate
+        run: python release-verification/run_release_gate.py --mode ci
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: packaged-release-gate-${{ runner.os }}
           path: release-verification/artifacts/latest/
+          if-no-files-found: error
 
   release-green:
     if: always()
@@ -409,6 +501,7 @@ jobs:
       - cross-component
       - package-smoke
       - distribution-smoke
+      - guided-onboarding
       - final-foundation
       - packaged-release-gate
     steps:

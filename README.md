@@ -1,136 +1,122 @@
 # Villani
 
-Villani is a local-first coding-agent control loop that classifies work, routes isolated attempts, verifies evidence, selects one patch, and leaves a replayable audit bundle.
+Villani is a local-first coding-agent control loop that classifies work, runs isolated attempts, verifies evidence, selects one patch, and keeps every completed run inspectable.
 
 ## Prerequisites
 
-- Python 3.11 or newer.
-- Git.
-- A local coding backend or an API credential supplied through an environment variable.
+- Python 3.11 or newer
+- Git
+- Either a supported local model server or a cloud-model credential in an environment variable
 
-Node.js, npm, and Bun are release-build dependencies only. They are not required by an installed platform package or self-contained release archive.
+Node.js is not required by an installed Villani release.
 
 ## Install
 
-The supported user path is one platform package:
+Install the supported public package with pipx:
 
 ```console
 pipx install villani
 ```
 
-It installs `villani`, `villani-code`, `villani-agentd`, and `vfr`. This repository currently builds local release candidates and does not publish them; install a CI-produced platform wheel with `pipx install ./villani-*.whl` while the release is unpublished.
-
-## Monorepo development
-
-From the repository root, run the same cross-platform installer on Windows, macOS, or Linux:
+While releases are distributed as CI artifacts rather than through a package index, install the downloaded platform wheel instead:
 
 ```console
-python scripts/install-local.py
+pipx install ./villani-*.whl
 ```
 
-The development installer requires Node.js 20 and npm to rebuild Flight Recorder. It prints the activation command for all four executables, is safe to run twice, installs but does not start the local daemon, and does not collect telemetry or download a model. See [distribution and user-service details](docs/DISTRIBUTION.md).
+## First run
 
-The canonical closed-loop provider names are `local`, `openai-compatible`, and
-`openai`. The first two require an explicit `--base-url`; `openai` uses
-`https://api.openai.com/v1` when no URL is supplied. All three are translated to
-Villani Code's supported `--provider openai` protocol mode.
-
-## Quickstart
-
-Create the local configuration and run store:
+Start the guided setup from the Git repository you want to use:
 
 ```console
-villani init
+cd your-project
+villani setup
 ```
 
-Add a local OpenAI-compatible backend. This example declares both its bootstrap capability and its local compute cost; replace the URL and model with those exposed by your local server:
+Setup detects the repository, supported loopback model servers and their loaded models, cloud credentials, existing coding-session history, and Villani Service. It recommends a model, runs a connection check and a small non-destructive capability probe, writes a validated configuration atomically, and offers to start the service, open Villani Console, and complete a disposable sample task.
+
+You are not asked for a capability score, pricing guess, token estimate, role list, execution environment, or parallelism setting. The selected model starts as `unrated` under the explicit bootstrap policy. Unknown pricing remains unknown until reliable provider metadata is available.
+
+Cloud secrets stay outside the configuration. For example, set OpenAI credentials before setup:
 
 ```console
-villani backend add local-qwen --provider local --base-url http://127.0.0.1:11434/v1 --model qwen2.5-coder --role classification --role coding --capability-score 55 --billing-mode compute_time --compute-cost-per-hour 0.18
+export OPENAI_API_KEY="your-provider-key"
+villani setup
 ```
 
-For another OpenAI-compatible local server, use the same vocabulary and keep
-the API key in the environment:
+PowerShell uses `$env:OPENAI_API_KEY = "your-provider-key"`. Setup saves only the environment-variable name and never prints the value.
+
+Check the resulting installation and open the one local console:
 
 ```console
-export LOCAL_API_KEY="dummy"
-villani backend add local-stub --provider openai-compatible --base-url http://127.0.0.1:8000/v1 --model deterministic --role classification --role coding --capability-score 55 --billing-mode compute_time --compute-cost-per-hour 0.18 --api-key-env LOCAL_API_KEY
+villani doctor
+villani open
 ```
 
-Or add an API backend without putting a literal key in configuration or shell history:
+Machine-readable diagnostics are available with:
 
 ```console
-export OPENAI_API_KEY="your-key-from-the-provider"
-villani backend add api-coder --provider openai --model gpt-5-codex --role classification --role coding --capability-score 85 --billing-mode token --input-cost-per-million 1.25 --output-cost-per-million 10.00 --api-key-env OPENAI_API_KEY
+villani doctor --json
 ```
 
-On PowerShell, set the variable with `$env:OPENAI_API_KEY = "your-key-from-the-provider"` instead. Run one canonical closed loop against an existing Git repository:
+Every failed doctor check includes a concrete recovery command or action.
+
+## Villani Service
+
+The public lifecycle commands are safe to repeat and prevent duplicate processes:
+
+```console
+villani service status
+villani service start
+villani service stop
+villani service restart
+```
+
+Use `villani service start --automatic` to install user-level automatic startup. Status reports the log path and last detected error. A bounded stop recovers stale process state after an unclean exit.
+
+`villani open` verifies that the service and console are responding before opening the URL; it never silently opens a dead address.
+
+## Run a coding task
 
 ```console
 villani run "Fix calculator addition" --repo ./calculator --success-criteria "The test suite passes"
 ```
 
-Inspect and replay local runs:
+Inspect or resume recorded runs with:
 
 ```console
 villani runs
 villani inspect RUN_ID
-villani open RUN_ID
 villani resume RUN_ID
 villani resume --latest
 ```
 
-When `villani-agentd` is installed and already running, `villani run` automatically registers the
-same canonical run and sends each event to the daemon after the event is durably appended to the
-local run bundle. It does not start the daemon. If the daemon is absent, stopped, or temporarily
-unavailable, execution remains local-first and records the telemetry condition in
-`telemetry_diagnostics.jsonl` without changing the coding result. Enrollment and upload remain
-explicit opt-ins.
-
-If agentd was absent during execution, starting it later scans bounded batches beneath
-`VILLANI_HOME/runs` and imports each valid canonical run with its original run, trace, event,
-attempt, and sequence identities. `villani-agentd backfill` triggers the same scan explicitly.
-This is distinct from synchronization: backfill moves local canonical evidence into the durable
-agentd spool, while `villani-agentd sync-once` sends pending spool records to an enrolled control
-plane. If agentd was already running while the control plane was offline, only the latter step is
-needed.
-
-The run ID printed by `villani run` is the identity used by the local run directory, daemon spool,
-control-plane run and outcome records, web run detail, and Flight Recorder replay. To verify a
-synchronized run, use `villani-agentd status`, run `villani-agentd sync-once` when enrolled, and
-look up that exact run ID in the control-plane/web run detail. Pending or degraded delivery remains
-inspectable in the local telemetry diagnostics and daemon status.
-Backfill diagnostics are shown by `villani-agentd backfill` and under `local_run_imports` in
-`villani-agentd doctor`. Correct an incomplete/corrupt local bundle or remove prohibited sensitive
-content at its source, then rerun `backfill`; stable identities make that retry idempotent.
-
-Agentd and the distribution share spool schema version 4. Compatible versions 0 through 3 migrate
-forward idempotently; dry-run checks do not mutate the database. Control-plane attempt identity is
-the tenant-scoped tuple `(organization_id, run_id, attempt_id)`, while public APIs continue to show
-the canonical run-local value such as `attempt_001`.
-
-Remote synchronization redacts registered secrets, credential-shaped text, and sensitive object
-fields without hiding the run. Unsafe artifact contents are withheld individually. Deterministic
-heuristic verifier predictions are advisory; only structured repository validation or another
-configured authoritative verification source can authorize materialization.
-
-Run `python release-verification/run_release_gate.py --mode local` for the cross-platform packaged
-connected-product check. It builds wheels, source distributions, and packed Node packages; consumes
-them from clean environments without editable installs; migrates PostgreSQL; starts the control
-plane, Agentd, and deterministic fixture model service; executes all eight release scenarios; and
-reconciles the canonical bundle, spool, database, API, Web model, and Flight Recorder model.
-Playwright then checks the connected applications at 1280, 1440, and 1920 pixel widths and writes
-17 real-data screenshots beneath `release-verification/artifacts/latest/screenshots/`.
-
-`--mode ci` adds mandatory Python and Node vulnerability audits. `--mode release` additionally
-requires the repository-secret, external SBOM, and release-container scanners. A required scanner
-that fails, is missing, or is unavailable fails the gate; only local optional scanners may be
-reported unavailable. Reports, API/canonical snapshots, hashes, migration proof, redaction proof,
-browser evidence, and supply-chain manifests are written beneath
-`release-verification/artifacts/latest/` and are regenerated on every run.
-
 `villani run` exits `0` for an accepted and materialized result, `3` when trustworthy attempts are exhausted without an accepted patch, and `4` when the controller fails and manual inspection is required. Invalid command or configuration input exits `2`.
 
-The public execution path is `villani run`. `villani-ops run --orchestrator ...`, `villani-ops viewer ...`, and `villani-ops cost-run ...` remain compatibility-only interfaces and are not reachable from the public run command.
+## Monorepo development
 
-See the [closed-loop architecture](docs/CLOSED_LOOP.md) and the [canonical protocol and run-bundle contract](docs/CLOSED_LOOP.md#canonical-run-bundle).
+From the repository root, install the development checkout on Windows, macOS, or Linux:
+
+```console
+python scripts/install-local.py
+```
+
+The development installer requires Node.js 20 and npm to rebuild bundled observability assets. It does not start the service, collect telemetry, or download a model. Internal component and protocol details are documented in [distribution details](docs/DISTRIBUTION.md), [closed-loop architecture](docs/CLOSED_LOOP.md), and the [canonical run-bundle contract](docs/CLOSED_LOOP.md#canonical-run-bundle).
+
+## Verification
+
+The recorded onboarding gate executes setup against a deterministic OpenAI-compatible fixture, starts the real local service, completes and materializes a sample task, runs doctor, validates the console, captures screenshots, and proves shutdown:
+
+```console
+python onboarding-verification/run_onboarding_gate.py
+```
+
+Its report and screenshots are written beneath `onboarding-verification/artifacts/latest/`.
+
+The complete packaged connected-product gate remains:
+
+```console
+python release-verification/run_release_gate.py --mode local
+```
+
+It builds release packages in isolation, applies PostgreSQL migrations, executes all connected scenarios, reconciles canonical data across packaged consumers, and runs browser tests.

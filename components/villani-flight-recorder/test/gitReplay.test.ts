@@ -1,45 +1,80 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { buildGitReplay } from "../src/git/gitReplay.js";
-const exec = promisify(execFile);
+import {
+  activeChildProcessCount,
+  ChildProcessFailure,
+  runChildProcess,
+} from "../src/utils/childProcess.js";
+
+afterEach(() => {
+  expect(activeChildProcessCount()).toBe(0);
+});
 
 describe("git replay", () => {
   it.each([1, 2, 3])(
     "works repeatedly in isolated git repo %i and CLI invalid input exits nonzero",
-    async () => {
-      const d = await fs.mkdtemp(path.join(os.tmpdir(), "vfr-"));
+    async (iteration) => {
+      const d = await fs.mkdtemp(
+        path.join(os.tmpdir(), `vfr-git-replay-${process.pid}-${iteration}-`),
+      );
       const boundedExec = (file: string, args: string[]) =>
-        exec(file, args, { cwd: d, timeout: 10_000, windowsHide: true });
+        runChildProcess(file, args, { cwd: d, timeoutMs: 10_000 });
       try {
         await boundedExec("git", ["init"]);
-        await boundedExec("git", ["config", "user.email", "a@b.c"]);
-        await boundedExec("git", ["config", "user.name", "A"]);
         await fs.writeFile(path.join(d, "a.test.ts"), "a");
         await boundedExec("git", ["add", "."]);
-        await boundedExec("git", ["commit", "-m", "first"]);
+        await boundedExec("git", [
+          "-c",
+          "user.email=a@b.c",
+          "-c",
+          "user.name=A",
+          "commit",
+          "-m",
+          "first",
+        ]);
         await fs.writeFile(path.join(d, "package.json"), "{}");
         await boundedExec("git", ["add", "."]);
-        await boundedExec("git", ["commit", "-m", "second"]);
+        await boundedExec("git", [
+          "-c",
+          "user.email=a@b.c",
+          "-c",
+          "user.name=A",
+          "commit",
+          "-m",
+          "second",
+        ]);
         const replay = await buildGitReplay("HEAD~1", "HEAD", d);
         expect(
           replay.events.some((event) =>
             event.summary?.includes("dependency file changed"),
           ),
         ).toBe(true);
-        await expect(
-          exec("node", ["dist/cli.js", "replay"], {
-            cwd: process.cwd(),
-            timeout: 10_000,
-            windowsHide: true,
-          }),
-        ).rejects.toBeTruthy();
+        const failure = await runChildProcess(
+          process.execPath,
+          [path.resolve("dist/cli.js"), "replay"],
+          { cwd: process.cwd(), timeoutMs: 5_000 },
+        ).catch((error: unknown) => error);
+        expect(failure).toBeInstanceOf(ChildProcessFailure);
+        const diagnostics = (failure as ChildProcessFailure).diagnostics;
+        expect(diagnostics).toMatchObject({
+          exitStatus: 1,
+          processState: "exited",
+          timedOut: false,
+        });
+        expect(diagnostics.stderr).toContain("replay requires");
+        expect(diagnostics.elapsedMs).toBeGreaterThanOrEqual(0);
       } finally {
-        await fs.rm(d, { recursive: true, force: true });
+        await fs.rm(d, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 100,
+        });
       }
     },
+    20_000,
   );
 });

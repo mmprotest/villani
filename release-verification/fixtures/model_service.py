@@ -24,6 +24,7 @@ MODEL_IDENTITIES = {
     "fixture-expert",
     "fixture-verifier-low",
     "fixture-verifier-high",
+    "fixture-onboarding",
 }
 SCENARIO_RE = re.compile(r"release[_ -]scenario[:= ]+([a-z0-9_-]+)", re.IGNORECASE)
 EVIDENCE_RE = re.compile(r"\bev-[0-9]{4,}\b")
@@ -92,6 +93,76 @@ def _classification(scenario: str) -> dict[str, Any]:
 def _tool_response(model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
     tool_results = sum(message.get("role") == "tool" for message in messages)
     scenario = _scenario(messages)
+    if model == "fixture-onboarding":
+        if tool_results == 0:
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "write-onboarding-implementation",
+                        "type": "function",
+                        "function": {
+                            "name": "Write",
+                            "arguments": json.dumps(
+                                {
+                                    "file_path": "calculator.py",
+                                    "content": (
+                                        '"""Tiny disposable Villani setup sample."""\n\n'
+                                        "\ndef add(left: int, right: int) -> int:\n"
+                                        "    return left + right\n\n"
+                                        "\ndef subtract(left: int, right: int) -> int:\n"
+                                        "    return left - right\n"
+                                    ),
+                                }
+                            ),
+                        },
+                    }
+                ],
+            }
+        if tool_results == 1:
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "write-onboarding-test",
+                        "type": "function",
+                        "function": {
+                            "name": "Write",
+                            "arguments": json.dumps(
+                                {
+                                    "file_path": "test_calculator.py",
+                                    "content": (
+                                        "import unittest\n\n"
+                                        "from calculator import add, subtract\n\n\n"
+                                        "class CalculatorTests(unittest.TestCase):\n"
+                                        "    def test_add(self):\n"
+                                        "        self.assertEqual(add(2, 3), 5)\n\n"
+                                        "    def test_subtract(self):\n"
+                                        "        self.assertEqual(subtract(8, 3), 5)\n\n\n"
+                                        "if __name__ == '__main__':\n"
+                                        "    unittest.main()\n"
+                                    ),
+                                }
+                            ),
+                        },
+                    }
+                ],
+            }
+        if tool_results == 2:
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "validate-onboarding",
+                        "type": "function",
+                        "function": {
+                            "name": "Bash",
+                            "arguments": json.dumps({"command": "python -m unittest -q"}),
+                        },
+                    }
+                ],
+            }
+        return {"role": "assistant", "content": "Completed the disposable setup sample."}
     if tool_results == 0:
         correct = model != "fixture-standard" or scenario not in {
             "scenario_b",
@@ -212,6 +283,27 @@ class FixtureState:
 def make_handler(state: FixtureState) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
+            if self.path.rstrip("/") == "/v1/models":
+                body = json.dumps(
+                    {
+                        "object": "list",
+                        "data": [
+                            {
+                                "id": model,
+                                "object": "model",
+                                "owned_by": "villani-release-fixture",
+                                "context_window": 32_768,
+                            }
+                            for model in sorted(MODEL_IDENTITIES)
+                        ],
+                    }
+                ).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if self.path.rstrip("/") == "/health":
                 body = json.dumps(
                     {"status": "ok", "models": sorted(MODEL_IDENTITIES)}
@@ -239,15 +331,29 @@ def make_handler(state: FixtureState) -> type[BaseHTTPRequestHandler]:
                 self.send_error(400, f"unknown fixture model {model}")
                 return
             tools = request.get("tools") or []
-            if model == "fixture-classifier":
+            tool_names = {
+                str(tool.get("function", {}).get("name") or "")
+                for tool in tools
+                if isinstance(tool, dict)
+            }
+            message_text = _message_text(messages)
+            if model == "fixture-classifier" or (
+                model == "fixture-onboarding" and "Classify this task" in message_text
+            ):
                 message = {
                     "role": "assistant",
                     "content": json.dumps(_classification(scenario), sort_keys=True),
                 }
-            elif model.startswith("fixture-verifier-"):
+            elif model.startswith("fixture-verifier-") or (
+                model == "fixture-onboarding"
+                and "verifier_final_verdict" in tool_names
+            ):
                 message = {
                     "role": "assistant",
-                    "content": _verifier_response(model, messages),
+                    "content": _verifier_response(
+                        "fixture-verifier-high" if model == "fixture-onboarding" else model,
+                        messages,
+                    ),
                 }
             elif tools:
                 message = _tool_response(model, messages)

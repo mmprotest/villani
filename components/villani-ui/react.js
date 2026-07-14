@@ -10,8 +10,11 @@ export function AppShell({ sidebar, header, statusStrip, children, className, ..
 }
 
 export function Sidebar({ brand = "VILLANI", children, className, ...props }) {
-  return h("aside", { ...props, className: classes("v-sidebar", className), "aria-label": props["aria-label"] || "Primary navigation" },
-    h("div", { className: "v-sidebar__brand" }, brand), h("nav", { className: "v-sidebar__body" }, children));
+  const label = props["aria-label"] || "Primary navigation";
+  const asideProps = { ...props };
+  delete asideProps["aria-label"];
+  return h("aside", { ...asideProps, className: classes("v-sidebar", className) },
+    h("div", { className: "v-sidebar__brand" }, brand), h("nav", { className: "v-sidebar__body", "aria-label": label }, children));
 }
 
 export function SidebarSection({ title, children, className, ...props }) {

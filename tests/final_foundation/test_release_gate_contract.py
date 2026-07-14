@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
+import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -179,3 +182,149 @@ def test_responsive_screenshot_dimensions_are_enforced(
                 "viewport_coverage": ["1280x800", "1440x900", "1920x1080"],
             }
         )
+
+
+def test_isolated_source_copy_removes_dependencies_builds_and_databases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_isolated_source", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    source = tmp_path / "source"
+    output = tmp_path / "evidence"
+    destination = tmp_path / "isolated"
+    files = {
+        "components/villani-web/src/app.ts": "export const app = true;",
+        "components/villani-web/node_modules/leak/index.js": "leak",
+        "components/villani-web/dist/index.html": "generated",
+        "components/villani-flight-recorder/.cache/value": "cache",
+        ".venv/pyvenv.cfg": "environment",
+        "release-verification/artifacts/latest/report.json": "{}",
+        "state.sqlite3": "database",
+    }
+    for relative, contents in files.items():
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding="utf-8")
+    listing = "\0".join(files) + "\0"
+    monkeypatch.setattr(gate, "LATEST", output)
+    monkeypatch.setattr(
+        gate,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout=listing, stderr=""
+        ),
+    )
+
+    report = gate.create_isolated_source(source, destination)
+
+    assert report["status"] == "passed"
+    assert report["copied_file_count"] == 1
+    assert (destination / "components/villani-web/src/app.ts").is_file()
+    assert not (destination / "components/villani-web/node_modules").exists()
+    assert not (destination / "components/villani-web/dist").exists()
+    assert not (destination / ".venv").exists()
+    assert not (destination / "state.sqlite3").exists()
+
+
+def test_node_application_boundaries_use_only_declared_shared_packages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_node_boundaries", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    monkeypatch.setattr(gate, "LATEST", tmp_path / "evidence")
+    for name in gate.NODE_COMPONENTS:
+        component = tmp_path / "components" / name
+        (component / "src").mkdir(parents=True)
+        package_name = {
+            "villani-ui": "@villani/ui",
+            "villani-run-model": "@villani/run-model",
+        }.get(name, name)
+        dependencies = {}
+        if name in {"villani-web", "villani-flight-recorder"}:
+            dependencies = {
+                "@villani/run-model": "file:../villani-run-model",
+                "@villani/ui": "file:../villani-ui",
+            }
+        (component / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": package_name,
+                    "version": "0.1.0",
+                    "dependencies": dependencies,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (component / "src/index.ts").write_text(
+            'export const value = "ok";\n', encoding="utf-8"
+        )
+    web_source = tmp_path / "components/villani-web/src/index.ts"
+    web_source.write_text(
+        'import "../../villani-flight-recorder/src/index";\n', encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="leaves package boundary"):
+        gate.validate_node_boundaries(tmp_path)
+
+    web_source.write_text(
+        'import { canonicalRunSnapshot } from "@villani/run-model";\n'
+        "export { canonicalRunSnapshot };\n",
+        encoding="utf-8",
+    )
+    report = gate.validate_node_boundaries(tmp_path)
+
+    assert report["status"] == "passed"
+    assert report["violations"] == []
+
+
+def test_real_node_sources_have_no_cross_application_raw_imports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_real_node_boundaries", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    monkeypatch.setattr(gate, "LATEST", tmp_path)
+
+    report = gate.validate_node_boundaries(ROOT)
+
+    assert report["status"] == "passed"
+    applications = {item["component"]: item for item in report["packages"]}
+    assert "@villani/run-model" in applications["villani-web"]["declared_dependencies"]
+    assert (
+        "@villani/run-model"
+        in applications["villani-flight-recorder"]["declared_dependencies"]
+    )
+
+
+def test_sibling_node_modules_are_removed_before_each_application_build(
+    tmp_path: Path,
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_sibling_dependencies", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    for name in gate.NODE_COMPONENTS:
+        (tmp_path / "components" / name / "node_modules").mkdir(parents=True)
+
+    for application in ("villani-web", "villani-flight-recorder"):
+        for path in gate._node_modules_paths(tmp_path):
+            if path.parent.name != application:
+                shutil.rmtree(path)
+        gate._assert_no_sibling_node_modules(tmp_path, application)
+        assert gate._node_modules_paths(tmp_path) == [
+            tmp_path / "components" / application / "node_modules"
+        ]
+        shutil.rmtree(tmp_path / "components" / application / "node_modules")
+        for name in gate.NODE_COMPONENTS:
+            if name != application:
+                (tmp_path / "components" / name / "node_modules").mkdir(
+                    parents=True, exist_ok=True
+                )

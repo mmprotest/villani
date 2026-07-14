@@ -13,13 +13,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import venv
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from supply_chain import generate as generate_supply_chain
+import supply_chain
 
 ROOT = Path(__file__).resolve().parents[1]
 LATEST = ROOT / "release-verification" / "artifacts" / "latest"
@@ -37,6 +38,65 @@ NODE_COMPONENTS = (
     "villani-flight-recorder",
 )
 ASSET_RE = re.compile(r"(?:src|href)=[\"']([^\"'#?]+)")
+IMPORT_RE = re.compile(
+    r"(?:\bfrom\s*|\bimport\s*\(|\brequire\s*\()\s*[\"']([^\"']+)[\"']"
+    r"|\bimport\s*[\"']([^\"']+)[\"']"
+)
+SOURCE_SUFFIXES = frozenset({".cjs", ".js", ".jsx", ".mjs", ".ts", ".tsx"})
+EXCLUDED_SOURCE_DIRECTORIES = frozenset(
+    {
+        ".cache",
+        ".eggs",
+        ".git",
+        ".hypothesis",
+        ".mypy_cache",
+        ".next",
+        ".nox",
+        ".npm",
+        ".nyc_output",
+        ".parcel-cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".test-temp",
+        ".tox",
+        ".turbo",
+        ".venv",
+        ".vite",
+        "__pycache__",
+        "artifacts",
+        "build",
+        "coverage",
+        "dist",
+        "dist-model",
+        "env",
+        "htmlcov",
+        "node_modules",
+        "out",
+        "playwright-report",
+        "site",
+        "test-results",
+        "tmp",
+        "venv",
+    }
+)
+EXCLUDED_DATABASE_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3"})
+COMMAND_RECORDS: list[dict[str, Any]] = []
+
+
+def _environment_paths(env: dict[str, str] | None) -> dict[str, str]:
+    values = env or os.environ
+    keys = (
+        "HOME",
+        "PATH",
+        "PIP_CACHE_DIR",
+        "PLAYWRIGHT_BROWSERS_PATH",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "VIRTUAL_ENV",
+        "npm_config_cache",
+    )
+    return {key: values[key] for key in keys if values.get(key)}
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -55,49 +115,164 @@ def sha256(path: Path) -> str:
 
 
 def run(
-    command: list[str], *, cwd: Path, log: Path, env: dict[str, str] | None = None
-) -> None:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
+    command: list[str],
+    *,
+    cwd: Path,
+    log: Path,
+    env: dict[str, str] | None = None,
+    timeout: int = 1_800,
+) -> subprocess.CompletedProcess[str]:
+    started = time.monotonic()
+    record: dict[str, Any] = {
+        "command": command,
+        "cwd": str(cwd.resolve()),
+        "executable": shutil.which(command[0], path=(env or os.environ).get("PATH"))
+        or command[0],
+        "environment_paths": _environment_paths(env),
+        "log": str(log.resolve()),
+        "timeout_seconds": timeout,
+    }
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+        )
+    except Exception as error:
+        record.update(
+            {
+                "status": "failed",
+                "error": type(error).__name__,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            }
+        )
+        COMMAND_RECORDS.append(record)
+        raise
+    record.update(
+        {
+            "status": "passed" if completed.returncode == 0 else "failed",
+            "returncode": completed.returncode,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+        }
     )
+    COMMAND_RECORDS.append(record)
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(
         "$ "
         + subprocess.list2cmdline(command)
         + "\n"
+        + f"cwd: {cwd.resolve()}\n"
+        + "environment paths: "
+        + json.dumps(record["environment_paths"], sort_keys=True)
+        + "\n\n"
         + completed.stdout
         + completed.stderr,
         encoding="utf-8",
     )
     if completed.returncode:
         raise RuntimeError(f"command failed ({completed.returncode}); see {log}")
+    return completed
 
 
-def component_versions() -> dict[str, str]:
+def _source_path_is_excluded(relative: Path) -> bool:
+    lowered = tuple(part.lower() for part in relative.parts)
+    if any(part in EXCLUDED_SOURCE_DIRECTORIES for part in lowered):
+        return True
+    if any(part.startswith((".release-", ".test-temp")) for part in lowered):
+        return True
+    if relative.suffix.lower() in EXCLUDED_DATABASE_SUFFIXES:
+        return True
+    if relative.name.lower().endswith((".pyc", ".pyo", ".tsbuildinfo")):
+        return True
+    return False
+
+
+def create_isolated_source(source: Path, destination: Path) -> dict[str, Any]:
+    """Copy only release source inputs into a dependency-free checkout image."""
+    listed = run(
+        [
+            shutil.which("git") or "git",
+            "-c",
+            "core.quotePath=false",
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+        cwd=source,
+        log=LATEST / "logs/isolated-source-manifest.log",
+    )
+    destination.mkdir(parents=True, exist_ok=False)
+    copied: list[str] = []
+    excluded: list[str] = []
+    for value in listed.stdout.split("\0"):
+        if not value:
+            continue
+        relative = Path(value)
+        source_path = source / relative
+        if not source_path.is_file() and not source_path.is_symlink():
+            continue
+        normalized = str(relative).replace("\\", "/")
+        if _source_path_is_excluded(relative):
+            excluded.append(normalized)
+            continue
+        destination_path = destination / relative
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        if source_path.is_symlink():
+            destination_path.symlink_to(os.readlink(source_path))
+        else:
+            shutil.copy2(source_path, destination_path)
+        copied.append(normalized)
+    forbidden = sorted(
+        str(path.relative_to(destination)).replace("\\", "/")
+        for path in destination.rglob("*")
+        if _source_path_is_excluded(path.relative_to(destination))
+    )
+    if forbidden:
+        raise RuntimeError(
+            f"isolated source contains forbidden generated paths: {forbidden[:20]}"
+        )
+    report = {
+        "status": "passed",
+        "source_root": str(source.resolve()),
+        "isolated_root": str(destination.resolve()),
+        "copied_file_count": len(copied),
+        "excluded_file_count": len(excluded),
+        "excluded_paths": excluded,
+        "forbidden_paths_present": [],
+        "git_metadata_copied": False,
+    }
+    write_json(LATEST / "isolated-source.json", report)
+    return report
+
+
+def component_versions(root: Path = ROOT) -> dict[str, str]:
     result: dict[str, str] = {}
     for name in PYTHON_COMPONENTS:
         document = tomllib.loads(
-            (ROOT / "components" / name / "pyproject.toml").read_text(encoding="utf-8")
+            (root / "components" / name / "pyproject.toml").read_text(encoding="utf-8")
         )
         result[str(document["project"]["name"])] = str(document["project"]["version"])
     for name in NODE_COMPONENTS:
         document = json.loads(
-            (ROOT / "components" / name / "package.json").read_text(encoding="utf-8")
+            (root / "components" / name / "package.json").read_text(encoding="utf-8")
         )
         result[str(document["name"])] = str(document["version"])
     result["shared-protocol"] = "2"
     return result
 
 
-def validate_compatibility(versions: dict[str, str]) -> dict[str, Any]:
+def validate_compatibility(
+    versions: dict[str, str], root: Path = ROOT
+) -> dict[str, Any]:
     template = json.loads(
-        (ROOT / "release/component-compatibility.json").read_text(encoding="utf-8")
+        (root / "release/component-compatibility.json").read_text(encoding="utf-8")
     )
     expected = template["components"]
     mismatches = {
@@ -151,18 +326,18 @@ def validate_compatibility(versions: dict[str, str]) -> dict[str, Any]:
     return template
 
 
-def validate_frontend_assets() -> dict[str, Any]:
+def validate_frontend_assets(root: Path = ROOT) -> dict[str, Any]:
     reports: list[dict[str, Any]] = []
     for application in ("villani-web",):
-        root = ROOT / "components" / application / "dist"
-        html = root / "index.html"
+        application_root = root / "components" / application / "dist"
+        html = application_root / "index.html"
         if not html.is_file():
             raise RuntimeError(f"{application} dist/index.html is missing")
         references = []
         for reference in ASSET_RE.findall(html.read_text(encoding="utf-8")):
             if reference.startswith(("http:", "https:", "data:", "mailto:")):
                 continue
-            target = root / reference.lstrip("/")
+            target = application_root / reference.lstrip("/")
             references.append({"reference": reference, "exists": target.is_file()})
             if not target.is_file():
                 raise RuntimeError(f"{html} references missing asset {reference}")
@@ -170,6 +345,130 @@ def validate_frontend_assets() -> dict[str, Any]:
             {"application": application, "html": str(html), "references": references}
         )
     return {"passed": True, "applications": reports}
+
+
+def _package_name(specifier: str) -> str:
+    if specifier.startswith("@"):
+        return "/".join(specifier.split("/")[:2])
+    return specifier.split("/", 1)[0]
+
+
+def validate_node_boundaries(root: Path) -> dict[str, Any]:
+    """Reject source imports outside a component or outside its manifest."""
+    packages: list[dict[str, Any]] = []
+    violations: list[dict[str, str]] = []
+    for name in NODE_COMPONENTS:
+        component = (root / "components" / name).resolve()
+        manifest = json.loads((component / "package.json").read_text(encoding="utf-8"))
+        declared = set()
+        local_dependencies: dict[str, str] = {}
+        for section in (
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "peerDependencies",
+        ):
+            for dependency, specification in manifest.get(section, {}).items():
+                declared.add(dependency)
+                if isinstance(specification, str) and specification.startswith("file:"):
+                    target = (component / specification.removeprefix("file:")).resolve()
+                    target_manifest = json.loads(
+                        (target / "package.json").read_text(encoding="utf-8")
+                    )
+                    if target_manifest.get("name") != dependency:
+                        violations.append(
+                            {
+                                "component": name,
+                                "file": "package.json",
+                                "specifier": specification,
+                                "reason": f"local dependency does not provide {dependency}",
+                            }
+                        )
+                    local_dependencies[dependency] = str(target)
+        scanned = 0
+        for source in sorted(component.rglob("*")):
+            if (
+                not source.is_file()
+                or source.suffix.lower() not in SOURCE_SUFFIXES
+                or any(
+                    part.lower() in EXCLUDED_SOURCE_DIRECTORIES
+                    for part in source.relative_to(component).parts
+                )
+            ):
+                continue
+            scanned += 1
+            text = source.read_text(encoding="utf-8", errors="replace")
+            specifiers = {first or second for first, second in IMPORT_RE.findall(text)}
+            for specifier in sorted(specifiers):
+                if specifier.startswith("."):
+                    target = (source.parent / specifier).resolve()
+                    try:
+                        target.relative_to(component)
+                    except ValueError:
+                        violations.append(
+                            {
+                                "component": name,
+                                "file": str(source.relative_to(component)).replace(
+                                    "\\", "/"
+                                ),
+                                "specifier": specifier,
+                                "reason": "relative import leaves package boundary",
+                            }
+                        )
+                    continue
+                if specifier.startswith(("node:", "#")):
+                    continue
+                dependency = _package_name(specifier)
+                if dependency not in declared:
+                    violations.append(
+                        {
+                            "component": name,
+                            "file": str(source.relative_to(component)).replace(
+                                "\\", "/"
+                            ),
+                            "specifier": specifier,
+                            "reason": "bare import is absent from package manifest",
+                        }
+                    )
+        packages.append(
+            {
+                "component": name,
+                "scanned_source_files": scanned,
+                "declared_dependencies": sorted(declared),
+                "declared_local_dependencies": local_dependencies,
+            }
+        )
+    report = {
+        "status": "passed" if not violations else "failed",
+        "packages": packages,
+        "violations": violations,
+    }
+    write_json(LATEST / "node-package-boundaries.json", report)
+    if violations:
+        raise RuntimeError(f"Node package boundary violations: {violations}")
+    return report
+
+
+def _node_modules_paths(root: Path) -> list[Path]:
+    return [
+        root / "components" / name / "node_modules"
+        for name in NODE_COMPONENTS
+        if (root / "components" / name / "node_modules").exists()
+    ]
+
+
+def _assert_no_sibling_node_modules(root: Path, component_name: str) -> None:
+    component = root / "components" / component_name
+    siblings = [
+        path
+        for path in _node_modules_paths(root)
+        if path.parent.resolve() != component.resolve()
+    ]
+    if siblings:
+        raise RuntimeError(
+            f"{component_name} build can see sibling node_modules: "
+            + ", ".join(str(path) for path in siblings)
+        )
 
 
 def _stage_node_package(component: Path, stage: Path) -> None:
@@ -281,47 +580,107 @@ def install_packed_node_packages(
     }
 
 
-def build_packages(work: Path) -> tuple[list[Path], dict[str, Any]]:
+def build_packages(
+    work: Path, root: Path, release_env: dict[str, str]
+) -> tuple[list[Path], dict[str, Any]]:
     package_dir = LATEST / "packages"
     package_dir.mkdir(parents=True, exist_ok=True)
     logs = LATEST / "logs"
     built: list[Path] = []
-    npm_environment = os.environ.copy()
-    npm_environment["npm_config_cache"] = str(work / "npm-cache")
     npm = "npm.cmd" if os.name == "nt" else "npm"
+    boundary_report = validate_node_boundaries(root)
+    isolation_proofs: list[dict[str, Any]] = []
     for name in NODE_COMPONENTS:
-        cwd = ROOT / "components" / name
+        cwd = root / "components" / name
+        _assert_no_sibling_node_modules(root, name)
+        if (cwd / "node_modules").exists():
+            raise RuntimeError(
+                f"{name} did not start from a clean dependency directory"
+            )
         if (cwd / "package-lock.json").is_file():
             run(
                 [npm, "ci", "--no-audit", "--no-fund"],
                 cwd=cwd,
                 log=logs / f"{name}-install.log",
-                env=npm_environment,
+                env=release_env,
             )
+        else:
+            run(
+                [
+                    npm,
+                    "install",
+                    "--ignore-scripts",
+                    "--no-audit",
+                    "--no-fund",
+                ],
+                cwd=cwd,
+                log=logs / f"{name}-install.log",
+                env=release_env,
+            )
+        _assert_no_sibling_node_modules(root, name)
         run(
             [npm, "run", "build"],
             cwd=cwd,
             log=logs / f"{name}-build.log",
-            env=npm_environment,
+            env=release_env,
         )
-        if name == "villani-web":
-            run(
-                [npm, "exec", "playwright", "install", "chromium"],
-                cwd=cwd,
-                log=logs / "playwright-browser-install.log",
-                env=npm_environment,
-            )
         stage = work / "node-stage" / name
         _stage_node_package(cwd, stage)
         run(
             [npm, "pack", "--ignore-scripts", "--pack-destination", str(package_dir)],
             cwd=stage,
             log=logs / f"{name}-pack.log",
-            env=npm_environment,
+            env=release_env,
         )
-    asset_report = validate_frontend_assets()
+        isolation_proofs.append(
+            {
+                "component": name,
+                "declared_dependency_install": "passed",
+                "independent_build": "passed",
+                "sibling_node_modules_during_build": [],
+                "package": "packed",
+            }
+        )
+        shutil.rmtree(cwd / "node_modules")
+        remaining = _node_modules_paths(root)
+        if remaining:
+            raise RuntimeError(f"dependency cleanup after {name} left: {remaining}")
+    asset_report = validate_frontend_assets(root)
+    run(
+        [
+            sys.executable,
+            str(root / "scripts" / "sync-console-assets.py"),
+        ],
+        cwd=root,
+        log=logs / "console-assets-sync.log",
+        env=release_env,
+    )
+    run(
+        [
+            sys.executable,
+            str(root / "scripts" / "sync-console-assets.py"),
+            "--check",
+        ],
+        cwd=root,
+        log=logs / "console-assets-check.log",
+        env=release_env,
+    )
+    asset_report["packaged_console_assets"] = "passed"
     asset_report["packed_node_install"] = install_packed_node_packages(
-        work, package_dir, npm_environment
+        work, package_dir, release_env
+    )
+    asset_report["package_boundaries"] = boundary_report
+    asset_report["isolated_builds"] = isolation_proofs
+    write_json(
+        LATEST / "isolated-node-build.json",
+        {
+            "status": "passed",
+            "source_root": str(root.resolve()),
+            "all_sibling_node_modules_removed": True,
+            "builds": isolation_proofs,
+            "villani_web_without_flight_recorder_dependencies": "passed",
+            "flight_recorder_without_villani_web_dependencies": "passed",
+        },
     )
     for name in PYTHON_COMPONENTS:
         output = work / "python" / name
@@ -336,31 +695,81 @@ def build_packages(work: Path) -> tuple[list[Path], dict[str, Any]]:
                 "--outdir",
                 str(output),
             ],
-            cwd=ROOT / "components" / name,
+            cwd=root / "components" / name,
             log=logs / f"{name}-build.log",
+            env=release_env,
         )
         for artifact in output.iterdir():
             destination = package_dir / artifact.name
             shutil.copy2(artifact, destination)
             built.append(destination)
+    run(
+        [
+            sys.executable,
+            str(root / "scripts" / "validate-console-wheel.py"),
+            str(package_dir),
+        ],
+        cwd=root,
+        log=logs / "console-wheel-content.log",
+        env=release_env,
+    )
+    asset_report["packaged_console_wheel"] = "passed"
     built.extend(sorted(package_dir.glob("*.tgz")))
     return built, asset_report
 
 
-def install_wheels(work: Path, packages: list[Path]) -> Path:
+def prepare_connected_node_runtime(
+    root: Path, release_env: dict[str, str]
+) -> dict[str, Any]:
+    """Install the two browser runtimes after isolated builds have completed."""
+    npm = "npm.cmd" if os.name == "nt" else "npm"
+    logs = LATEST / "logs"
+    if _node_modules_paths(root):
+        raise RuntimeError("connected runtime preparation did not start clean")
+    for name in ("villani-flight-recorder", "villani-web"):
+        cwd = root / "components" / name
+        run(
+            [npm, "ci", "--no-audit", "--no-fund"],
+            cwd=cwd,
+            log=logs / f"{name}-runtime-install.log",
+            env=release_env,
+        )
+    run(
+        [npm, "exec", "playwright", "install", "chromium"],
+        cwd=root / "components" / "villani-web",
+        log=logs / "playwright-browser-install.log",
+        env=release_env,
+    )
+    return {
+        "status": "passed",
+        "runtime_node_modules": [
+            str(path.resolve()) for path in _node_modules_paths(root)
+        ],
+        "playwright_browsers_path": release_env["PLAYWRIGHT_BROWSERS_PATH"],
+    }
+
+
+def install_wheels(
+    work: Path,
+    packages: list[Path],
+    root: Path,
+    release_env: dict[str, str],
+) -> Path:
     environment = work / "installed"
     venv.EnvBuilder(with_pip=True, clear=True).create(environment)
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     run(
         [str(python), "-m", "pip", "install", "--upgrade", "pip"],
-        cwd=ROOT,
+        cwd=root,
         log=LATEST / "logs/wheel-environment-pip-upgrade.log",
+        env=release_env,
     )
     wheels = [str(path) for path in packages if path.suffix == ".whl"]
     run(
         [str(python), "-m", "pip", "install", *wheels],
-        cwd=ROOT,
+        cwd=root,
         log=LATEST / "logs/wheel-install.log",
+        env=release_env,
     )
     for command in ("villani", "villani-code", "villani-agentd"):
         executable = environment / (
@@ -555,6 +964,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("local", "ci", "release"), default="ci")
     args = parser.parse_args(argv)
+    COMMAND_RECORDS.clear()
     if LATEST.exists():
         shutil.rmtree(LATEST)
     LATEST.mkdir(parents=True)
@@ -577,15 +987,70 @@ def main(argv: list[str] | None = None) -> int:
         "flight_recorder_reconciliation_status": "not_executed",
         "browser_result": "not_executed",
         "security_scan_status": "not_executed",
+        "commands": [],
+        "environment_paths": {},
     }
     exit_code = 1
     try:
-        versions = component_versions()
-        template = validate_compatibility(versions)
-        with tempfile.TemporaryDirectory(prefix="villani-release-gate-") as temporary:
+        temporary_parent_value = os.environ.get("VILLANI_RELEASE_TEMP_ROOT")
+        temporary_parent = (
+            Path(temporary_parent_value).resolve()
+            if temporary_parent_value
+            else (ROOT / ".release-smoke" / "release-gate-temp").resolve()
+        )
+        temporary_parent.mkdir(parents=True, exist_ok=True)
+        write_probe = temporary_parent / (
+            f".villani-write-probe-{os.getpid()}-{time.time_ns()}"
+        )
+        try:
+            write_probe.mkdir()
+            write_probe.rmdir()
+        except OSError as error:
+            raise RuntimeError(
+                f"release temporary root is not writable: {temporary_parent}"
+            ) from error
+        with tempfile.TemporaryDirectory(
+            prefix="villani-release-gate-", dir=temporary_parent
+        ) as temporary:
             work = Path(temporary)
-            packages, assets = build_packages(work)
-            installed_python = install_wheels(work, packages)
+            source_root = work / "clean-source"
+            isolation = create_isolated_source(ROOT, source_root)
+            release_env = os.environ.copy()
+            environment_directories = {
+                "temporary_root": work / "temp",
+                "npm_cache": work / "npm-cache",
+                "pip_cache": work / "pip-cache",
+                "playwright_browsers": work / "playwright-browsers",
+                "isolated_source": source_root,
+                "installed_python": work / "installed",
+                "release_artifacts": LATEST,
+            }
+            for directory in environment_directories.values():
+                directory.mkdir(parents=True, exist_ok=True)
+            release_env.update(
+                {
+                    "TEMP": str(environment_directories["temporary_root"]),
+                    "TMP": str(environment_directories["temporary_root"]),
+                    "TMPDIR": str(environment_directories["temporary_root"]),
+                    "npm_config_cache": str(environment_directories["npm_cache"]),
+                    "PIP_CACHE_DIR": str(environment_directories["pip_cache"]),
+                    "PLAYWRIGHT_BROWSERS_PATH": str(
+                        environment_directories["playwright_browsers"]
+                    ),
+                }
+            )
+            report["environment_paths"] = {
+                name: str(path.resolve())
+                for name, path in environment_directories.items()
+            }
+            report["isolated_source"] = isolation
+            versions = component_versions(source_root)
+            template = validate_compatibility(versions, source_root)
+            packages, assets = build_packages(work, source_root, release_env)
+            installed_python = install_wheels(work, packages, source_root, release_env)
+            connected_node_runtime = prepare_connected_node_runtime(
+                source_root, release_env
+            )
             hashes = {path.name: sha256(path) for path in sorted(packages)}
             generated = json.loads(json.dumps(template))
             generated["generated"] = {
@@ -634,6 +1099,9 @@ def main(argv: list[str] | None = None) -> int:
                     "python_source_distributions": len(
                         [name for name in hashes if name.endswith(".tar.gz")]
                     ),
+                    "isolated_source": isolation,
+                    "isolated_node_build": "passed",
+                    "connected_node_runtime": connected_node_runtime,
                 },
             )
             report["package_versions"] = versions
@@ -645,7 +1113,7 @@ def main(argv: list[str] | None = None) -> int:
             run(
                 [
                     str(installed_python),
-                    str(ROOT / "release-verification" / "connected_product.py"),
+                    str(source_root / "release-verification" / "connected_product.py"),
                     "--python",
                     str(installed_python),
                     "--work",
@@ -655,9 +1123,10 @@ def main(argv: list[str] | None = None) -> int:
                     "--mode",
                     args.mode,
                 ],
-                cwd=ROOT,
+                cwd=source_root,
                 log=LATEST / "logs/connected-product.log",
-                env=os.environ.copy(),
+                env=release_env,
+                timeout=3_600,
             )
             connected = json.loads(
                 (LATEST / "connected-product-summary.json").read_text(encoding="utf-8")
@@ -750,7 +1219,7 @@ def main(argv: list[str] | None = None) -> int:
                     "classification_adjustment": "passed",
                 }
             )
-            security = generate_supply_chain(
+            security = supply_chain.generate(
                 mode=args.mode,
                 installed_python=installed_python,
                 packages=packages,
@@ -775,6 +1244,35 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = 0
     except Exception as error:
         report["failure"] = str(error)
+    connected_command_path = LATEST / "connected-command-manifest.json"
+    connected_commands: list[dict[str, Any]] = []
+    if connected_command_path.is_file():
+        connected_document = json.loads(
+            connected_command_path.read_text(encoding="utf-8")
+        )
+        connected_commands = [
+            {"scope": "connected_product", **item}
+            for item in connected_document.get("commands", [])
+            if isinstance(item, dict)
+        ]
+    all_commands = [
+        {"scope": "release_gate", **item} for item in COMMAND_RECORDS
+    ] + connected_commands
+    report["commands"] = all_commands
+    report["command_count"] = len(all_commands)
+    write_json(
+        LATEST / "command-manifest.json",
+        {
+            "status": "passed"
+            if all(
+                item.get("status") in {"passed", "exited", "terminated"}
+                for item in all_commands
+            )
+            else "failed",
+            "environment_paths": report.get("environment_paths", {}),
+            "commands": all_commands,
+        },
+    )
     report["finished_at"] = (
         datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     )

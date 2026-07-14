@@ -113,6 +113,11 @@ def main() -> int:
     args = parser.parse_args()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [sys.executable, "scripts/sync-console-assets.py", "--check"],
+        cwd=ROOT,
+        check=True,
+    )
     default_vfr = ROOT / "components" / "villani" / "villani_distribution" / "bin" / (
         "vfr.exe" if os.name == "nt" else "vfr"
     )
