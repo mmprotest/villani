@@ -3413,8 +3413,8 @@ Remaining limitations and risks:
   exposed recursive fixture-copy contention and overlapping cleanup ownership as the amplification
   path; the stress proof validates the repair locally, while hosted Node/OS repetition remains the
   outstanding confirmation.
-- Local test artifacts under `.m55-hardening-temp/` include ACL-restricted pytest directories. They
-  are excluded by the release source-isolation policy, are untracked, and must not be committed.
+- ACL-restricted local pytest artifacts were moved out of the repository to
+  `C:\tmp\villani-m55-hardening-temp-6353ff3`; no test debris remains in the worktree or commit.
 - No Founder Thesis Lab, Milestone 6 team feature, evaluation feature, coding-agent adapter, routing
   strategy, benchmark special case, or later milestone was started.
 
