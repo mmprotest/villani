@@ -52,13 +52,14 @@ def fake_villani(path, monkeypatch=None):
         monkeypatch.setenv("PATH", str(path) + os.pathsep + os.environ["PATH"])
     else:
         os.environ["PATH"] = str(path) + os.pathsep + os.environ["PATH"]
+    return exe
 
 
 def make_ops(tmp_path, monkeypatch, reviews, selection=None):
     ws = tmp_path / ".villani-ops"
     s = FileStorage(ws)
     s.init_workspace()
-    fake_villani(tmp_path, monkeypatch)
+    fake_command = fake_villani(tmp_path, monkeypatch)
     s.save_backends(
         {
             "code": Backend(
@@ -67,6 +68,7 @@ def make_ops(tmp_path, monkeypatch, reviews, selection=None):
                 base_url="http://x/v1",
                 model="m",
                 api_key="dummy",
+                command_name=str(fake_command),
                 roles=[
                     "coding",
                     "classification",

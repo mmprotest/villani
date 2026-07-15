@@ -359,6 +359,72 @@ def _backend_checks(
     return checks
 
 
+def _adapter_checks(reports: list[dict[str, Any]]) -> list[DiagnosticCheck]:
+    """Project adapter presence, bounded probe health, and runtime health separately."""
+
+    report = next(
+        (item for item in reports if item.get("adapter") == "villani-code"),
+        None,
+    )
+    if report is None:
+        return []
+    details = {**report, "model_tokens_spent": 0}
+    executable_status = report.get("executable_status")
+    probe_status = str(report.get("probe_status") or "unknown")
+    runtime_status = report.get("runtime_status")
+    if executable_status == "missing":
+        return [
+            DiagnosticCheck(
+                "coding_adapter_probe:villani-code",
+                "fail",
+                "The villani-code executable is missing.",
+                "Reinstall Villani Code, then run: villani doctor",
+                details,
+            )
+        ]
+    if probe_status.endswith("timed_out"):
+        timeout = report.get("probe_timeout_seconds")
+        timeout_text = f" after {timeout:g} seconds" if isinstance(timeout, (int, float)) else ""
+        runtime_text = (
+            " A successful recent coding run confirms runtime availability."
+            if runtime_status == "successful_recent_run"
+            else ""
+        )
+        return [
+            DiagnosticCheck(
+                "coding_adapter_probe:villani-code",
+                "warn",
+                (
+                    "The villani-code executable is present, but its bounded diagnostic probe "
+                    f"timed out{timeout_text}.{runtime_text}"
+                ),
+                "Retry diagnostics with: villani doctor",
+                details,
+            )
+        ]
+    if probe_status.endswith("failed") or probe_status == "error":
+        return [
+            DiagnosticCheck(
+                "coding_adapter_probe:villani-code",
+                "warn",
+                "The villani-code executable is present, but its diagnostic probe failed.",
+                "Retry diagnostics with: villani doctor",
+                details,
+            )
+        ]
+    message = "The villani-code executable is present and its diagnostic probe is healthy."
+    if runtime_status == "successful_recent_run":
+        message += " A successful recent coding run also confirms runtime availability."
+    return [
+        DiagnosticCheck(
+            "coding_adapter_probe:villani-code",
+            "pass",
+            message,
+            details=details,
+        )
+    ]
+
+
 def _storage_check(home: Path) -> DiagnosticCheck:
     probe = home / ".doctor-write-probe"
     try:
@@ -598,6 +664,7 @@ def run_doctor(
             )
         )
     checks.extend(_backend_checks(backends, core["backend_connectivity"]))
+    checks.extend(_adapter_checks(core.get("adapters", [])))
     capabilities = core.get("required_capabilities", {})
     recovery_by_capability = {
         "disk": "Free at least 100 MiB, then run: villani doctor",

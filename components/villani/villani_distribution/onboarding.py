@@ -23,6 +23,7 @@ from pydantic import ValidationError
 
 from villani_ops.cli.unified import DEFAULT_CONFIG
 from villani_ops.core.backend import Backend
+from villani_ops.executables import resolve_installed_executable
 from villani_ops.providers import ProviderConfigurationError, validate_closed_loop_backend
 
 from .migrations import SUPPORTED_CONFIG_VERSION
@@ -452,12 +453,8 @@ def _provider_for_configuration(detection: ProviderDetection) -> str:
 
 
 def _coding_command() -> str | None:
-    suffix = ".exe" if os.name == "nt" else ""
-    sibling = Path(sys.executable).resolve().parent / f"villani-code{suffix}"
-    if sibling.is_file():
-        return str(sibling)
-    found = shutil.which("villani-code")
-    return str(Path(found).resolve()) if found else None
+    resolution = resolve_installed_executable("villani-code")
+    return str(resolution.path) if resolution.path is not None else None
 
 
 def build_configuration(

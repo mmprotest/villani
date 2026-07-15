@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`Milestone 2, one Villani Console: complete`
+`Milestone 5.5.1, final release hardening: release-green with hosted certification outstanding by explicit waiver`
 
 ### Milestone status
 
@@ -3307,3 +3307,117 @@ Remaining limitations and risks:
 
 Next permitted milestone:
 - None. Milestone 5.5 is complete, and Milestone 6 was not started.
+
+#### 2026-07-15: Milestone 5.5.1, final release hardening before Founder Thesis Lab
+
+Status: release-green for this pass under the user's explicit 2026-07-15 waiver of hosted
+certification as a blocking completion gate. The complete local release proof passed. Hosted
+GitHub Actions certification was deliberately not executed and remains an outstanding item; it is
+not recorded as passed, and no hosted workflow run or exact hosted commit certification is claimed.
+
+Changed areas:
+- `components/villani-ops/villani_ops/executables.py` is the single production resolver for
+  installed Villani entry points. It discovers current-interpreter scripts with `sysconfig`, queries
+  external interpreters with a bounded isolated stdlib command, preserves the literal interpreter
+  parent without resolving symlinks, supports POSIX and Windows entry-point forms, consults
+  additional directories and `PATH` in a deterministic order, and returns structured diagnostics.
+- `components/villani/villani_distribution/{onboarding.py,services.py}`,
+  `components/villani-agentd/villani_agentd/{console.py,adapters/contract.py,
+  adapters/implementations.py}`, and `components/villani-ops/villani_ops/{diagnostics.py,
+  subprocess_utils.py}` now use the shared resolver and distinguish executable presence, bounded
+  probe health, and successful recent runtime use.
+- `onboarding-verification/run_onboarding_gate.py`, `release-verification/{connected_product.py,
+  run_release_gate.py,postgres_migration_proof.py}`, `scripts/{install-local.py,
+  ci-package-smoke.py,resolve-installed-executable.py}`, and `tests/closed_loop/test_cli_e2e.py`
+  resolve entry points from the selected installation without activating it or changing the
+  caller's environment.
+- `components/villani-flight-recorder/test/helpers/{concurrencyDiagnostics.ts,testResources.ts,
+  villaniFixture.ts}`, `test/villaniProvider.test.ts`, and `scripts/concurrency-stress.mjs` add
+  phase-level failure diagnostics, immutable fixture materialization into 20 independent run
+  directories, one cleanup owner, explicit resource registries, and bounded same-process/fresh-
+  process stress proof.
+- `components/villani-ops/villani_ops/tests/test_villani_code_runner.py` replaces the marker timing
+  race with a flushed readiness record containing parent and child PIDs, a changing heartbeat, and
+  direct bounded parent/descendant liveness checks. Production process-tree termination was not
+  changed.
+- `.github/workflows/ci.yml` retains the future hosted proof: Python package/install jobs,
+  PostgreSQL 16, preinstalled Playwright, Flight Recorder Node 20/current-LTS runs, a 20-run
+  cross-platform process-tree matrix, always-uploaded evidence, and exact-SHA `release-green`
+  aggregation. It was prepared but not run under this pass's hosted-certification waiver.
+
+Architectural decisions:
+- Executable lookup lives at the Villani Ops dependency floor so distribution and Agentd share one
+  implementation without circular imports. Resolution never uses
+  `Path(sys.executable).resolve().parent`; resolving a virtual-environment interpreter symlink can
+  escape to the system installation.
+- Diagnostic presence is independent of probe health. A timed-out version/help probe is a warning
+  with the executable path and bounded timeout, not a false "adapter absent" result. Probes make no
+  model call, capture both streams, terminate descendants, and leave no child process.
+- Flight Recorder keeps real 20-way concurrency. The hardened path removes repeated recursive copy
+  contention against the OneDrive-backed canonical fixture, initializes the schema validator once,
+  keeps parser state immutable, and assigns each temporary root to exactly one idempotent cleanup
+  owner. Failure-only diagnostics identify all ten required phases and active/tracked resources.
+- The process-tree test triggers the production timeout only after the descendant is demonstrably
+  alive and its heartbeat has advanced; termination is proved from both PIDs and a stable heartbeat,
+  rather than inferred from a marker that might never have been created.
+- Release evidence preserves the distinction between local and hosted proof. The durable local
+  report remains `LOCAL GATE PASSED`; release-green is the milestone disposition authorized by the
+  explicit waiver, not a fabricated hosted `RELEASE GATE PASSED` artifact.
+
+Verification:
+- `python -m pytest components/villani/tests -q`: 61 passed, 0 failed, 0 skipped.
+- `python -m pytest tests -q` with the selected environment's scripts directory removed from the
+  caller `PATH`: 43 passed, 0 failed, 0 skipped, 1 warning.
+- `python -m pytest tests/final_foundation -q`: 33 passed, 0 failed, 0 skipped.
+- `components/villani-code: python -m pytest -q`: 671 passed, 0 failed, 1 skipped, 27 warnings.
+- `components/villani-ops: python -m pytest -q`: 999 passed, 0 failed, 2 skipped,
+  114 deselected. The exact process-tree test passed 20 consecutive runs, with no surviving parent
+  or descendant.
+- `components/villani-agentd: python -m pytest -q`: 78 passed, 0 failed, 0 skipped.
+- `components/villani-control-plane: python -m pytest tests/unit -q`: 76 passed, 0 failed,
+  0 skipped, 43 warnings. Against real PostgreSQL 16.14, the full suite produced 89 passed,
+  0 failed, 0 skipped, 46 warnings; no-skip assertion, Alembic head `0a1b2c3d4e5f`, offline SQL,
+  and backup/restore smoke passed.
+- Run Model: 5 passed, 0 failed, 0 skipped; typecheck and build passed. UI: 3 passed, 0 failed,
+  0 skipped; build passed. Web: 15 unit tests and 14 Playwright tests passed; typecheck, build,
+  format, and browser reconciliation passed.
+- Flight Recorder on Node 24.13.0/npm 11.6.2 completed three consecutive suites at 21 files and
+  111 passed tests each: 6.13 seconds, 5.61 seconds, and 5.39 seconds. The original concurrent test
+  completed in 479 ms, 356 ms, and 339 ms within its unchanged five-second timeout.
+- `npm run test:concurrency-stress`: 18 bounded iterations and 360 independent fixture copies
+  passed across one-process and fresh-process modes; tracked temporary directories, JSDOM windows,
+  servers, watchers, timers, and child processes were all zero at completion. Flight Recorder
+  typecheck, build, format, and `npm pack --dry-run` also passed.
+- A fresh Python 3.12.10 environment installed the four built wheels without activation. Absolute
+  `villani`, `villani-code`, `villani-agentd`, and `vfr` help invocations passed; `villani setup`,
+  `villani doctor --json`, and a real fixture task passed. The system-Python onboarding invocation
+  reported `ONBOARDING GATE PASSED` while `caller_path_contained_scripts_directory` was false.
+- `python release-verification/run_release_gate.py --mode local`: exited 0 with
+  `LOCAL GATE PASSED` after 244.4 seconds. Scenarios A-H synchronized 8 runs: 7 completed,
+  1 deliberately exhausted, and 0 entered the dead-letter queue. Canonical, Villani Console, and
+  Flight Recorder reconciliation; redaction of 3 values; withholding of 1 unsafe artifact;
+  verifier routing; candidate diversity; classification adjustment; all delivery modes; and all
+  17 screenshot dimension/hash validations passed.
+- Exact component CI Ruff and mypy commands passed for Villani Code, Villani Ops, and Agentd.
+  `git diff --check`, workflow YAML parsing, resolver-pattern audit, and packaged Console asset
+  synchronization checks passed.
+
+Remaining limitations and risks:
+- Hosted certification is outstanding by explicit waiver. No GitHub workflow run identifier,
+  hosted exact-commit artifact, or hosted `release-green` aggregation result exists for this pass.
+  Hosted jobs and evidence statuses must remain `not_executed` until an actual workflow runs.
+- The current-pass clean-install proof used Python 3.12.10; the current-pass Flight Recorder proof
+  used Node 24.13.0; and the current-pass operating system was Windows. Python 3.11/3.13, Node 20,
+  Linux, and macOS coverage are configured for hosted CI but were not rerun under this waiver.
+- The independent Flight Recorder hang did not reproduce after instrumentation. The measured phases
+  exposed recursive fixture-copy contention and overlapping cleanup ownership as the amplification
+  path; the stress proof validates the repair locally, while hosted Node/OS repetition remains the
+  outstanding confirmation.
+- Local test artifacts under `.m55-hardening-temp/` include ACL-restricted pytest directories. They
+  are excluded by the release source-isolation policy, are untracked, and must not be committed.
+- No Founder Thesis Lab, Milestone 6 team feature, evaluation feature, coding-agent adapter, routing
+  strategy, benchmark special case, or later milestone was started.
+
+Next permitted milestone:
+- None automatically. Milestone 5.5.1 is release-green under the explicit hosted-certification
+  waiver; hosted certification remains the only outstanding release-proof item.

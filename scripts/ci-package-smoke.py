@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -21,9 +22,52 @@ def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
     subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
-def executable(venv_root: Path, name: str) -> Path:
+def environment_python(venv_root: Path) -> Path:
     scripts = venv_root / ("Scripts" if os.name == "nt" else "bin")
-    return scripts / f"{name}{'.exe' if os.name == 'nt' else ''}"
+    return scripts / ("python.exe" if os.name == "nt" else "python")
+
+
+def installed_executable(
+    python: Path, name: str, environment: dict[str, str]
+) -> dict[str, object]:
+    completed = subprocess.run(
+        [
+            str(python),
+            "-I",
+            str(ROOT / "scripts" / "resolve-installed-executable.py"),
+            name,
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(
+            f"Installed executable resolver failed for {name!r}: "
+            f"{completed.stderr.strip()}"
+        )
+    try:
+        resolution = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"Installed executable resolver returned malformed output for {name!r}."
+        ) from error
+    if not isinstance(resolution, dict) or not resolution.get("path"):
+        diagnostic = (
+            resolution.get("diagnostic") if isinstance(resolution, dict) else None
+        )
+        raise SystemExit(str(diagnostic or f"Missing installed executable {name!r}."))
+    if resolution.get("source") not in {"interpreter_scripts", "interpreter_parent"}:
+        raise SystemExit(
+            f"Isolated installation resolved {name!r} outside its environment: "
+            f"{resolution.get('diagnostic')}"
+        )
+    return resolution
 
 
 def main() -> int:
@@ -83,7 +127,7 @@ def main() -> int:
     run([sys.executable, "scripts/validate-console-wheel.py", str(wheels)])
     isolated = work / "venv"
     venv.EnvBuilder(with_pip=True, clear=True).create(isolated)
-    python = executable(isolated, "python")
+    python = environment_python(isolated)
     run(
         [
             str(python),
@@ -106,20 +150,32 @@ def main() -> int:
             "VILLANI_SERVICE_DRY_RUN": "1",
         }
     )
-    for name in ("villani", "villani-code", "villani-agentd", "vfr"):
-        command = executable(isolated, name)
-        command_env = dict(env)
-        if name == "vfr":
-            command_env["PATH"] = str(command.parent)
-        run([str(command), "--help"], env=command_env)
-    villani = executable(isolated, "villani")
-    run([str(villani), "install-service"], env=env)
-    run([str(villani), "service", "status"], env=env)
-    run([str(villani), "uninstall-service"], env=env)
+    entry_points = {
+        name: installed_executable(python, name, env)
+        for name in ("villani", "villani-code", "villani-agentd", "vfr")
+    }
+    for resolution in entry_points.values():
+        prefix = resolution.get("prefix")
+        if not isinstance(prefix, list) or not all(
+            isinstance(item, str) for item in prefix
+        ):
+            raise SystemExit(
+                "Installed executable resolver returned an invalid prefix."
+            )
+        run([*prefix, "--help"], env=env)
+    villani_value = entry_points["villani"].get("prefix")
+    if not isinstance(villani_value, list) or not all(
+        isinstance(item, str) for item in villani_value
+    ):
+        raise SystemExit("Installed Villani executable prefix is invalid.")
+    villani = tuple(villani_value)
+    run([*villani, "install-service"], env=env)
+    run([*villani, "service", "status"], env=env)
+    run([*villani, "uninstall-service"], env=env)
     preserved = home / "runs" / "preserved.txt"
     preserved.parent.mkdir(parents=True, exist_ok=True)
     preserved.write_text("preserved", encoding="utf-8")
-    run([str(villani), "uninstall-service"], env=env)
+    run([*villani, "uninstall-service"], env=env)
     if preserved.read_text(encoding="utf-8") != "preserved":
         raise SystemExit("service uninstall removed user run data")
     release = work / "release"
@@ -145,10 +201,7 @@ def main() -> int:
             path.chmod(path.stat().st_mode | 0o755)
     for name in ("villani", "villani-code", "villani-agentd", "vfr"):
         path = extracted / f"{name}{'.exe' if os.name == 'nt' else ''}"
-        archive_env = dict(env)
-        if name == "vfr":
-            archive_env["PATH"] = str(extracted)
-        run([str(path), "--help"], env=archive_env)
+        run([str(path), "--help"], env=env)
     print(f"RELEASE_ARTIFACT={archive}")
     return 0
 

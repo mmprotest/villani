@@ -461,3 +461,30 @@ def test_json_contract_contains_both_doctor_generations_without_inference() -> N
     assert report["summary"] == {"passed": 0, "warnings": 1, "failed": 0}
     assert report["inferred_commands_executed"] is False
     assert set(details) <= set(report)
+
+
+def test_adapter_probe_timeout_is_a_presence_warning_not_absence() -> None:
+    checks = diagnostics._adapter_checks(
+        [
+            {
+                "adapter": "villani-code",
+                "available": True,
+                "executable_status": "present",
+                "executable_path": "/fixture/bin/villani-code",
+                "probe_status": "version_timed_out",
+                "probe_timeout_seconds": 1.5,
+                "runtime_status": "successful_recent_run",
+                "last_successful_use": {
+                    "run_id": "run_fixture",
+                    "attempt_id": "attempt_001",
+                },
+            }
+        ]
+    )
+    assert len(checks) == 1
+    check = checks[0]
+    assert check.status == "warn"
+    assert "executable is present" in check.message
+    assert "1.5 seconds" in check.message
+    assert "successful recent coding run" in check.message
+    assert check.details["model_tokens_spent"] == 0

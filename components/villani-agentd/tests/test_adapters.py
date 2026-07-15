@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from villani_agentd.adapters import AdapterContext, get_adapter
+from villani_agentd.adapters import contract as contract_module
+from villani_agentd.adapters.contract import ProbeResult, subprocess_probe
 from villani_agentd.adapters.implementations import CodexAdapter
 from villani_agentd.otlp import normalize_otlp_traces
 from villani_agentd.spool import SpoolError
 from villani_agentd.trace_context import parse_traceparent, propagated_environment
 from villani_ops.closed_loop.protocol_v2 import TelemetryEnvelopeV2
+from villani_ops.executables import ExecutableResolution
+from villani_ops.execution_environment.secrets import _process_alive
 
 FIXTURES = Path(__file__).parent / "fixtures" / "adapters"
 NOW = datetime(2026, 7, 11, tzinfo=timezone.utc)
@@ -119,8 +127,19 @@ def test_machine_adapter_commands_use_only_documented_modes() -> None:
 def test_provider_detection_requires_documented_machine_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    executable = Path(sys.executable).parent / "codex-fixture"
     monkeypatch.setattr(
-        "villani_agentd.adapters.implementations.shutil.which", lambda _name: "codex"
+        "villani_agentd.adapters.implementations.resolve_installed_executable",
+        lambda name: ExecutableResolution(
+            name,
+            executable,
+            "PATH",
+            (executable,),
+            "fixture",
+            Path(sys.executable),
+            Path(sys.executable).parent,
+            True,
+        ),
     )
 
     def probe(command):
@@ -132,6 +151,132 @@ def test_provider_detection_requires_documented_machine_mode(
     assert result.detected_version == "codex-cli 9.8.7"
     assert result.available is False
     assert result.missing_capabilities == ("documented_exec_json",)
+
+
+def test_slow_version_probe_confirms_presence_without_reporting_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = Path(sys.executable).parent / "codex-fixture"
+    monkeypatch.setattr(
+        "villani_agentd.adapters.implementations.resolve_installed_executable",
+        lambda name: ExecutableResolution(
+            name,
+            executable,
+            "interpreter_scripts",
+            (executable,),
+            "fixture",
+            Path(sys.executable),
+            Path(sys.executable).parent,
+            False,
+        ),
+    )
+
+    def probe(command):
+        if "--version" in command:
+            return ProbeResult("timed_out", None, "", "", 1.25)
+        return ProbeResult("completed", 0, "Usage: codex exec --json\n", "", 1.25)
+
+    result = CodexAdapter().detect(probe)
+    report = result.as_dict()
+    assert result.available is True
+    assert report["executable_status"] == "present"
+    assert report["executable_path"] == str(executable)
+    assert report["probe_status"] == "version_timed_out"
+    assert report["probe_timeout_seconds"] == 1.25
+    assert "presence was confirmed" in str(report["warning"])
+    assert "executable" not in result.missing_capabilities
+
+
+def test_timed_out_probe_terminates_its_confirmed_descendant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ready = tmp_path / "probe-ready.json"
+    child = tmp_path / "probe-child.py"
+    child.write_text(
+        "import time\nwhile True:\n    time.sleep(1)\n",
+        encoding="utf-8",
+    )
+    parent = tmp_path / "probe-parent.py"
+    parent.write_text(
+        f"""import json, os, pathlib, subprocess, sys, time
+ready = pathlib.Path({str(ready)!r})
+descendant = subprocess.Popen([sys.executable, {str(child)!r}])
+temporary = ready.with_name(ready.name + '.tmp')
+with temporary.open('w', encoding='utf-8') as handle:
+    json.dump({{'parent_pid': os.getpid(), 'child_pid': descendant.pid}}, handle)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temporary, ready)
+time.sleep(30)
+""",
+        encoding="utf-8",
+    )
+    real_popen = subprocess.Popen
+    observed: dict[str, int] = {}
+
+    class ReadyPopen(real_popen):
+        def communicate(self, input=None, timeout=None):  # type: ignore[no-untyped-def]
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                try:
+                    document = json.loads(ready.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    time.sleep(0.02)
+                    continue
+                observed.update(
+                    parent_pid=int(document["parent_pid"]),
+                    child_pid=int(document["child_pid"]),
+                )
+                break
+            else:
+                raise AssertionError("probe descendant did not become ready")
+            return super().communicate(input=input, timeout=0.2)
+
+    class SubprocessProxy:
+        Popen = ReadyPopen
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return getattr(subprocess, name)
+
+    monkeypatch.setattr(contract_module, "subprocess", SubprocessProxy())
+
+    def alive(pid: int) -> bool:
+        if not _process_alive(pid):
+            return False
+        if os.name != "nt":
+            try:
+                fields = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()
+            except OSError:
+                return True
+            if len(fields) >= 3 and fields[2] == "Z":
+                return False
+        return True
+
+    try:
+        result = subprocess_probe([sys.executable, str(parent)], timeout_seconds=5)
+        assert result.status == "timed_out"
+        assert observed
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and any(alive(pid) for pid in observed.values()):
+            time.sleep(0.02)
+        assert not alive(observed["parent_pid"])
+        assert not alive(observed["child_pid"])
+    finally:
+        for pid in observed.values():
+            if not alive(pid):
+                continue
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True,
+                    check=False,
+                    timeout=10,
+                )
+            else:
+                try:
+                    os.kill(pid, 9)
+                except OSError:
+                    pass
 
 
 def test_trace_context_preserves_valid_parent_and_replaces_invalid() -> None:

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { launchVillaniRun } from "../src/commands/launchVillani.js";
 import { scanToIndex } from "../src/index/sessionIndex.js";
 import { parseVillaniRun, readVillaniJsonl } from "../src/providers/villani.js";
+import { defaultVillaniSchemaValidator } from "../src/providers/villaniSchemaValidation.js";
 import { renderDashboard } from "../src/render/dashboard.js";
 import { deriveReplayViewModel } from "../src/render/viewModel.js";
 import { renderReplay } from "../src/render/renderReplay.js";
@@ -15,8 +16,11 @@ import {
   canonicalVillaniFixture,
   copyVillaniFixture,
   digestRunFiles,
+  materializeVillaniFixture,
+  parseCanonicalProtocolDocuments,
   snapshotRunFiles,
 } from "./helpers/villaniFixture.js";
+import { ConcurrencyDiagnostics } from "./helpers/concurrencyDiagnostics.js";
 import { testResources } from "./helpers/testResources.js";
 
 async function updateJson(
@@ -35,16 +39,101 @@ describe("native Villani provider", () => {
   it("copies and parses the immutable canonical fixture concurrently", async () => {
     const canonical = canonicalVillaniFixture();
     const before = await digestRunFiles(canonical);
-    const copies = await Promise.all(
-      Array.from({ length: 20 }, () => copyVillaniFixture()),
-    );
+    const diagnostics = new ConcurrencyDiagnostics("canonical-fixture");
+    const copies: { workerIndex: number; root: string; run: string }[] = [];
+    const validators = new Set<
+      ReturnType<typeof defaultVillaniSchemaValidator>
+    >();
+    const watchdog = testResources.timer(() => {
+      void diagnostics.write(
+        "failed",
+        new Error(
+          "targeted concurrency test remained active near its 5 second deadline",
+        ),
+      );
+    }, 4500);
+    watchdog.unref();
+    let failure: unknown;
     try {
       const inventories = await Promise.all(
-        copies.map(async ({ run }) => {
-          const session = await parseVillaniRun(run);
-          expect(session.sessionId).toBe("run_protocol_fixture");
-          expect(session.events).toHaveLength(24);
-          return digestRunFiles(run);
+        Array.from({ length: 20 }, async (_value, workerIndex) => {
+          const source = canonical;
+          const root = await diagnostics.phase(
+            workerIndex,
+            "fixture_directory_creation",
+            source,
+            "pending",
+            () => testResources.temporaryDirectory("vfr-villani-runs-"),
+          );
+          const run = path.join(root, "run_protocol_fixture");
+          copies.push({ workerIndex, root, run });
+          await diagnostics.phase(
+            workerIndex,
+            "fixture_recursive_copy",
+            source,
+            run,
+            () => materializeVillaniFixture(run),
+          );
+          await diagnostics.phase(
+            workerIndex,
+            "fixture_integrity_check",
+            source,
+            run,
+            async () => {
+              expect(await digestRunFiles(run)).toEqual(before);
+            },
+          );
+          const validator = await diagnostics.phase(
+            workerIndex,
+            "schema_validator_acquisition",
+            source,
+            run,
+            () => defaultVillaniSchemaValidator(),
+          );
+          validators.add(validator);
+          const documents = await diagnostics.phase(
+            workerIndex,
+            "json_parsing",
+            source,
+            run,
+            () => parseCanonicalProtocolDocuments(),
+          );
+          await diagnostics.phase(
+            workerIndex,
+            "schema_validation",
+            source,
+            run,
+            () => {
+              for (const document of documents)
+                expect(validator.validate(document).valid).toBe(true);
+            },
+          );
+          const session = await diagnostics.phase(
+            workerIndex,
+            "canonical_run_parsing",
+            source,
+            run,
+            () => parseVillaniRun(run, validator),
+          );
+          const inventory = await diagnostics.phase(
+            workerIndex,
+            "digest_calculation",
+            source,
+            run,
+            () => digestRunFiles(run),
+          );
+          await diagnostics.phase(
+            workerIndex,
+            "assertion_completion",
+            source,
+            run,
+            () => {
+              expect(session.sessionId).toBe("run_protocol_fixture");
+              expect(session.events).toHaveLength(24);
+              expect(inventory).toEqual(before);
+            },
+          );
+          return inventory;
         }),
       );
       expect(
@@ -52,11 +141,50 @@ describe("native Villani provider", () => {
           (inventory) => inventory.join("\n") === before.join("\n"),
         ),
       ).toBe(true);
+      expect(validators.size).toBe(1);
       expect(await digestRunFiles(canonical)).toEqual(before);
+    } catch (error) {
+      failure = error;
+      throw error;
     } finally {
-      await Promise.all(
-        copies.map(({ root }) => fs.rm(root, { recursive: true, force: true })),
-      );
+      testResources.clearTimer(watchdog);
+      try {
+        await Promise.all(
+          copies.map(({ workerIndex, root, run }) =>
+            diagnostics.phase(
+              workerIndex,
+              "temporary_directory_cleanup",
+              canonical,
+              run,
+              () => testResources.removeDirectory(root),
+            ),
+          ),
+        );
+      } catch (error) {
+        failure ??= error;
+        if (failure === error) throw error;
+      } finally {
+        const pending = testResources.pending();
+        diagnostics.recordResourceState(pending);
+        let resourceError: Error | undefined;
+        if (
+          failure === undefined &&
+          (pending.directories.length ||
+            pending.domWindows ||
+            pending.servers ||
+            pending.watchers ||
+            pending.timers ||
+            pending.childProcesses)
+        ) {
+          resourceError = new Error(
+            `targeted concurrency resources leaked: ${JSON.stringify(pending)}`,
+          );
+          failure = resourceError;
+        }
+        if (failure !== undefined) await diagnostics.write("failed", failure);
+        else await diagnostics.writeWhenRequested();
+        if (resourceError) throw resourceError;
+      }
     }
   });
 

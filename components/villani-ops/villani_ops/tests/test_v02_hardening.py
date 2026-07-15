@@ -162,6 +162,7 @@ def test_villani_code_receives_key_and_saves_redacted_command(tmp_path, monkeypa
         base_url="http://x/v1",
         model="m",
         api_key="secret",
+        command_name=str(exe),
     )
     res = VillaniCodeRunner().run(
         RunnerContext(

@@ -29,6 +29,7 @@ from villani_ops.closed_loop.interfaces import Classification
 from villani_ops.closed_loop.interfaces import EvidenceItem, Requirement, Verification
 from villani_ops.closed_loop.policy import configured_backends
 from villani_ops.cli.agentd_sink import build_agentd_event_sink
+from villani_ops.executables import resolve_installed_executable
 from villani_agentd.config import AgentdPaths, Limits, ServerConfig
 from villani_agentd.server import AgentdHTTPServer
 from villani_agentd.spool import SQLiteSpool
@@ -46,13 +47,9 @@ def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _installed_entry_point(name: str) -> str:
-    suffix = ".exe" if os.name == "nt" else ""
-    adjacent = Path(sys.executable).resolve().parent / f"{name}{suffix}"
-    if adjacent.is_file():
-        return str(adjacent)
-    resolved = shutil.which(name)
-    assert resolved is not None, f"the installed {name} entry point is required"
-    return resolved
+    resolution = resolve_installed_executable(name)
+    assert resolution.path is not None, resolution.diagnostic
+    return str(resolution.path)
 
 
 def _tiny_repo(tmp_path: Path) -> Path:
