@@ -484,6 +484,13 @@ jobs:
       - run: python -m pip install -e components/villani-ops -e components/villani-code -e components/villani-agentd -e "components/villani[test]"
       - run: python -m pytest -q
         working-directory: components/villani
+      - name: PowerShell multiline task-file regression
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          python -m pytest
+          tests/closed_loop/test_cli_e2e.py::test_windows_powershell_installed_cli_accepts_multiline_task_file
+          -q
       - run: python scripts/ci-package-smoke.py --work "$RUNNER_TEMP/villani-distribution"
         if: runner.os != 'Windows'
       - run: python scripts/ci-package-smoke.py --work "$env:RUNNER_TEMP\villani-distribution"

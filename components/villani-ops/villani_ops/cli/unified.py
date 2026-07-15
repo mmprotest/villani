@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from villani_ops.classification import TaskClassifier
+from villani_ops.cli.task_input import TaskInputError, resolve_task_input
 from villani_ops.llm.client import LLMCallError, LLMCallResult
 from villani_ops.diagnostics import (
     RepositoryDiagnosticError,
@@ -2534,7 +2535,15 @@ def _finish_run(
 
 @app.command("run")
 def run_command(
-    task: str = typer.Argument(..., help="Coding task, preserved verbatim."),
+    task: str | None = typer.Argument(
+        None,
+        help="Task instruction. Omit when using --task-file.",
+    ),
+    task_file: Path | None = typer.Option(
+        None,
+        "--task-file",
+        help="Read the complete task instruction from a UTF-8 file.",
+    ),
     repo: Path | None = typer.Option(
         None,
         "--repo",
@@ -2582,6 +2591,12 @@ def run_command(
 ) -> None:
     """Run one canonical deterministic closed loop."""
 
+    try:
+        task_text = resolve_task_input(task, task_file)
+    except TaskInputError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(2) from None
+
     repository = _resolve_run_repository(repo)
     try:
         configuration = apply_policy_preset(_load_config(), preset)
@@ -2617,9 +2632,11 @@ def run_command(
             _usage_error("--accepted-candidates-required must be at least 1")
         policy["accepted_candidates_required"] = accepted_candidates_required
     result = _execute_new_run(
-        task=task,
+        task=task_text,
         repository=repository,
-        success_criteria=success_criteria if success_criteria is not None else task,
+        success_criteria=(
+            success_criteria if success_criteria is not None else task_text
+        ),
         configuration=configuration,
         max_attempts=attempts_budget,
         max_cost=cost_budget,

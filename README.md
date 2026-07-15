@@ -101,16 +101,30 @@ Use `villani service start --automatic` to install user-level automatic startup.
 
 ## Run a coding task
 
-```console
+For a short task, use the positional form:
+
+```powershell
 cd calculator
-villani run "Fix calculator addition"
+villani run 'Fix the slug-generation bug'
+```
+
+For multiline or long Markdown instructions, pass the source file instead:
+
+```powershell
+villani run `
+    --task-file 'C:\tasks\pytest-fix.md' `
+    --repo 'C:\repos\pytest' `
+    --delivery suggest
 ```
 
 Inside a Git repository, Villani selects the current repository, configured policy, available
 backends, and discovered validation command. Use `--success-criteria`,
 `--validation-command`, budget, delivery, approval, or policy options only when you want to
 override those defaults. Use `--preset` to choose a different public preset for one run; internal
-routing modes remain under Advanced controls.
+routing modes remain under Advanced controls. Exactly one task source is required. `--task-file`
+is recommended for multiline instructions, long Markdown tasks, PowerShell automation, generated
+task specifications, and reproducible runs; the file is decoded as UTF-8 and its internal
+formatting is preserved.
 
 Delivery is explicit for every accepted run:
 

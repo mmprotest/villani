@@ -12,8 +12,25 @@ import yaml
 from typer.testing import CliRunner
 
 from villani_ops.cli import unified
+from villani_ops.closed_loop.controller import ClosedLoopController
+from villani_ops.closed_loop.candidate_strategies import immutable_baseline_digest
 from villani_ops.closed_loop.interfaces import ClosedLoopRunResult
 from villani_ops.closed_loop.schema_validation import validate_protocol_document
+from villani_ops.tests.closed_loop.fakes import (
+    FakeAttemptRunner,
+    FakeClassifier,
+    FakeMaterializer,
+    FakeMonotonic,
+    FakePolicyEngine,
+    FakeSelector,
+    FakeVerifier,
+    FixedNow,
+    StableIds,
+    accepted_verification,
+    attempt,
+    backend,
+    policy,
+)
 
 
 runner = CliRunner()
@@ -263,6 +280,204 @@ def test_run_calls_closed_loop_controller_not_legacy_orchestrators(
     assert "VillaniOps(" not in source
 
 
+def test_run_task_file_preserves_complete_multiline_task_in_canonical_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_home: Path,
+) -> None:
+    _init()
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.setattr(unified, "_git_repository_root", lambda _path: repository)
+    monkeypatch.setattr(unified, "_repository_dirty", lambda _path: False)
+    monkeypatch.setenv("VILLANI_TASK_CANARY", "expanded-value")
+    task = (
+        "Fix the assertion diff bug.\n\n"
+        "The implementation must preserve identical trailing characters.\n"
+        "Keep literal $VILLANI_TASK_CANARY and $(Write-Output 'not executed').\n\n"
+        "Add a focused regression test and run the relevant repository tests."
+    )
+    task_file = tmp_path / "multiline-task.md"
+    task_file.write_bytes(task.encode("utf-8"))
+
+    selected_backend = backend("fixture")
+    classifier = FakeClassifier()
+    policy_engine = FakePolicyEngine(
+        [
+            policy("attempt", backend_option=selected_backend),
+            policy("select"),
+        ]
+    )
+    attempt_runner = FakeAttemptRunner([attempt()])
+    verifier = FakeVerifier([accepted_verification()])
+    selector = FakeSelector()
+    materializer = FakeMaterializer()
+    builder_calls: list[dict[str, Any]] = []
+
+    def builder(configuration: Any, on_event: Any) -> ClosedLoopController:
+        builder_calls.append({"configuration": configuration, "on_event": on_event})
+        return ClosedLoopController(
+            classifier=classifier,
+            policy_engine=policy_engine,
+            attempt_runner=attempt_runner,
+            verifier=verifier,
+            selector=selector,
+            materializer=materializer,
+            now=FixedNow(),
+            monotonic=FakeMonotonic(),
+            id_factory=StableIds(),
+            on_event=on_event,
+        )
+
+    monkeypatch.setattr(unified, "_controller_builder", builder)
+    result = runner.invoke(
+        unified.app,
+        [
+            "run",
+            "--task-file",
+            str(task_file),
+            "--repo",
+            str(repository),
+            "--validation-command",
+            "python -m pytest -q",
+            "--delivery",
+            "suggest",
+            "--max-attempts",
+            "1",
+            "--max-cost",
+            "10",
+            "--max-wall-time",
+            "60",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "unexpected extra argument" not in result.output.lower()
+    assert len(builder_calls) == 1
+    assert classifier.calls[0][0] == task
+    assert attempt_runner.calls[0].task == task
+    assert verifier.calls[0][0].task == task
+    assert selector.calls[0][1].task == task
+    assert "$VILLANI_TASK_CANARY" in attempt_runner.calls[0].task
+    assert "expanded-value" not in attempt_runner.calls[0].task
+    run_directories = [
+        path
+        for path in (isolated_home / "runs").iterdir()
+        if path.is_dir() and (path / "manifest.json").is_file()
+    ]
+    assert len(run_directories) == 1
+    canonical_task = json.loads(
+        (run_directories[0] / "task.json").read_text(encoding="utf-8")
+    )
+    assert canonical_task["instruction"] == task
+    assert canonical_task["success_criteria"] == task
+    assert "\n\n" in canonical_task["instruction"]
+    candidate_strategy = json.loads(
+        (run_directories[0] / "candidate_strategy.json").read_text(encoding="utf-8")
+    )
+    assert candidate_strategy["baseline_sha256"] == immutable_baseline_digest(
+        repository, task, task
+    )
+    run_created = json.loads(
+        (run_directories[0] / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()[0]
+    )
+    assert run_created["payload"]["task_instruction"] == task
+    assert (
+        unified._inspect_bundle(run_directories[0].name)["task"]["instruction"] == task
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_message"),
+    [
+        (
+            "neither",
+            "Provide exactly one task source: positional TASK or --task-file PATH.",
+        ),
+        (
+            "both",
+            "Provide exactly one task source: positional TASK or --task-file PATH.",
+        ),
+        ("missing", "Task file does not exist:"),
+        ("directory", "Task file is not a regular file:"),
+        ("invalid-utf8", "Task file must contain valid UTF-8:"),
+        ("empty", "Task instruction is empty."),
+        ("whitespace", "Task instruction is empty."),
+        ("empty-positional", "Task instruction is empty."),
+        ("whitespace-positional", "Task instruction is empty."),
+    ],
+)
+def test_run_rejects_invalid_task_input_before_run_creation(
+    case: str,
+    expected_message: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_home: Path,
+) -> None:
+    task_file = tmp_path / "task.md"
+    if case == "invalid-utf8":
+        task_file.write_bytes(b"task\xff")
+    elif case == "empty":
+        task_file.write_bytes(b"")
+    elif case == "whitespace":
+        task_file.write_bytes(b" \t\r\n")
+    else:
+        task_file.write_text("File task", encoding="utf-8")
+
+    if case == "neither":
+        arguments = ["run"]
+    elif case == "both":
+        arguments = ["run", "Positional task", "--task-file", str(task_file)]
+    elif case == "empty-positional":
+        arguments = ["run", ""]
+    elif case == "whitespace-positional":
+        arguments = ["run", " \t\r\n"]
+    elif case == "missing":
+        missing = tmp_path / "missing-task.md"
+        arguments = ["run", "--task-file", str(missing)]
+    elif case == "directory":
+        arguments = ["run", "--task-file", str(tmp_path)]
+    else:
+        arguments = ["run", "--task-file", str(task_file)]
+
+    backend_calls: list[object] = []
+
+    def forbidden_builder(*args: object, **kwargs: object) -> object:
+        backend_calls.append((args, kwargs))
+        raise AssertionError("task validation must precede controller construction")
+
+    monkeypatch.setattr(unified, "_controller_builder", forbidden_builder)
+    result = runner.invoke(unified.app, arguments)
+
+    assert result.exit_code == 2
+    assert expected_message in result.output
+    assert "Traceback" not in result.output
+    assert backend_calls == []
+    runs_root = isolated_home / "runs"
+    assert not runs_root.exists() or list(runs_root.iterdir()) == []
+
+
+def test_run_both_or_neither_task_source_prints_exact_message(
+    tmp_path: Path,
+) -> None:
+    task_file = tmp_path / "task.md"
+    task_file.write_text("File task", encoding="utf-8")
+    expected = (
+        "Provide exactly one task source: positional TASK or --task-file PATH.\n"
+    )
+    neither = runner.invoke(unified.app, ["run"])
+    both = runner.invoke(
+        unified.app,
+        ["run", "Positional task", "--task-file", str(task_file)],
+    )
+    assert neither.exit_code == 2
+    assert both.exit_code == 2
+    assert neither.output == expected
+    assert both.output == expected
+
+
 def test_run_defaults_to_current_git_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -378,6 +593,12 @@ def test_help_contains_no_architecture_selector() -> None:
     run_help = runner.invoke(unified.app, ["run", "--help"])
     assert root_help.exit_code == 0
     assert run_help.exit_code == 0
+    normalized_run_help = " ".join(run_help.output.split())
+    assert "Task instruction. Omit when using --task-file." in normalized_run_help
+    assert "--task-file" in run_help.output
+    assert "Read the complete task" in normalized_run_help
+    assert "instruction from a UTF-8" in normalized_run_help
+    assert "file." in normalized_run_help
     combined = (root_help.output + run_help.output).lower()
     for forbidden in (
         "--orchestrator",

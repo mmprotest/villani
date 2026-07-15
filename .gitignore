@@ -15,6 +15,7 @@ Desktop.ini
 !.env.*.example
 
 # Python environments, caches, and build output
+.venv-experiment/
 .venv/
 venv/
 env/

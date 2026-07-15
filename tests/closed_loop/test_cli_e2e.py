@@ -685,3 +685,141 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+@pytest.mark.e2e
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell native-process regression")
+def test_windows_powershell_installed_cli_accepts_multiline_task_file(
+    tmp_path: Path,
+) -> None:
+    """Prove the absolute installed executable needs no environment activation."""
+
+    villani = Path(_installed_entry_point("villani"))
+    villani_code = Path(_installed_entry_point("villani-code"))
+    assert villani.is_absolute() and villani.suffix.lower() == ".exe"
+    assert villani_code.is_absolute()
+    powershell = shutil.which("powershell.exe") or shutil.which("powershell")
+    assert powershell is not None, "Windows CI must provide Windows PowerShell"
+
+    repo = _tiny_repo(tmp_path)
+    home = tmp_path / "home"
+    task = (
+        "Fix the assertion diff bug.\n\n"
+        "The implementation must preserve identical trailing characters.\n\n"
+        "Add a focused regression test and run the relevant repository tests.\n"
+        "Preserve literal $VILLANI_TASK_CANARY and `$(Write-Output not-executed)`."
+    )
+    task_file = tmp_path / "multiline-task.md"
+    task_file.write_bytes(task.encode("utf-8"))
+
+    _DeterministicOpenAIHandler.calls = 0
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _DeterministicOpenAIHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        environment = os.environ.copy()
+        environment["VILLANI_HOME"] = str(home)
+        environment["VILLANI_CODE_INLINE_PROMPT_LIMIT"] = "1"
+        environment["VILLANI_TASK_CANARY"] = "expanded-value"
+        scripts_directory = os.path.normcase(str(villani.parent.resolve()))
+        environment["PATH"] = os.pathsep.join(
+            part
+            for part in environment.get("PATH", "").split(os.pathsep)
+            if os.path.normcase(str(Path(part).resolve())) != scripts_directory
+        )
+        for name in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+            "GIT_ASKPASS",
+            "SSH_ASKPASS",
+            "VSCODE_GIT_ASKPASS_NODE",
+            "VSCODE_GIT_ASKPASS_EXTRA_ARGS",
+            "VSCODE_GIT_ASKPASS_MAIN",
+            "VSCODE_GIT_IPC_HANDLE",
+        ):
+            environment.pop(name, None)
+        environment["NO_PROXY"] = "127.0.0.1,localhost"
+
+        initialized = subprocess.run(
+            [str(villani), "init"],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+        )
+        assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+        config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+        config["budgets"]["max_attempts"] = 1
+        config["repository_validation_commands"] = [
+            {
+                "validation_id": "repository_unittest",
+                "argv": [sys.executable, "-m", "unittest", "-q"],
+                "timeout_seconds": 30,
+            }
+        ]
+        config["backends"] = {
+            "local-stub": {
+                "provider": "local",
+                "base_url": f"http://127.0.0.1:{server.server_port}/v1",
+                "model": "deterministic",
+                "roles": ["classification", "coding"],
+                "capability_score": 100,
+                "billing_mode": "unknown",
+                "command_name": str(villani_code),
+                "metadata": {"allow_dummy_api_key": True},
+            }
+        }
+        unified._write_config(home / "config.yaml", config)
+
+        def ps_literal(value: str | Path) -> str:
+            return "'" + str(value).replace("'", "''") + "'"
+
+        command = "\n".join(
+            [
+                f"$PromptPath = {ps_literal(task_file)}",
+                f"& {ps_literal(villani)} run `",
+                "    --task-file $PromptPath `",
+                f"    --repo {ps_literal(repo)} `",
+                f"    --success-criteria {ps_literal('The test suite passes')} `",
+                "    --delivery suggest `",
+                "    --max-attempts 1",
+                "exit $LASTEXITCODE",
+            ]
+        )
+        result = subprocess.run(
+            [
+                powershell,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                command,
+            ],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+        )
+        output = result.stdout + result.stderr
+        assert result.returncode != 2, output
+        assert result.returncode == 0, output
+        assert "unexpected extra argument" not in output.lower()
+        run_directories = [
+            path
+            for path in (home / "runs").iterdir()
+            if path.is_dir() and (path / "manifest.json").is_file()
+        ]
+        assert len(run_directories) == 1
+        run_dir = run_directories[0]
+        assert (run_dir / "manifest.json").is_file()
+        canonical_task = json.loads((run_dir / "task.json").read_text(encoding="utf-8"))
+        assert canonical_task["instruction"] == task
+        assert "$VILLANI_TASK_CANARY" in canonical_task["instruction"]
+        assert "expanded-value" not in canonical_task["instruction"]
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)

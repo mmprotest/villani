@@ -72,10 +72,23 @@ villani-ops run \
   --non-interactive
 ```
 
-The canonical public CLI is `villani run "task instruction"`; from inside a Git repository the
-repository defaults to the current repository. Interrupted runs can be resumed with
-`villani resume <run_id>` or `villani resume --latest`. Use `villani rerun <run_id>` to create a
-new, lineage-linked run with fresh cost accounting and optional policy or budget overrides.
+The canonical public CLI accepts either a short positional task or one UTF-8 task file; from inside
+a Git repository the repository defaults to the current repository:
+
+```powershell
+villani run 'Fix the slug-generation bug'
+
+villani run `
+    --task-file 'C:\tasks\pytest-fix.md' `
+    --repo 'C:\repos\pytest' `
+    --delivery suggest
+```
+
+Use `--task-file` for multiline instructions, long Markdown tasks, PowerShell automation,
+generated task specifications, and reproducible runs. Internal whitespace and line breaks are
+preserved. Interrupted runs can be resumed with `villani resume <run_id>` or
+`villani resume --latest`. Use `villani rerun <run_id>` to create a new, lineage-linked run with
+fresh cost accounting and optional policy or budget overrides.
 
 Accepted patches have an explicit delivery state. The public choices are:
 

@@ -3421,3 +3421,65 @@ Remaining limitations and risks:
 Next permitted milestone:
 - None automatically. Milestone 5.5.1 is release-green under the explicit hosted-certification
   waiver; hosted certification remains the only outstanding release-proof item.
+
+#### 2026-07-15: Reliable multiline task-file input for `villani run`
+
+Status: complete. This pass changed only public task-input transport and its documentation,
+tests, and Windows CI coverage. It did not start a new product milestone.
+
+Changed files:
+- `components/villani-ops/villani_ops/cli/{task_input.py,unified.py}` adds one pure task-input
+  resolver and calls it before repository, configuration, controller, backend, or model work.
+- `components/villani-ops/villani_ops/tests/{test_task_input.py,test_unified_cli.py}` covers exact
+  positional/file preservation, UTF-8/BOM/error behavior, canonical propagation, help, mutual
+  exclusion, and failure-before-run guarantees.
+- `tests/closed_loop/test_cli_e2e.py` and `.github/workflows/ci.yml` add an installed-entry-point
+  Windows PowerShell regression and execute it in the existing Windows distribution job.
+- `README.md` and `components/villani-ops/README.md` document short positional tasks and recommend
+  `--task-file` for multiline Markdown, PowerShell automation, generated specifications, and
+  reproducible runs. This progress entry is the only other `PLANS.md` change.
+
+Architectural decisions:
+- `villani run` now accepts optional positional `[TASK]` plus `--task-file PATH`, requires exactly
+  one source, and resolves both forms once into the existing plain `str` request field. No separate
+  controller path, schema field, routing choice, or execution behavior was added.
+- File input resolves relative to the existing working directory without changing it, validates
+  existence and regular-file/readability status under Villani control, decodes `utf-8-sig`, and
+  opens with newline translation disabled. Only the optional BOM is removed; CRLF/LF, indentation,
+  blank lines, Markdown, Unicode, quotes, backticks, environment-variable text, and shell text are
+  otherwise preserved exactly.
+- All task-input errors exit 2 without a traceback or controller construction. Both/neither source
+  print the exact required mutual-exclusion sentence. The resolved string continues through the
+  established digest, canonical task snapshot, classification, attempt, verification, selection,
+  inspect, and replay paths.
+
+Verification:
+- Resolver focus: 25 passed. Unified public CLI: 35 passed. Windows absolute-`villani.exe`
+  PowerShell regression: 1 passed in 8.18 seconds; no activation was used, the command exited 0,
+  and the canonical task equaled the multiline source including literal `$VILLANI_TASK_CANARY`
+  and PowerShell syntax.
+- `python -m pytest components/villani/tests -q`: 61 passed. `python -m pytest tests -q`: 44
+  passed with one dependency deprecation warning. `python -m pytest tests/final_foundation -q`:
+  33 passed.
+- Villani Ops clean-index mirror: 1,035 passed, 2 expected host-capability skips, 114 deselected.
+  The direct OneDrive checkout first produced 1,026 passes and eight plugin-fixture digest failures
+  because Git `core.autocrlf=true` materialized the unrelated allowlisted plugin artifact as CRLF;
+  the disposable clean-index LF mirror passed without changing that working-tree fixture.
+- Installed `villani run --help` exited 0 and rendered `Usage: villani run [OPTIONS] [TASK]`, the
+  optional-task guidance, and `--task-file PATH` UTF-8 guidance. Independent artifact inspection
+  reported `manifest_exists=True` and `task_matches_prompt=True` for the successful PowerShell run.
+- Ruff passed all edited Ops Python files and the new root test code (excluding its pre-existing
+  unused-import finding); both new Python files are formatter-clean. Workflow YAML parsing,
+  compile checks, and scoped `git diff --check` passed.
+
+Remaining limitations, assumptions, and risks:
+- The new Windows CI step is configured but was not run on hosted GitHub Actions in this local
+  pass. Its exact Windows PowerShell test passed locally.
+- The unrelated CRLF plugin-fixture mismatch remains in this checkout only; changing fixture
+  attributes or plugin behavior was outside this task. The committed LF fixture and clean-index
+  suite are green.
+- No routing, model selection, verification, retry, escalation, delivery, orchestration-policy,
+  canonical-schema, or unrelated CLI behavior changed. No later milestone was started.
+
+Next permitted milestone:
+- Unchanged. This narrow task-input fix is complete; the next milestone was not started.
