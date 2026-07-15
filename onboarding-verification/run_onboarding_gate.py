@@ -17,12 +17,28 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import yaml
+from villani_ops.executables import (
+    discover_interpreter_scripts_directory,
+    resolve_installed_executable,
+    resolved_executable_prefix,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACTS = ROOT / "onboarding-verification" / "artifacts" / "latest"
 MODEL_FIXTURE = ROOT / "release-verification" / "fixtures" / "model_service.py"
 SCREENSHOT_SCRIPT = ROOT / "onboarding-verification" / "capture_screenshots.mjs"
+_PACKAGE_IDENTITY_QUERY = """
+import importlib.metadata
+import json
+import platform
+
+names = ('villani', 'villani-code', 'villani-ops', 'villani-agentd')
+print(json.dumps({
+    'python_version': platform.python_version(),
+    'packages': {name: importlib.metadata.version(name) for name in names},
+}, sort_keys=True))
+"""
 
 
 class GateFailure(RuntimeError):
@@ -57,10 +73,104 @@ def _safe_artifacts(path: Path) -> Path:
     return resolved
 
 
-def _villani_prefix(python: Path) -> list[str]:
-    # ``-m`` guarantees the command is loaded from the exact interpreter under
-    # test. Release packaging separately validates the generated console shim.
-    return [str(python), "-m", "villani_distribution.frozen_entry"]
+def _literal_absolute(path: Path) -> Path:
+    """Return an absolute path without following an interpreter symlink."""
+
+    return Path(os.path.abspath(os.path.expanduser(str(path))))
+
+
+def _selected_installation(
+    python: Path, parent_environment: dict[str, str]
+) -> tuple[Path, Path, dict[str, str], dict[str, Any]]:
+    selected = _literal_absolute(python)
+    discovery = discover_interpreter_scripts_directory(
+        selected, environ=parent_environment
+    )
+    if discovery.path is None:
+        raise GateFailure(
+            f"could not discover the selected interpreter scripts directory: "
+            f"{discovery.diagnostic}"
+        )
+    scripts = discovery.path
+    original_path = parent_environment.get("PATH", "")
+    child_environment = dict(parent_environment)
+    child_environment["PATH"] = str(scripts) + (
+        os.pathsep + original_path if original_path else ""
+    )
+    resolutions = {
+        name: resolve_installed_executable(
+            name,
+            interpreter=selected,
+            environ=child_environment,
+        )
+        for name in ("villani", "villani-code", "villani-agentd", "vfr")
+    }
+    selected_directories = {
+        os.path.normcase(os.path.abspath(str(scripts))),
+        os.path.normcase(os.path.abspath(str(selected.parent))),
+    }
+    invalid = [
+        item
+        for item in resolutions.values()
+        if item.path is None
+        or item.source not in {"interpreter_scripts", "interpreter_parent"}
+        or os.path.normcase(os.path.abspath(str(item.path.parent)))
+        not in selected_directories
+    ]
+    if invalid:
+        details = "; ".join(item.diagnostic for item in invalid)
+        raise GateFailure(
+            "required entry points were not all resolved from the selected "
+            f"installation at {scripts}: {details}"
+        )
+    report = {
+        name: {
+            "path": str(item.path),
+            "source": item.source,
+            "candidates": [str(candidate) for candidate in item.candidates],
+            "diagnostic": item.diagnostic,
+        }
+        for name, item in resolutions.items()
+    }
+    report["_prefixes"] = {
+        name: list(
+            resolved_executable_prefix(
+                item, interpreter=selected, environ=child_environment
+            )
+        )
+        for name, item in resolutions.items()
+    }
+    try:
+        identity = subprocess.run(
+            [str(selected), "-I", "-c", _PACKAGE_IDENTITY_QUERY],
+            env=child_environment,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise GateFailure(
+            f"could not record selected installation package identity: "
+            f"{type(error).__name__}"
+        ) from error
+    if identity.returncode != 0:
+        raise GateFailure(
+            "selected installation package identity query failed with exit code "
+            f"{identity.returncode}"
+        )
+    try:
+        identity_document = json.loads(identity.stdout)
+    except json.JSONDecodeError as error:
+        raise GateFailure(
+            "selected installation package identity query returned malformed output"
+        ) from error
+    if not isinstance(identity_document, dict):
+        raise GateFailure("selected installation package identity is not an object")
+    report["_runtime_identity"] = identity_document
+    return selected, scripts, child_environment, report
 
 
 def _run(
@@ -534,36 +644,91 @@ def run_gate(
     temporary.mkdir(parents=True)
     endpoint_file = work / "model-endpoint.json"
     model_requests = artifacts / "model-requests.jsonl"
-    model_process_log = (artifacts / "model-service.log").open("wb")
     records: list[CommandRecord] = []
+    parent_environment = dict(os.environ)
+    try:
+        selected_python, scripts_directory, env, executable_report = (
+            _selected_installation(python, parent_environment)
+        )
+    except BaseException as error:
+        selected_python = _literal_absolute(python)
+        discovery = discover_interpreter_scripts_directory(
+            selected_python, environ=parent_environment
+        )
+        failure_report = {
+            "schema_version": "villani.onboarding_gate.v1",
+            "started_at": utc_now(),
+            "completed_at": utc_now(),
+            "verdict": "ONBOARDING GATE FAILED",
+            "python": str(selected_python),
+            "selected_interpreter": str(selected_python),
+            "scripts_directory": (
+                str(discovery.path) if discovery.path is not None else None
+            ),
+            "scripts_directory_diagnostic": discovery.diagnostic,
+            "entry_points": {},
+            "commands": [],
+            "screenshots": [],
+            "failure": f"{type(error).__name__}: {error}",
+        }
+        (artifacts / "onboarding-report.json").write_text(
+            json.dumps(failure_report, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (artifacts / "ONBOARDING_REPORT.txt").write_text(
+            "ONBOARDING GATE FAILED\n", encoding="utf-8"
+        )
+        raise
+    prefixes = executable_report.pop("_prefixes")
+    runtime_identity = executable_report.pop("_runtime_identity")
     report: dict[str, Any] = {
         "schema_version": "villani.onboarding_gate.v1",
         "started_at": utc_now(),
         "verdict": "ONBOARDING GATE FAILED",
-        "python": str(python.resolve()),
+        "python": str(selected_python),
+        "selected_interpreter": str(selected_python),
+        "scripts_directory": str(scripts_directory),
+        "caller_path_contained_scripts_directory": any(
+            os.path.normcase(os.path.abspath(part))
+            == os.path.normcase(str(scripts_directory))
+            for part in parent_environment.get("PATH", "").split(os.pathsep)
+            if part
+        ),
+        "entry_points": executable_report,
+        "runtime_identity": runtime_identity,
+        "certification_identity": {
+            "git_commit_sha": os.environ.get("GITHUB_SHA"),
+            "branch": os.environ.get("GITHUB_HEAD_REF")
+            or os.environ.get("GITHUB_REF_NAME"),
+            "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+            "operating_system": os.name,
+        },
         "villani_home": str(home.resolve()),
         "temporary_directory": str(temporary.resolve()),
         "commands": [],
         "screenshots": [],
     }
-    env = dict(os.environ)
     env.update(
         {
             "VILLANI_HOME": str(home.resolve()),
             "TEMP": str(temporary.resolve()),
             "TMP": str(temporary.resolve()),
             "PYTHONUTF8": "1",
+            "PYTHONNOUSERSITE": "1",
         }
     )
+    env.pop("PYTHONHOME", None)
+    env.pop("PYTHONPATH", None)
     for secret_name in (
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "VILLANI_MODEL_API_KEY_ENV",
     ):
         env.pop(secret_name, None)
+    model_process_log = (artifacts / "model-service.log").open("wb")
     fixture = subprocess.Popen(
         [
-            str(python),
+            str(selected_python),
             str(MODEL_FIXTURE),
             "--log",
             str(model_requests),
@@ -577,8 +742,19 @@ def run_gate(
         stderr=subprocess.STDOUT,
         shell=False,
     )
-    prefix = _villani_prefix(python)
+    prefix = list(prefixes["villani"])
     try:
+        for index, name in enumerate(
+            ("villani", "villani-code", "villani-agentd", "vfr")
+        ):
+            _run(
+                records,
+                artifacts,
+                f"00-entrypoint-{index + 1}-{name}",
+                [*prefixes[name], "--help"],
+                env=env,
+                timeout=60,
+            )
         endpoint = _wait_for_endpoint(fixture, endpoint_file)
         setup = _run(
             records,
@@ -610,7 +786,7 @@ def run_gate(
             records,
             artifacts,
             "02-sample-validation",
-            [str(python), "-m", "unittest", "-q"],
+            [str(selected_python), "-m", "unittest", "-q"],
             env=env,
             cwd=sample_path,
         )

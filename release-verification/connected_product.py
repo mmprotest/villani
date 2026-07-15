@@ -23,6 +23,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from villani_ops.executables import (
+    ExecutableResolution,
+    discover_interpreter_scripts_directory,
+    resolve_installed_executable,
+    resolved_executable_prefix,
+)
 
 from canonical_reconciliation import (
     api_snapshot as canonical_api_snapshot,
@@ -516,13 +522,22 @@ class PostgreSQLService:
                 )
 
 
-def _entry(python: Path, name: str) -> Path:
-    root = python.parent
-    suffix = ".exe" if os.name == "nt" else ""
-    value = root / f"{name}{suffix}"
-    if not value.is_file():
-        raise RuntimeError(f"packaged entry point is absent: {value}")
-    return value
+def _entry(
+    python: Path, name: str, environment: dict[str, str]
+) -> ExecutableResolution:
+    resolution = resolve_installed_executable(
+        name,
+        interpreter=python,
+        environ=environment,
+    )
+    if resolution.path is None:
+        raise RuntimeError(resolution.diagnostic)
+    if resolution.source not in {"interpreter_scripts", "interpreter_parent"}:
+        raise RuntimeError(
+            f"packaged entry point {name!r} escaped the selected installation: "
+            f"{resolution.diagnostic}"
+        )
+    return resolution
 
 
 def _repository(
@@ -1370,7 +1385,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=("local", "ci", "release"), required=True)
     args = parser.parse_args(argv)
     COMMAND_RECORDS.clear()
-    python = args.python.resolve()
+    python = Path(os.path.abspath(os.path.expanduser(str(args.python))))
     work = args.work.resolve()
     artifacts = args.artifacts.resolve()
     logs = artifacts / "logs"
@@ -1404,11 +1419,22 @@ def main(argv: list[str] | None = None) -> int:
         "all_proxy",
     ):
         env.pop(name, None)
-    scripts = python.parent
+    scripts_discovery = discover_interpreter_scripts_directory(python, environ=env)
+    if scripts_discovery.path is None:
+        raise RuntimeError(scripts_discovery.diagnostic)
+    scripts = scripts_discovery.path
     env["PATH"] = str(scripts) + os.pathsep + env.get("PATH", "")
-    villani = _entry(python, "villani")
-    villani_code = _entry(python, "villani-code")
-    agentd = _entry(python, "villani-agentd")
+    villani_resolution = _entry(python, "villani", env)
+    villani_code_resolution = _entry(python, "villani-code", env)
+    agentd_resolution = _entry(python, "villani-agentd", env)
+    villani = list(
+        resolved_executable_prefix(villani_resolution, interpreter=python, environ=env)
+    )
+    villani_code = villani_code_resolution.path
+    agentd = list(
+        resolved_executable_prefix(agentd_resolution, interpreter=python, environ=env)
+    )
+    assert villani_code is not None
     fixture: subprocess.Popen[Any] | None = None
     control_plane: subprocess.Popen[Any] | None = None
     browser_server: subprocess.Popen[Any] | None = None
@@ -1509,11 +1535,11 @@ def main(argv: list[str] | None = None) -> int:
         fixture_base = _read(endpoint_file)["base_url"]
         _wait_http(str(fixture_base).rsplit("/v1", 1)[0] + "/health")
 
-        _run([str(villani), "init"], cwd=work, env=env, log=logs / "villani-init.log")
-        _run([str(agentd), "start"], cwd=work, env=env, log=logs / "agentd-start.log")
+        _run([*villani, "init"], cwd=work, env=env, log=logs / "villani-init.log")
+        _run([*agentd, "start"], cwd=work, env=env, log=logs / "agentd-start.log")
         _run(
             [
-                str(agentd),
+                *agentd,
                 "enroll",
                 "--control-plane",
                 control_plane_url,
@@ -1604,7 +1630,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             result = _run(
                 [
-                    str(villani),
+                    *villani,
                     "run",
                     task,
                     "--repo",
@@ -1642,7 +1668,7 @@ def main(argv: list[str] | None = None) -> int:
                     for path in sorted((run_dir / "attempts").glob("*/attempt.json"))
                 ]
                 _run(
-                    [str(villani), "resume", run_id],
+                    [*villani, "resume", run_id],
                     cwd=work,
                     env=env,
                     log=logs / f"{scenario}-terminal-resume.log",
@@ -1743,7 +1769,7 @@ def main(argv: list[str] | None = None) -> int:
         # ample headroom for the eight-scenario gate at the default concurrency.
         for sync_ordinal in range(1, 65):
             sync = _run(
-                [str(agentd), "sync-once"],
+                [*agentd, "sync-once"],
                 cwd=work,
                 env=env,
                 log=logs / f"agentd-sync-{sync_ordinal:02d}.log",
@@ -1791,7 +1817,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         idempotency_sync = _run(
-            [str(agentd), "sync-once"],
+            [*agentd, "sync-once"],
             cwd=work,
             env=env,
             log=logs / "agentd-sync-idempotency.log",
@@ -2409,7 +2435,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if home.exists() and (home / "agentd" / "endpoint.json").exists():
                 _run(
-                    [str(agentd), "stop"],
+                    [*agentd, "stop"],
                     cwd=work,
                     env=env,
                     log=logs / "agentd-final-stop.log",

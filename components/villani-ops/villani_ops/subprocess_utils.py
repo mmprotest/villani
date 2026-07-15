@@ -5,6 +5,11 @@ from pathlib import Path
 import shutil
 import sys
 
+from .executables import resolve_installed_executable, resolved_executable_prefix
+
+
+_VILLANI_ENTRY_POINTS = {"villani", "villani-code", "villani-agentd", "vfr"}
+
 
 def _exact_path_match(command: str) -> str | None:
     if os.name != "nt":
@@ -27,6 +32,13 @@ def resolve_command_prefix(command: str) -> list[str] | None:
     if explicit.parent != Path("."):
         resolved = str(explicit) if explicit.is_file() else None
     else:
+        installed = (
+            resolve_installed_executable(command)
+            if command in _VILLANI_ENTRY_POINTS
+            else None
+        )
+        if installed is not None and installed.path is not None:
+            return list(resolved_executable_prefix(installed))
         resolved = _exact_path_match(command) or shutil.which(command)
 
     if resolved is None:

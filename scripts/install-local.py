@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -41,16 +42,44 @@ def _environment_python(venv: Path) -> Path:
     return _scripts_directory(venv) / ("python.exe" if os.name == "nt" else "python")
 
 
-def _entry_point(scripts: Path, name: str) -> Path:
-    candidates = (
-        [scripts / f"{name}.exe", scripts / f"{name}.cmd", scripts / name]
-        if os.name == "nt"
-        else [scripts / name]
+def _entry_point(python: Path, name: str) -> dict[str, object]:
+    completed = subprocess.run(
+        [
+            str(python),
+            "-I",
+            str(ROOT / "scripts" / "resolve-installed-executable.py"),
+            name,
+        ],
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+        timeout=30,
     )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise SystemExit(f"Editable installation did not create the {name!r} entry point.")
+    if completed.returncode != 0:
+        raise SystemExit(
+            f"Installed executable resolver failed for {name!r}: "
+            f"{completed.stderr.strip()}"
+        )
+    try:
+        resolution = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"Installed executable resolver returned malformed output for {name!r}."
+        ) from error
+    if not isinstance(resolution, dict) or not resolution.get("path"):
+        diagnostic = (
+            resolution.get("diagnostic") if isinstance(resolution, dict) else None
+        )
+        raise SystemExit(str(diagnostic or f"Missing installed executable {name!r}."))
+    if resolution.get("source") not in {"interpreter_scripts", "interpreter_parent"}:
+        raise SystemExit(
+            f"Editable installation resolved {name!r} outside the selected "
+            f"environment: {resolution.get('diagnostic')}"
+        )
+    return resolution
 
 
 def _pip_available(python: Path) -> bool:
@@ -141,14 +170,31 @@ def main() -> int:
             ("import villani_distribution, villani_ops, villani_code, villani_agentd"),
         ]
     )
-    scripts = _scripts_directory(venv)
-    entry_points = {
-        name: _entry_point(scripts, name)
+    resolutions = {
+        name: _entry_point(python, name)
         for name in ("villani", "villani-code", "villani-agentd", "vfr")
     }
-    for entry_point in entry_points.values():
-        _run([str(entry_point), "--help"])
+    for resolution in resolutions.values():
+        prefix = resolution.get("prefix")
+        if not isinstance(prefix, list) or not all(
+            isinstance(item, str) for item in prefix
+        ):
+            raise SystemExit(
+                "Installed executable resolver returned an invalid prefix."
+            )
+        _run([*prefix, "--help"])
     _run([str(python), "-m", "pip", "check"])
+    scripts = next(
+        (
+            Path(str(resolution["scripts_directory"]))
+            for resolution in resolutions.values()
+            if resolution.get("scripts_directory")
+        ),
+        _scripts_directory(venv),
+    )
+    entry_points = {
+        name: Path(str(resolution["path"])) for name, resolution in resolutions.items()
+    }
     activation = (
         f"& '{scripts / 'Activate.ps1'}'"
         if os.name == "nt"

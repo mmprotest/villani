@@ -144,6 +144,135 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _digest_source_manifest(root: Path, paths: list[str]) -> str:
+    digest = hashlib.sha256()
+    for value in sorted(paths):
+        path = root / value
+        digest.update(value.encode("utf-8"))
+        digest.update(b"\0")
+        if path.is_symlink():
+            digest.update(b"symlink\0")
+            digest.update(os.readlink(path).encode("utf-8"))
+        else:
+            digest.update(b"file\0")
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _digest_configuration(root: Path) -> tuple[str, list[str]]:
+    inputs = [
+        ".github/workflows/ci.yml",
+        "release/component-compatibility.json",
+        "release-verification/run_release_gate.py",
+        "release-verification/connected_product.py",
+    ]
+    return _digest_source_manifest(root, inputs), inputs
+
+
+def _git_value(arguments: list[str], *, allow_empty: bool = False) -> str | None:
+    try:
+        completed = subprocess.run(
+            [shutil.which("git") or "git", *arguments],
+            cwd=ROOT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    value = completed.stdout.strip()
+    if completed.returncode != 0:
+        return None
+    return value if value or allow_empty else None
+
+
+def _certification_identity(mode: str) -> dict[str, Any]:
+    commit = _git_value(["rev-parse", "HEAD"])
+    branch = (
+        os.environ.get("GITHUB_HEAD_REF")
+        or os.environ.get("GITHUB_REF_NAME")
+        or _git_value(["branch", "--show-current"])
+        or "detached"
+    )
+    status = _git_value(
+        ["status", "--porcelain", "--untracked-files=all"], allow_empty=True
+    )
+    if commit is None or status is None:
+        raise RuntimeError("could not record the checked-out Git revision and status")
+    node = subprocess.run(
+        [shutil.which("node") or "node", "--version"],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+    configuration_digest, configuration_inputs = _digest_configuration(ROOT)
+    hosted = os.environ.get("GITHUB_ACTIONS") == "true"
+    identity: dict[str, Any] = {
+        "git_commit_sha": commit,
+        "branch": branch,
+        "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+        "workflow_name": os.environ.get("GITHUB_WORKFLOW"),
+        "workflow_job": os.environ.get("GITHUB_JOB"),
+        "operating_system": platform.platform(),
+        "python_version": platform.python_version(),
+        "node_version": node.stdout.strip() if node.returncode == 0 else None,
+        "mode": mode,
+        "hosted_ci": hosted,
+        "authoritative_hosted_ci": hosted and mode == "ci",
+        "working_tree_clean": status == "",
+        "source_manifest_sha256": None,
+        "configuration_sha256": configuration_digest,
+        "configuration_inputs": configuration_inputs,
+        "package_versions": {},
+    }
+    expected = os.environ.get("GITHUB_SHA")
+    if hosted and expected and commit != expected:
+        raise RuntimeError(
+            f"checked-out commit {commit!r} does not match GITHUB_SHA {expected!r}"
+        )
+    if hosted and status:
+        raise RuntimeError(
+            "hosted release certification requires a clean checkout; "
+            f"unexpected changes: {status.splitlines()[:20]}"
+        )
+    return identity
+
+
+def _write_artifact_manifest(identity: dict[str, Any]) -> None:
+    artifacts: list[dict[str, Any]] = []
+    manifest = LATEST / "release-artifact-manifest.json"
+    for path in sorted(item for item in LATEST.rglob("*") if item.is_file()):
+        if path == manifest:
+            continue
+        artifacts.append(
+            {
+                "path": path.relative_to(LATEST).as_posix(),
+                "size_bytes": path.stat().st_size,
+                "sha256": sha256(path),
+            }
+        )
+    write_json(
+        manifest,
+        {
+            "status": "passed"
+            if all(item.get("sha256") for item in artifacts)
+            else "failed",
+            "certification_identity": identity,
+            "artifact_count": len(artifacts),
+            "artifacts": artifacts,
+        },
+    )
+
+
 def run(
     command: list[str],
     *,
@@ -269,6 +398,53 @@ def run(
             _ACTIVE_REPORTER.persist()
         raise RuntimeError(f"command failed ({completed.returncode}); see {log}")
     return completed
+
+
+def _installed_entry_point(
+    python: Path,
+    command: str,
+    *,
+    root: Path,
+    release_env: dict[str, str],
+) -> dict[str, Any]:
+    """Query the resolver installed in the exact wheel environment under test."""
+
+    completed = run(
+        [
+            str(python),
+            "-I",
+            str(root / "scripts" / "resolve-installed-executable.py"),
+            command,
+        ],
+        cwd=root,
+        log=LATEST / "logs" / f"wheel-entrypoint-{command}-resolution.log",
+        env=release_env,
+        timeout=60,
+    )
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"installed entry point resolver returned malformed output for {command!r}"
+        ) from error
+    if not isinstance(result, dict) or not result.get("path"):
+        diagnostic = result.get("diagnostic") if isinstance(result, dict) else None
+        raise RuntimeError(
+            str(diagnostic or f"installed entry point is missing: {command}")
+        )
+    if result.get("source") not in {"interpreter_scripts", "interpreter_parent"}:
+        raise RuntimeError(
+            f"installed entry point {command!r} came from outside the selected "
+            f"wheel environment: {result.get('diagnostic')}"
+        )
+    prefix = result.get("prefix")
+    if (
+        not isinstance(prefix, list)
+        or not prefix
+        or not all(isinstance(item, str) and item for item in prefix)
+    ):
+        raise RuntimeError(f"installed entry point prefix is invalid: {command}")
+    return result
 
 
 def _source_path_is_excluded(relative: Path) -> bool:
@@ -502,6 +678,7 @@ def create_isolated_source(source: Path, destination: Path) -> dict[str, Any]:
         "virtual_environment_roots": sorted(virtual_environments),
         "forbidden_paths_present": [],
         "git_metadata_copied": False,
+        "source_manifest_sha256": _digest_source_manifest(destination, copied),
     }
     write_json(LATEST / "isolated-source.json", report)
     return report
@@ -1062,19 +1239,42 @@ def prepare_connected_node_runtime(
             log=logs / f"{name}-runtime-install.log",
             env=release_env,
         )
+    web = root / "components" / "villani-web"
+    playwright_cli = web / "node_modules" / "playwright" / "cli.js"
+    node = shutil.which("node") or "node"
+    version = run(
+        [node, str(playwright_cli), "--version"],
+        cwd=web,
+        log=logs / "playwright-version.log",
+        env=release_env,
+    )
     run(
-        [npm, "exec", "playwright", "install", "chromium"],
-        cwd=root / "components" / "villani-web",
+        [node, str(playwright_cli), "install", "chromium"],
+        cwd=web,
         log=logs / "playwright-browser-install.log",
         env=release_env,
     )
-    return {
+    installed = run(
+        [node, str(playwright_cli), "install", "--list"],
+        cwd=web,
+        log=logs / "playwright-browser-list.log",
+        env=release_env,
+    )
+    result = {
         "status": "passed",
         "runtime_node_modules": [
             str(path.resolve()) for path in _node_modules_paths(root)
         ],
         "playwright_browsers_path": release_env["PLAYWRIGHT_BROWSERS_PATH"],
+        "playwright_version": version.stdout.strip(),
+        "installed_browsers": installed.stdout.strip().splitlines(),
+        "preinstalled_before_release_gate": release_env.get(
+            "VILLANI_PLAYWRIGHT_PREINSTALLED"
+        )
+        == "1",
     }
+    write_json(LATEST / "playwright-runtime.json", result)
+    return result
 
 
 def install_wheels(
@@ -1099,19 +1299,30 @@ def install_wheels(
         log=LATEST / "logs/wheel-install.log",
         env=release_env,
     )
+    entry_points: dict[str, Any] = {}
     for command in ("villani", "villani-code", "villani-agentd", "vfr"):
-        executable = environment / (
-            f"Scripts/{command}.exe" if os.name == "nt" else f"bin/{command}"
+        resolution = _installed_entry_point(
+            python,
+            command,
+            root=root,
+            release_env=release_env,
         )
-        if not executable.is_file():
-            raise RuntimeError(f"installed entry point is missing: {command}")
+        entry_points[command] = resolution
         run(
-            [str(executable), "--help"],
+            [*resolution["prefix"], "--help"],
             cwd=root,
             log=LATEST / "logs" / f"wheel-entrypoint-{command}.log",
             env=release_env,
             timeout=60,
         )
+    write_json(
+        LATEST / "installed-entrypoints.json",
+        {
+            "status": "passed",
+            "selected_interpreter": str(python),
+            "entry_points": entry_points,
+        },
+    )
     run(
         [str(python), "-m", "pip", "check"],
         cwd=root,
@@ -1472,6 +1683,7 @@ class GateReporter:
             LATEST / "command-manifest.json",
             {
                 "status": command_status,
+                "certification_identity": self.report.get("certification_identity", {}),
                 "environment_paths": self.report.get("environment_paths", {}),
                 "commands": commands,
             },
@@ -1534,6 +1746,21 @@ def validate_final_evidence(mode: str, reporter: GateReporter) -> None:
             phase["status"] in {"passed", "not_applicable"},
             f"required phase did not pass: {name} ({phase['status']})",
         )
+    identity = reporter.report.get("certification_identity")
+    _require(isinstance(identity, dict), "certification identity is missing")
+    _require(
+        bool(identity.get("git_commit_sha"))
+        and bool(identity.get("source_manifest_sha256"))
+        and bool(identity.get("configuration_sha256")),
+        "certification identity digests are incomplete",
+    )
+    if mode == "ci" and identity.get("hosted_ci"):
+        _require(
+            identity.get("authoritative_hosted_ci") is True
+            and bool(identity.get("workflow_run_id"))
+            and identity.get("working_tree_clean") is True,
+            "hosted certification identity is incomplete",
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1551,6 +1778,13 @@ def main(argv: list[str] | None = None) -> int:
     report = reporter.report
     exit_code = 1
     try:
+        identity = _certification_identity(args.mode)
+        report["certification_identity"] = identity
+        write_json(
+            LATEST / "certification-identity.json",
+            {"status": "passed", **identity},
+        )
+        reporter.persist()
         reporter.start(
             "source_isolation",
             logs=[LATEST / "logs/isolated-source-manifest.log"],
@@ -1588,11 +1822,25 @@ def main(argv: list[str] | None = None) -> int:
             source_root = work / "clean-source"
             isolation = create_isolated_source(ROOT, source_root)
             release_env = os.environ.copy()
+            configured_playwright = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+            use_preinstalled_playwright = os.environ.get(
+                "VILLANI_PLAYWRIGHT_PREINSTALLED"
+            ) == "1" and bool(configured_playwright)
+            playwright_browsers = (
+                Path(str(configured_playwright)).expanduser().absolute()
+                if use_preinstalled_playwright
+                else work / "playwright-browsers"
+            )
+            if use_preinstalled_playwright and not any(playwright_browsers.iterdir()):
+                raise RuntimeError(
+                    "hosted Playwright preinstallation was declared but its browser "
+                    "directory is empty"
+                )
             environment_directories = {
                 "temporary_root": work / "temp",
                 "npm_cache": work / "npm-cache",
                 "pip_cache": work / "pip-cache",
-                "playwright_browsers": work / "playwright-browsers",
+                "playwright_browsers": playwright_browsers,
                 "isolated_source": source_root,
                 "installed_python": work / "installed",
                 "release_artifacts": LATEST,
@@ -1616,10 +1864,22 @@ def main(argv: list[str] | None = None) -> int:
                 for name, path in environment_directories.items()
             }
             report["isolated_source"] = isolation
+            identity["source_manifest_sha256"] = isolation["source_manifest_sha256"]
+            report["certification_identity"] = identity
+            write_json(
+                LATEST / "certification-identity.json",
+                {"status": "passed", **identity},
+            )
             reporter.finish("source_isolation")
 
             reporter.start("compatibility")
             versions = component_versions(source_root)
+            identity["package_versions"] = versions
+            report["certification_identity"] = identity
+            write_json(
+                LATEST / "certification-identity.json",
+                {"status": "passed", **identity},
+            )
             template = validate_compatibility(versions, source_root)
             write_json(LATEST / "component-versions.json", versions)
             reporter.finish("compatibility")
@@ -1663,7 +1923,11 @@ def main(argv: list[str] | None = None) -> int:
 
             reporter.start(
                 "connected_runtime_preparation",
-                logs=[LATEST / "logs/playwright-browser-install.log"],
+                logs=[
+                    LATEST / "logs/playwright-version.log",
+                    LATEST / "logs/playwright-browser-install.log",
+                    LATEST / "logs/playwright-browser-list.log",
+                ],
             )
             connected_node_runtime = prepare_connected_node_runtime(
                 source_root, release_env
@@ -1884,7 +2148,11 @@ def main(argv: list[str] | None = None) -> int:
             validate_final_evidence(args.mode, reporter)
             reporter.finish("final_evidence_validation")
             report["release_verdict"] = (
-                "LOCAL GATE PASSED" if args.mode == "local" else "RELEASE GATE PASSED"
+                "LOCAL GATE PASSED"
+                if args.mode == "local"
+                else "RELEASE GATE PASSED"
+                if identity["authoritative_hosted_ci"] or args.mode == "release"
+                else "CI-MODE GATE PASSED (NON-AUTHORITATIVE)"
             )
             exit_code = 0
     except KeyboardInterrupt as error:
@@ -1897,6 +2165,11 @@ def main(argv: list[str] | None = None) -> int:
         reporter.fail_active(error)
     finally:
         reporter.persist(final=True)
+        _write_artifact_manifest(
+            report.get("certification_identity", {})
+            if isinstance(report.get("certification_identity"), dict)
+            else {}
+        )
         _ACTIVE_REPORTER = None
     print(LATEST / "release-gate-report.json")
     print(report["release_verdict"])

@@ -12,7 +12,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import threading
 import time
 import urllib.parse
@@ -22,7 +21,6 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 import yaml
-
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.interfaces import ClosedLoopRunRequest
 from villani_ops.closed_loop.model_management import (
@@ -56,6 +54,10 @@ from villani_ops.execution_environment import (
     confirmed_command,
     discover_repository_validation,
     parse_manual_command,
+)
+from villani_ops.executables import (
+    resolve_installed_executable,
+    resolved_executable_prefix,
 )
 
 from .config import AgentdPaths, SyncConfig
@@ -114,19 +116,17 @@ def _package_version() -> str:
 
 def _locate_vfr() -> BridgeCommand | None:
     configured = os.environ.get("VILLANI_VFR_EXECUTABLE")
-    if configured:
-        candidate = Path(configured).expanduser()
-        if candidate.is_file():
-            return BridgeCommand((str(candidate.resolve()),), "configured Flight Recorder adapter")
-
-    suffix = ".exe" if os.name == "nt" else ""
-    sibling = Path(sys.executable).resolve().parent / f"vfr{suffix}"
-    if sibling.is_file():
-        return BridgeCommand((str(sibling),), "packaged Flight Recorder adapter")
-
-    installed = shutil.which("vfr")
-    if installed:
-        return BridgeCommand((str(Path(installed).resolve()),), "installed Flight Recorder adapter")
+    fallbacks = (Path(configured).expanduser(),) if configured else ()
+    resolution = resolve_installed_executable("vfr", compatibility_fallbacks=fallbacks)
+    if resolution.path is not None:
+        description = {
+            "interpreter_scripts": "packaged Flight Recorder adapter",
+            "interpreter_parent": "packaged Flight Recorder adapter",
+            "additional_search_dir": "installed Flight Recorder adapter",
+            "PATH": "installed Flight Recorder adapter",
+            "compatibility_fallback": "configured Flight Recorder adapter",
+        }.get(resolution.source, "installed Flight Recorder adapter")
+        return BridgeCommand(resolved_executable_prefix(resolution), description)
 
     # Development checkout only.  This path is never used by an installed
     # wheel; packaged products resolve the sibling executable above.

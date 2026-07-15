@@ -14,6 +14,7 @@ from villani_agentd.client import ClientError, LocalClient
 from villani_agentd.config import AgentdPaths, ServerConfig
 from villani_agentd.lifecycle import _pid_exists, start_background, stop_background
 from villani_ops.closed_loop.durable_io import write_json_atomic
+from villani_ops.executables import resolve_installed_executable
 
 from .migrations import check_upgrade
 
@@ -99,14 +100,10 @@ def _definition(platform: str, environ: Mapping[str, str]) -> Path:
 
 
 def _agentd_executable() -> Path:
-    suffix = ".exe" if os.name == "nt" else ""
-    sibling = Path(sys.executable).resolve().parent / f"villani-agentd{suffix}"
-    found = shutil.which("villani-agentd")
-    if sibling.is_file():
-        return sibling
-    if found:
-        return Path(found).resolve()
-    raise ServiceError("villani-agentd executable is not installed beside villani")
+    resolution = resolve_installed_executable("villani-agentd")
+    if resolution.path is not None:
+        return resolution.path
+    raise ServiceError(resolution.diagnostic)
 
 
 def _quote_systemd(value: str) -> str:

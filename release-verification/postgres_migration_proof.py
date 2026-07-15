@@ -290,6 +290,11 @@ def prove(database_url: str) -> dict[str, Any]:
         "policy_publications",
     )
     try:
+        with engine.connect() as connection:
+            server_version = str(connection.scalar(text("SHOW server_version")))
+            server_version_number = int(
+                str(connection.scalar(text("SHOW server_version_num")))
+            )
         config = _config(proof_url)
         command.upgrade(config, PRE_COMPOSITE)
         before_metadata = MetaData()
@@ -391,6 +396,7 @@ def prove(database_url: str) -> dict[str, Any]:
                 text("SELECT version_num FROM alembic_version")
             )
         checks = {
+            "postgresql_16": 160000 <= server_version_number < 170000,
             "fresh_schema_created": True,
             "pre_composite_revision_populated": bool(before),
             "no_data_loss": before == after,
@@ -412,6 +418,8 @@ def prove(database_url: str) -> dict[str, Any]:
         return {
             "status": "passed" if all(checks.values()) else "failed",
             "database": "postgresql",
+            "server_version": server_version,
+            "server_version_number": server_version_number,
             "pre_composite_revision": PRE_COMPOSITE,
             "alembic_head": revision,
             "before_counts": before,

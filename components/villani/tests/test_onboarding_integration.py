@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 
 
@@ -14,6 +15,13 @@ def test_recorded_guided_setup_reaches_completed_sample_and_stops_service(
     artifacts = tmp_path / "recorded-onboarding"
     env = dict(os.environ)
     env["VILLANI_ONBOARDING_ALLOW_EXTERNAL_ARTIFACTS"] = "1"
+    scripts = Path(os.path.abspath(sysconfig.get_path("scripts")))
+    scripts_key = os.path.normcase(str(scripts))
+    env["PATH"] = os.pathsep.join(
+        item
+        for item in env.get("PATH", "").split(os.pathsep)
+        if item and os.path.normcase(os.path.abspath(item)) != scripts_key
+    )
     completed = subprocess.run(
         [
             sys.executable,
@@ -35,6 +43,15 @@ def test_recorded_guided_setup_reaches_completed_sample_and_stops_service(
     assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
     report = json.loads((artifacts / "onboarding-report.json").read_text(encoding="utf-8"))
     assert report["verdict"] == "ONBOARDING GATE PASSED"
+    assert report["selected_interpreter"] == str(Path(sys.executable).absolute())
+    assert report["scripts_directory"] == str(scripts)
+    assert report["caller_path_contained_scripts_directory"] is False
+    assert set(report["entry_points"]) == {
+        "villani",
+        "villani-code",
+        "villani-agentd",
+        "vfr",
+    }
     assert report["configured_model"] == "fixture-onboarding"
     assert report["capability_status"] == "unrated"
     assert report["doctor"]["healthy"] is True

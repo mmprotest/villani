@@ -1,5 +1,4 @@
 import json
-import os
 import stat
 import subprocess
 from pathlib import Path
@@ -39,19 +38,20 @@ def git_repo(path: Path):
     )
 
 
-def fake_villani(path: Path, exit_code=0):
+def fake_villani(path: Path, exit_code=0) -> Path:
     exe = path / "villani-code"
     exe.write_text(
         f"#!/usr/bin/env python\nimport pathlib, sys\nrepo=pathlib.Path(sys.argv[sys.argv.index('--repo')+1])\n(repo/'hello.txt').write_text('changed '+str(len(list(repo.glob('marker*'))))+'\\n')\n(repo/('marker'+str(len(list(repo.glob('marker*')))))).write_text('x')\nsys.exit({exit_code})\n"
     )
     exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
-    os.environ["PATH"] = str(path) + os.pathsep + os.environ["PATH"]
+    return exe
 
 
 def make_ops(tmp_path, monkeypatch, reviews, strategy=None, provider=None, exit_code=0):
     ws = tmp_path / ".villani-ops"
     s = FileStorage(ws)
     s.init_workspace()
+    fake_command = fake_villani(tmp_path, exit_code=exit_code)
     backs = {
         "code": Backend(
             name="code",
@@ -59,6 +59,7 @@ def make_ops(tmp_path, monkeypatch, reviews, strategy=None, provider=None, exit_
             base_url="http://x/v1",
             model="m",
             api_key="dummy",
+            command_name=str(fake_command),
             roles=["coding", "classification", "policy", "review"],
         ),
         "strong": Backend(
@@ -67,11 +68,11 @@ def make_ops(tmp_path, monkeypatch, reviews, strategy=None, provider=None, exit_
             base_url="http://x/v1",
             model="s",
             api_key="dummy",
+            command_name=str(fake_command),
             roles=["coding"],
         ),
     }
     s.save_backends(backs)
-    fake_villani(tmp_path, exit_code=exit_code)
     monkeypatch.setattr(
         "villani_ops.classification.classifier.TaskClassifier.classify",
         lambda self, task, backends, out_path=None: (

@@ -50,6 +50,40 @@ jobs:
       - run: mypy --follow-imports=skip --ignore-missing-imports villani_ops/closed_loop villani_ops/cli/unified.py villani_ops/providers.py
         working-directory: components/villani-ops
 
+  villani-ops-process-tree:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: components/villani-ops/pyproject.toml
+      - run: python -m pip install -e "components/villani-ops[test]"
+      - name: Repeat the deterministic process-tree timeout proof 20 times
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          for run in $(seq 1 20); do
+            echo "process-tree proof $run/20"
+            python -m pytest villani_ops/tests/test_villani_code_runner.py::test_villani_code_runner_timeout_kills_child_process_group -q
+          done
+        working-directory: components/villani-ops
+      - name: Repeat the deterministic process-tree timeout proof 20 times
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          1..20 | ForEach-Object {
+            Write-Host "process-tree proof $_/20"
+            python -m pytest villani_ops/tests/test_villani_code_runner.py::test_villani_code_runner_timeout_kills_child_process_group -q
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+        working-directory: components/villani-ops
+
   villani-agentd:
     strategy:
       fail-fast: false
@@ -105,6 +139,14 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - run: alembic upgrade head
         working-directory: components/villani-control-plane
+      - name: Record PostgreSQL 16 and Alembic head
+        env:
+          PGPASSWORD: villani
+        run: |
+          set -euo pipefail
+          psql --host 127.0.0.1 --username villani --dbname villani_test --tuples-only --no-align --command "SHOW server_version" | tee "$RUNNER_TEMP/postgres-version.log"
+          alembic current | tee "$RUNNER_TEMP/alembic-current.log"
+        working-directory: components/villani-control-plane
       - run: alembic upgrade head --sql > "$RUNNER_TEMP/control-plane-migrations.sql"
         working-directory: components/villani-control-plane
       - run: python -m pytest tests/unit -q
@@ -112,11 +154,18 @@ jobs:
       - run: python -m pytest -q --run-load-smoke --junitxml="$RUNNER_TEMP/control-plane-postgres.xml"
         working-directory: components/villani-control-plane
       - run: python scripts/assert-no-pytest-skips.py "$RUNNER_TEMP/control-plane-postgres.xml"
-      - run: python scripts/postgres-backup-restore-smoke.py
+      - name: Back up and restore the migrated PostgreSQL database
+        run: |
+          set -euo pipefail
+          python scripts/postgres-backup-restore-smoke.py 2>&1 | tee "$RUNNER_TEMP/postgres-backup-restore.log"
       - run: ruff check villani_control_plane tests
         working-directory: components/villani-control-plane
       - run: mypy --follow-imports=skip --ignore-missing-imports villani_control_plane
         working-directory: components/villani-control-plane
+      - name: Preserve PostgreSQL service logs
+        if: always()
+        continue-on-error: true
+        run: docker logs "${{ job.services.postgres.id }}" > "$RUNNER_TEMP/postgres-service.log" 2>&1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -124,6 +173,11 @@ jobs:
           path: |
             ${{ runner.temp }}/control-plane-postgres.xml
             ${{ runner.temp }}/control-plane-migrations.sql
+            ${{ runner.temp }}/postgres-version.log
+            ${{ runner.temp }}/alembic-current.log
+            ${{ runner.temp }}/postgres-backup-restore.log
+            ${{ runner.temp }}/postgres-service.log
+          retention-days: 90
 
   node-engine-contract:
     runs-on: ubuntu-latest
@@ -163,6 +217,8 @@ jobs:
 
   flight-recorder:
     needs: node-engine-contract
+    env:
+      VFR_CONCURRENCY_DIAGNOSTICS_DIR: ${{ runner.temp }}/flight-recorder-diagnostics
     strategy:
       fail-fast: false
       matrix:
@@ -179,6 +235,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: components/villani-flight-recorder/package-lock.json
+      - name: Record Flight Recorder runtime identity
+        run: |
+          mkdir -p "$VFR_CONCURRENCY_DIAGNOSTICS_DIR"
+          node --version > "$VFR_CONCURRENCY_DIAGNOSTICS_DIR/node-version.txt"
+          npm --version > "$VFR_CONCURRENCY_DIAGNOSTICS_DIR/npm-version.txt"
       - name: Verify standalone clean-checkout precondition
         run: |
           test ! -d components/villani-run-model/node_modules
@@ -200,6 +261,11 @@ jobs:
             test "$status" -eq 0
           done
         working-directory: components/villani-flight-recorder
+      - name: Run bounded in-process and fresh-process concurrency stress
+        run: |
+          set -euo pipefail
+          npm run test:concurrency-stress 2>&1 | tee "$RUNNER_TEMP/flight-recorder-diagnostics/concurrency-stress.log"
+        working-directory: components/villani-flight-recorder
       - run: npm run typecheck
         working-directory: components/villani-flight-recorder
       - run: npm run build
@@ -209,11 +275,12 @@ jobs:
       - run: npm pack --dry-run
         working-directory: components/villani-flight-recorder
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: flight-recorder-diagnostics-${{ matrix.label }}
           path: ${{ runner.temp }}/flight-recorder-diagnostics/
-          if-no-files-found: ignore
+          if-no-files-found: error
+          retention-days: 90
 
   villani-ui:
     needs: node-engine-contract
@@ -376,8 +443,13 @@ jobs:
       - run: npm run build
         working-directory: components/villani-flight-recorder
       - run: |
-          PATH="$RUNNER_TEMP/villani-smoke/bin:$PATH" \
-            "$RUNNER_TEMP/villani-smoke/bin/python" -m pytest tests/closed_loop/test_cli_e2e.py -m e2e -q
+          case ":$PATH:" in
+            *":$RUNNER_TEMP/villani-smoke/bin:"*)
+              echo "isolated scripts directory unexpectedly present on caller PATH" >&2
+              exit 1
+              ;;
+          esac
+          "$RUNNER_TEMP/villani-smoke/bin/python" -m pytest tests/closed_loop/test_cli_e2e.py -m e2e -q
 
   distribution-smoke:
     needs: node-engine-contract
@@ -433,12 +505,22 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: components/villani-web/package-lock.json
-      - run: python -m pip install build
+          cache-dependency-path: |
+            components/villani-web/package-lock.json
+            components/villani-flight-recorder/package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.20
+      - run: python -m pip install build -e components/villani-ops
       - run: npm ci
         working-directory: components/villani-web
       - run: npm run build
         working-directory: components/villani-web
+      - run: npm ci
+        working-directory: components/villani-flight-recorder
+      - run: npm run build
+        working-directory: components/villani-flight-recorder
+      - run: python scripts/build-vfr-standalone.py --skip-npm-build
       - run: python scripts/sync-console-assets.py --check
       - name: Build the public distribution and internal runtime wheels
         run: |
@@ -449,25 +531,33 @@ jobs:
           python -m build --wheel --outdir "$RUNNER_TEMP/onboarding-wheels" components/villani
       - name: Install only built wheels in a clean environment
         run: |
+          set -euo pipefail
           python -m venv "$RUNNER_TEMP/onboarding-env"
           "$RUNNER_TEMP/onboarding-env/bin/python" -m pip install "$RUNNER_TEMP/onboarding-wheels"/*.whl
-          "$RUNNER_TEMP/onboarding-env/bin/villani" setup --help
-          "$RUNNER_TEMP/onboarding-env/bin/villani" doctor --help
-          "$RUNNER_TEMP/onboarding-env/bin/villani" service --help
-          "$RUNNER_TEMP/onboarding-env/bin/villani" open --help
+          "$RUNNER_TEMP/onboarding-env/bin/python" -m pip check
+          for command in villani villani-code villani-agentd vfr; do
+            "$RUNNER_TEMP/onboarding-env/bin/$command" --help
+          done
       - run: npx playwright install --with-deps chromium
         working-directory: components/villani-web
       - name: Run recorded first-user setup through sample completion
-        run: >-
-          "$RUNNER_TEMP/onboarding-env/bin/python"
-          onboarding-verification/run_onboarding_gate.py
-          --python "$RUNNER_TEMP/onboarding-env/bin/python"
+        run: |
+          set -euo pipefail
+          case ":$PATH:" in
+            *":$RUNNER_TEMP/onboarding-env/bin:"*)
+              echo "selected scripts directory unexpectedly present on caller PATH" >&2
+              exit 1
+              ;;
+          esac
+          python onboarding-verification/run_onboarding_gate.py \
+            --python "$RUNNER_TEMP/onboarding-env/bin/python"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: guided-onboarding-${{ runner.os }}
           path: onboarding-verification/artifacts/latest/
           if-no-files-found: error
+          retention-days: 90
 
   final-foundation:
     runs-on: ubuntu-latest
@@ -513,6 +603,8 @@ jobs:
     env:
       VILLANI_TEST_POSTGRES_URL: postgresql+psycopg://villani:villani@127.0.0.1:5432/villani_release
       VILLANI_CONTROL_PLANE_DATABASE_URL: postgresql+psycopg://villani:villani@127.0.0.1:5432/villani_release
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
+      VILLANI_PLAYWRIGHT_PREINSTALLED: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -524,18 +616,32 @@ jobs:
           bun-version: 1.2.20
       - run: python -m pip install build pip-audit
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - run: npx --yes playwright@1.52.0 install-deps chromium
+      - name: Preinstall the exact Playwright Chromium runtime
+        run: |
+          set -euo pipefail
+          npx --yes playwright@1.61.1 --version | tee "$RUNNER_TEMP/playwright-preinstall-version.log"
+          npx --yes playwright@1.61.1 install --with-deps chromium 2>&1 | tee "$RUNNER_TEMP/playwright-preinstall.log"
       - name: Verify the checkout has no residual dependency trees
         run: |
           test -z "$(find components -type d -name node_modules -print -quit)"
       - name: Run isolated package build and connected release gate
         run: python release-verification/run_release_gate.py --mode ci
+      - name: Preserve hosted PostgreSQL service logs
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p release-verification/artifacts/latest/logs
+          docker logs "${{ job.services.postgres.id }}" > release-verification/artifacts/latest/logs/postgres-service.log 2>&1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: packaged-release-gate-${{ runner.os }}
-          path: release-verification/artifacts/latest/
+          path: |
+            release-verification/artifacts/latest/
+            ${{ runner.temp }}/playwright-preinstall-version.log
+            ${{ runner.temp }}/playwright-preinstall.log
           if-no-files-found: error
+          retention-days: 90
 
   release-green:
     if: always()
@@ -543,6 +649,7 @@ jobs:
     needs:
       - villani-code
       - villani-ops
+      - villani-ops-process-tree
       - villani-agentd
       - villani-control-plane
       - node-engine-contract
@@ -558,13 +665,60 @@ jobs:
       - final-foundation
       - packaged-release-gate
     steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: packaged-release-gate-Linux
+          path: packaged-release-proof
       - name: Require every real release gate
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          CERTIFIED_SHA: ${{ github.sha }}
+          CERTIFIED_BRANCH: ${{ github.head_ref || github.ref_name }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
         run: |
           python - <<'PY'
           import json, os
+          from pathlib import Path
+
           results = {name: value["result"] for name, value in json.loads(os.environ["NEEDS_JSON"]).items()}
           print(json.dumps(results, sort_keys=True))
-          raise SystemExit(1 if any(result != "success" for result in results.values()) else 0)
+          reports = list(Path("packaged-release-proof").rglob("release-gate-report.json"))
+          errors = [
+              f"job {name} finished with {result}"
+              for name, result in results.items()
+              if result != "success"
+          ]
+          report = None
+          if len(reports) != 1:
+              errors.append(f"expected one authoritative release report, found {reports}")
+          else:
+              report = json.loads(reports[0].read_text(encoding="utf-8"))
+              if report.get("release_verdict") != "RELEASE GATE PASSED":
+                  errors.append("packaged release report did not pass")
+              identity = report.get("certification_identity") or {}
+              if identity.get("git_commit_sha") != os.environ["CERTIFIED_SHA"]:
+                  errors.append("packaged release report certifies a different commit")
+          output = {
+              "release_verdict": "RELEASE GATE PASSED" if not errors else "RELEASE GATE FAILED",
+              "git_commit_sha": os.environ["CERTIFIED_SHA"],
+              "branch": os.environ["CERTIFIED_BRANCH"],
+              "workflow_run_id": os.environ["WORKFLOW_RUN_ID"],
+              "jobs": results,
+              "authoritative_report": str(reports[0]) if len(reports) == 1 else None,
+              "errors": errors,
+          }
+          destination = Path("release-green-evidence/release-green.json")
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          destination.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(output, sort_keys=True))
+          if errors:
+              raise SystemExit(1)
           PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-green-${{ github.run_id }}
+          path: release-green-evidence/
+          if-no-files-found: warn
+          retention-days: 90

@@ -266,21 +266,85 @@ def daemon_diagnostic() -> dict[str, Any]:
         }
 
 
-def adapter_diagnostics() -> list[dict[str, Any]]:
+def _recent_villani_code_success(environ: Mapping[str, str]) -> dict[str, Any] | None:
+    home = Path(environ.get("VILLANI_HOME") or Path.home() / ".villani")
+    runs = home / "runs"
+    try:
+        directories = sorted(
+            (item for item in runs.iterdir() if item.is_dir()),
+            key=lambda item: item.stat().st_mtime_ns,
+            reverse=True,
+        )[:100]
+    except OSError:
+        return None
+    for directory in directories:
+        try:
+            manifest = json.loads(
+                (directory / "manifest.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            continue
+        attempt_ids = (
+            manifest.get("attempt_ids") if isinstance(manifest, Mapping) else None
+        )
+        if not isinstance(attempt_ids, list):
+            continue
+        for attempt_id in reversed(attempt_ids):
+            if not isinstance(attempt_id, str):
+                continue
+            try:
+                attempt = json.loads(
+                    (directory / "attempts" / attempt_id / "attempt.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(attempt, Mapping):
+                continue
+            if (
+                attempt.get("runner_name") in {"villani_code", "villani-code"}
+                and attempt.get("status") == "completed"
+                and attempt.get("exit_code") == 0
+            ):
+                return {
+                    "run_id": manifest.get("run_id"),
+                    "attempt_id": attempt_id,
+                    "completed_at": attempt.get("completed_at"),
+                }
+    return None
+
+
+def adapter_diagnostics(
+    *, environ: Mapping[str, str] | None = None
+) -> list[dict[str, Any]]:
+    env = os.environ if environ is None else environ
     try:
         from villani_agentd.adapters import ADAPTERS
 
+        recent_villani_code = _recent_villani_code_success(env)
         reports: list[dict[str, Any]] = []
         for name, adapter in sorted(ADAPTERS.items()):
             if name == "generic":
                 continue
             try:
-                reports.append(adapter.detect().as_dict())
+                report = adapter.detect().as_dict()
+                if name == "villani-code" and recent_villani_code is not None:
+                    report["runtime_status"] = "successful_recent_run"
+                    report["last_successful_use"] = recent_villani_code
+                    if report.get("executable_status") == "present" and str(
+                        report.get("probe_status", "")
+                    ).endswith("timed_out"):
+                        report["available"] = True
+                reports.append(report)
             except Exception as error:
                 reports.append(
                     {
-                        "name": name,
+                        "adapter": name,
                         "available": False,
+                        "executable_status": "unknown",
+                        "probe_status": "error",
+                        "runtime_status": "not_observed",
                         "detected_version": None,
                         "capabilities": [],
                         "missing_capabilities": [
@@ -437,7 +501,7 @@ def build_repository_diagnostics(
         },
         "service": dict(service or {}),
         "daemon": daemon_diagnostic(),
-        "adapters": adapter_diagnostics(),
+        "adapters": adapter_diagnostics(environ=env),
         "coding_commands": coding_commands,
         "backend_connectivity": backend_reports,
         "credentials": [

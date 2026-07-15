@@ -15,6 +15,7 @@ from villani_ops.core.acceptance import (
 from villani_ops.controller.human_approval import TestHumanApprovalProvider
 from villani_ops.review.reviewer import ReviewResult
 from villani_ops.policy_engine.engine import ExecutionStrategy, StrategyAttempt
+from villani_ops.storage.files import FileStorage
 from villani_ops.tests.test_controller_lifecycle_hardening import git_repo, make_ops
 from villani_ops.tests.test_v02_hardening import init_git, make_run
 
@@ -236,6 +237,7 @@ def _fake_villani(path: Path, count_file: Path, fail=False):
         f"#!/usr/bin/env python\nimport pathlib, sys\npathlib.Path(r'{count_file}').write_text(str(int(pathlib.Path(r'{count_file}').read_text() or '0')+1))\nrepo=pathlib.Path(sys.argv[sys.argv.index('--repo')+1])\n(repo/'hello.txt').write_text('changed\\n')\nsys.exit({1 if fail else 0})\n"
     )
     exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+    return exe
 
 
 def _setup_compare(tmp_path, monkeypatch, reviews):
@@ -280,8 +282,13 @@ def _setup_compare(tmp_path, monkeypatch, reviews):
         )
     count = tmp_path / "count.txt"
     count.write_text("0")
-    _fake_villani(tmp_path, count)
+    fake_command = _fake_villani(tmp_path, count)
     monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
+    storage = FileStorage(ws)
+    configured_backends = storage.load_backends()
+    for backend in configured_backends.values():
+        backend.command_name = str(fake_command)
+    storage.save_backends(configured_backends)
     from villani_ops.core.task import TaskClassification
     from villani_ops.llm.client import LLMCallResult
 

@@ -1,15 +1,28 @@
 from __future__ import annotations
 
+import importlib.metadata
 import json
-import shutil
 import subprocess
 from typing import Any, Mapping, Sequence
 
 from pydantic import ValidationError
 from villani_ops.closed_loop.protocol_v2 import OutcomeV2, TelemetryEnvelopeV2
+from villani_ops.executables import (
+    ExecutableResolution,
+    resolve_installed_executable,
+    resolved_executable_prefix,
+)
 
 from ..process import terminate_process_tree
-from .contract import AdapterContext, DetectionResult, Probe, SensitiveFieldPolicy, subprocess_probe
+from .contract import (
+    DEFAULT_PROBE_TIMEOUT_SECONDS,
+    AdapterContext,
+    DetectionResult,
+    Probe,
+    ProbeResult,
+    SensitiveFieldPolicy,
+    subprocess_probe,
+)
 from .normalize import normalize_record, redact, stable_hex
 
 
@@ -116,29 +129,152 @@ class BaseAdapter:
     def capability_declaration(self) -> tuple[str, ...]:
         return self.capabilities
 
+    @staticmethod
+    def _probe_result(probe: Probe, command: Sequence[str]) -> ProbeResult:
+        value = probe(command)
+        if isinstance(value, ProbeResult):
+            return value
+        code, stdout, stderr = value
+        marker = (stderr or "").strip()
+        status = (
+            "timed_out"
+            if marker == "TimeoutExpired"
+            else "spawn_failed"
+            if marker.endswith("OSError")
+            else "completed"
+        )
+        return ProbeResult(
+            status,
+            code,
+            stdout,
+            stderr,
+            DEFAULT_PROBE_TIMEOUT_SECONDS,
+        )
+
+    def version_command(self, executable: str) -> list[str] | None:
+        return [executable, "--version"]
+
+    def fallback_version(self) -> str:
+        return self.version
+
+    @staticmethod
+    def _resolved_probe_command(
+        resolution: ExecutableResolution, command: Sequence[str]
+    ) -> list[str]:
+        """Apply probe arguments to a platform-safe resolved entry-point prefix."""
+
+        return [*resolved_executable_prefix(resolution), *command[1:]]
+
     def detect(self, probe: Probe = subprocess_probe) -> DetectionResult:
         if self.executable is None:
             return DetectionResult(
-                self.name, self.version, True, self.version, self.capabilities, ()
+                self.name,
+                self.version,
+                True,
+                self.version,
+                self.capabilities,
+                (),
+                executable_status="not_required",
+                probe_status="not_required",
             )
-        path = shutil.which(self.executable)
-        if path is None:
+        resolution = resolve_installed_executable(self.executable)
+        if resolution.path is None:
             return DetectionResult(
-                self.name, self.version, False, None, self.capabilities, ("executable",)
+                self.name,
+                self.version,
+                False,
+                None,
+                self.capabilities,
+                ("executable",),
+                executable_status="missing",
+                probe_status="not_run",
+                warning=resolution.diagnostic,
             )
-        _code, stdout, stderr = probe([path, "--version"])
-        detected = (stdout.strip() or stderr.strip() or "unknown").splitlines()[0]
-        _code, help_out, help_err = probe(self.help_command(path))
-        help_text = help_out + "\n" + help_err
-        missing = tuple(
+        path = str(resolution.path)
+        raw_version_command = self.version_command(path)
+        version_command = (
+            self._resolved_probe_command(resolution, raw_version_command)
+            if raw_version_command is not None
+            else None
+        )
+        version_result = (
+            self._probe_result(probe, version_command) if version_command is not None else None
+        )
+        detected = self.fallback_version()
+        if (
+            version_result is not None
+            and version_result.completed
+            and version_result.exit_code == 0
+        ):
+            detected = (
+                version_result.stdout.strip()
+                or version_result.stderr.strip()
+                or self.fallback_version()
+            ).splitlines()[0]
+        help_command = self._resolved_probe_command(resolution, self.help_command(path))
+        help_result = self._probe_result(probe, help_command)
+        help_text = help_result.stdout + "\n" + help_result.stderr
+        missing = list(
             dict.fromkeys(
                 self.missing_capability(term)
                 for term in self.required_help_terms
                 if term not in help_text
             )
         )
+        if help_result.status == "timed_out":
+            missing.append("probe_timeout:help")
+        elif help_result.status == "spawn_failed":
+            missing.append("probe_error:help")
+        elif help_result.exit_code != 0:
+            missing.append("probe_failed:help")
+        missing_tuple = tuple(dict.fromkeys(missing))
+        warning: str | None = None
+        probe_status = "healthy"
+        reported_probe = help_result
+        reported_command = help_command
+        if help_result.status == "timed_out":
+            probe_status = "help_timed_out"
+            warning = (
+                f"Executable presence was confirmed, but the help probe timed out after "
+                f"{help_result.timeout_seconds:g} seconds. Retry diagnostics."
+            )
+        elif help_result.status == "spawn_failed" or help_result.exit_code != 0:
+            probe_status = "help_failed"
+            warning = (
+                "Executable presence was confirmed, but the help probe failed. Retry diagnostics."
+            )
+        elif version_result is not None and version_result.status == "timed_out":
+            probe_status = "version_timed_out"
+            reported_probe = version_result
+            reported_command = version_command or help_command
+            warning = (
+                f"Executable presence was confirmed, but the version probe timed out after "
+                f"{version_result.timeout_seconds:g} seconds. Retry diagnostics."
+            )
+        elif version_result is not None and (
+            version_result.status == "spawn_failed" or version_result.exit_code != 0
+        ):
+            probe_status = "version_failed"
+            reported_probe = version_result
+            reported_command = version_command or help_command
+            warning = (
+                "Executable presence was confirmed, but the version probe failed. "
+                "Retry diagnostics."
+            )
         return DetectionResult(
-            self.name, self.version, not missing, detected, self.capabilities, missing
+            self.name,
+            self.version,
+            not missing_tuple,
+            detected,
+            self.capabilities,
+            missing_tuple,
+            executable_path=path,
+            executable_status="present",
+            probe_status=probe_status,
+            probe_command=tuple(reported_command),
+            probe_timeout_seconds=reported_probe.timeout_seconds,
+            probe_exit_code=reported_probe.exit_code,
+            warning=warning,
         )
 
     def help_command(self, executable: str) -> list[str]:
@@ -252,8 +388,19 @@ class GenericJsonlAdapter(BaseAdapter):
 class VillaniCodeAdapter(BaseAdapter):
     name = "villani-code"
     executable = "villani-code"
-    required_help_terms = ("--debug",)
+    required_help_terms = ("debug-bundle",)
     capabilities = BaseAdapter.capabilities + ("native_runtime_events", "native_debug_events")
+
+    def version_command(self, executable: str) -> list[str] | None:
+        # The actual CLI guarantees a bounded --help command and does not expose
+        # a --version option.  Avoid a knowingly failing probe.
+        return None
+
+    def fallback_version(self) -> str:
+        try:
+            return importlib.metadata.version("villani-code")
+        except importlib.metadata.PackageNotFoundError:
+            return self.version
 
     def missing_capability(self, _term: str) -> str:
         return "native_debug_events"
