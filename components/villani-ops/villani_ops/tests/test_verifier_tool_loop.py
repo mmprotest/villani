@@ -278,3 +278,46 @@ def test_llm_binary_schema_accepts_and_rejects_unclear():
                 }
             )
         )
+
+
+def test_llm_binary_schema_preserves_focused_probe_request():
+    from villani_ops.verifier.llm import _parse
+
+    parsed = _parse(
+        json.dumps(
+            {
+                "type": "final_verdict",
+                "result": 0,
+                "verdict": "unclear",
+                "recommendedAction": "retry_verifier",
+                "reason": "Exact output still needs executable evidence.",
+                "requirementResults": [],
+                "successEvidence": [],
+                "failureEvidence": [],
+                "missingEvidence": ["No exact-output command has run."],
+                "riskFlags": [],
+                "criticalRequirementCoverageProven": False,
+                "focusedProbeRequests": [
+                    {
+                        "probe_id": "probe-exact-output",
+                        "requirement_ids": ["req-exact-output"],
+                        "argv": ["python", "-c", "print('wanted')"],
+                        "timeout_seconds": 30,
+                        "expected_exit_code": 0,
+                        "expected_stdout": "wanted\n",
+                        "expected_stdout_contains": [],
+                        "expected_stderr_contains": [],
+                        "reason": "The requirement specifies exact observable output.",
+                    }
+                ],
+            }
+        )
+    )
+
+    assert parsed["result"] == 0
+    assert parsed["criticalRequirementCoverageProven"] is False
+    assert parsed["focusedProbeRequests"][0]["argv"] == [
+        "python",
+        "-c",
+        "print('wanted')",
+    ]

@@ -9,6 +9,7 @@ from typing import Any, Callable, Literal
 
 from villani_ops.materialize import apply_patch_safely
 
+from ..candidate_bundle import read_patch_text
 from ..durable_io import write_json_atomic
 from ..event_writer import redact_data, redact_message
 from ..interfaces import (
@@ -62,7 +63,7 @@ class PatchMaterializerAdapter:
                 )
             if not source_patch.is_file():
                 raise FileNotFoundError("selected recorded patch does not exist")
-            patch_text = source_patch.read_text(encoding="utf-8", errors="replace")
+            patch_text = read_patch_text(source_patch, errors="replace")
             if not patch_text.strip():
                 raise ValueError("selected recorded patch is empty")
             selected_patch_hash = hashlib.sha256(patch_text.encode("utf-8")).hexdigest()

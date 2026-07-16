@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import difflib
+import hashlib
+import json
 import py_compile
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from villani_code.command_environment import runner_private_roots
+from villani_code.command_failures import CommandFailureLedger
 from villani_code.patch_apply import PatchApplyError, extract_unified_diff_targets, parse_unified_diff
 from villani_code.permissions import Decision
 from villani_code.repo_rules import classify_repo_path, is_ignored_repo_path
-from villani_code.tools import execute_tool
+from villani_code.repository_state import repository_state_digest
+from villani_code.tool_result_ledger import ToolResultLedger
+from villani_code.tools import execute_tool, normalized_tool_arguments
 
 
 _FENCED_BLOCK_RE = re.compile(r"```(?:[a-zA-Z0-9_+-]+)?\n(.*?)```", re.DOTALL)
@@ -208,7 +214,7 @@ def _sanitize_tool_input_file_path(tool_input: dict[str, Any], repo: Path) -> No
 
 
 def _benchmark_mutation_targets(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
-    if tool_name == "Write":
+    if tool_name in {"Write", "PatchRange"}:
         path = str(tool_input.get("file_path", ""))
         return [path] if path else []
     if tool_name == "Patch":
@@ -242,7 +248,7 @@ def _benchmark_post_write_python_validation(
 ) -> dict[str, Any]:
     if result.get("is_error"):
         return result
-    if not runner.benchmark_config.enabled or tool_name not in {"Write", "Patch"}:
+    if not runner.benchmark_config.enabled or tool_name not in {"Write", "Patch", "PatchRange"}:
         return result
 
     targets = _benchmark_mutation_targets(tool_name, tool_input)
@@ -294,7 +300,7 @@ def _benchmark_post_write_python_validation(
 
 def _validate_benchmark_mutation(runner: Any, tool_name: str, tool_input: dict[str, Any]) -> str | None:
     config = runner.benchmark_config
-    if not config.enabled or tool_name not in {"Write", "Patch"}:
+    if not config.enabled or tool_name not in {"Write", "Patch", "PatchRange"}:
         return None
     targets = _benchmark_mutation_targets(tool_name, tool_input)
     if not targets:
@@ -348,7 +354,7 @@ def _benchmark_denial_feedback(runner: Any, denial_message: str, paths: list[str
 def _validate_first_attempt_locked_target_mutation(
     runner: Any, tool_name: str, tool_input: dict[str, Any]
 ) -> str | None:
-    if tool_name not in {"Write", "Patch"}:
+    if tool_name not in {"Write", "Patch", "PatchRange"}:
         return None
     if not bool(getattr(runner, "_first_attempt_write_lock_active", False)):
         return None
@@ -431,7 +437,11 @@ def _prepare_global_mutation_policy(
             )
         )
         unified_diff = "\n".join(diff_lines).rstrip("\n") + "\n"
-        patched_input = {"file_path": file_path, "unified_diff": unified_diff}
+        patched_input = {
+            "file_path": file_path,
+            "unified_diff": unified_diff,
+            "expected_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
         return "Patch", patched_input, None
     if tool_name == "Patch":
         default_path = str(tool_input.get("file_path", "") or "") or None
@@ -445,6 +455,31 @@ def _prepare_global_mutation_policy(
             if analysis.probable_rewrite:
                 return tool_name, tool_input, {"content": _reject_rewrite_message(analysis), "is_error": True}
     return tool_name, tool_input, None
+
+
+def _command_policy_failure(
+    runner: Any,
+    tool_input: dict[str, Any],
+    message: str,
+) -> dict[str, Any]:
+    ledger = getattr(runner, "_command_failure_ledger", None)
+    if ledger is None:
+        return {"content": message, "is_error": True}
+    command = str(tool_input.get("command", ""))
+    cwd = str(tool_input.get("cwd", "."))
+    prior = ledger.lookup_repeat(command=command, cwd=cwd)
+    if prior is not None:
+        result = ledger.repeated_result(prior)
+        result["is_error"] = True
+        return result
+    result = {"content": message, "is_error": True}
+    ledger.observe(
+        command=command,
+        cwd=cwd,
+        result=result,
+        policy_denied=True,
+    )
+    return result
 
 
 def execute_tool_with_policy(
@@ -484,7 +519,7 @@ def execute_tool_with_policy(
         return {"content": "Plan artifact accepted", "is_error": False}
 
     if getattr(runner, "_planning_read_only", False):
-        if tool_name in {"Write", "Patch", "Edit"}:
+        if tool_name in {"Write", "Patch", "PatchRange", "Edit"}:
             return {"content": "Planning mode is read-only: file mutation tools are blocked", "is_error": True}
         if tool_name == "Bash":
             command = str(tool_input.get("command", "")).strip().lower()
@@ -519,6 +554,12 @@ def execute_tool_with_policy(
     )
     runner._emit_policy_event(tool_name, tool_input, policy.decision, policy.reason)
     if policy.decision == Decision.DENY:
+        if tool_name == "Bash":
+            return _command_policy_failure(
+                runner,
+                tool_input,
+                "Denied by permission policy",
+            )
         return {"content": "Denied by permission policy", "is_error": True}
     if policy.decision == Decision.ASK:
         if getattr(runner, "auto_approve", False):
@@ -561,8 +602,14 @@ def execute_tool_with_policy(
                 }
             )
             if not approved:
+                if tool_name == "Bash":
+                    return _command_policy_failure(
+                        runner,
+                        tool_input,
+                        "User denied tool execution",
+                    )
                 return {"content": "User denied tool execution", "is_error": True}
-    elif runner.plan_mode != "off" and not runner.villani_mode and tool_name in {"Write", "Patch"}:
+    elif runner.plan_mode != "off" and not runner.villani_mode and tool_name in {"Write", "Patch", "PatchRange"}:
         return {"content": "Plan mode: edit not executed", "is_error": False}
 
     tool_name, tool_input, forced_result = _prepare_global_mutation_policy(runner, tool_name, tool_input)
@@ -596,7 +643,7 @@ def execute_tool_with_policy(
         )
         return {"content": correction, "is_error": True}
 
-    if runner.villani_mode and tool_name in {"Write", "Patch"}:
+    if runner.villani_mode and tool_name in {"Write", "Patch", "PatchRange"}:
         target = str(tool_input.get("file_path", ""))
         if target:
             classification = classify_repo_path(target)
@@ -609,7 +656,7 @@ def execute_tool_with_policy(
                 runner.event_callback({"type": "autonomous_phase", "phase": msg})
                 return {"content": msg, "is_error": True}
 
-    if tool_name in {"Write", "Patch"}:
+    if tool_name in {"Write", "Patch", "PatchRange"}:
         targets = _benchmark_mutation_targets(tool_name, tool_input)
         normalized_targets = sorted(
             {
@@ -666,6 +713,27 @@ def execute_tool_with_lifecycle(
             **({"forced": True} if forced else {}),
         }
     )
+    try:
+        normalized_arguments = normalized_tool_arguments(tool_name, tool_input)
+    except Exception:
+        normalized_arguments = dict(tool_input)
+
+    tool_result_ledger = getattr(runner, "_tool_result_ledger", None)
+    prior_tool_result = None
+    ledger_key = None
+    if tool_result_ledger is not None:
+        prior_tool_result, ledger_key = tool_result_ledger.lookup(
+            tool_name,
+            normalized_arguments,
+        )
+
+    command_failure_ledger = getattr(runner, "_command_failure_ledger", None)
+    prior_command_failure = None
+    if command_failure_ledger is not None and tool_name == "Bash":
+        prior_command_failure = command_failure_ledger.lookup_repeat(
+            command=str(normalized_arguments.get("command", "")),
+            cwd=str(normalized_arguments.get("cwd", ".")),
+        )
 
     def _debug_callback_with_turn(event_type: str, payload: dict[str, Any]) -> None:
         callback_payload = dict(payload)
@@ -685,7 +753,46 @@ def execute_tool_with_lifecycle(
             target_existed_before = (runner.repo / str(tool_input["file_path"])).resolve().exists()
         except OSError:
             target_existed_before = None
-    if memory is not None and tool_name.startswith("memory_"):
+
+    result_record = None
+    duplicate_of: str | None = None
+    if prior_tool_result is not None:
+        result = {
+            "content": json.dumps(
+                ToolResultLedger.duplicate_payload(prior_tool_result),
+                indent=2,
+            ),
+            "is_error": False,
+            "unchanged": True,
+            "prior_result_id": prior_tool_result.result_id,
+        }
+        duplicate_of = prior_tool_result.result_id
+        runner.event_callback(
+            {
+                "type": "tool_result_reused",
+                "name": tool_name,
+                "tool_use_id": stable_tool_use_id,
+                "prior_result_id": prior_tool_result.result_id,
+                "repository_state_digest": (
+                    prior_tool_result.repository_state_digest
+                ),
+                "target_digest": prior_tool_result.target_digest,
+            }
+        )
+    elif prior_command_failure is not None:
+        result = CommandFailureLedger.repeated_result(prior_command_failure)
+        runner.event_callback(
+            {
+                "type": "command_failure_reused",
+                "tool_use_id": stable_tool_use_id,
+                "prior_failure_id": prior_command_failure.failure_id,
+                "failure_class": prior_command_failure.failure_class,
+                "repository_state_digest": (
+                    prior_command_failure.repository_state_digest
+                ),
+            }
+        )
+    elif memory is not None and tool_name.startswith("memory_"):
         result = memory.execute_tool(tool_name, tool_input)
     else:
         result = execute_tool(
@@ -697,6 +804,71 @@ def execute_tool_with_lifecycle(
             tool_call_id=stable_tool_use_id,
             private_roots=private_roots,
         )
+        if command_failure_ledger is not None and tool_name == "Bash":
+            repeats_before = command_failure_ledger.repeated_command_failures
+            failure_record = command_failure_ledger.observe(
+                command=str(normalized_arguments.get("command", "")),
+                cwd=str(normalized_arguments.get("cwd", ".")),
+                result=result,
+            )
+            if (
+                failure_record is not None
+                and command_failure_ledger.repeated_command_failures
+                > repeats_before
+            ):
+                result = command_failure_ledger.repeated_result(failure_record)
+        if tool_result_ledger is not None and not result.get("is_error"):
+            result_record = tool_result_ledger.register(
+                tool_name=tool_name,
+                normalized_arguments=normalized_arguments,
+                content=str(result.get("content", "")),
+                key=ledger_key,
+            )
+            if result_record is not None:
+                result["result_id"] = result_record.result_id
+
+    state_digest = (
+        ledger_key.repository_state_digest
+        if ledger_key is not None
+        else repository_state_digest(runner.repo)
+    )
+    context_ledger = getattr(runner, "_context_ledger", None)
+    if context_ledger is not None:
+        context_ledger.record_tool_result(
+            tool_name=tool_name,
+            arguments=normalized_arguments,
+            tool_use_id=stable_tool_use_id,
+            content=str(result.get("content", "")),
+            repository_state_digest=state_digest,
+            turn=emit_turn_index,
+            result_id=(
+                result_record.result_id
+                if result_record is not None
+                else None
+            ),
+            duplicate_of=duplicate_of,
+        )
+
+    progress = getattr(runner, "_progress_tracker", None)
+    if progress is not None:
+        progress.start_tool_call()
+        progress.record_turn(emit_turn_index)
+        if tool_name == "Read" and not result.get("is_error") and not duplicate_of:
+            progress.observe_read(str(normalized_arguments.get("file_path", "")))
+        if tool_name in {"Write", "Patch", "PatchRange"} and not result.get(
+            "is_error"
+        ):
+            completed = subprocess.run(
+                ["git", "diff", "--binary", "HEAD", "--"],
+                cwd=runner.repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            progress.observe_patch(
+                completed.stdout if completed.returncode == 0 else "",
+                _benchmark_mutation_targets(tool_name, normalized_arguments),
+            )
     if memory is not None:
         if not tool_name.startswith("memory_"):
             memory.observe_tool_result(

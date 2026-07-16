@@ -43,7 +43,7 @@ Manage models without editing YAML:
 villani models
 villani models detect
 villani models test
-villani models add local-qwen --model qwen --provider local --endpoint http://127.0.0.1:1234/v1 --default
+villani models add local-qwen --model qwen --provider local --endpoint http://127.0.0.1:1234/v1 --api-key dummy --default
 villani models remove local-qwen
 ```
 

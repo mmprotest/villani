@@ -162,6 +162,83 @@ def _failure_category(
     return None
 
 
+def _combined_metadata(
+    attempt: AttemptSnapshot, verification: VerificationSnapshot | None
+) -> dict[str, Any]:
+    values = dict(attempt.metadata)
+    if verification is not None:
+        values.update(verification.metadata)
+    return values
+
+
+def _infrastructure_exclusion_reason(
+    attempt: AttemptSnapshot, verification: VerificationSnapshot | None
+) -> str | None:
+    """Return a stable exclusion reason for non-model failure evidence."""
+
+    metadata = _combined_metadata(attempt, verification)
+    category = _failure_category(attempt, verification)
+    if attempt.status == "cancelled" or metadata.get("external_cancellation") is True:
+        return "external_cancellation"
+    if category == "materialization_failure":
+        return "materialization_infrastructure_failure"
+    repository_status = str(metadata.get("repository_validation_status") or "")
+    repository_code = str(
+        metadata.get("repository_validation_failure_code") or ""
+    )
+    infrastructure_markers = {
+        "repository_validation_timeout": "validation_timeout",
+        "repository_validation_executable_missing": "missing_executable",
+        "repository_validation_environment_mismatch": "environment_mismatch",
+        "repository_validation_provider_failure": "provider_failure",
+        "repository_validation_policy_denied": "policy_denial",
+    }
+    if repository_status == "infrastructure_error":
+        return infrastructure_markers.get(
+            repository_code,
+            repository_code or "repository_validation_infrastructure_failure",
+        )
+    focused_probe_status = str(metadata.get("focused_probe_status") or "")
+    if focused_probe_status == "infrastructure_error":
+        return "focused_probe_infrastructure_failure"
+    invocation_status = str(metadata.get("verifier_invocation_status") or "")
+    if invocation_status in {"error", "timed_out", "malformed_output"}:
+        return f"verifier_{invocation_status}"
+    final_reason = str(metadata.get("computed_final_reason_code") or "")
+    explicit_reasons = {
+        "repository_validation_infrastructure_error",
+        "verifier_tool_failure",
+        "verifier_malformed_output",
+        "focused_probe_missing",
+    }
+    if final_reason in explicit_reasons:
+        return final_reason
+    if repository_code in infrastructure_markers:
+        return infrastructure_markers[repository_code]
+    if category == "verification_failure" or (
+        verification is not None and verification.outcome == "error"
+    ):
+        return "verifier_infrastructure_failure"
+    if metadata.get("infrastructure_failure_present") is True:
+        return "unresolved_infrastructure_failure"
+    if category == "infrastructure_failure":
+        return "infrastructure_failure"
+    return None
+
+
+def _authoritative_validation_passed(
+    attempt: AttemptSnapshot, verification: VerificationSnapshot
+) -> bool:
+    metadata = _combined_metadata(attempt, verification)
+    return bool(
+        metadata.get("repository_validation_status") == "passed"
+        and (
+            metadata.get("repository_validation_authoritative") is True
+            or metadata.get("external_validation_authoritative") is True
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _Outcome:
     key: ProfileKey
@@ -236,6 +313,7 @@ def _make_outcome(
         scorer_version=scorer_version,
     )
     category = _failure_category(attempt, verification)
+    infrastructure_reason = _infrastructure_exclusion_reason(attempt, verification)
     included: str | None = None
     excluded: str | None = None
 
@@ -243,19 +321,17 @@ def _make_outcome(
         excluded = "missing_backend_identity"
     elif _human_modified(attempt, verification):
         excluded = "human_modified"
-    elif attempt.status in {"pending", "running", "cancelled"}:
+    elif attempt.status in {"pending", "running"}:
         excluded = "interrupted_attempt"
-    elif category == "infrastructure_failure":
-        excluded = "infrastructure_failure"
-    elif category == "verification_failure" or (
-        verification is not None and verification.outcome == "error"
-    ):
-        excluded = "verification_failure"
-    elif category == "materialization_failure":
-        excluded = "materialization_failure"
+    elif infrastructure_reason is not None:
+        excluded = infrastructure_reason
     elif verification is None:
         excluded = "unknown_outcome"
-    elif verification.outcome == "accepted" and verification.acceptance_eligible:
+    elif (
+        verification.outcome == "accepted"
+        and verification.acceptance_eligible
+        and _authoritative_validation_passed(attempt, verification)
+    ):
         if _selected_and_materialized(attempt, selection, materialization):
             included = "success"
         elif (
@@ -274,6 +350,8 @@ def _make_outcome(
             excluded = "materialization_failure"
         else:
             excluded = "accepted_not_selected_untrusted"
+    elif verification.outcome == "accepted" and verification.acceptance_eligible:
+        excluded = "repository_validation_not_authoritatively_passed"
     elif verification.outcome == "rejected" and category in MODEL_FAILURE_CATEGORIES:
         included = "verified_model_failure"
     elif verification.outcome == "unclear":

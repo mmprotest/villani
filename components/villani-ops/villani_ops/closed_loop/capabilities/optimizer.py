@@ -14,12 +14,14 @@ from .models import (
 )
 
 
-OPTIMIZER_VERSION = "empirical_sequence_v1"
+OPTIMIZER_VERSION = "empirical_sequence_v2"
 FORMULAS = {
     "expected_cost": "sum(cost_i * product(1 - p_j for every earlier j))",
     "success_probability": "1 - product(1 - p_i)",
     "expected_cost_to_success": "mean_attempt_cost / conservative_success_probability",
     "budget_constraint": "sum(cost_i) <= known_cost_budget",
+    "expected_duration": "sum(duration_i * product(1 - p_j for every earlier j))",
+    "effective_capability": "floor(100 * Wilson lower bound)",
 }
 
 
@@ -57,10 +59,17 @@ def _rank(sequence: SequenceEvaluation) -> tuple[object, ...]:
         return (
             0,
             sequence.expected_cost,
+            sequence.expected_duration_ms,
             -sequence.success_probability,
             sequence.backends,
         )
-    return (1, -sequence.success_probability, sequence.expected_cost, sequence.backends)
+    return (
+        1,
+        -sequence.success_probability,
+        sequence.expected_cost,
+        sequence.expected_duration_ms,
+        sequence.backends,
+    )
 
 
 def optimize_sequence(
@@ -93,6 +102,10 @@ def optimize_sequence(
             missing.append(f"{item.backend_name}:insufficient_probability_data")
         if item.mean_actual_attempt_cost is None:
             missing.append(f"{item.backend_name}:mean_actual_attempt_cost")
+        if item.effective_capability_score is None:
+            missing.append(f"{item.backend_name}:effective_capability_score")
+        if item.median_duration_ms is None and item.mean_duration_ms is None:
+            missing.append(f"{item.backend_name}:observed_duration")
     if missing:
         return _fallback(
             ordered_inputs,
@@ -139,6 +152,15 @@ def optimize_sequence(
                 cast(float, item.conservative_success_probability)
                 for item in sequence_inputs
             ]
+            durations = [
+                cast(
+                    float,
+                    item.median_duration_ms
+                    if item.median_duration_ms is not None
+                    else item.mean_duration_ms,
+                )
+                for item in sequence_inputs
+            ]
             worst_case_cost = sum(costs)
             if known_cost_budget is not None and worst_case_cost > known_cost_budget:
                 rejected_by_budget += 1
@@ -146,6 +168,10 @@ def optimize_sequence(
             expected_cost = sum(
                 cost * prod(1.0 - earlier for earlier in probabilities[:index])
                 for index, cost in enumerate(costs)
+            )
+            expected_duration = sum(
+                duration * prod(1.0 - earlier for earlier in probabilities[:index])
+                for index, duration in enumerate(durations)
             )
             success_probability = 1.0 - prod(1.0 - value for value in probabilities)
             evaluations.append(
@@ -155,6 +181,8 @@ def optimize_sequence(
                     success_probability=success_probability,
                     worst_case_cost=worst_case_cost,
                     reaches_target=success_probability >= target_success_probability,
+                    expected_duration_ms=expected_duration,
+                    worst_case_duration_ms=sum(durations),
                 )
             )
     ranked = sorted(evaluations, key=_rank)

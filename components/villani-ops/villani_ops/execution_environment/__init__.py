@@ -4,6 +4,17 @@ from .inspection import inspect_repository, lockfile_digests
 from .container import ContainerProvider
 from .devcontainer import DevcontainerProvider
 from .models import ExecutionEnvironmentConfig, PreparedEnvironment, SetupLimits
+from .models import (
+    CandidateBundleManifest,
+    CandidatePatchQuality,
+    CandidateCommandFailureCode,
+    CandidateCommandResult,
+    FocusedProbeFailureCode,
+    RepositoryValidationCommandResult,
+    RepositoryValidationFailureCode,
+    RepositoryValidationReport,
+)
+from .candidate_execution import execute_candidate_command
 from .secrets import LocalSecretBroker, SecretBroker, SecretLease
 from .security import ExecutionPolicyDenied
 from .providers import (
@@ -27,8 +38,16 @@ __all__ = [
     "ExecutionEnvironmentConfig",
     "ExecutionEnvironmentProvider",
     "ExecutionPolicyDenied",
+    "CandidateBundleManifest",
+    "CandidatePatchQuality",
+    "CandidateCommandFailureCode",
+    "CandidateCommandResult",
+    "FocusedProbeFailureCode",
     "InheritProvider",
     "PreparedEnvironment",
+    "RepositoryValidationCommandResult",
+    "RepositoryValidationFailureCode",
+    "RepositoryValidationReport",
     "ContainerProvider",
     "DevcontainerProvider",
     "LocalSecretBroker",
@@ -47,4 +66,5 @@ __all__ = [
     "discover_repository_validation",
     "display_argv",
     "parse_manual_command",
+    "execute_candidate_command",
 ]

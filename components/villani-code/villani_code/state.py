@@ -18,6 +18,8 @@ from villani_code.autonomy import (
 from villani_code.checkpoints import CheckpointManager
 from villani_code.context_budget import ContextBudget
 from villani_code.context_governance import ContextGovernanceManager
+from villani_code.context_ledger import ContextLedger
+from villani_code.command_failures import CommandFailureLedger
 from villani_code.edits import ProposalStore
 from villani_code.execution import ExecutionBudget, ExecutionResult
 from villani_code.hooks import HookRunner
@@ -35,9 +37,12 @@ from villani_code.benchmark.runtime_config import BenchmarkRuntimeConfig
 from villani_code.llm_client import LLMClient
 from villani_code.runtime_safety import ensure_runtime_dependencies_not_shadowed
 from villani_code.retrieval import Retriever
+from villani_code.progress_telemetry import UsefulProgressTracker
+from villani_code.repository_state import repository_state_digest
 from villani_code.skills import discover_skills
 from villani_code.streaming import StreamCoalescer, assemble_anthropic_stream
 from villani_code.tools import tool_specs
+from villani_code.tool_result_ledger import ToolResultLedger
 from villani_code.task_memory import TaskMemory
 from villani_code.transcripts import save_transcript
 from villani_code.context_projection import build_model_context_packet, render_model_context_packet
@@ -46,6 +51,7 @@ from villani_code.debug_mode import DebugConfig, DebugMode
 from villani_code.debug_recorder import DebugRecorder
 from villani_code.mission_state import MissionState, create_mission_state, get_mission_dir, save_mission_state
 from villani_code.summarizer import summarize_mission_state
+from villani_code.trace_summary import normalize_token_usage
 from villani_code.state_execution import (
     collect_runner_failures,
     collect_validation_artifacts,
@@ -582,12 +588,14 @@ class Runner:
         self.permissions = PermissionEngine(
             PermissionConfig.from_strings(
                 deny=["Read(.env)", "Read(secrets/**)", "Bash(curl *)", "Bash(wget *)"],
-                ask=["Write(*)", "Patch(*)"],
+                ask=["Write(*)", "Patch(*)", "PatchRange(*)"],
                 allow=[
                     "Read(*)",
                     "Ls(*)",
                     "Grep(*)",
                     "Search(*)",
+                    "FindSymbol(*)",
+                    "FindReferences(*)",
                     "Glob(*)",
                     "BashSafe(*)",
                     "GitStatus(*)",
@@ -647,6 +655,10 @@ class Runner:
         self._first_attempt_write_lock_active = False
         self._first_attempt_locked_target = ""
         self._context_governance = ContextGovernanceManager(self.repo)
+        self._context_ledger: ContextLedger | None = None
+        self._tool_result_ledger: ToolResultLedger | None = None
+        self._command_failure_ledger: CommandFailureLedger | None = None
+        self._progress_tracker: UsefulProgressTracker | None = None
         self._planning_read_only = False
         self._runtime_mode: Literal["execution", "planning"] = "execution"
         self._finalized_plan_artifact: dict[str, Any] | None = None
@@ -688,6 +700,28 @@ class Runner:
                 bool(payload.get("ok", True)),
                 str(payload.get("tool_call_id", "") or ""),
                 turn_index=turn_index,
+                content_sha256=str(payload.get("content_sha256", "")),
+                start_line=(
+                    payload.get("start_line")
+                    if isinstance(payload.get("start_line"), int)
+                    else None
+                ),
+                end_line=(
+                    payload.get("end_line")
+                    if isinstance(payload.get("end_line"), int)
+                    else None
+                ),
+                lines_read=(
+                    payload.get("lines_read")
+                    if isinstance(payload.get("lines_read"), int)
+                    else None
+                ),
+                total_lines=(
+                    payload.get("total_lines")
+                    if isinstance(payload.get("total_lines"), int)
+                    else None
+                ),
+                truncated=bool(payload.get("truncated", False)),
             )
             return
         if event_type == "file_write":
@@ -844,6 +878,7 @@ class Runner:
             autonomous_blockers_summary=[str(v) for v in (working.get("stop_decision_rationale", {}) or {}).values()][:8],
             autonomous_stop_reason=str(summary.get("done_reason", "")) if isinstance(summary, dict) else "",
         )
+        telemetry = self._capture_efficiency_telemetry()
         if self._event_recorder is not None:
             self._event_recorder.write_digest()
         if self._debug_recorder is not None:
@@ -856,7 +891,7 @@ class Runner:
             )
         text = VillaniModeController.format_summary(summary)
         response = {"role": "assistant", "content": [{"type": "text", "text": text}]}
-        return {"response": response, "summary": summary, "telemetry": self._finalize_task_memory()}
+        return {"response": response, "summary": summary, "telemetry": telemetry}
 
     def run(
         self,
@@ -891,6 +926,17 @@ class Runner:
         else:
             self._ensure_project_memory_and_plan(instruction)
             self._task_mode = classify_task_mode(instruction)
+        if self._progress_tracker is not None:
+            self._progress_tracker.set_known_relevant(
+                list(
+                    getattr(
+                        getattr(self, "_execution_plan", None),
+                        "relevant_files",
+                        [],
+                    )
+                    or []
+                )
+            )
         diagnosis = None
         diagnosed_target_file = ""
         required_initial_read = ""
@@ -1198,6 +1244,7 @@ class Runner:
             self._save_session_snapshot(messages)
             mission_status = "completed" if completed else ("interrupted" if reason in {"max_seconds", "max_turns", "max_tool_calls"} else "failed")
             self._update_mission_state(status=mission_status, changed_files=all_changes, compact_summary=summarize_mission_state(self._mission_state) if self._mission_state else "")
+            telemetry = self._capture_efficiency_telemetry()
             if self._event_recorder is not None:
                 self._event_recorder.write_digest()
             if self._debug_recorder is not None:
@@ -1213,7 +1260,7 @@ class Runner:
                 "transcript_path": str(transcript_path) if transcript_path is not None else "",
                 "transcript": transcript,
                 "execution": execution.to_dict(),
-                "telemetry": self._finalize_task_memory(),
+                "telemetry": telemetry,
             }
 
         def _budget_reason(
@@ -1287,6 +1334,12 @@ class Runner:
             if self._debug_recorder is not None:
                 self._debug_recorder.record_model_response(response)
                 self._debug_recorder.record_turn_finish(turns_used + 1, str(response.get("stop_reason", "")))
+            if self._progress_tracker is not None:
+                usage = normalize_token_usage(response)
+                self._progress_tracker.record_tokens(
+                    int(usage.get("tokens_total") or 0)
+                )
+                self._progress_tracker.record_turn(turns_used + 1)
             messages.append(
                 {"role": "assistant", "content": response.get("content", [])}
             )
@@ -1383,6 +1436,7 @@ class Runner:
                     if post:
                         response.setdefault("content", []).append({"type": "text", "text": post})
                     self._save_session_snapshot(messages)
+                    telemetry = self._capture_efficiency_telemetry()
                     if self._event_recorder is not None:
                         self._event_recorder.write_digest()
                     if self._debug_recorder is not None:
@@ -1397,7 +1451,7 @@ class Runner:
                         "messages": messages,
                         "transcript_path": str(transcript_path),
                         "transcript": transcript,
-                        "telemetry": self._finalize_task_memory(),
+                        "telemetry": telemetry,
                     }
                 proposal = self._capture_edit_proposal(response)
                 if proposal:
@@ -1544,6 +1598,7 @@ class Runner:
                     transcript_path = self._save_transcript_and_link(transcript)
                     self._save_session_snapshot(messages)
                 self._update_mission_state(status="completed", compact_summary=summarize_mission_state(self._mission_state) if self._mission_state else "")
+                telemetry = self._capture_efficiency_telemetry()
                 if self._event_recorder is not None:
                     self._event_recorder.write_digest()
                 if self._debug_recorder is not None:
@@ -1558,7 +1613,7 @@ class Runner:
                     "messages": messages,
                     "transcript_path": str(transcript_path) if transcript_path is not None else "",
                     "transcript": transcript,
-                    "telemetry": self._finalize_task_memory(),
+                    "telemetry": telemetry,
                 }
 
             tool_results: list[dict[str, Any]] = []
@@ -1593,14 +1648,14 @@ class Runner:
                         "messages": messages,
                         "transcript_path": "",
                         "transcript": transcript,
-                        "telemetry": self._finalize_task_memory(),
+                        "telemetry": self._capture_efficiency_telemetry(),
                     }
 
                 result = self._execute_tool_with_policy(
                     tool_name, tool_input, tool_use_id, len(messages)
                 )
                 tool_calls_used += 1
-                if tool_name in {"Write", "Patch"} and not result.get("is_error"):
+                if tool_name in {"Write", "Patch", "PatchRange"} and not result.get("is_error"):
                     targets = sorted(self._intended_targets)
                     if any(not _is_generated_or_runtime_artifact(target) for target in targets):
                         meaningful_repo_edit_made = True
@@ -1610,13 +1665,13 @@ class Runner:
                     if tool_name == "Read" and not result.get("is_error"):
                         self._files_read.add(str(tool_input.get("file_path", "")))
 
-                if tool_name in {"Write", "Patch"} and not result.get("is_error"):
+                if tool_name in {"Write", "Patch", "PatchRange"} and not result.get("is_error"):
                     self._pending_verification = self._run_post_edit_verification(
                         trigger=f"{tool_name} execution"
                     )
                     self._patch_effect_check_pending = True
                     self._patch_effect_check_attempts = 0
-                elif tool_name == "Bash":
+                elif tool_name == "Bash" and not result.get("suppressed_repeat"):
                     self._pending_verification = self._run_verification(
                         trigger=f"{tool_name} execution"
                     )
@@ -1756,7 +1811,7 @@ class Runner:
     def _is_mutating_tool_call(
         self, tool_name: str, tool_input: dict[str, Any]
     ) -> bool:
-        if tool_name in {"Write", "Patch", "GitCheckout", "GitCommit"}:
+        if tool_name in {"Write", "Patch", "PatchRange", "GitCheckout", "GitCommit"}:
             return True
         if tool_name == "Bash":
             command = str(tool_input.get("command", "")).strip().lower()
@@ -1777,6 +1832,38 @@ class Runner:
     def _dispatch_event(self, event: dict[str, Any]) -> None:
         if "turn_index" not in event and isinstance(self._current_turn_index, int):
             event = {**event, "turn_index": self._current_turn_index}
+        if str(event.get("type", "")) == "validation_completed":
+            failures_value = (
+                event.get("failures")
+                or event.get("failed_steps")
+                or event.get("validation_failures")
+                or []
+            )
+            failures = (
+                [str(item) for item in failures_value]
+                if isinstance(failures_value, list)
+                else [str(failures_value)]
+                if failures_value
+                else []
+            )
+            if (
+                not failures
+                and str(event.get("status", "")).casefold()
+                not in {"", "passed", "success"}
+            ):
+                failures = [str(event.get("status"))]
+            if self._progress_tracker is not None:
+                self._progress_tracker.observe_validation(failures)
+            if self._context_ledger is not None:
+                self._context_ledger.record_validation(
+                    content=json.dumps(event, sort_keys=True, default=str),
+                    repository_state_digest=repository_state_digest(self.repo),
+                    turn=(
+                        self._current_turn_index
+                        if isinstance(self._current_turn_index, int)
+                        else 0
+                    ),
+                )
         if self._event_recorder is not None:
             self._event_recorder.record(event)
         if self._debug_recorder is not None:
@@ -1878,6 +1965,21 @@ class Runner:
             self._mission_id = self._mission_state.mission_id
             self._mission_dir = get_mission_dir(self.repo, self._mission_id)
             self._event_recorder = RuntimeEventRecorder(self._mission_dir)
+            self._tool_result_ledger = ToolResultLedger(self.repo)
+            self._command_failure_ledger = CommandFailureLedger(self.repo)
+            self._context_ledger = ContextLedger(
+                repo=self.repo,
+                task=instruction,
+                max_projection_chars=(
+                    self._context_budget.max_chars
+                    if self._context_budget is not None
+                    else 50_000
+                ),
+            )
+            self._progress_tracker = UsefulProgressTracker(
+                repo=self.repo,
+                objective=instruction,
+            )
             if self.memory_enabled:
                 try:
                     self._task_memory = TaskMemory(
@@ -1942,9 +2044,19 @@ class Runner:
         self._update_mission_state(last_transcript_path=str(path))
         return path
 
+    def _capture_efficiency_telemetry(self) -> dict[str, Any]:
+        telemetry = self._finalize_task_memory()
+        self.event_callback(
+            {
+                "type": "efficiency_telemetry",
+                "metrics": telemetry,
+            }
+        )
+        return telemetry
+
     def _finalize_task_memory(self) -> dict[str, Any]:
         if self._task_memory is None:
-            return {
+            telemetry: dict[str, Any] = {
                 "memory_enabled": False,
                 "memory_run_dir": "",
                 "memory_records_written": 0,
@@ -1955,8 +2067,76 @@ class Runner:
                 "duplicate_command_count": 0,
                 "duplicate_failed_attempt_count": 0,
             }
-        self._task_memory.regenerate_current_state()
-        return self._task_memory.telemetry()
+        else:
+            self._task_memory.regenerate_current_state()
+            telemetry = self._task_memory.telemetry()
+        if self._tool_result_ledger is not None:
+            telemetry.update(self._tool_result_ledger.telemetry())
+        else:
+            telemetry.update(
+                {
+                    "duplicate_tool_results": 0,
+                    "duplicate_file_reads": 0,
+                    "duplicate_searches": 0,
+                }
+            )
+        if self._command_failure_ledger is not None:
+            telemetry.update(self._command_failure_ledger.telemetry())
+        else:
+            telemetry.update(
+                {
+                    "unique_command_failures": 0,
+                    "repeated_command_failures": 0,
+                    "failed_command_ratio": 0.0,
+                    "commands_retried_without_state_change": 0,
+                    "repeated_commands": 0,
+                }
+            )
+        if self._context_ledger is not None:
+            telemetry.update(self._context_ledger.telemetry())
+            if self._mission_dir is not None:
+                context_path = self._mission_dir / "context-ledger.json"
+                context_path.write_text(
+                    json.dumps(
+                        {
+                            "schema_version": "villani.context_ledger.v1",
+                            "items": [
+                                item.durable_dict()
+                                for item in self._context_ledger.items
+                            ],
+                            "telemetry": self._context_ledger.telemetry(),
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                telemetry["context_ledger_path"] = str(context_path)
+        else:
+            telemetry.update(
+                {
+                    "context_items_added": 0,
+                    "context_items_reused": 0,
+                    "context_items_compacted": 0,
+                    "tokens_removed_by_compaction": 0,
+                    "estimated_tokens_before_projection": 0,
+                    "estimated_tokens_after_projection": 0,
+                }
+            )
+        if self._progress_tracker is not None:
+            telemetry.update(self._progress_tracker.telemetry())
+        telemetry.setdefault("unique_relevant_files_read", 0)
+        telemetry.setdefault("time_to_first_relevant_file", None)
+        telemetry.setdefault("tool_calls_to_first_relevant_file", None)
+        telemetry.setdefault("time_to_first_relevant_patch", None)
+        telemetry.setdefault("tool_calls_to_first_relevant_patch", None)
+        telemetry.setdefault("tokens_to_first_relevant_patch", None)
+        telemetry.setdefault("tokens_after_last_relevant_progress", 0)
+        telemetry.setdefault("turns_after_last_relevant_progress", 0)
+        telemetry.setdefault("relevant_patch_revisions", 0)
+        telemetry.setdefault("validation_improvement_count", 0)
+        return telemetry
 
     def _execute_tool_with_policy(
         self,
@@ -2012,11 +2192,46 @@ class Runner:
                 }
         elif tool_name == "Read":
             text_content = str(content)
+            try:
+                decoded_read = json.loads(text_content)
+            except Exception:
+                decoded_read = {}
             payload["result_payload"] = {
                 **base_result_payload,
                 "content": text_content,
                 "bytes_read": len(text_content.encode("utf-8", errors="replace")),
                 "preview": text_content[:240],
+                "path": (
+                    decoded_read.get("path")
+                    if isinstance(decoded_read, dict)
+                    else None
+                ),
+                "lines_read": (
+                    len(decoded_read.get("lines", []))
+                    if isinstance(decoded_read, dict)
+                    and isinstance(decoded_read.get("lines"), list)
+                    else None
+                ),
+                "content_sha256": (
+                    decoded_read.get("content_sha256")
+                    if isinstance(decoded_read, dict)
+                    else None
+                ),
+                "start_line": (
+                    decoded_read.get("start_line")
+                    if isinstance(decoded_read, dict)
+                    else None
+                ),
+                "end_line": (
+                    decoded_read.get("end_line")
+                    if isinstance(decoded_read, dict)
+                    else None
+                ),
+                "truncated": (
+                    bool(decoded_read.get("truncated", False))
+                    if isinstance(decoded_read, dict)
+                    else False
+                ),
             }
         elif tool_name == "Write":
             text_content = str(content)
@@ -2024,7 +2239,7 @@ class Runner:
                 **base_result_payload,
                 "content": text_content,
             }
-        elif tool_name == "Patch":
+        elif tool_name in {"Patch", "PatchRange"}:
             text_content = str(content)
             payload["result_payload"] = {
                 **base_result_payload,

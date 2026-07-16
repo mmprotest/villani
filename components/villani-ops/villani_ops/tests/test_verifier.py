@@ -14,8 +14,78 @@ from villani_ops.verifier.extract import (
 from villani_ops.verifier.deterministic import deterministic_result
 from villani_ops.verifier.errors import VerifierSchemaError
 from villani_ops.verifier.service import _subprocess_invocation_status, execute_verifier
+from villani_ops.closed_loop.adapters.villani_verifier import (
+    _configured_command_coverage,
+    _semantic_requirements,
+)
+from villani_ops.closed_loop.verification_evidence import RequirementDefinition
 
 FIX = Path(__file__).parent / "fixtures"
+
+
+def test_repository_suite_covers_suite_outcome_but_not_exact_or_artifact_requirements():
+    configuration = {
+        "repository_validation_commands": [
+            {"validation_id": "suite", "argv": ["test-runner", "--all"]}
+        ]
+    }
+    broad = RequirementDefinition(
+        requirement_id="req-broad",
+        description="The test suite passes",
+        critical=True,
+        observable=True,
+        source="success_criteria",
+    )
+    exact = RequirementDefinition(
+        requirement_id="req-exact",
+        description="The command must return exact text ok",
+        critical=True,
+        observable=True,
+        source="success_criteria",
+    )
+    artifact = RequirementDefinition(
+        requirement_id="req-artifact",
+        description="Add a focused regression test and run the repository tests",
+        critical=True,
+        observable=True,
+        source="task_instruction",
+    )
+
+    assert _configured_command_coverage(broad, configuration) == {"suite"}
+    assert _configured_command_coverage(exact, configuration) == set()
+    assert _configured_command_coverage(artifact, configuration) == set()
+
+
+def test_semantic_output_cannot_invent_controller_requirements():
+    definitions = [
+        RequirementDefinition(
+            requirement_id="req-task",
+            description="Fix calculator addition",
+            critical=True,
+            observable=False,
+            source="task_instruction",
+        )
+    ]
+    merged, assessments = _semantic_requirements(
+        definitions,
+        {
+            "requirementResults": [
+                {
+                    "id": "req-task",
+                    "requirement": "Fix calculator addition",
+                    "status": "passed",
+                },
+                {
+                    "id": "wrapper",
+                    "requirement": "Strategy: direct",
+                    "status": "passed",
+                },
+            ]
+        },
+    )
+
+    assert [item.requirement_id for item in merged] == ["req-task"]
+    assert set(assessments) == {"req-task"}
 
 
 def test_jsonl_parser_warns(tmp_path):
@@ -336,3 +406,11 @@ def test_strongest_validation_window_selects_later_cluster(tmp_path):
     win = res["deterministicChecks"]["finalValidationWindow"]
     assert win["startOrder"] >= 3 and any("PASS" in s for s in win["signals"])
     assert res["result"] == 1
+
+
+def test_closed_loop_verifier_has_no_candidate_validation_subprocess_path():
+    source = (
+        Path(__file__).parents[1] / "closed_loop" / "adapters" / "villani_verifier.py"
+    ).read_text(encoding="utf-8")
+    assert "subprocess.run" not in source
+    assert "_execute_configured_repository_validation" not in source

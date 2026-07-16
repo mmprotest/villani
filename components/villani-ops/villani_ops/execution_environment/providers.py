@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import signal
+import shutil
 import subprocess
 import threading
 import time
@@ -261,7 +262,16 @@ class InheritProvider:
         self, prepared: PreparedEnvironment, command: Sequence[str]
     ) -> list[str]:
         self.validate_command(prepared, command)
-        return list(command)
+        wrapped = list(command)
+        executable = Path(wrapped[0])
+        if not executable.is_absolute() and executable.parent == Path("."):
+            path_value = prepared.environment.get(
+                "PATH", prepared.environment.get("Path", "")
+            )
+            resolved = shutil.which(wrapped[0], path=path_value)
+            if resolved:
+                wrapped[0] = resolved
+        return wrapped
 
     def validate_command(
         self, prepared: PreparedEnvironment, command: Sequence[str]
@@ -388,17 +398,13 @@ class SetupCommandProvider(InheritProvider):
 
     def _run_setup(self, prepared: PreparedEnvironment) -> CommandResult:
         limits = self.config.limits
-        command: Any = (
-            self.config.shell_command
-            if self.config.shell
-            else list(self.config.setup_argv or [])
-        )
         policy_command = (
             [str(self.config.shell_command)]
             if self.config.shell
             else list(self.config.setup_argv or [])
         )
-        self.wrap_command(prepared, policy_command)
+        wrapped = self.wrap_command(prepared, policy_command)
+        command: Any = self.config.shell_command if self.config.shell else wrapped
         before = _tree_size(Path(prepared.worktree_path))
         started = time.monotonic()
         process = subprocess.Popen(

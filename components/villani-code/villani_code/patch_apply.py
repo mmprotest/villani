@@ -3,10 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from typing import Any, Mapping
+
+from villani_code.repository_state import file_sha256
 
 
 class PatchApplyError(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.details = details or {}
 
 
 @dataclass
@@ -66,7 +76,10 @@ def apply_unified_diff(repo: Path, diff_text: str, default_file_path: str | None
 
 
 def apply_unified_diff_with_diagnostics(
-    repo: Path, diff_text: str, default_file_path: str | None = None
+    repo: Path,
+    diff_text: str,
+    default_file_path: str | None = None,
+    expected_file_digests: Mapping[str, str] | None = None,
 ) -> tuple[list[str], PatchApplyDiagnostics]:
     patches = parse_unified_diff(diff_text)
     if not patches:
@@ -75,20 +88,79 @@ def apply_unified_diff_with_diagnostics(
         raise PatchApplyError("No file patch found in unified diff")
 
     diagnostics = PatchApplyDiagnostics(fallback_files=[])
+    expected_digests = {
+        _normalize_relative_patch_path(str(path)): str(digest)
+        for path, digest in (expected_file_digests or {}).items()
+        if str(path).strip() and str(digest).strip()
+    }
     targets: list[tuple[Path, str | None]] = []
     for fp in patches:
-        rel = _resolve_target_path(fp, default_file_path)
-        old_content = None
+        rel = _normalize_relative_patch_path(
+            _resolve_target_path(fp, default_file_path)
+        )
         path = (repo / rel).resolve()
+        try:
+            path.relative_to(repo.resolve())
+        except ValueError as exc:
+            raise PatchApplyError(
+                f"{rel}: patch target escapes repository",
+                details=_failure_details(
+                    rel=rel,
+                    path=path,
+                    expected_digest=expected_digests.get(rel),
+                    actual_digest=file_sha256(path),
+                    hunk=fp.hunks[0] if fp.hunks else None,
+                    retry_guidance="Regenerate the patch with a repository-relative target path.",
+                ),
+            ) from exc
+        expected_digest = expected_digests.get(rel)
+        actual_digest = file_sha256(path)
+        if expected_digest is not None and actual_digest != expected_digest:
+            raise PatchApplyError(
+                f"{rel}: stale preimage digest; expected {expected_digest}, got {actual_digest}",
+                details=_failure_details(
+                    rel=rel,
+                    path=path,
+                    expected_digest=expected_digest,
+                    actual_digest=actual_digest,
+                    hunk=fp.hunks[0] if fp.hunks else None,
+                    retry_guidance=(
+                        "Re-read the current file range, use its new content_sha256, "
+                        "and regenerate only the failed hunk."
+                    ),
+                ),
+            )
+        old_content = None
         if path.exists():
             old_content = path.read_bytes().decode("utf-8", errors="surrogateescape")
         newline_style = _detect_newline_style(old_content)
         try:
             new_content = _apply_file_patch(old_content, fp, rel, newline_style=newline_style)
         except PatchApplyError as exc:
-            new_content = _apply_file_patch_with_fallback(
-                old_content, fp, rel, newline_style=newline_style, exact_error=exc
-            )
+            try:
+                new_content = _apply_file_patch_with_fallback(
+                    old_content,
+                    fp,
+                    rel,
+                    newline_style=newline_style,
+                    exact_error=exc,
+                )
+            except PatchApplyError as fallback_error:
+                hunk = _failed_hunk(fp, str(fallback_error))
+                raise PatchApplyError(
+                    str(fallback_error),
+                    details=_failure_details(
+                        rel=rel,
+                        path=path,
+                        expected_digest=expected_digest,
+                        actual_digest=actual_digest,
+                        hunk=hunk,
+                        retry_guidance=(
+                            "Re-read the nearest context shown here, then regenerate "
+                            "a narrow patch against the current preimage digest."
+                        ),
+                    ),
+                ) from fallback_error
             diagnostics.fallback_files.append(rel)
         targets.append((path, new_content))
 
@@ -104,6 +176,66 @@ def apply_unified_diff_with_diagnostics(
         path.write_text(content, encoding="utf-8", newline="")
         touched.append(str(path))
     return touched, diagnostics
+
+
+def _failed_hunk(file_patch: FilePatch, error: str) -> Hunk | None:
+    match = re.search(r"hunk #(\d+)", error)
+    if match:
+        index = int(match.group(1)) - 1
+        if 0 <= index < len(file_patch.hunks):
+            return file_patch.hunks[index]
+    return file_patch.hunks[0] if file_patch.hunks else None
+
+
+def _serialize_hunk(hunk: Hunk | None) -> dict[str, Any] | None:
+    if hunk is None:
+        return None
+    return {
+        "header": (
+            f"@@ -{hunk.old_start},{hunk.old_count} "
+            f"+{hunk.new_start},{hunk.new_count} @@"
+        ),
+        "old_start": hunk.old_start,
+        "old_count": hunk.old_count,
+        "new_start": hunk.new_start,
+        "new_count": hunk.new_count,
+        "lines": list(hunk.lines),
+    }
+
+
+def _nearest_context(path: Path, hunk: Hunk | None) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    lines = path.read_text(
+        encoding="utf-8",
+        errors="surrogateescape",
+    ).splitlines()
+    center = max((hunk.old_start if hunk is not None else 1) - 1, 0)
+    start = max(0, center - 3)
+    end = min(len(lines), center + max(hunk.old_count if hunk else 1, 1) + 3)
+    return [
+        {"line": index + 1, "text": lines[index]}
+        for index in range(start, end)
+    ]
+
+
+def _failure_details(
+    *,
+    rel: str,
+    path: Path,
+    expected_digest: str | None,
+    actual_digest: str,
+    hunk: Hunk | None,
+    retry_guidance: str,
+) -> dict[str, Any]:
+    return {
+        "file": rel,
+        "expected_digest": expected_digest,
+        "actual_digest": actual_digest,
+        "failed_hunk": _serialize_hunk(hunk),
+        "nearest_context": _nearest_context(path, hunk),
+        "retry_guidance": retry_guidance,
+    }
 
 
 def parse_unified_diff(diff_text: str) -> list[FilePatch]:
@@ -171,6 +303,13 @@ def _normalize_patch_path(path: str) -> str:
     if path.startswith("a/") or path.startswith("b/"):
         return path[2:]
     return path
+
+
+def _normalize_relative_patch_path(path: str) -> str:
+    normalized = _normalize_patch_path(path).replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
 
 
 def _resolve_target_path(file_patch: FilePatch, default_file_path: str | None) -> str:
@@ -330,6 +469,8 @@ def _normalize_whitespace(value: str) -> str:
 def _detect_newline_style(content: str | None) -> str:
     if content and "\r\n" in content:
         return "\r\n"
+    if content and "\r" in content:
+        return "\r"
     return "\n"
 
 

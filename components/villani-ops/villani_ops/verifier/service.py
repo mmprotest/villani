@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import inspect
 import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Mapping
 
 from .deterministic import deterministic_result
 from .errors import VerifierSchemaError
@@ -196,9 +197,12 @@ def execute_verifier(
     api_key: str | None = None,
     stdout_path: Path | None = None,
     stderr_path: Path | None = None,
+    verification_context: Mapping[str, Any] | None = None,
+    verification_context_path: Path | None = None,
 ) -> VerifierExecution:
     """Resolve one trace and invoke the verifier exactly once without retries."""
 
+    result: dict[str, Any]
     resolved, resolution_status, resolution_reason = debug_resolution(
         debug_root, resolved_trace_dir
     )
@@ -217,20 +221,33 @@ def execute_verifier(
     subprocess_exit_code: int | None = None
     try:
         if verifier is not None:
+            verifier_kwargs: dict[str, Any] = {
+                "debug_dir": resolved,
+                "repo_dir": repo_dir,
+                "workspace": workspace,
+                "backend": backend,
+                "out": out,
+                "trace_dir": trace_dir,
+            }
+            try:
+                parameters = tuple(inspect.signature(verifier).parameters.values())
+            except (TypeError, ValueError):
+                parameters = ()
+            if verification_context is not None and (
+                any(item.kind == inspect.Parameter.VAR_KEYWORD for item in parameters)
+                or any(item.name == "verification_context" for item in parameters)
+            ):
+                verifier_kwargs["verification_context"] = verification_context
             returned = verifier(
-                debug_dir=resolved,
-                repo_dir=repo_dir,
-                workspace=workspace,
-                backend=backend,
-                out=out,
-                trace_dir=trace_dir,
+                **verifier_kwargs,
             )
             if isinstance(returned, dict):
                 result = returned
             else:
-                result = _read_result(out)
-                if result is None:
+                loaded_result = _read_result(out)
+                if loaded_result is None:
                     raise ValueError("malformed verifier output: expected an object")
+                result = loaded_result
         elif invocation == "in_process":
             run = load_debug_run(resolved)
             trace_writer = None
@@ -271,6 +288,7 @@ def execute_verifier(
                     timeout_seconds=timeout_seconds,
                     max_tool_calls=max_tool_calls,
                     trace=trace_writer,
+                    verification_context=verification_context,
                 )
                 if trace_writer is not None:
                     trace_writer.finish(result)
@@ -302,6 +320,11 @@ def execute_verifier(
                 command += ["--base-url", base_url]
             if model:
                 command += ["--model", model]
+            if verification_context_path is not None:
+                command += [
+                    "--verification-context",
+                    str(verification_context_path),
+                ]
             process_env = None
             if api_key:
                 process_env = {
@@ -324,12 +347,13 @@ def execute_verifier(
                 parsed = json.loads(process.stdout) if process.stdout.strip() else None
             except json.JSONDecodeError:
                 parsed = None
-            result = parsed if isinstance(parsed, dict) else _read_result(out)
-            if result is None:
+            loaded_result = parsed if isinstance(parsed, dict) else _read_result(out)
+            if loaded_result is None:
                 raise ValueError(
                     "verifier subprocess failed with malformed output "
                     f"(exit {process.returncode})"
                 )
+            result = loaded_result
 
         if not isinstance(result, dict):
             raise ValueError("malformed verifier output: expected an object")

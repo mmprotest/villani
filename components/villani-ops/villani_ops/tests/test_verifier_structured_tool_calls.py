@@ -291,3 +291,48 @@ def test_legacy_prose_plus_json_extracted(monkeypatch, tmp_path):
     )
     res = llm_result(run, det, workspace=str(tmp_path))
     assert res["result"] == 1 and res["llmProtocol"] == "legacy_json_fallback"
+
+
+def test_native_final_tool_call_preserves_focused_probe_proposal(monkeypatch, tmp_path):
+    _ws(tmp_path)
+    run = load_debug_run(FIX)
+    det = deterministic_result(run, mode="llm_tool_loop")
+    probe = {
+        "probe_id": "probe-exact-output",
+        "requirement_ids": ["req-exact-output"],
+        "argv": ["python", "-c", "print('wanted')"],
+        "timeout_seconds": 30,
+        "expected_exit_code": 0,
+        "expected_stdout": "wanted\n",
+        "expected_stdout_contains": [],
+        "expected_stderr_contains": [],
+        "reason": "Exact observable output requires a controller-owned probe.",
+    }
+    patch_backend_post(
+        monkeypatch,
+        lambda *a, **k: type(
+            "R",
+            (),
+            {
+                "raise_for_status": lambda s: None,
+                "json": lambda s: _tc(
+                    "verifier_final_verdict",
+                    _verdict(
+                        result=0,
+                        verdict="unclear",
+                        recommendedAction="retry_verifier",
+                        reason="Executable evidence is missing.",
+                        missingEvidence=["No exact-output probe has run."],
+                        criticalRequirementCoverageProven=False,
+                        focusedProbeRequests=[probe],
+                    ),
+                ),
+            },
+        )(),
+    )
+
+    result = llm_result(run, det, workspace=str(tmp_path))
+
+    assert result["result"] == 0
+    assert result["llmProtocol"] == "native_tool_calls"
+    assert result["focusedProbeRequests"] == [probe]

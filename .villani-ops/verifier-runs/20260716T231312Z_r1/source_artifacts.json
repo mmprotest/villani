@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "villani-ops-verifier-source-artifacts-v1",
+  "debugDir": "C:\\Users\\Simon\\OneDrive\\Documents\\Python Scripts\\villani\\components\\villani-ops\\villani_ops\\tests\\fixtures\\verifier_success",
+  "files": [
+    {
+      "relativePath": "commands.jsonl",
+      "exists": true,
+      "sizeBytes": 991,
+      "sha256": "57d09f036ae9f8b4f9e05f80c582740716179bfda5040fb6f1a0a1b41ed223e9",
+      "lineCount": 9
+    },
+    {
+      "relativePath": "final_summary.json",
+      "exists": true,
+      "sizeBytes": 105,
+      "sha256": "b7d25e6b54155a1b4f232259498bee92cf3aaee7ef11707af82bbd2a6b1db286",
+      "lineCount": 2
+    },
+    {
+      "relativePath": "model_responses.jsonl",
+      "exists": true,
+      "sizeBytes": 17,
+      "sha256": "4b000de035f8590433a704b6d3babba8192da6fe1f985e0e5aa60b328324d221",
+      "lineCount": 2
+    },
+    {
+      "relativePath": "patches.jsonl",
+      "exists": true,
+      "sizeBytes": 119,
+      "sha256": "9b210174c115cb073426c3e9cdefac0dbdd40ed446d779046c8e2ed3e852e4f9",
+      "lineCount": 3
+    },
+    {
+      "relativePath": "session_meta.json",
+      "exists": true,
+      "sizeBytes": 356,
+      "sha256": "4f5216d31d6545bcac1f22d61874cf684bf418cf451d00dbbd9f2e8dab5145cf",
+      "lineCount": 2
+    },
+    {
+      "relativePath": "summary.json",
+      "exists": true,
+      "sizeBytes": 105,
+      "sha256": "b7d25e6b54155a1b4f232259498bee92cf3aaee7ef11707af82bbd2a6b1db286",
+      "lineCount": 2
+    },
+    {
+      "relativePath": "tool_calls.jsonl",
+      "exists": true,
+      "sizeBytes": 225,
+      "sha256": "2961c62fad600d506f785212840ea7d1f6661d36ac9c938c698461fb1ae2f9c2",
+      "lineCount": 3
+    }
+  ],
+  "coreArtifacts": {
+    "session_meta.json": true,
+    "commands.jsonl": true,
+    "tool_calls.jsonl": true,
+    "patches.jsonl": true,
+    "model_responses.jsonl": true,
+    "summary.json": true,
+    "final_summary.json": true,
+    "validations.jsonl": false
+  },
+  "missingArtifacts": [
+    "validations.jsonl"
+  ],
+  "parseWarnings": []
+}

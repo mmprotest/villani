@@ -700,8 +700,82 @@ def test_capability_commands_rebuild_list_and_explain_without_attempt(
     assert explained.exit_code == 0, explained.output
     payload = json.loads(explained.output)
     assert payload["coding_attempt_executed"] is False
-    assert payload["path_used"] == "bootstrap_v1"
-    assert payload["bootstrap"]["considered_backends"][0]["capability_score"] == 55
+    assert payload["path_used"] == "bootstrap_fallback"
+    option = payload["bootstrap"]["considered_backends"][0]
+    assert option["configured_capability_score"] == 55
+    assert option["effective_capability_score"] == 35
+    assert option["capability_score"] == 35
+
+
+def test_policy_explain_reports_capability_provenance_and_reserves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _init()
+    configuration = yaml.safe_load(config.read_text(encoding="utf-8"))
+    configuration["model_management"]["bootstrap_default"] = "weak"
+    configuration["backends"] = {
+        "weak": {
+            "provider": "local",
+            "base_url": "http://127.0.0.1:8000/v1",
+            "model": "weak-model",
+            "roles": ["classification", "coding"],
+            "capability_score": 80,
+            "billing_mode": "fixed",
+            "fixed_cost_per_attempt": 0.1,
+        },
+        "strong": {
+            "provider": "local",
+            "base_url": "http://127.0.0.1:8000/v1",
+            "model": "strong-model",
+            "roles": ["coding"],
+            "capability_score": 100,
+            "capability_score_source": "explicit_override",
+            "billing_mode": "fixed",
+            "fixed_cost_per_attempt": 1.0,
+        },
+    }
+    unified._write_config(config, configuration)
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.setattr(unified, "_is_git_repository", lambda path: True)
+    monkeypatch.setattr(unified, "_git_repository_root", lambda path: repository)
+    monkeypatch.setattr(unified, "_repository_dirty", lambda path: False)
+    monkeypatch.setattr(
+        unified,
+        "_classify_for_capability_explain",
+        lambda *args, **kwargs: unified.ClassificationSnapshot(
+            schema_version="villani.classification.v1",
+            classification_id="policy_explain",
+            run_id="policy_explain",
+            task_id="policy_explain",
+            classified_at="2026-07-17T00:00:00Z",
+            difficulty="hard",
+            risk="high",
+            category="bug_fix",
+            required_capabilities=[],
+            estimated_attempts_needed=1,
+            needs_tests=True,
+            confidence=0.95,
+            reasoning_summary="fixture",
+            signals={},
+            metadata={"classifier_version": "task_classifier_v1"},
+        ),
+    )
+
+    explained = runner.invoke(
+        unified.app,
+        ["policy", "explain", "hard change", "--repo", str(repository)],
+    )
+
+    assert explained.exit_code == 0, explained.output
+    assert "Coding route: strong / strong-model" in explained.output
+    assert "Backend weak: configured=80.0; effective=55.0" in explained.output
+    assert "provenance=bootstrap" in explained.output
+    assert "confidence=low" in explained.output
+    assert "empirical_status=estimated" in explained.output
+    assert "retry_reason=" in explained.output
+    assert "Stage budget:" in explained.output
+    assert "Empirical sequence: status=bootstrap_fallback" in explained.output
 
 
 def test_completed_run_exits_zero_and_prints_evidence_summary(
@@ -822,13 +896,12 @@ def test_open_resolves_command_fallbacks_in_order(
     if mode == "configured":
         monkeypatch.setenv("VILLANI_VFR_COMMAND", "custom-vfr --flag")
     monkeypatch.setattr(unified, "resolve_command_prefix", resolve)
-    monkeypatch.setattr(
-        unified.subprocess,
-        "run",
-        lambda command, check=False: (
-            launched.append(list(command)) or SimpleNamespace(returncode=0)
-        ),
-    )
+
+    def record_launch(command: list[str], check: bool = False) -> SimpleNamespace:
+        launched.append(list(command))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(unified.subprocess, "run", record_launch)
 
     result = runner.invoke(unified.app, ["open"])
 
@@ -859,13 +932,12 @@ def test_open_passes_optional_run_id(
     _copy_valid_run(unified._runs_root())
     launched: list[str] = []
     monkeypatch.setattr(unified, "_resolve_vfr_command", lambda: ["vfr"])
-    monkeypatch.setattr(
-        unified.subprocess,
-        "run",
-        lambda command, check=False: (
-            launched.extend(command) or SimpleNamespace(returncode=0)
-        ),
-    )
+
+    def record_launch(command: list[str], check: bool = False) -> SimpleNamespace:
+        launched.extend(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(unified.subprocess, "run", record_launch)
     result = runner.invoke(unified.app, ["open", "run_protocol_fixture"])
     assert result.exit_code == 0
     assert launched == [

@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from villani_ops.closed_loop.capabilities.effective import (
+    resolve_effective_capability,
+)
 from villani_ops.closed_loop.capabilities.ingest import rebuild_snapshot
 from villani_ops.closed_loop.capabilities.models import (
     CapabilityProfile,
@@ -24,9 +28,11 @@ from villani_ops.closed_loop.capabilities.scoring import (
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.controller import ClosedLoopController
 from villani_ops.closed_loop.interfaces import (
+    AttemptSummary,
     BudgetContext,
     ClosedLoopRunRequest,
     PolicyContext,
+    VerificationSummary,
 )
 from villani_ops.closed_loop.policy import BootstrapPolicyEngine
 from villani_ops.closed_loop.protocol import ClassificationSnapshot
@@ -83,6 +89,8 @@ def _fixture_run(
     human_modified: bool = False,
     outcome_label: str | None = None,
     accepted_candidates_required: int = 1,
+    repository_validation_status: str | None = None,
+    repository_validation_failure_code: str | None = None,
 ) -> Path:
     """Materialize a deterministic minimal canonical run-bundle fixture."""
 
@@ -95,7 +103,38 @@ def _fixture_run(
         attempt_metadata["human_modification_label"] = "reviewer_adjusted"
     if outcome_label:
         attempt_metadata["capability_outcome_label"] = outcome_label
-    verification_metadata: dict[str, Any] = {"verifier_version": VERIFIER}
+    if repository_validation_status is None:
+        if acceptance_eligible:
+            repository_validation_status = "passed"
+        elif failure_category in {
+            "implementation_failure",
+            "capability_failure",
+            "no_change_failure",
+        }:
+            repository_validation_status = "failed"
+        elif failure_category == "infrastructure_failure":
+            repository_validation_status = "infrastructure_error"
+        else:
+            repository_validation_status = "passed"
+    if repository_validation_failure_code is None:
+        repository_validation_failure_code = {
+            "passed": "repository_validation_passed",
+            "failed": "repository_validation_test_failure",
+            "infrastructure_error": "repository_validation_provider_failure",
+        }.get(repository_validation_status, "repository_validation_unavailable")
+    verification_metadata: dict[str, Any] = {
+        "verifier_version": VERIFIER,
+        "repository_validation_status": repository_validation_status,
+        "repository_validation_failure_code": (
+            repository_validation_failure_code
+        ),
+        "repository_validation_authoritative": (
+            repository_validation_status in {"passed", "failed"}
+        ),
+        "infrastructure_failure_present": failure_category
+        in {"infrastructure_failure", "verification_failure"},
+        "computed_final_result": 1 if acceptance_eligible else 0,
+    }
     if failure_category:
         verification_metadata["failure_category"] = failure_category
     if outcome_label:
@@ -329,8 +368,12 @@ def test_verified_rejection_counts_as_failure(
 @pytest.mark.parametrize(
     ("category", "outcome", "reason"),
     [
-        ("infrastructure_failure", "rejected", "infrastructure_failure"),
-        ("verification_failure", "error", "verification_failure"),
+        ("infrastructure_failure", "rejected", "provider_failure"),
+        (
+            "verification_failure",
+            "error",
+            "verifier_infrastructure_failure",
+        ),
     ],
 )
 def test_non_model_failures_are_excluded(
@@ -399,9 +442,9 @@ def test_fixture_exclusion_counts_are_exact(tmp_path: Path) -> None:
     assert snapshot.excluded_outcome_counts == {
         "duplicate_attempt": 1,
         "human_modified": 1,
-        "infrastructure_failure": 1,
         "materialization_failure": 1,
-        "verification_failure": 1,
+        "provider_failure": 1,
+        "verifier_infrastructure_failure": 1,
     }
     assert _fine(snapshot).sample_count == 2
 
@@ -654,6 +697,11 @@ def _input(
         profile_version=SCORER,
         profile_digest="4" * 64,
         sample_count=20 if sufficient else 19,
+        effective_capability_score=(probability or 0.0) * 100.0,
+        median_duration_ms=1_000.0,
+        profile_level="category_difficulty_risk",
+        probability_source="wilson_lower_bound",
+        cost_source="actual_profile_mean",
     )
 
 
@@ -825,18 +873,292 @@ def test_sufficient_empirical_evidence_can_qualify_below_static_threshold() -> N
         capability_snapshot=snapshot,
     ).decide(context)
     assert decision.chosen_backend == "cheap"
-    assert decision.policy_version == "empirical_sequence_v1"
+    assert decision.policy_version == "empirical_sequence_v2"
+    expected_effective = float(int(100 * snapshot.profiles[0].wilson_lower_bound))
     assert {
         item.backend_name: item.capability_score
         for item in decision.considered_backends
-    } == {
-        "cheap": 10.0,
-        "strong": 90.0,
-    }
+    } == {"cheap": expected_effective, "strong": expected_effective}
     assert (
-        decision.metadata["capability_scores"]["cheap"]["static_capability_score"] == 10
+        decision.metadata["capability_scores"]["cheap"][
+            "configured_capability_score"
+        ]
+        == 10
     )
     eligibility = decision.metadata["eligibility_by_backend"]["cheap"]
     assert eligibility["static_eligible"] is False
     assert eligibility["empirical_eligible"] is True
-    assert decision.metadata["policy_path_used"] == "empirical_sequence_v1"
+    assert decision.metadata["policy_path_used"] == "empirical_sequence_v2"
+
+
+def _routing_classification() -> ClassificationSnapshot:
+    return ClassificationSnapshot(
+        schema_version="villani.classification.v1",
+        classification_id="classification_effective",
+        run_id="run_effective",
+        task_id="task_effective",
+        classified_at="2026-07-10T00:00:00Z",
+        difficulty="medium",
+        risk="low",
+        category="bug_fix",
+        required_capabilities=[],
+        estimated_attempts_needed=1,
+        needs_tests=True,
+        confidence=0.9,
+        reasoning_summary="fixture",
+        signals={},
+        metadata={"classifier_version": CLASSIFIER},
+    )
+
+
+def test_qualified_empirical_capability_uses_floor_of_wilson_bound() -> None:
+    backend = Backend(
+        name="fixture",
+        provider="local",
+        model="fixture-model",
+        roles=["coding"],
+        capability_score=99,
+    )
+    profile = _profile(_key(), 20, 20)
+    resolution = resolve_effective_capability(
+        backend,
+        _routing_classification(),
+        _snapshot(profile),
+        {
+            "capabilities": {
+                "minimum_empirical_samples": 20,
+                "classifier_version": CLASSIFIER,
+                "verifier_version": VERIFIER,
+                "scorer_version": SCORER,
+            }
+        },
+    )
+
+    assert resolution.capability_provenance == "qualified_empirical"
+    assert resolution.effective_capability_score == int(
+        100 * profile.wilson_lower_bound
+    )
+    assert resolution.empirical_sample_count == 20
+    assert resolution.selected_level == "category_difficulty_risk"
+
+
+def test_sparse_observation_receives_sample_size_uncertainty_penalty() -> None:
+    backend = Backend(
+        name="fixture",
+        provider="local",
+        model="fixture-model",
+        roles=["coding"],
+        capability_score=90,
+    )
+    profile = _profile(_key(), 5, 5)
+    resolution = resolve_effective_capability(
+        backend,
+        _routing_classification(),
+        _snapshot(profile),
+        {
+            "capabilities": {
+                "minimum_empirical_samples": 20,
+                "observed_uncertainty_penalty_max": 15,
+                "classifier_version": CLASSIFIER,
+                "verifier_version": VERIFIER,
+                "scorer_version": SCORER,
+            }
+        },
+    )
+
+    assert resolution.capability_provenance == "observed"
+    assert resolution.qualification_status == "provisional"
+    assert resolution.uncertainty_penalty == 12
+    assert resolution.effective_capability_score < 90
+    assert resolution.empirical_sample_count == 5
+
+
+@pytest.mark.parametrize(
+    ("failure_code", "excluded_reason"),
+    [
+        ("repository_validation_environment_mismatch", "environment_mismatch"),
+        ("repository_validation_executable_missing", "missing_executable"),
+        ("repository_validation_policy_denied", "policy_denial"),
+    ],
+)
+def test_validation_infrastructure_does_not_enter_capability_denominator(
+    tmp_path: Path, failure_code: str, excluded_reason: str
+) -> None:
+    _fixture_run(
+        tmp_path,
+        f"run_{excluded_reason}",
+        outcome="error",
+        acceptance_eligible=False,
+        failure_category="verification_failure",
+        materialization_status=None,
+        repository_validation_status="infrastructure_error",
+        repository_validation_failure_code=failure_code,
+    )
+    snapshot = rebuild_snapshot(tmp_path)
+    profile = _fine(snapshot)
+
+    assert profile.sample_count == 0
+    assert profile.excluded_outcome_counts[excluded_reason] == 1
+    assert snapshot.excluded_outcome_counts[excluded_reason] == 1
+
+
+def test_optimizer_persists_conservative_probability_and_profile_inputs() -> None:
+    value = _input("qualified", 0.73, 2.5)
+    result = optimize_sequence(
+        [value], max_attempts=1, target_success_probability=0.70
+    )
+
+    assert result.optimizer_status == "empirical"
+    assert result.input_backends[0].probability_source == "wilson_lower_bound"
+    assert result.input_backends[0].conservative_success_probability == 0.73
+    assert result.input_backends[0].effective_capability_score == 73
+    assert result.input_backends[0].median_duration_ms == 1_000
+
+
+def test_qualified_weak_can_route_and_retry_once_then_no_progress_escalates() -> None:
+    classification = _routing_classification().model_copy(
+        update={"difficulty": "hard"}
+    )
+    weak = Backend(
+        name="weak",
+        provider="local",
+        model="weak-model",
+        roles=["coding"],
+        capability_score=80,
+        billing_mode="fixed",
+        fixed_cost_per_attempt=0.1,
+    )
+    strong = Backend(
+        name="strong",
+        provider="local",
+        model="strong-model",
+        roles=["coding"],
+        capability_score=100,
+        capability_score_source="explicit_override",
+        billing_mode="fixed",
+        fixed_cost_per_attempt=1.0,
+    )
+    snapshot = _snapshot(
+        _profile(
+            _key(backend="weak", model="weak-model", difficulty="hard"),
+            30,
+            30,
+            mean_cost=0.1,
+        )
+    )
+    configuration = {
+        "public_policy": {
+            "preset": "cheapest-acceptable",
+            "selection_preference": "cheapest_acceptable",
+        },
+        "policy": {"version": "bootstrap_v1"},
+        "capabilities": {
+            "minimum_empirical_samples": 20,
+            "classifier_version": CLASSIFIER,
+            "verifier_version": VERIFIER,
+            "scorer_version": SCORER,
+        },
+    }
+    engine = BootstrapPolicyEngine(
+        {weak.name: weak, strong.name: strong},
+        configuration,
+        capability_snapshot=snapshot,
+    )
+    budget = BudgetContext(
+        remaining_attempts=3,
+        remaining_cost_usd=None,
+        cost_accounting_status="not_applicable",
+        remaining_wall_time_ms=None,
+        duration_accounting_status="not_applicable",
+    )
+    base = PolicyContext(
+        run_id="run_empirical_retry",
+        trace_id="trace_empirical_retry",
+        state="CLASSIFIED",
+        classification=classification,
+        attempts=(),
+        verifications=(),
+        eligible_candidate_ids=(),
+        budget=budget,
+        policy_configuration=configuration,
+    )
+    progress = {
+        "credible_progress": True,
+        "progress_score": 0.8,
+        "relevant_patch_present": True,
+        "relevant_diff_ratio": 0.9,
+        "validation_improvement_count": 1,
+        "relevant_files_changed": 1,
+        "irrelevant_files_changed": 0,
+        "duplicate_read_ratio": 0.0,
+        "repeated_failure_ratio": 0.0,
+        "turns_after_last_progress": 0,
+        "tokens_after_last_progress": 0,
+        "reason_codes": ["relevant_tracked_patch", "validation_improved"],
+        "actionable_feedback": True,
+        "candidate_quality_status": "eligible",
+    }
+    credible_attempt = AttemptSummary(
+        attempt_id="attempt_001",
+        backend_name="weak",
+        exit_code=1,
+        status="completed",
+        cost_usd=0.1,
+        cost_accounting_status="complete",
+        failure_category="implementation_failure",
+        material_progress=True,
+        progress_assessment=progress,
+    )
+    actionable = VerificationSummary(
+        attempt_id="attempt_001",
+        outcome="rejected",
+        acceptance_eligible=False,
+        recommended_action="reject",
+        failure_category="implementation_failure",
+        actionable_correction=True,
+    )
+    no_progress = AttemptSummary(
+        attempt_id="attempt_001",
+        backend_name="weak",
+        exit_code=1,
+        status="completed",
+        cost_usd=0.1,
+        cost_accounting_status="complete",
+        failure_category="implementation_failure",
+        progress_assessment={
+            **progress,
+            "credible_progress": False,
+            "progress_score": 0.0,
+            "relevant_patch_present": False,
+            "relevant_diff_ratio": 0.0,
+            "validation_improvement_count": 0,
+            "relevant_files_changed": 0,
+            "reason_codes": ["no_credible_progress_signal"],
+            "actionable_feedback": False,
+            "candidate_quality_status": "ineligible",
+            "candidate_empty": True,
+        },
+    )
+
+    assert engine.decide(base).chosen_backend == "weak"
+    retry = engine.decide(
+        replace(
+            base,
+            state="REJECTED",
+            attempts=(credible_attempt,),
+            verifications=(actionable,),
+        )
+    )
+    escalated = engine.decide(
+        replace(
+            base,
+            state="REJECTED",
+            attempts=(no_progress,),
+            verifications=(),
+        )
+    )
+
+    assert retry.action == "retry"
+    assert retry.chosen_backend == "weak"
+    assert escalated.action == "escalate"
+    assert escalated.chosen_backend == "strong"

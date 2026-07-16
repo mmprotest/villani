@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "villani-ops-verifier-input-v1",
+  "debugDir": "C:\\Users\\Simon\\OneDrive\\Documents\\Python Scripts\\villani\\components\\villani-ops\\villani_ops\\tests\\fixtures\\verifier_success",
+  "repoDir": null,
+  "workspace": ".villani-ops",
+  "backendRequested": null,
+  "modelRequested": null,
+  "baseUrlRequested": null,
+  "maxVerifierToolCalls": 12,
+  "maxToolResultChars": 12000,
+  "maxReadLines": 160,
+  "verifierTimeoutSeconds": 180,
+  "traceLevel": "full"
+}

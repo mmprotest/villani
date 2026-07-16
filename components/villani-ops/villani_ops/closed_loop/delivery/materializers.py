@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..adapters.git_isolation import repository_identity
+from ..candidate_bundle import read_patch_text
 from ..durable_io import read_jsonl_tolerant, write_json_atomic
 from ..event_writer import redact_data, redact_message
 from ..interfaces import (
@@ -1008,7 +1009,7 @@ class DeliveryMaterializerAdapter:
             source = Path(context.run_directory) / str(source_value)
             if (
                 not source.is_file()
-                or source.read_text(encoding="utf-8", errors="strict") != patch
+                or read_patch_text(source, errors="strict") != patch
             ):
                 raise DeliveryError(
                     "patch_integrity_failure",

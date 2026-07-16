@@ -297,21 +297,46 @@ class TaskMemory:
                 )
 
                 self._record_shell_inspections(command, cwd)
-            elif tool_name in {"Grep", "Search"}:
+            elif tool_name in {"Grep", "Search", "FindSymbol", "FindReferences"}:
                 content = str(result.get("content", ""))
                 seen: set[str] = set()
-                for line in content.splitlines()[:500]:
-                    candidate = line.split(":", 1)[0].strip()
-                    path = Path(candidate)
-                    if candidate and candidate not in seen and ((path.is_absolute() and path.is_file()) or (self.repo / path).is_file()):
+                try:
+                    decoded = json.loads(content)
+                except ValueError:
+                    decoded = {}
+                rows: list[Any] = []
+                if isinstance(decoded, dict):
+                    for key in ("matches", "results", "references"):
+                        value = decoded.get(key)
+                        if isinstance(value, list):
+                            rows.extend(value)
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    candidate = str(row.get("path", "")).strip()
+                    if candidate and candidate not in seen:
                         seen.add(candidate)
                         self.record_inspection(candidate)
+                if not rows:
+                    for line in content.splitlines()[:500]:
+                        candidate = line.split(":", 1)[0].strip()
+                        path = Path(candidate)
+                        if candidate and candidate not in seen and ((path.is_absolute() and path.is_file()) or (self.repo / path).is_file()):
+                            seen.add(candidate)
+                            self.record_inspection(candidate)
             elif tool_name == "Write" and tool_input.get("file_path") and not result.get("is_error"):
                 self.record_change(
                     str(tool_input["file_path"]),
                     "edit" if target_existed_before else "create",
                 )
-            elif tool_name == "Patch" and not result.get("is_error"):
+            elif tool_name in {"Patch", "PatchRange"} and not result.get("is_error"):
+                if tool_name == "PatchRange" and tool_input.get("file_path"):
+                    self.record_change(
+                        str(tool_input["file_path"]),
+                        "edit",
+                        "range patch applied",
+                    )
+                    return
                 diff = str(tool_input.get("unified_diff", ""))
                 old_paths = re.findall(r"^---\s+(?:a/)?(.+)$", diff, re.M)
                 new_paths = re.findall(r"^\+\+\+\s+(?:b/)?(.+)$", diff, re.M)

@@ -15,7 +15,13 @@ def build_system_blocks(repo: Path, repo_map: str = "", villani_mode: bool = Fal
         "You are an interactive Villani Code agent for software engineering tasks. "
         "Use tools conservatively, verify changes, and keep outputs concise. "
         "When asked to fix or modify code, do not describe an edit as complete unless you actually changed files using Patch or Write. "
-        "If you identify a concrete change, apply it before final response."
+        "If you identify a concrete change, apply it before final response. "
+        "Prefer line-range Read calls and use FindSymbol or FindReferences before scanning large files. "
+        "Do not reread unchanged content; reopen compacted evidence through its tool-result reference only when needed. "
+        "Do not repeat an identical failed command without changing its environment or inputs. "
+        "Use GitDiff frequently to inspect the actual candidate state. Keep patches narrowly scoped, use expected preimage digests, "
+        "preserve each file's newline style, and avoid generated logs or scratch output in the final patch. "
+        "Validate after meaningful mutations."
     )
     if villani_mode:
         text = (
@@ -35,7 +41,8 @@ def build_system_blocks(repo: Path, repo_map: str = "", villani_mode: bool = Fal
         task_hint = f" Task mode: {task_mode.value}." if task_mode else ""
         text = (
             f"{text} Before editing, name one likely target file. Prefer minimal patches over whole-file rewrites. "
-            f"Expand scope only with concrete evidence. Verify after meaningful edits. Stop if verification repeats without new evidence.{task_hint}"
+            f"Expand scope only with concrete evidence. Verify after meaningful edits. "
+            f"Do not repeat unchanged reads, searches, validation output, or failed commands.{task_hint}"
         )
     if benchmark_enabled:
         text = (

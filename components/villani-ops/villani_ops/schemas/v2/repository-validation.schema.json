@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/repository-validation.schema.json",
+  "title": "Villani Repository Validation v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "attempt_id", "candidate_id", "execution_environment_fingerprint", "execution_provider", "commands", "status", "authoritative", "completed_at", "retry_count", "failure_code", "authority_source"],
+  "properties": {
+    "schema_version": {"const": "villani.repository_validation.v2"},
+    "run_id": {"type": "string", "minLength": 1},
+    "attempt_id": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "execution_environment_fingerprint": {"type": "string", "minLength": 1},
+    "execution_provider": {"type": "string", "minLength": 1},
+    "commands": {"type": "array", "items": {"$ref": "#/$defs/command"}},
+    "status": {"enum": ["passed", "failed", "unavailable", "infrastructure_error"]},
+    "authoritative": {"type": "boolean"},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "retry_count": {"type": "integer", "minimum": 0},
+    "failure_code": {"type": ["string", "null"], "enum": ["repository_validation_passed", "repository_validation_test_failure", "repository_validation_timeout", "repository_validation_executable_missing", "repository_validation_environment_mismatch", "repository_validation_provider_failure", "repository_validation_policy_denied", "repository_validation_unavailable", "repository_validation_malformed_result", null]},
+    "authority_source": {"enum": ["repository_validation_v2", "legacy_runtime_events"]}
+  },
+  "$defs": {
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validation_id", "argv", "command_role", "status", "exit_code", "duration_ms", "stdout", "stderr", "stdout_bytes", "stderr_bytes", "stdout_truncated", "stderr_truncated", "execution_environment_fingerprint", "execution_provider", "worktree_path", "baseline_sha256", "candidate_state", "started_at", "completed_at", "failure_code"],
+      "properties": {
+        "validation_id": {"type": "string", "minLength": 1},
+        "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "command_role": {"const": "repository_validation"},
+        "status": {"enum": ["passed", "failed", "timed_out", "infrastructure_error", "policy_denied"]},
+        "exit_code": {"type": ["integer", "null"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "stdout": {"type": "string"},
+        "stderr": {"type": "string"},
+        "stdout_bytes": {"type": "integer", "minimum": 0},
+        "stderr_bytes": {"type": "integer", "minimum": 0},
+        "stdout_truncated": {"type": "boolean"},
+        "stderr_truncated": {"type": "boolean"},
+        "execution_environment_fingerprint": {"type": "string", "minLength": 1},
+        "execution_provider": {"type": "string", "minLength": 1},
+        "worktree_path": {"type": "string", "minLength": 1},
+        "baseline_sha256": {"type": "string", "minLength": 1},
+        "candidate_state": {"const": "post_mutation"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "failure_code": {"$ref": "#/properties/failure_code"}
+      }
+    }
+  }
+}

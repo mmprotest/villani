@@ -328,6 +328,11 @@ def verifier(
     trace_dir: str | None = typer.Option(
         None, "--trace-dir", help="Exact trace directory for this run."
     ),
+    verification_context: str | None = typer.Option(
+        None,
+        "--verification-context",
+        help="Typed closed-loop verification context JSON.",
+    ),
     trace_level: str = typer.Option(
         "full", "--trace-level", help="Trace level: minimal, standard, or full."
     ),
@@ -454,6 +459,16 @@ def verifier(
             base_url=base_url,
         )
         if not no_llm:
+            context_value = None
+            if verification_context:
+                loaded_context = json.loads(
+                    Path(verification_context).read_text(encoding="utf-8")
+                )
+                if not isinstance(loaded_context, dict):
+                    raise VerifierSchemaError(
+                        "verification context must be a JSON object"
+                    )
+                context_value = loaded_context
             result = llm_result(
                 run,
                 result,
@@ -466,6 +481,7 @@ def verifier(
                 max_tool_result_chars=max_tool_result_chars,
                 max_read_lines=max_read_lines,
                 trace=tw,
+                verification_context=context_value,
             )
         else:
             tw.write_json(

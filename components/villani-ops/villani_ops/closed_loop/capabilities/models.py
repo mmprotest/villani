@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+CapabilityProvenance: TypeAlias = Literal[
+    "manual",
+    "bootstrap",
+    "observed",
+    "qualified_empirical",
+    "explicit_override",
+]
+CapabilityConfidence: TypeAlias = Literal[
+    "low", "medium", "high", "operator_override"
+]
+QualificationStatus: TypeAlias = Literal[
+    "estimated",
+    "provisional",
+    "qualified",
+    "explicit_override",
+]
 
 
 class ProfileKey(StrictModel):
@@ -125,6 +143,31 @@ class EmpiricalScoreResolution(StrictModel):
     backoff_evidence: list[dict[str, object]]
 
 
+class EffectiveCapability(StrictModel):
+    """Conservative capability used by routing, with its evidence provenance."""
+
+    backend_name: str = Field(min_length=1)
+    configured_capability_score: float = Field(ge=0, le=100)
+    effective_capability_score: float = Field(ge=0, le=100)
+    capability_provenance: CapabilityProvenance
+    capability_confidence: CapabilityConfidence
+    uncertainty_penalty: float = Field(ge=0, le=100)
+    empirical_sample_count: int = Field(ge=0)
+    empirical_wilson_lower_bound: float | None = Field(default=None, ge=0, le=1)
+    qualification_status: QualificationStatus
+    conservative_success_probability: float | None = Field(default=None, ge=0, le=1)
+    selected_level: str | None = None
+    selected_profile_key: ProfileKey | None = None
+    selected_profile_digest: str | None = None
+    mean_actual_attempt_cost: float | None = Field(default=None, ge=0)
+    median_actual_attempt_cost: float | None = Field(default=None, ge=0)
+    mean_duration_ms: float | None = Field(default=None, ge=0)
+    median_duration_ms: float | None = Field(default=None, ge=0)
+    override_applied: bool = False
+    backoff_evidence: list[dict[str, object]] = Field(default_factory=list)
+    missing_inputs: list[str] = Field(default_factory=list)
+
+
 class EmpiricalBackendInput(StrictModel):
     backend_name: str = Field(min_length=1)
     conservative_success_probability: float | None = Field(default=None, ge=0, le=1)
@@ -133,6 +176,17 @@ class EmpiricalBackendInput(StrictModel):
     profile_version: str | None
     profile_digest: str | None
     sample_count: int = Field(ge=0)
+    effective_capability_score: float | None = Field(default=None, ge=0, le=100)
+    mean_duration_ms: float | None = Field(default=None, ge=0)
+    median_duration_ms: float | None = Field(default=None, ge=0)
+    profile_level: str | None = None
+    task_category_profile: str | None = None
+    difficulty_profile: str | None = None
+    risk_profile: str | None = None
+    execution_environment_profile: str | None = None
+    probability_source: str = "missing"
+    cost_source: str = "missing"
+    fallback_assumptions: tuple[str, ...] = ()
 
 
 class SequenceEvaluation(StrictModel):
@@ -141,6 +195,8 @@ class SequenceEvaluation(StrictModel):
     success_probability: float = Field(ge=0, le=1)
     worst_case_cost: float = Field(ge=0)
     reaches_target: bool
+    expected_duration_ms: float = Field(default=0, ge=0)
+    worst_case_duration_ms: float = Field(default=0, ge=0)
 
 
 class SequenceOptimizationResult(StrictModel):

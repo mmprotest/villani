@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/verification-evidence.schema.json",
+  "title": "Villani Verification Evidence Matrix v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "attempt_id",
+    "requirements",
+    "repository_validation_status",
+    "candidate_eligibility_status",
+    "semantic_verifier_status",
+    "critical_requirements_proven",
+    "contradictions_present",
+    "infrastructure_failure_present",
+    "final_result",
+    "final_reason_code",
+    "final_reason"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.verification_evidence.v2" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "requirements": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/requirement_evidence" }
+    },
+    "repository_validation_status": { "type": "string", "minLength": 1 },
+    "candidate_eligibility_status": { "type": "string", "minLength": 1 },
+    "semantic_verifier_status": { "type": "string", "minLength": 1 },
+    "critical_requirements_proven": { "type": "boolean" },
+    "contradictions_present": { "type": "boolean" },
+    "infrastructure_failure_present": { "type": "boolean" },
+    "final_result": { "enum": [0, 1] },
+    "final_reason_code": {
+      "enum": [
+        "accepted",
+        "candidate_ineligible",
+        "empty_patch",
+        "repository_validation_failed",
+        "repository_validation_unavailable",
+        "repository_validation_infrastructure_error",
+        "focused_probe_failed",
+        "focused_probe_missing",
+        "critical_requirement_missing",
+        "critical_requirement_failed",
+        "semantic_verifier_rejected",
+        "semantic_verifier_unclear",
+        "verifier_tool_failure",
+        "verifier_malformed_output",
+        "evidence_contradiction"
+      ]
+    },
+    "final_reason": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "requirement_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirement_id",
+        "description",
+        "critical",
+        "evidence_type",
+        "evidence_ids",
+        "deterministic_status",
+        "semantic_status",
+        "contradiction",
+        "final_status",
+        "reason"
+      ],
+      "properties": {
+        "requirement_id": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "critical": { "type": "boolean" },
+        "evidence_type": {
+          "enum": [
+            "repository_validation",
+            "focused_probe",
+            "static_patch_evidence",
+            "source_inspection",
+            "debug_trace",
+            "semantic_reasoning"
+          ]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "deterministic_status": {
+          "enum": [
+            "passed",
+            "failed",
+            "missing",
+            "not_applicable",
+            "infrastructure_error"
+          ]
+        },
+        "semantic_status": {
+          "enum": ["passed", "failed", "unclear", "not_assessed"]
+        },
+        "contradiction": { "type": "boolean" },
+        "final_status": {
+          "enum": ["passed", "failed", "missing", "infrastructure_error"]
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

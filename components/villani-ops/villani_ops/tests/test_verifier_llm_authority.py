@@ -46,8 +46,8 @@ def test_raw_llm_success_remains_final_success_with_candidate_active_failures():
     assert out["llmRawVerdict"]["result"] == 1
     assert out["result"] == 1 and out["verdict"] == "success"
     assert out["postProcessingChangedResult"] is False
-    assert out["resultSource"] == "llm_verifier"
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["resultSource"] == "semantic_llm_advisory"
+    assert out["recommendedAction"] == "escalate"
     assert out["_calibration"]["resultChanged"] is False
     assert (
         out["_calibration"]["deterministicDisagreements"][0]["effect"]
@@ -80,12 +80,12 @@ def test_confidence_cap_does_not_change_result():
     assert out["_calibration"]["confidenceChanged"] is True
 
 
-def test_recommended_action_can_change_to_inspect_manually_not_result():
+def test_recommended_action_can_change_to_escalate_not_result():
     out = calibrate(
         _det(active=[{"text": "candidate failure"}]), _verdict(1, action="accept")
     )
     assert out["result"] == 1 and out["verdict"] == "success"
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert out["_calibration"]["recommendedActionChanged"] is True
 
 
@@ -205,7 +205,7 @@ def test_llm_result_contains_raw_source_and_trace(monkeypatch, tmp_path):
 
     patch_backend_post(monkeypatch, lambda *a, **k: Resp())
     res = llm_result(run, det, workspace=str(tmp_path / "ws"))
-    assert res["resultSource"] == "llm_verifier"
+    assert res["resultSource"] == "semantic_llm_advisory"
     assert res["llmRawVerdict"]["result"] == 1
     assert res["postProcessingChangedResult"] is False
 
@@ -256,18 +256,15 @@ def test_transcript_includes_non_mutating_sections():
     assert "## Final Result" in text
 
 
-def test_prompt_declares_llm_authority_and_task_contract_checklist():
-    assert "The deterministic evidence collector is not authoritative." in SYSTEM
-    assert "deterministic labels are hints, not conclusions" in SYSTEM
+def test_prompt_declares_evidence_collection_and_deterministic_authority():
     for phrase in [
-        "required outputs",
-        "required file modifications",
-        "required behavior",
-        "required services or installability",
-        "required performance or quality constraints",
-        "forbidden changes",
-        "allowed-edit constraints",
-        "negative requirements",
+        "collect and classify evidence",
+        "deterministic evidence matrix computes the final acceptance decision",
+        "Never infer behavior is correct merely because the diff looks reasonable",
+        "Treat candidate claims",
+        "before the final mutation as stale",
+        "propose a focused probe",
+        "strict structured JSON",
     ]:
         assert phrase in SYSTEM
 
@@ -277,7 +274,7 @@ def test_infrastructure_error_schema_still_possible():
     out = {
         "result": None,
         "verdict": "error",
-        "recommendedAction": "inspect_manually",
+        "recommendedAction": "escalate",
         "riskFlags": [],
     }
     from villani_ops.verifier.llm import validate_final_result_consistency
@@ -323,7 +320,7 @@ def test_critical_coverage_false_downgrades_accept_and_caps_confidence():
     )
     out = calibrate(_det(), v)
     assert out["result"] == 1
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert out["confidence"] == 0.70
     assert (
         "accept_downgraded_without_evidence_proven_critical_requirement_coverage"
@@ -334,7 +331,7 @@ def test_critical_coverage_false_downgrades_accept_and_caps_confidence():
 def test_missing_critical_coverage_downgrades_accept_and_caps_confidence():
     out = calibrate(_det(), _verdict(1, confidence=0.86, action="accept"))
     assert out["result"] == 1
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert out["confidence"] == 0.70
 
 
@@ -392,7 +389,7 @@ def test_critical_coverage_proven_accept_stays_accept():
 def test_critical_coverage_declared_without_refs_downgrades_accept():
     out = calibrate(_det(), _covered_verdict([]))
     assert out["result"] == 1
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert out["confidence"] == 0.70
     assert out["criticalRequirementCoverageProven"] is False
     assert (
@@ -408,7 +405,7 @@ def test_critical_coverage_source_inspection_ref_downgrades_accept():
         ]
     )
     out = calibrate(det, _covered_verdict(["src"]))
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert out["criticalRequirementCoverageProven"] is False
 
 
@@ -420,7 +417,7 @@ def test_critical_coverage_import_and_file_existence_refs_downgrade_unless_artif
         deliverables=[{"id": "exists", "kind": "file_existence_check"}],
     )
     out = calibrate(det, _covered_verdict(["imp", "exists"]))
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert out["criticalRequirementCoverageProven"] is False
 
     artifact_det = _det(
@@ -441,7 +438,7 @@ def test_critical_coverage_normal_path_for_abnormal_requirement_downgrades_accep
     v = _covered_verdict(["normal"])
     v["criticalRequirement"] = "abnormal path behavior"
     out = calibrate(det, v)
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert out["criticalRequirementCoverageProven"] is False
 
 
@@ -536,4 +533,4 @@ def test_proven_coverage_downgraded_by_final_decisive_failure():
         },
     }
     out = calibrate(det, v)
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"

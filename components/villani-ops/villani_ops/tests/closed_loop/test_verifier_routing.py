@@ -55,16 +55,29 @@ def context(tmp_path: Path, *, risk: str = "low") -> AttemptContext:
 
 def attempt(tmp_path: Path, *, validation_exit: int | None = None) -> AttemptResult:
     events = ()
+    metadata = {"changed_files": ["calculator.py"]}
     if validation_exit is not None:
         events = (
             RuntimeEvent(
-                event_type="command_completed" if validation_exit == 0 else "command_failed",
+                event_type=(
+                    "repository_validation_completed"
+                    if validation_exit == 0
+                    else "repository_validation_failed"
+                ),
                 timestamp=datetime.now(timezone.utc),
                 payload={
                     "command_role": "repository_validation",
                     "exit_code": validation_exit,
                 },
             ),
+        )
+        metadata.update(
+            {
+                "repository_validation_status": (
+                    "passed" if validation_exit == 0 else "failed"
+                ),
+                "repository_validation_authoritative": True,
+            }
         )
     return AttemptResult(
         runner_name="fixture",
@@ -73,7 +86,7 @@ def attempt(tmp_path: Path, *, validation_exit: int | None = None) -> AttemptRes
         patch="+fixed\n",
         exit_code=0,
         runtime_events=events,
-        metadata={"changed_files": ["calculator.py"]},
+        metadata=metadata,
     )
 
 
@@ -177,9 +190,7 @@ def test_cheapest_eligible_verifier_is_selected_before_stronger_fallback() -> No
 
 
 def test_malformed_output_escalates_and_billing_is_counted_once(tmp_path: Path) -> None:
-    low = StaticVerifier(
-        verification("error", status="malformed_output", cost=0.01)
-    )
+    low = StaticVerifier(verification("error", status="malformed_output", cost=0.01))
     high = StaticVerifier(verification("accepted", cost=0.04))
     cascade = VerifierCascade(
         (
@@ -204,7 +215,9 @@ def test_malformed_output_escalates_and_billing_is_counted_once(tmp_path: Path) 
         "low",
         "high",
     ]
-    assert result.metadata["verifier_calls"][0]["escalation_reason"] == "malformed_output"
+    assert (
+        result.metadata["verifier_calls"][0]["escalation_reason"] == "malformed_output"
+    )
     assert sum(float(item["cost"]) for item in result.llm_usage) == 0.05
 
 
@@ -316,7 +329,9 @@ def test_unavailable_verifier_is_never_selected() -> None:
     assert [item.entry.backend for item in selected] == ["available"]
 
 
-def test_failed_repository_validation_never_calls_an_llm_verifier(tmp_path: Path) -> None:
+def test_failed_repository_validation_blocks_semantic_acceptance(
+    tmp_path: Path,
+) -> None:
     backend = StaticVerifier(verification("accepted", cost=1.0))
     cascade = VerifierCascade(
         (
@@ -325,10 +340,17 @@ def test_failed_repository_validation_never_calls_an_llm_verifier(tmp_path: Path
             ),
         )
     )
-    result = cascade.verify(context(tmp_path, risk="high"), attempt(tmp_path, validation_exit=1))
+    result = cascade.verify(
+        context(tmp_path, risk="high"),
+        attempt(tmp_path, validation_exit=1),
+    )
     assert result.acceptance_eligible is False
-    assert result.outcome == "error"
-    assert backend.calls == 0
+    assert result.outcome == "rejected"
+    assert backend.calls == 1
+    assert (
+        result.metadata["computed_final_reason_code"] == "repository_validation_failed"
+    )
+    assert result.metadata["verifier_disagreement"] is True
 
 
 def test_no_eligible_authority_fails_closed(tmp_path: Path) -> None:

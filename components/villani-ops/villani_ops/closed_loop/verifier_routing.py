@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .interfaces import AttemptContext, AttemptResult, EvidenceItem, Verification, Verifier
+from .interfaces import (
+    AttemptContext,
+    AttemptResult,
+    EvidenceItem,
+    Verification,
+    Verifier,
+)
 
 
 class VerifierPolicyEntry(BaseModel):
@@ -83,7 +90,6 @@ def required_capability(
     if context.authoritative_validation_passed:
         reasons.append("authoritative_repository_validation_passed")
     if context.active_validation_failure:
-        minimum = 101
         reasons.append("active_validation_failure_blocks_acceptance")
     if context.missing_evidence:
         minimum = max(minimum, policy.medium_risk_minimum_capability)
@@ -133,7 +139,9 @@ def select_routes(
     return tuple(eligible), minimum, reasons
 
 
-def _routing_context(context: AttemptContext, result: AttemptResult) -> VerifierRoutingContext:
+def _routing_context(
+    context: AttemptContext, result: AttemptResult
+) -> VerifierRoutingContext:
     raw = context.classification
     risk = str(raw.get("risk") or "high")
     difficulty = str(raw.get("difficulty") or "hard")
@@ -145,24 +153,79 @@ def _routing_context(context: AttemptContext, result: AttemptResult) -> Verifier
         )
         for name in changed_files
     )
-    repository_validations = [
-        event
-        for event in result.runtime_events
-        if event.payload.get("command_role") == "repository_validation"
-    ]
-    validation_failed = any(
-        event.event_type == "command_failed"
-        or event.payload.get("exit_code") not in {None, 0}
-        for event in repository_validations
+    declared_status = str(result.metadata.get("repository_validation_status") or "")
+    declared_authoritative = bool(
+        result.metadata.get("repository_validation_authoritative")
     )
-    validation_passed = bool(repository_validations) and not validation_failed and any(
-        event.payload.get("exit_code") == 0 for event in repository_validations
-    )
+    if declared_status in {
+        "passed",
+        "failed",
+        "unavailable",
+        "infrastructure_error",
+    }:
+        validation_passed = declared_status == "passed" and declared_authoritative
+        validation_failed = declared_status == "failed" and declared_authoritative
+    else:
+        expected_worktree = str(Path(result.worktree_path).resolve())
+
+        def legacy_event_is_structured(event: Any) -> bool:
+            if event.event_type not in {"command_completed", "command_failed"}:
+                return False
+            payload = event.payload
+            required = {
+                "run_id",
+                "attempt_id",
+                "worktree_path",
+                "baseline_sha256",
+                "candidate_state",
+                "exit_code",
+            }
+            return bool(
+                required.issubset(payload)
+                and payload.get("run_id") == context.run_id
+                and payload.get("attempt_id") == context.attempt_id
+                and str(Path(str(payload.get("worktree_path"))).resolve())
+                == expected_worktree
+                and context.baseline_sha256
+                and payload.get("baseline_sha256") == context.baseline_sha256
+                and payload.get("candidate_state") == "post_mutation"
+                and payload.get("command_role") == "repository_validation"
+            )
+
+        legacy_events = [
+            event
+            for event in result.runtime_events
+            if (
+                event.event_type
+                in {
+                    "repository_validation_completed",
+                    "repository_validation_failed",
+                    "repository_validation_infrastructure_error",
+                }
+                and event.payload.get("command_role") == "repository_validation"
+            )
+            or legacy_event_is_structured(event)
+        ]
+        validation_failed = any(
+            event.event_type
+            in {
+                "repository_validation_failed",
+                "command_failed",
+            }
+            for event in legacy_events
+        )
+        validation_passed = (
+            bool(legacy_events)
+            and not validation_failed
+            and all(
+                event.event_type
+                in {"repository_validation_completed", "command_completed"}
+                for event in legacy_events
+            )
+        )
     return VerifierRoutingContext(
         risk=risk if risk in {"low", "medium", "high"} else "high",  # type: ignore[arg-type]
-        difficulty=(
-            difficulty if difficulty in {"easy", "medium", "hard"} else "hard"
-        ),  # type: ignore[arg-type]
+        difficulty=(difficulty if difficulty in {"easy", "medium", "hard"} else "hard"),  # type: ignore[arg-type]
         authoritative_validation_passed=validation_passed,
         active_validation_failure=validation_failed,
         missing_evidence=not validation_passed,
@@ -204,7 +267,9 @@ class VerifierCascade:
         self.policy = policy or VerifierRoutingPolicy()
 
     @staticmethod
-    def _escalation_reason(policy: VerifierRoutingPolicy, result: Verification) -> str | None:
+    def _escalation_reason(
+        policy: VerifierRoutingPolicy, result: Verification
+    ) -> str | None:
         status = str(result.metadata.get("invocation_status") or "")
         if policy.escalate_on_malformed and status == "malformed_output":
             return "malformed_output"
@@ -226,11 +291,6 @@ class VerifierCascade:
             "minimum_capability": minimum,
             "selection_reasons": list(reasons),
         }
-        if facts.active_validation_failure:
-            return _failure_verification(
-                "Failed authoritative repository validation blocks acceptance.",
-                {**base_metadata, "active_validation_failure": True},
-            )
         if not routes:
             return _failure_verification(
                 "No available verifier meets the configured acceptance authority.",
@@ -259,6 +319,25 @@ class VerifierCascade:
                         "exception_class": type(error).__name__,
                     },
                 )
+            if facts.active_validation_failure and returned.acceptance_eligible:
+                returned = replace(
+                    returned,
+                    outcome="rejected",
+                    acceptance_eligible=False,
+                    reason=(
+                        "Authoritative repository validation failed on the candidate."
+                    ),
+                    recommended_action="reject",
+                    risk_flags=tuple(returned.risk_flags)
+                    + ("acceptance_blocker:repository_validation_failed",),
+                    metadata={
+                        **dict(returned.metadata),
+                        "raw_semantic_acceptance_eligible": True,
+                        "computed_final_result": 0,
+                        "computed_final_reason_code": ("repository_validation_failed"),
+                        "verifier_disagreement": True,
+                    },
+                )
             duration_ms = max(int((time.monotonic() - started) * 1000), 0)
             usage.extend(returned.llm_usage)
             new_disagreement = bool(
@@ -278,14 +357,21 @@ class VerifierCascade:
                     "selection_reason": (
                         "cheapest_eligible"
                         if retry_number == 0
-                        else "stronger_after_"
-                        + str(calls[-1].get("escalation_reason"))
+                        else "stronger_after_" + str(calls[-1].get("escalation_reason"))
                     ),
                     "authority": route.entry.authority,
-                    "input_tokens": sum(int(item.get("input_tokens") or 0) for item in call_usage),
-                    "output_tokens": sum(int(item.get("output_tokens") or 0) for item in call_usage),
-                    "total_tokens": sum(int(item.get("total_tokens") or 0) for item in call_usage),
-                    "cost_usd": sum(float(item.get("cost") or 0) for item in call_usage),
+                    "input_tokens": sum(
+                        int(item.get("input_tokens") or 0) for item in call_usage
+                    ),
+                    "output_tokens": sum(
+                        int(item.get("output_tokens") or 0) for item in call_usage
+                    ),
+                    "total_tokens": sum(
+                        int(item.get("total_tokens") or 0) for item in call_usage
+                    ),
+                    "cost_usd": sum(
+                        float(item.get("cost") or 0) for item in call_usage
+                    ),
                     "duration_ms": duration_ms,
                     "outcome": returned.outcome,
                     "confidence": returned.confidence,
@@ -297,6 +383,23 @@ class VerifierCascade:
                 }
             )
             previous = returned
+            if returned.metadata.get("focused_probe_requests_pending"):
+                return replace(
+                    returned,
+                    verifier=route.entry.backend,
+                    metadata={
+                        **dict(returned.metadata),
+                        **base_metadata,
+                        "verifier_calls": calls,
+                        "verifier_disagreement": disagreement
+                        or bool(returned.metadata.get("verifier_disagreement")),
+                        "verifier_disagreement_resolution": None,
+                        "verifier_route_complete": False,
+                        "verifier_route_index": retry_number,
+                        "verifier_route_awaiting_focused_probes": True,
+                    },
+                    llm_usage=tuple(usage),
+                )
             if escalation is None:
                 if (
                     new_disagreement
@@ -335,7 +438,8 @@ class VerifierCascade:
                         **dict(returned.metadata),
                         **base_metadata,
                         "verifier_calls": calls,
-                        "verifier_disagreement": disagreement,
+                        "verifier_disagreement": disagreement
+                        or bool(returned.metadata.get("verifier_disagreement")),
                         "verifier_disagreement_resolution": disagreement_resolution,
                         "verifier_route_complete": True,
                     },
@@ -349,13 +453,50 @@ class VerifierCascade:
                 **dict(previous.metadata),
                 **base_metadata,
                 "verifier_calls": calls,
-                "verifier_disagreement": disagreement,
+                "verifier_disagreement": disagreement
+                or bool(previous.metadata.get("verifier_disagreement")),
                 "verifier_disagreement_resolution": (
                     "unresolved" if disagreement else None
                 ),
                 "verifier_route_complete": False,
             },
             llm_usage=tuple(usage),
+        )
+
+    def finalize_with_focused_probes(
+        self,
+        context: AttemptContext,
+        result: AttemptResult,
+        initial_verification: Verification,
+    ) -> Verification:
+        """Finalize the route that proposed probes without another model call."""
+
+        route_index = initial_verification.metadata.get("verifier_route_index")
+        if not isinstance(route_index, int) or not (
+            0 <= route_index < len(self.routes)
+        ):
+            return initial_verification
+        finalize = getattr(
+            self.routes[route_index].verifier,
+            "finalize_with_focused_probes",
+            None,
+        )
+        if not callable(finalize):
+            return initial_verification
+        returned = finalize(context, result, initial_verification)
+        if not isinstance(returned, Verification):
+            raise TypeError("verifier returned an invalid focused-probe finalization")
+        metadata = {
+            **dict(initial_verification.metadata),
+            **dict(returned.metadata),
+            "verifier_route_complete": True,
+            "verifier_route_awaiting_focused_probes": False,
+        }
+        return replace(
+            returned,
+            verifier=self.routes[route_index].entry.backend,
+            metadata=metadata,
+            llm_usage=initial_verification.llm_usage,
         )
 
 

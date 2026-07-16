@@ -345,7 +345,7 @@ def test_coverage_gate_accepts_only_concrete_evidence_and_preserves_warnings():
         out = calibrate(
             _det_with(kind, prov), _verdict(["ev-0001"], warnings=["existing"])
         )
-        assert out["recommendedAction"] == "inspect_manually"
+        assert out["recommendedAction"] == "escalate"
         assert out["criticalRequirementCoverageProven"] is False
         assert "critical_requirement_evidence_refs_not_concrete" in out["warnings"]
         assert (
@@ -357,10 +357,10 @@ def test_coverage_gate_accepts_only_concrete_evidence_and_preserves_warnings():
 
 def test_coverage_gate_missing_invalid_and_failure_result_behavior():
     out = calibrate(_det_with(), _verdict([]))
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     assert "critical_requirement_evidence_refs_missing_or_invalid" in out["warnings"]
     out = calibrate(_det_with(), _verdict(["ev-9999"]))
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     out = calibrate(_det_with(), _verdict([], result=0, action="reject"))
     assert out["result"] == 0
     assert out["recommendedAction"] == "reject"
@@ -504,7 +504,7 @@ def test_evidence_equivalence_missing_false_and_material_limitations_downgrade()
         v = _verdict(["ev-0001"])
         v["criticalRequirementEvidenceMatch"] = match
         out = calibrate(_det_with(), v)
-        assert out["recommendedAction"] == "inspect_manually"
+        assert out["recommendedAction"] == "escalate"
         assert out["criticalRequirementCoverageProven"] is False
 
 
@@ -521,7 +521,7 @@ def test_nearby_condition_concrete_validation_downgrades_but_same_condition_acce
         }
     }
     out = calibrate(_det_with(), v)
-    assert out["recommendedAction"] == "inspect_manually"
+    assert out["recommendedAction"] == "escalate"
     v = _verdict(["ev-0001"])
     v["criticalRequirementEvidenceMatch"] = {
         "ev-0001": {

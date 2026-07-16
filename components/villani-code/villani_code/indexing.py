@@ -16,6 +16,7 @@ class FileInfo:
     lang: str
     symbols: list[str]
     snippet: str
+    content_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -87,11 +88,23 @@ class RepoIndex:
             size = stat.st_size
             if size > 2_000_000:
                 continue
-            snippet = extract_snippet(path)
+            raw = path.read_bytes()
+            snippet = extract_snippet_bytes(raw)
             lang = guess_language(path)
             symbols = extract_symbols(snippet, lang)
-            files.append(FileInfo(path=rel.as_posix(), size=size, mtime=stat.st_mtime, lang=lang, symbols=symbols, snippet=snippet))
-            fingerprints.append(f"{rel.as_posix()}:{size}:{int(stat.st_mtime)}")
+            content_sha256 = hashlib.sha256(raw).hexdigest()
+            files.append(
+                FileInfo(
+                    path=rel.as_posix(),
+                    size=size,
+                    mtime=stat.st_mtime,
+                    lang=lang,
+                    symbols=symbols,
+                    snippet=snippet,
+                    content_sha256=content_sha256,
+                )
+            )
+            fingerprints.append(f"{rel.as_posix()}:{content_sha256}")
         digest = hashlib.sha256("\n".join(fingerprints).encode("utf-8")).hexdigest()
         return cls(root=root, files=files, fingerprint=digest)
 
@@ -122,8 +135,7 @@ def compute_repo_fingerprint(root: Path, ignore: IgnoreRules = DEFAULT_IGNORE) -
         rel = path.relative_to(root)
         if ignore.should_ignore(rel):
             continue
-        stat = path.stat()
-        markers.append(f"{rel.as_posix()}:{stat.st_size}:{int(stat.st_mtime)}")
+        markers.append(f"{rel.as_posix()}:{hashlib.sha256(path.read_bytes()).hexdigest()}")
     return hashlib.sha256("\n".join(markers).encode("utf-8")).hexdigest()
 
 
@@ -144,7 +156,19 @@ def extract_symbols(text: str, lang: str, limit: int = 64) -> list[str]:
 
 
 def extract_snippet(path: Path, max_lines: int = 40, max_bytes: int = 8_000) -> str:
-    raw = path.read_bytes()[:max_bytes]
+    return extract_snippet_bytes(
+        path.read_bytes(),
+        max_lines=max_lines,
+        max_bytes=max_bytes,
+    )
+
+
+def extract_snippet_bytes(
+    raw: bytes,
+    max_lines: int = 40,
+    max_bytes: int = 8_000,
+) -> str:
+    raw = raw[:max_bytes]
     text = raw.decode("utf-8", errors="replace")
     lines = text.splitlines()[:max_lines]
     return "\n".join(lines)

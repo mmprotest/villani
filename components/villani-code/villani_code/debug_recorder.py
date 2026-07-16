@@ -176,7 +176,7 @@ class DebugRecorder:
                     break
         payload_data = result_payload if isinstance(result_payload, dict) else {}
         result_summary = self._normalize_result_summary(name, payload_data, summary)
-        payload = {
+        payload: dict[str, Any] = {
             "tool_name": name,
             "tool_call_id": tool_call_id,
             "summary": summary,
@@ -226,7 +226,7 @@ class DebugRecorder:
                 "created": payload_data.get("created"),
                 "overwrote": payload_data.get("overwrote"),
             }
-        if lowered == "patch":
+        if lowered in {"patch", "patchrange"}:
             return {
                 "kind": "file_patch_result",
                 "path": payload_data.get("file_path") or payload_data.get("path"),
@@ -312,10 +312,33 @@ class DebugRecorder:
         ok: bool = True,
         tool_call_id: str | None = None,
         turn_index: int | None = None,
+        *,
+        content_sha256: str = "",
+        start_line: int | None = None,
+        end_line: int | None = None,
+        lines_read: int | None = None,
+        total_lines: int | None = None,
+        truncated: bool = False,
     ) -> None:
+        payload: dict[str, Any] = {
+            "file_path": file_path,
+            "size_bytes": size_bytes,
+            "ok": ok,
+            "tool_call_id": tool_call_id or "",
+            "content_sha256": content_sha256,
+            "truncated": truncated,
+        }
+        if isinstance(start_line, int):
+            payload["start_line"] = start_line
+        if isinstance(end_line, int):
+            payload["end_line"] = end_line
+        if isinstance(lines_read, int):
+            payload["lines_read"] = lines_read
+        if isinstance(total_lines, int):
+            payload["total_lines"] = total_lines
         self._emit(
             "file_read",
-            {"file_path": file_path, "size_bytes": size_bytes, "ok": ok, "tool_call_id": tool_call_id or ""},
+            payload,
             turn_index=turn_index,
         )
 

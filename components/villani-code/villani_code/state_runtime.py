@@ -28,6 +28,10 @@ from villani_code.context_governance import (
     ContextInclusionReason,
     ContextExclusionReason,
 )
+from villani_code.context_projection import (
+    build_model_context_packet,
+    render_model_context_packet,
+)
 from villani_code.validation_loop import run_validation
 from villani_code.shells import baseline_import_validation_command, shell_family_for_platform
 from villani_code.repair import execute_repair_loop
@@ -80,6 +84,23 @@ def prepend_text_to_latest_safe_user_message(messages: list[dict[str, Any]], tex
         return True
     if isinstance(content, list):
         content.insert(0, {"type": "text", "text": text})
+        return True
+    return False
+
+
+def append_text_to_latest_safe_user_message(
+    messages: list[dict[str, Any]],
+    text: str,
+) -> bool:
+    message = _find_latest_safe_user_message(messages)
+    if message is None:
+        return False
+    content = message.get("content")
+    if isinstance(content, str):
+        message["content"] = content + "\n\n" + text if content else text
+        return True
+    if isinstance(content, list):
+        content.append({"type": "text", "text": text})
         return True
     return False
 
@@ -404,6 +425,25 @@ def prepare_messages_for_model(runner: Any, messages: list[dict[str, Any]]) -> l
     prepared = deepcopy(messages)
     if runner.small_model:
         inject_retrieval_briefing(runner, prepared)
+    packet = build_model_context_packet(runner)
+    append_text_to_latest_safe_user_message(
+        prepared,
+        render_model_context_packet(packet),
+    )
+    ledger = getattr(runner, "_context_ledger", None)
+    compacted_before = (
+        ledger.context_items_compacted if ledger is not None else 0
+    )
+    if ledger is not None:
+        prepared = ledger.project_messages(prepared)
+        if ledger.context_items_compacted > compacted_before:
+            runner.event_callback(
+                {
+                    "type": "context_compacted",
+                    **ledger.telemetry(),
+                }
+            )
+    if runner.small_model:
         if runner._context_budget:
             prepared = runner._context_budget.compact(prepared)
     inventory = runner._context_governance.load_inventory()
@@ -546,13 +586,13 @@ def small_model_tool_guard(runner: Any, tool_name: str, tool_input: dict[str, An
     constrained = runner.small_model or runner.villani_mode or runner.benchmark_config.enabled
     if not constrained:
         return None
-    if tool_name in {"Write", "Patch"}:
+    if tool_name in {"Write", "Patch", "PatchRange"}:
         fp = str(tool_input.get("file_path", "")).replace("\\", "/").lstrip("./")
         if fp:
             path = (runner.repo / fp).resolve()
             if is_ignored_repo_path(fp) or classify_repo_path(fp) != "authoritative":
                 return f"Small-model mode policy: target path is not authoritative: {fp}."
-            if tool_name == "Patch" and not path.exists():
+            if tool_name in {"Patch", "PatchRange"} and not path.exists():
                 return f"Read-before-edit policy: cannot patch missing file {fp}. Use Write to create it first."
             if tool_name == "Write" and not path.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -637,6 +677,12 @@ def tighten_tool_input(tool_name: str, tool_input: dict[str, Any]) -> None:
         tool_input["max_bytes"] = min(int(tool_input.get("max_bytes", 200000)), 50_000)
     if tool_name == "Grep":
         tool_input["max_results"] = min(int(tool_input.get("max_results", 200)), 60)
+        tool_input["max_output_chars"] = min(
+            int(tool_input.get("max_output_chars", 40_000)),
+            20_000,
+        )
+    if tool_name in {"Search", "FindSymbol", "FindReferences"}:
+        tool_input["limit"] = min(int(tool_input.get("limit", 20)), 60)
 
 
 def truncate_tool_result(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:

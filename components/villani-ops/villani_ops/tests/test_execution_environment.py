@@ -2,19 +2,26 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 from villani_ops.execution_environment import (
+    CandidateCommandResult,
     ExecutionEnvironmentConfig,
     InheritProvider,
     SetupCommandProvider,
     SetupLimits,
+    execute_candidate_command,
     inspect_repository,
 )
 from villani_ops.cli.unified import _doctor_report
-from villani_ops.execution_environment.secrets import registered_secret_values
+from villani_ops.execution_environment.secrets import (
+    register_secret_values,
+    registered_secret_values,
+)
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -197,6 +204,257 @@ def test_setup_command_bounds_output_and_timeout(tmp_path: Path) -> None:
     )
     assert timed.exit_code == 124
     assert timed.timed_out is True
+
+
+def test_candidate_execution_reuses_exact_path_fingerprint_and_private_tool(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    worktree = tmp_path / "worktree"
+    tools = tmp_path / "prepared-tools"
+    repo.mkdir()
+    worktree.mkdir()
+    tools.mkdir()
+    tool_name = (
+        f"candidate-tool-{uuid.uuid4().hex}.exe"
+        if os.name == "nt"
+        else f"candidate-tool-{uuid.uuid4().hex}"
+    )
+    tool = tools / tool_name
+    source_tool = shutil.which("whoami.exe" if os.name == "nt" else "true")
+    assert source_tool is not None
+    shutil.copy2(source_tool, tool)
+    tool.chmod(tool.stat().st_mode | 0o111)
+    path_value = str(tools)
+    provider = InheritProvider(
+        ExecutionEnvironmentConfig(),
+        source_environment={"PATH": path_value},
+    )
+    prepared = provider.prepare(repository=repo, worktree=worktree)
+
+    assert shutil.which(tool_name, path=os.environ.get("PATH", "")) is None
+    result = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[tool_name],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="prepared_path",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+
+    assert isinstance(result, CandidateCommandResult)
+    assert result.status == "passed"
+    assert result.execution_environment_fingerprint == prepared.fingerprint
+    assert result.worktree_path == str(worktree.resolve())
+
+    path_result = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[
+            sys.executable,
+            "-c",
+            "import os; print(os.environ.get('PATH', ''))",
+        ],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="exact_path",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+    assert path_result.status == "passed"
+    assert path_result.stdout.strip() == path_value
+
+
+def test_setup_command_state_is_reused_by_candidate_execution(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    worktree = tmp_path / "worktree"
+    repo.mkdir()
+    worktree.mkdir()
+    provider = SetupCommandProvider(
+        ExecutionEnvironmentConfig(
+            provider="setup-command",
+            setup_argv=[
+                sys.executable,
+                "-c",
+                "from pathlib import Path; Path('setup.marker').write_text('ready')",
+            ],
+            cache=False,
+        ),
+        source_environment={"PATH": os.environ.get("PATH", "")},
+    )
+    prepared = provider.prepare(repository=repo, worktree=worktree)
+
+    result = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[
+            sys.executable,
+            "-c",
+            "from pathlib import Path; assert Path('setup.marker').read_text() == 'ready'",
+        ],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="setup_reused",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+
+    assert result.status == "passed"
+    assert result.execution_environment_fingerprint == prepared.fingerprint
+
+
+def test_candidate_execution_distinguishes_test_and_infrastructure_failures(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    worktree = tmp_path / "worktree"
+    repo.mkdir()
+    worktree.mkdir()
+    provider = InheritProvider(
+        ExecutionEnvironmentConfig(limits={"timeout_seconds": 1}),
+        source_environment={"PATH": os.environ.get("PATH", "")},
+    )
+    prepared = provider.prepare(repository=repo, worktree=worktree)
+
+    failed = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[sys.executable, "-c", "raise SystemExit(3)"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="test_failure",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+    candidate_missing_artifact = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[
+            sys.executable,
+            "-c",
+            "import sys; sys.stderr.write('No such file or directory'); raise SystemExit(2)",
+        ],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="candidate_missing_artifact",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+    missing = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[f"missing-{uuid.uuid4().hex}"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="missing",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+    timed = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[sys.executable, "-c", "import time; time.sleep(5)"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="timeout",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+
+    assert failed.status == "failed"
+    assert failed.failure_code == "repository_validation_test_failure"
+    assert candidate_missing_artifact.status == "failed"
+    assert (
+        candidate_missing_artifact.failure_code == "repository_validation_test_failure"
+    )
+    assert missing.status == "infrastructure_error"
+    assert missing.failure_code == "repository_validation_executable_missing"
+    assert timed.status == "timed_out"
+    assert timed.failure_code == "repository_validation_timeout"
+
+
+def test_candidate_execution_policy_denial_and_fingerprint_mismatch_fail_closed(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    worktree = tmp_path / "worktree"
+    repo.mkdir()
+    worktree.mkdir()
+    provider = InheritProvider(
+        ExecutionEnvironmentConfig(
+            policy={"command_deny": [Path(sys.executable).name]}
+        ),
+        source_environment={"PATH": os.environ.get("PATH", "")},
+    )
+    prepared = provider.prepare(repository=repo, worktree=worktree)
+    denied = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[sys.executable, "-c", "pass"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="denied",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+
+    assert denied.status == "policy_denied"
+    assert denied.failure_code == "repository_validation_policy_denied"
+
+    provider.config = ExecutionEnvironmentConfig()
+    prepared.fingerprint = "b" * 64
+    mismatch = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[sys.executable, "-c", "pass"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="mismatch",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+    assert mismatch.status == "infrastructure_error"
+    assert mismatch.failure_code == "repository_validation_environment_mismatch"
+
+
+def test_candidate_execution_redacts_registered_secret_output(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    worktree = tmp_path / "worktree"
+    repo.mkdir()
+    worktree.mkdir()
+    secret = f"candidate-secret-{uuid.uuid4().hex}"
+    register_secret_values([secret])
+    provider = InheritProvider(
+        ExecutionEnvironmentConfig(),
+        source_environment={"PATH": os.environ.get("PATH", "")},
+    )
+    prepared = provider.prepare(repository=repo, worktree=worktree)
+
+    result = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=[sys.executable, "-c", f"print({secret!r})"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="redaction",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+
+    assert secret not in result.stdout
+    assert "[REDACTED]" in result.stdout
 
 
 def test_doctor_report_has_stable_v1_shape_and_fails_missing_requirements(

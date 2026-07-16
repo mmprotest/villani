@@ -1,6 +1,9 @@
 import json
+import inspect
 import sys
 
+import villani_ops.closed_loop.adapters.villani_verifier as verifier_adapter
+import villani_ops.execution_environment.candidate_execution as candidate_execution
 from villani_ops.orchestration.engine import OrchestrationEngine
 from villani_ops.performance.report import write_performance_report
 from villani_ops.core.decision import Decision
@@ -12,6 +15,16 @@ def test_validation_command_uses_sys_executable_not_bare_python(tmp_path):
     cmd = engine._validation_command(tmp_path)
     assert cmd == [sys.executable, "-m", "pytest", "-q"]
     assert cmd[0] != "python"
+
+
+def test_closed_loop_candidate_validation_has_one_provider_execution_boundary():
+    verifier_source = inspect.getsource(verifier_adapter)
+    execution_source = inspect.getsource(candidate_execution)
+
+    assert "_execute_configured_repository_validation" not in verifier_source
+    assert "subprocess.run" not in verifier_source
+    assert "environment_provider.execute(" in execution_source
+    assert "shell=True" not in execution_source
 
 
 def test_run_cmd_records_python_executable_and_environment_failure(tmp_path):

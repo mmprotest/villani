@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v2/execution-environment.schema.json",
+  "title": "Villani Execution Environment v2",
+  "type": "object",
+  "required": ["schema_version", "provider", "provider_version", "execution_environment_selection", "repository_path", "worktree_path", "fingerprint", "cache_key", "cache_hit", "setup_status", "inspection", "runtime_state_summary", "command_prefix_digest", "environment_variable_names", "path_digest", "configuration_digest", "platform"],
+  "properties": {
+    "schema_version": {"const": "villani.execution_environment.v2"},
+    "provider": {"enum": ["inherit", "setup-command", "container", "devcontainer"]},
+    "provider_version": {"type": "string"},
+    "execution_environment_selection": {"type": "string"},
+    "repository_path": {"type": "string"},
+    "worktree_path": {"type": "string"},
+    "fingerprint": {"type": "string"},
+    "cache_key": {"type": ["string", "null"]},
+    "cache_hit": {"type": "boolean"},
+    "setup_status": {"enum": ["not_configured", "passed", "failed"]},
+    "inspection": {"type": "object"},
+    "runtime_state_summary": {"type": "object"},
+    "command_prefix_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "environment_variable_names": {"type": "array", "items": {"type": "string"}},
+    "path_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "configuration_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "platform": {"type": "object"}
+  }
+}

@@ -9,7 +9,6 @@ import sys
 import threading
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -249,8 +248,12 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     config["backends"] = {
         "economy": {
             "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-small",
-            "roles": ["classification", "coding"], "capability_score": 25,
-            "billing_mode": "unknown",
+            # The default manual-score uncertainty penalty is 20.  A configured
+            # estimate of 45 therefore remains eligible for this easy-task
+            # escalation fixture with an effective capability of 25.
+            "roles": ["classification", "coding"], "capability_score": 45,
+            "billing_mode": "fixed",
+            "fixed_cost_per_attempt": 0.01,
             "command_name": str(executable),
             "api_key_env": "VILLANI_E2E_API_SECRET",
             "metadata": {"allow_dummy_api_key": True},
@@ -258,7 +261,8 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
         "capable": {
             "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-large",
             "roles": ["coding"], "capability_score": 90,
-            "billing_mode": "unknown",
+            "billing_mode": "fixed",
+            "fixed_cost_per_attempt": 0.10,
             "command_name": str(executable),
             "api_key_env": "VILLANI_E2E_API_SECRET",
             "metadata": {"allow_dummy_api_key": True},
@@ -315,8 +319,8 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     assert manifest["total_input_tokens"] == 22
     assert manifest["total_output_tokens"] == 10
     assert manifest["total_duration_ms"] == 50
-    assert manifest["total_cost_usd"] is None
-    assert manifest["cost_accounting_status"] == "unknown"
+    assert manifest["total_cost_usd"] == pytest.approx(0.11)
+    assert manifest["cost_accounting_status"] == "complete"
     assert (repo / "calculator.py").read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
     _run([sys.executable, "-m", "unittest", "-q"], repo)
 
@@ -338,7 +342,7 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     assert "attempt_001" in html and "attempt_002" in html
     assert "attempt_002" in html and "fake-large" in html
     assert "32" in html and "total tokens" in html and "50ms" in html
-    assert "Unknown" in html
+    assert "USD 0.11" in html
     assert raw_secret not in html
 
     with sqlite3.connect(agentd_paths.database) as connection:
@@ -356,7 +360,7 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     outcome = json.loads(final_payload)["outcome"]
     assert outcome["run_id"] == run_id
     assert outcome["attempt_id"] == "attempt_002"
-    assert outcome["cost"] is None
+    assert outcome["cost"] == pytest.approx(0.11)
     assert raw_secret.encode() not in agentd_paths.database.read_bytes()
 
     from fastapi.testclient import TestClient
@@ -440,7 +444,7 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
         assert len(detail_body["outcomes"]) == 1
         assert detail_body["outcomes"][0]["attempt_id"] == "attempt_002"
         assert detail_body["outcomes"][0]["accepted"] is True
-        assert detail_body["outcomes"][0]["cost"] is None
+        assert detail_body["outcomes"][0]["cost"] == pytest.approx(0.11)
         assert detail_body["status"] == "COMPLETED"
         assert raw_secret not in detail.text
     engine.dispose()
@@ -704,10 +708,9 @@ def test_windows_powershell_installed_cli_accepts_multiline_task_file(
     repo = _tiny_repo(tmp_path)
     home = tmp_path / "home"
     task = (
-        "Fix the assertion diff bug.\n\n"
-        "The implementation must preserve identical trailing characters.\n\n"
-        "Add a focused regression test and run the relevant repository tests.\n"
-        "Preserve literal $VILLANI_TASK_CANARY and `$(Write-Output not-executed)`."
+        "Fix calculator addition.\n\n"
+        "Diagnostic literal: $VILLANI_TASK_CANARY.\n\n"
+        "PowerShell literal: `$(Write-Output not-executed)`."
     )
     task_file = tmp_path / "multiline-task.md"
     task_file.write_bytes(task.encode("utf-8"))

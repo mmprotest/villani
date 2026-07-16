@@ -198,12 +198,39 @@ def build_policy_preview_document(
     elif chosen.estimated_cost_usd is None:
         uncertainty.append("Selected-route cost is unknown.")
     provenance = _mapping(decision.metadata.get("route_provenance"))
-    if provenance.get("basis") in {"bootstrap_default", "observed_policy"}:
+    if provenance.get("basis") in {"manual", "bootstrap", "observed"}:
         uncertainty.append(
             "Selected model capability is not qualified empirical evidence."
         )
+    stage_projection = _mapping(decision.metadata.get("stage_budget_projection"))
+    if stage_projection and not stage_projection.get("reserve_satisfied", False):
+        uncertainty.append("Required downstream stage reserves are not satisfied.")
     if not uncertainty:
         uncertainty.append("No unresolved routing uncertainty was recorded.")
+    backend_explanations = [
+        {
+            "backend": item.backend_name,
+            "model": item.model,
+            "configured_score": item.configured_capability_score,
+            "effective_score": item.effective_capability_score,
+            "score_provenance": item.capability_provenance,
+            "capability_confidence": item.capability_confidence,
+            "uncertainty_penalty": item.uncertainty_penalty,
+            "empirical_status": item.qualification_status,
+            "sample_count": item.empirical_sample_count,
+            "wilson_lower_bound": item.empirical_wilson_lower_bound,
+            "required_score": decision.required_capability_score,
+            "eligibility": item.eligible,
+            "rejection_reasons": list(item.rejection_reasons),
+            "estimated_cost": item.estimated_cost_usd,
+            "cost_accounting_status": item.cost_accounting_status,
+            "estimated_duration_ms": item.estimated_duration_ms,
+            "duration_accounting_status": item.duration_accounting_status,
+            "reserve_impact": dict(item.reserve_impact),
+            "override_applied": item.override_applied,
+        }
+        for item in decision.considered_backends
+    ]
     return {
         "schema_version": POLICY_PREVIEW_SCHEMA,
         "raw_classification": raw_classification.model_dump(mode="json"),
@@ -217,7 +244,21 @@ def build_policy_preview_document(
             "action": decision.action,
             "reason": decision.reason,
             "route_provenance": dict(provenance) if provenance else None,
+            "retry_allowed": decision.metadata.get("retry_allowed"),
+            "retry_reason_code": decision.metadata.get("policy_reason_code"),
+            "credible_progress_assessment": decision.metadata.get(
+                "credible_progress_assessment"
+            ),
+            "next_higher_backend": decision.metadata.get("next_higher_backend"),
+            "stage_budget_projection": decision.metadata.get(
+                "stage_budget_projection"
+            ),
+            "empirical_sequence": decision.metadata.get("empirical_optimizer"),
+            "override_status": (
+                provenance.get("explicit_override") if provenance else False
+            ),
         },
+        "backend_explanations": backend_explanations,
         "selected_verifier_route": _verifier_route_explanation(
             configuration, backends, effective_classification
         ),

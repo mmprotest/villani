@@ -7,13 +7,15 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from jsonschema import Draft202012Validator, FormatChecker
+from pydantic import BaseModel
 
 from .durable_io import read_jsonl_tolerant
 from .protocol import PROTOCOL_MODEL_BY_VERSION, EventEnvelope, ProtocolDocument
 from .protocol_v2 import PROTOCOL_V2_MODEL_BY_VERSION, ProtocolDocumentV2
+from .verification_evidence import VerificationEvidenceMatrix
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -58,10 +60,16 @@ SCHEMA_V2_VERSION_TO_PATH: dict[str, Path] = {
     "villani.verifier_capability.v2": SCHEMA_ROOT_V2
     / "verifier-capability.schema.json",
     "villani.policy_publication.v2": SCHEMA_ROOT_V2 / "policy-publication.schema.json",
+    "villani.verification_evidence.v2": SCHEMA_ROOT_V2
+    / "verification-evidence.schema.json",
 }
 
 ALL_SCHEMA_VERSION_TO_PATH = {**SCHEMA_VERSION_TO_PATH, **SCHEMA_V2_VERSION_TO_PATH}
-ALL_PROTOCOL_MODELS = {**PROTOCOL_MODEL_BY_VERSION, **PROTOCOL_V2_MODEL_BY_VERSION}
+ALL_PROTOCOL_MODELS: dict[str, type[BaseModel]] = {
+    **PROTOCOL_MODEL_BY_VERSION,
+    **PROTOCOL_V2_MODEL_BY_VERSION,
+    "villani.verification_evidence.v2": VerificationEvidenceMatrix,
+}
 
 
 def _pointer(parts: Iterable[object]) -> str:
@@ -329,10 +337,15 @@ def validate_protocol_document(value: Any) -> None:
         raise ProtocolValidationError(issues)
 
 
-def parse_protocol_document(value: Any) -> ProtocolDocument | ProtocolDocumentV2:
+def parse_protocol_document(
+    value: Any,
+) -> ProtocolDocument | ProtocolDocumentV2 | VerificationEvidenceMatrix:
     validate_protocol_document(value)
     schema_version = value["schema_version"]
-    return ALL_PROTOCOL_MODELS[schema_version].model_validate(value)
+    return cast(
+        ProtocolDocument | ProtocolDocumentV2 | VerificationEvidenceMatrix,
+        ALL_PROTOCOL_MODELS[schema_version].model_validate(value),
+    )
 
 
 def validate_event_stream(events: Iterable[Mapping[str, Any]]) -> list[EventEnvelope]:

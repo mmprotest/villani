@@ -577,7 +577,7 @@ Codex must update this section at the end of each milestone. It must not mark a 
 
 ### Current milestone
 
-`Milestone 5.5.1, final release hardening: release-green with hosted certification outstanding by explicit waiver`
+`Trustworthy candidate execution boundary for coding and repository validation`
 
 ### Milestone status
 
@@ -3483,3 +3483,416 @@ Remaining limitations, assumptions, and risks:
 
 Next permitted milestone:
 - Unchanged. This narrow task-input fix is complete; the next milestone was not started.
+
+#### 2026-07-16: Trustworthy candidate execution boundary
+
+Status: complete for this milestone. Coding and controller-owned repository validation now share
+one prepared execution environment and fingerprint, validation finishes before provider cleanup,
+validation-only infrastructure retry preserves the candidate without rerunning coding, and every
+completed coding attempt has a durable candidate bundle. The one full-suite failure is an
+unrelated pre-existing README assertion described below; all affected milestone tests pass.
+
+Changed files:
+- `.gitattributes`
+- `PLANS.md`
+- `components/villani-ops/villani_ops/agentic/git_artifacts.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/villani_code_attempt.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/villani_verifier.py`
+- `components/villani-ops/villani_ops/closed_loop/candidate_bundle.py`
+- `components/villani-ops/villani_ops/closed_loop/controller.py`
+- `components/villani-ops/villani_ops/closed_loop/failure_classification.py`
+- `components/villani-ops/villani_ops/closed_loop/interfaces.py`
+- `components/villani-ops/villani_ops/closed_loop/policy.py`
+- `components/villani-ops/villani_ops/closed_loop/repository_validation.py`
+- `components/villani-ops/villani_ops/closed_loop/state_machine.py`
+- `components/villani-ops/villani_ops/execution_environment/__init__.py`
+- `components/villani-ops/villani_ops/execution_environment/candidate_execution.py`
+- `components/villani-ops/villani_ops/execution_environment/models.py`
+- `components/villani-ops/villani_ops/execution_environment/providers.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_adapters.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_controller.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_m5_policy_costs.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_structured_verification_authority.py`
+- `components/villani-ops/villani_ops/tests/test_execution_environment.py`
+- `components/villani-ops/villani_ops/tests/test_hardened_execution_environment.py`
+- `components/villani-ops/villani_ops/tests/test_integration_validation.py`
+- `components/villani-ops/villani_ops/tests/test_validation_authority.py`
+- `components/villani-ops/villani_ops/schemas/v1/candidate.schema.json`
+- `components/villani-ops/villani_ops/schemas/v2/execution-environment.schema.json`
+- `components/villani-ops/villani_ops/schemas/v2/repository-validation.schema.json`
+- `schemas/v1/candidate.schema.json`
+- `schemas/v2/execution-environment.schema.json`
+- `schemas/v2/repository-validation.schema.json`
+
+Architectural decisions:
+- `execution_environment/candidate_execution.py` is the single shell-free candidate-command
+  boundary. It requires argv, delegates to the selected provider's `execute` method, uses the
+  attempt's exact `PreparedEnvironment`, bounds output through provider limits, verifies the
+  fingerprint, redacts persisted output, and distinguishes command failure from timeout, policy,
+  executable, malformed-result, and provider failures.
+- Repository validation moved from the verifier into `VillaniCodeAttemptAdapter`. It executes
+  after the final coding mutation and before collection/cleanup, emits explicit validation events,
+  persists a strict v2 report, and loses authority if validation changes the candidate state.
+- The verifier is now a read-only consumer of the v2 report. Existing bundles can use only exact
+  legacy structured validation events and are labelled `legacy_runtime_events`; arbitrary command
+  history is not promoted to authority.
+- Every completed attempt writes `candidate/{candidate.json,patch.diff,changed-files.json,
+  untracked-files.json,repository-validation.json,execution-environment.json}`. Patch capture
+  includes relevant untracked files, excludes Villani state, caches, virtual environments,
+  `node_modules`, and model artifacts, and preserves empty and rejected candidates.
+- Repository-validation infrastructure errors use policy action `retry` with
+  `retry_scope=repository_validation`. One retry is allowed by default, rehydrates the preserved
+  candidate and provider, verifies the original fingerprint, runs no coding backend, spends no
+  coding tokens, and does not consume attempt budget.
+- Failure metadata now uses explicit repository-validation reason codes. Normal nonzero tests are
+  implementation failures; timeout, missing executable, environment mismatch, provider failure,
+  policy denial, and malformed results are verification/infrastructure failures; empty patches
+  remain no-change failures.
+
+Verification:
+- `python -m pytest components/villani-ops/villani_ops/tests/test_execution_environment.py -q`:
+  exit code 0; 12 passed, 0 failed, 0 skipped.
+- `python -m pytest components/villani-ops/villani_ops/tests/test_hardened_execution_environment.py -q`:
+  exit code 0; 23 passed, 0 failed, 2 expected host-capability skips.
+- `python -m pytest components/villani-ops/villani_ops/tests/test_validation_authority.py -q`:
+  exit code 0; 16 passed, 0 failed, 0 skipped.
+- `python -m pytest components/villani-ops/villani_ops/tests/test_integration_validation.py -q`:
+  exit code 0; 6 passed, 0 failed, 0 skipped.
+- `python -m pytest components/villani-ops/villani_ops/tests/closed_loop/test_controller.py -q`:
+  exit code 0; 16 passed, 0 failed, 0 skipped.
+- `python -m pytest components/villani-ops/villani_ops/tests/closed_loop/test_structured_verification_authority.py -q`:
+  exit code 0; 11 passed, 0 failed, 0 skipped.
+- Focused adapter and policy regression suites: exit code 0; 49 passed, 0 failed, 0 skipped.
+- `python -m pytest components/villani-ops/villani_ops/tests -q`: exit code 1; 1,056 passed,
+  1 failed, 2 skipped, 114 deselected. The sole failure is
+  `test_v02_hardening.py::test_readme_primary_example_uses_direct_key`, which requires the public
+  README to contain `--api-key dummy`; current secure documentation intentionally uses
+  environment-backed secret references. No milestone code path failed.
+- `python -m pytest tests -q`: exit code 0; 44 passed, 0 failed, 0 skipped, 2 warnings.
+- `python -m pytest tests/final_foundation -q`: exit code 0; 33 passed, 0 failed, 0 skipped,
+  1 warning.
+- `python -m pytest tests/closed_loop -q`: exit code 0; 11 passed, 0 failed, 0 skipped, 2 warnings.
+- `python -m ruff check components/villani-ops/villani_ops`: exit code 0; all checks passed.
+- Ruff format check over all 22 touched Python files: exit code 0; all 22 files formatted.
+- Targeted mypy over all 14 touched production modules with `--follow-imports=skip`: exit code 0;
+  no issues found. Package-wide mypy was also run and retained the existing baseline of 334
+  errors in 76 files, including missing third-party stubs and unrelated legacy typing errors.
+- `python -m compileall -q components/villani-ops/villani_ops`: exit code 0.
+- Root/package JSON schema semantic parity: all three schema pairs matched.
+- `git diff --check`: exit code 0; no whitespace errors.
+
+Acceptance criteria:
+- PASS: Coding and validation use the same selected provider, prepared environment, PATH, setup
+  state, worktree, and execution-environment fingerprint.
+- PASS: Repository validation executes before provider collection and cleanup and no longer has a
+  verifier-owned bare subprocess path.
+- PASS: Typed reports and explicit events distinguish candidate test failure from validation
+  infrastructure failure and fail closed on environment mismatch or post-validation mutation.
+- PASS: One validation-only infrastructure retry rehydrates the preserved candidate, reruns no
+  coding attempt, spends zero coding tokens, and persists its retry count.
+- PASS: Accepted, rejected, verifier-error, superseded, and empty-patch attempts retain durable
+  candidate evidence; reconstruction from the base commit and persisted patch is covered.
+- PASS: Persisted JSON is redacted, environment descriptors contain names and digests rather than
+  secret values, all existing provider types remain supported, and legacy bundles remain readable.
+
+Remaining limitations, assumptions, and risks:
+- The unrelated stale README assertion prevents the complete Villani Ops suite from exiting zero.
+  It was not changed because adding a direct API-key example or weakening the test solely for this
+  milestone would conflict with secure secret handling and the no-regression-hiding rule.
+- Package-wide mypy is not yet a clean repository gate; the modified production surface is clean.
+- Test execution created an untracked root `.villani-ops/` verifier-output directory. Sandbox
+  policy denied deletion without explicit user approval, so it remains local and is not part of
+  the implementation.
+- Git reports `integration/fixtures/plugins/fake_plugin.py` as modified because of local line-ending
+  metadata, but `git diff` is empty for that file. `.gitattributes` now pins plugin fixtures to LF
+  so their allowlisted content digest is stable across checkouts.
+- No attempt limits, token limits, stagnation controls, wall-time controls, routing-policy changes,
+  capability-scoring changes, backend-selection changes, task-specific logic, benchmark-specific
+  logic, language-specific routing, operating-system-specific routing, or later milestone work
+  was started.
+
+Next permitted milestone:
+- Unchanged. This execution-boundary milestone is complete; the next milestone was not started.
+
+#### 2026-07-16: Deterministic evidence-based verification
+
+Status: complete for this milestone. Final acceptance is now computed by a pure deterministic
+decision function over candidate eligibility, authoritative repository validation, a typed
+requirement-evidence matrix, semantic review, and verifier invocation health. The semantic model's
+binary result is retained as advisory evidence and cannot override failed or missing executable
+evidence. No coding-backend routing, capability scoring, backend selection, attempt-limit,
+stagnation, or wall-time policy was changed.
+
+Architecture and files:
+- Added `closed_loop/verification_evidence.py` with stable requirement extraction,
+  `RequirementEvidence`, `VerificationEvidenceMatrix`, focused-probe request/result models, and
+  `compute_final_verification_decision(...)`.
+- Added `closed_loop/focused_probes.py`. The controller records argv-only probe proposals, the
+  attempt adapter rehydrates the preserved candidate and original provider fingerprint, and the
+  shared candidate-command boundary executes probes without model credentials or candidate
+  mutation.
+- Reworked `closed_loop/adapters/villani_verifier.py` to read typed repository-validation and
+  focused-probe reports, reject stale or cross-attempt/worktree/environment evidence, build the v2
+  matrix, persist raw and computed results separately, and expose only the computed result as
+  acceptance authority.
+- Updated `closed_loop/controller.py`, `verifier_routing.py`, and
+  `failure_classification.py` so probe execution and retry remain controller-owned, probe
+  infrastructure retry reruns only the probe, verifier failures remain verification failures, and
+  v2 evidence authority is distinct from legacy verification snapshots.
+- Updated `verifier/llm.py`, `verifier/service.py`, and `verifier/deterministic.py` with the strict
+  advisory semantic schema and evidence-collection prompt. Unknown semantic wrapper requirements
+  are ignored rather than promoted into controller gates.
+- Added the normative and packaged `schemas/v2/verification-evidence.schema.json`, protocol model
+  registration, and a shared valid protocol fixture.
+- Extended focused verifier, adapter, controller, authority, execution-environment, protocol, and
+  installed-CLI regression tests. The PowerShell installed-CLI fixture now asks the deterministic
+  local stub to solve the behavior it actually implements while retaining literal multiline shell
+  canaries.
+
+Decision and evidence rules:
+- Acceptance requires an eligible patch, sufficient runner completion, required authoritative
+  repository validation, every critical requirement passed, no executable contradiction, no
+  semantic critical failure or veto, valid verifier output, and no unresolved infrastructure
+  failure.
+- Exact or directly observable critical behavior cannot pass on semantic reasoning alone.
+  Repository suites prove a generic suite-pass requirement, but do not prove exact output or a
+  required artifact unless coverage is explicit.
+- Focused probes use argv only, execute against the preserved post-mutation candidate through the
+  selected provider, compare declared exit/stdout/stderr expectations, bound and redact output,
+  and fail closed on timeout, policy denial, provider failure, mutation, or fingerprint mismatch.
+- Raw semantic result, computed result, disagreement, requirement evidence IDs, authority source,
+  probe requests, probe results, and retry scope are durable. Legacy v1 snapshots and exact legacy
+  repository-validation events remain readable without rewriting old bundles.
+
+Verification:
+- Required focused verifier commands: exit code 0; 105 passed, 0 failed, 0 skipped
+  (`17 + 29 + 9 + 9 + 8 + 10 + 10 + 13`).
+- Axios-prefix regression: passed. A semantically approved candidate producing
+  `AggregateError: wanted` failed the exact-output probe and persisted computed result `0`,
+  reason `focused_probe_failed`, and `verifier_disagreement=true`.
+- Validation-environment regression: passed. Cross-attempt, cross-worktree, and fingerprint-mismatch
+  evidence is infrastructure evidence and does not prove candidate failure.
+- `python -m pytest components/villani-ops/villani_ops/tests -q`: exit code 0; 1,093 passed,
+  2 skipped, 114 deselected.
+- `python -m pytest tests -q`: exit code 0; 44 passed, 0 failed, 0 skipped, 2 warnings.
+- `python -m pytest tests/final_foundation -q`: exit code 0; 33 passed, 0 failed, 0 skipped,
+  1 warning.
+- Current-tree targeted PowerShell installed-CLI regression after final diff narrowing: exit code 0;
+  1 passed.
+- `python -m ruff check components/villani-ops/villani_ops
+  tests/closed_loop/test_cli_e2e.py`: exit code 0; all checks passed.
+- Ruff format check over the 30 new or substantially modified Villani Ops Python files: exit code 0;
+  all files formatted.
+- Villani Ops CI mypy scope
+  (`villani_ops/closed_loop`, `villani_ops/cli/unified.py`, `villani_ops/providers.py`): exit code
+  0; no issues in 80 source files.
+- Additional mypy over the modified verifier and execution-environment modules: exit code 0; no
+  issues in 5 source files.
+- `git diff --check`: exit code 0; no whitespace errors.
+
+Remaining limitations, assumptions, and risks:
+- The inherit and setup-command providers enforce cwd, argv policy, explicit path checks, bounded
+  output, redaction, and private-environment filtering, but they are process-level providers rather
+  than kernel filesystem sandboxes. Container and devcontainer remain the stronger isolation
+  choices for hostile candidate code.
+- Pytest emitted the existing Starlette/httpx deprecation warning and Windows pytest-cache
+  permission warnings; neither affected a test result or persisted run evidence.
+- The existing untracked root `.villani-ops/` directory and unrelated pre-existing working-tree
+  changes were preserved.
+- No benchmark metadata, task-name heuristic, programming-language-specific production rule,
+  operating-system-specific routing rule, coding-route change, attempt limit, stagnation control,
+  or later milestone was introduced.
+
+Next permitted milestone:
+- Unchanged. This deterministic-verification milestone is complete; the next milestone was not
+  started.
+
+#### 2026-07-17: Milestone 4, Villani Code navigation, context efficiency, and patch quality
+
+Status: complete for this milestone. Villani Code now provides range-aware and indexed repository
+navigation, suppresses unchanged read-only results and repeated identical command failures, projects
+model context from a durable structured ledger, rejects stale patch preimages, preserves source
+newlines, removes line-ending-only churn, persists a typed candidate patch-quality report, and emits
+useful-progress telemetry. No attempt-level token, turn, tool, stagnation, or wall-time limit was
+introduced.
+
+Changed files:
+- `components/villani-code/villani_code/{command_failures,context_ledger,context_projection,
+  debug_recorder,indexing,patch_apply,progress_telemetry,prompting,repository_state,retrieval,state,
+  state_runtime,state_tooling,task_memory,tool_result_ledger,tools,trace_summary}.py`
+- `components/villani-code/tests/{test_command_failure_efficiency,
+  test_context_ledger_efficiency,test_navigation_efficiency,test_patch_precision}.py`
+- `components/villani-ops/villani_ops/agentic/git_artifacts.py`
+- `components/villani-ops/villani_ops/closed_loop/adapters/{git_isolation,patch_materializer,
+  villani_code_attempt,villani_verifier}.py`
+- `components/villani-ops/villani_ops/closed_loop/{candidate_bundle,candidate_quality,controller,
+  verification_evidence}.py`
+- `components/villani-ops/villani_ops/closed_loop/delivery/materializers.py`
+- `components/villani-ops/villani_ops/execution_environment/{__init__,models}.py`
+- `components/villani-ops/villani_ops/runners/villani_code_debug.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/test_adapters.py`
+- `components/villani-ops/villani_ops/tests/test_candidate_patch_quality.py`
+- `components/villani-ops/villani_ops/schemas/v1/{candidate,candidate-patch-quality}.schema.json`
+- `schemas/v1/{candidate,candidate-patch-quality}.schema.json`
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- `Read` supports validated line ranges, numbered structured lines, full-file SHA-256, total-line
+  count, and truncation metadata. `Grep` returns bounded structured matches with deduplicated
+  context. `FindSymbol` and `FindReferences` reuse the generic repository index and lexical
+  evidence; BM25 `Search` returns ranked reasons, symbols, snippets, and file digests.
+- A per-run tool-result ledger keys read-only calls by normalized tool arguments, repository state,
+  and target/index digest. Unchanged repeats return a prior-result reference unless explicitly
+  refreshed; repository mutations invalidate the key.
+- `ContextLedger` retains task, criteria, current plan/diff/validation/failures/state and relevant
+  excerpts while superseding duplicate or stale payloads. Durable debug evidence is unchanged;
+  only the model-facing projection is compacted, with reopenable provenance.
+- Command failures are classified without task, language, or operating-system heuristics.
+  Fingerprints cover normalized command, cwd, exit code, failure class, and normalized stderr.
+  The first failure remains complete; identical retries against unchanged state receive a compact
+  warning and reference.
+- Patch requests may carry expected preimage digests. Stale files fail closed with the exact hunk,
+  actual digest, nearest context, and retry guidance. The range helper still emits unified diffs,
+  and writes/patches preserve LF, CRLF, or lone-CR style.
+- Every isolated Git worktree uses `core.autocrlf=false`. Before candidate capture, tracked and
+  untracked state is classified, prohibited Villani/cache/dependency/scratch artifacts are removed,
+  pure newline churn is restored, and semantic changes are normalized back to each baseline file's
+  newline style.
+- `villani.candidate_patch_quality.v1` records changed/relevant/untracked/ignored/Villani/generated
+  files, semantic and formatting line counts, file-mode and bulk-rewrite findings, relevance ratio,
+  eligibility, and reason codes. Explicitly task-required generated artifacts remain eligible.
+  The report is persisted in the candidate bundle and exposed to deterministic verification.
+- Per-attempt efficiency telemetry now includes first relevant file/patch timing and tool counts,
+  unique and duplicate reads/searches, repeated commands/failures, post-progress token/turn counts,
+  patch revisions, validation improvement, relevance ratio, line-ending churn, and excluded
+  generated files.
+
+Verification:
+- Focused Villani Code milestone tests: exit code 0; 15 passed.
+- Candidate patch-quality regressions: exit code 0; 9 passed.
+- Villani Code full component suite: exit code 0; 686 passed, 1 skipped, 27 warnings.
+- Villani Ops full component suite: exit code 0; 1,102 passed, 2 skipped, 114 deselected.
+- Root suite: exit code 0; 44 passed, 2 warnings.
+- Final foundation: exit code 0; 33 passed, 1 warning.
+- Closed-loop integration: exit code 0; 11 passed, 2 warnings.
+- Synthetic large-file/repeated-read regression: naive projection 16,080 characters versus 3,134
+  after compaction, an 80.51% reduction; estimated tokens fell from 4,346 to 642, with 3,704 tokens
+  removed and eight context items compacted.
+- Ruff passed every Milestone 4 file and the complete Villani Ops package. Package-wide Villani Code
+  Ruff retains three unrelated pre-existing findings in `subagent_runtime.py` and two older tests.
+- Targeted mypy passed 16 new or substantially modified Villani Code modules and 12 Villani Ops
+  modules. Package-wide mypy retains the existing baseline: 132 errors in 10 Villani Code files and
+  341 errors in 75 Villani Ops files; the legacy `trace_summary.py` accounts for 83 direct errors.
+
+Remaining limitations, assumptions, and risks:
+- `FindReferences` is intentionally approximate lexical/index discovery, not a language-specific
+  semantic reference engine.
+- The literal root-cwd command `python -m pytest components/villani-code/tests -q` remains sensitive
+  to legacy component-relative fixtures and runtime shadowing. The supported component-cwd full
+  suite passes all 686 runnable tests.
+- The package-wide mypy and three pre-existing Villani Code Ruff findings remain repository debt;
+  the Milestone 4 typed and linted surface is clean.
+- Existing unrelated working-tree changes and the untracked `.villani-ops/` run-output directory
+  were preserved.
+- No task-specific, benchmark-specific, programming-language-specific, or operating-system-specific
+  production rule was added. Milestone 5 and all later work were not started.
+
+Next permitted milestone:
+- Unchanged. This navigation, context-efficiency, and patch-quality milestone is complete; the next
+  milestone was not started.
+
+#### 2026-07-17: Milestone 5, empirical uncertainty- and progress-aware routing
+
+Status: complete for this milestone. Coding-backend eligibility, ordering, retry, escalation, and
+sequence planning now use conservative effective capability rather than treating configured
+estimates as measured evidence. Same-backend coding retry requires a credible candidate,
+actionable local correction, and preserved downstream reserves. No task-name, benchmark,
+programming-language, or operating-system routing heuristic and no attempt-level hard termination
+limit was introduced.
+
+Changed files:
+- `components/villani-ops/villani_ops/cli/unified.py`
+- `components/villani-ops/villani_ops/closed_loop/capabilities/{__init__,effective,ingest,models,
+  optimizer,report}.py`
+- `components/villani-ops/villani_ops/closed_loop/{controller,failure_classification,interfaces,
+  model_management,policy,policy_preview,progress,stage_budget}.py`
+- `components/villani-ops/villani_ops/tests/closed_loop/{test_m5_policy_costs,
+  test_m8_capabilities}.py`
+- `components/villani-ops/villani_ops/tests/{test_milestone4_model_policy,
+  test_unified_cli}.py`
+- `tests/closed_loop/test_cli_e2e.py`
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- `resolve_effective_capability(...)` follows the persisted profile backoff order. A sufficiently
+  sampled profile uses `floor(100 * Wilson lower bound)` with `qualified_empirical` provenance.
+  Sparse observations are capped by the configured estimate and receive a sample-size penalty.
+  Manual and bootstrap estimates receive default penalties of 20 and 25 respectively.
+- A numeric score never implies an operator override. Manual hard-task qualification is disabled
+  by default, bootstrap never bypasses the threshold by default, and per-backend or configured
+  overrides are explicit and durable. Configured and effective scores remain separately visible.
+- Effective score, confidence, and provenance order eligibility, Reliable routing,
+  `_next_higher()`, escalation, and deterministic fallback. Equal effective scores prefer stronger
+  evidence provenance rather than equating a static estimate with a qualified profile.
+- `AttemptProgressAssessment` derives credible progress only from a relevant semantic candidate,
+  validation improvement, actionable verifier correction against a plausible candidate, or a
+  materially improved patch revision. Reads, searches, commands, model requests, scratch output,
+  empty patches, generated-only output, line-ending churn, and repeated failures do not qualify.
+- Same-backend retry additionally requires an eligible nonempty focused patch, no high failure
+  repetition, an unused retry, actionable evidence, and a satisfied `StageBudgetProjection`.
+  Empty, irrelevant, ineligible, no-progress, capability-failure, or reserve-consuming candidates
+  escalate immediately when a stronger eligible route exists.
+- Stage reserves default to 10% verification, 30% strong escalation, 10% final validation, and 5%
+  selection for both known-cost and wall-time budgets. Projections use configured estimates or
+  observed medians, preserve unknown accounting inputs, and do not allow an unaffordable stronger
+  backend to disappear from a weak retry's reserve calculation.
+- The empirical sequence optimizer consumes only qualified Wilson probabilities, actual profile
+  mean cost, observed median/mean duration, effective capability, task-category/difficulty/risk
+  profile evidence, and configured execution-environment identity. Sub-target backend
+  probabilities can combine into a target-reaching sequence; sparse or missing inputs produce an
+  explicit `bootstrap_fallback` rather than treating manual scores as probabilities.
+- Capability ingestion counts success only with acceptance-eligible authoritative validation and
+  no unresolved infrastructure failure. Only verified implementation, capability, or no-change
+  failures enter the denominator. Validation/verifier infrastructure failures, cancellation,
+  environment mismatch, missing executables, policy denial, and materialization infrastructure
+  failures are excluded and counted by reason.
+- `villani policy explain` now reports configured/effective score, provenance, confidence,
+  uncertainty, sample/Wilson evidence, eligibility, rejection reasons, cost/duration, reserves,
+  retry rationale, credible progress, next-higher route, empirical sequence, missing inputs, and
+  override status in its JSON and human-readable projections.
+
+Verification:
+- Required focused policy commands: exit code 0; 122 passed
+  (`41 + 36 + 12 + 17 + 11 + 5`).
+- Additional policy-normalization coverage: exit code 0; 10 passed.
+- Manual-bootstrap, qualified-empirical, strong-fallback, credible-retry, no-progress-escalation,
+  and insufficient-reserve explain/decision fixtures: exit code 0; 7 passed.
+- `python -m pytest components/villani-ops/villani_ops/tests -q`: exit code 0; 1,125 passed,
+  2 skipped, 114 deselected.
+- `python -m pytest tests -q`: exit code 0; 44 passed, 2 warnings.
+- `python -m pytest tests/final_foundation -q`: exit code 0; 33 passed, 1 warning.
+- `python -m ruff check components/villani-ops/villani_ops
+  tests/closed_loop/test_cli_e2e.py`: exit code 0; all checks passed.
+- Targeted mypy over all 15 Milestone 5 production files and four modified component test files:
+  exit code 0; no issues.
+- `git diff --check`: exit code 0; no whitespace errors (Git emitted existing working-tree
+  line-ending conversion warnings).
+
+Remaining limitations, assumptions, and risks:
+- Empirical routing deliberately falls back until matching profiles have enough samples plus
+  measured cost and duration. Missing values are persisted; no synthetic probability or numeric
+  zero cost is invented.
+- Without an active cost or wall-time cap, missing accounting inputs are still reported but do not
+  make an otherwise eligible route impossible; deterministic fallback prefers stronger effective
+  evidence when all costs are unknown.
+- Package-wide Villani Ops mypy retains existing repository debt: 343 errors in 75 files. The full
+  Milestone 5 production surface is clean under targeted mypy.
+- Pytest emitted the existing Starlette/httpx deprecation warning and Windows pytest-cache
+  permission warnings; neither changed test outcomes.
+- Existing unrelated working-tree changes and the pre-existing untracked `.villani-ops/`
+  directory were preserved.
+- No attempt-level hard token, turn, tool, stagnation, or wall-time termination was added. No later
+  milestone was started.
+
+Next permitted milestone:
+- Unchanged. This empirical routing milestone is complete; the next milestone was not started.

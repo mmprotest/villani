@@ -1,5 +1,12 @@
 import json
 
+from villani_ops.closed_loop.verification_evidence import (
+    CandidateEligibility,
+    RepositoryValidationDecisionInput,
+    RequirementEvidence,
+    SemanticReviewDecisionInput,
+    compute_final_verification_decision,
+)
 from villani_ops.core.backend import Backend
 from villani_ops.storage.files import FileStorage
 from villani_ops.tests._http_transport import patch_backend_post
@@ -276,3 +283,43 @@ def test_adjudication_changes_reason_not_stale():
     out = calibrate(det, v)
     assert out["result"] == 1 and out["verdict"] == "success"
     assert "Deterministic disagreement" in " ".join(out["riskFlags"])
+
+
+def test_observable_critical_requirement_without_probe_fails_closed():
+    requirement = RequirementEvidence(
+        requirement_id="req-exact-output",
+        description="The command must return exact text wanted with no prefix.",
+        critical=True,
+        evidence_type="focused_probe",
+        evidence_ids=["missing:probe-exact-output"],
+        deterministic_status="missing",
+        semantic_status="passed",
+        contradiction=False,
+        final_status="missing",
+        reason="The semantic review is not executable evidence for exact output.",
+    )
+
+    decision = compute_final_verification_decision(
+        CandidateEligibility(
+            status="eligible",
+            runner_completed_sufficiently=True,
+            reason="Candidate patch captured.",
+        ),
+        RepositoryValidationDecisionInput(
+            status="passed",
+            authoritative=True,
+            required=True,
+        ),
+        [requirement],
+        SemanticReviewDecisionInput(
+            raw_result=1,
+            verdict="success",
+            recommended_action="accept",
+            schema_valid=True,
+        ),
+        "completed",
+    )
+
+    assert decision.result == 0
+    assert decision.reason_code == "focused_probe_missing"
+    assert decision.recommended_action == "retry_verifier"

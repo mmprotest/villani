@@ -11,6 +11,8 @@ from villani_ops.agentic.tools import (
     h_validation,
     make_validation_decision,
 )
+from villani_ops.closed_loop.failure_classification import classify_failure
+from villani_ops.closed_loop.interfaces import AttemptResult, Verification
 from villani_ops.core.acceptance import is_attempt_acceptance_eligible
 
 
@@ -569,3 +571,65 @@ def test_runner_trace_history_is_labelled_non_blocking_in_review_payload(tmp_pat
     assert hist["label"] == "NON-BLOCKING RUNNER TRACE HISTORY"
     assert hist["authority"] == "diagnostic_only"
     assert payload["validation_decision"]["status"] == "passed"
+
+
+def _closed_loop_validation_verdict(
+    *,
+    status: str,
+    failure_code: str,
+) -> Verification:
+    return Verification(
+        verifier="fixture",
+        outcome="rejected" if status == "failed" else "error",
+        acceptance_eligible=False,
+        confidence=1.0,
+        reason="Fixture repository validation result.",
+        recommended_action="reject" if status == "failed" else "retry_verifier",
+        metadata={
+            "repository_validation_status": status,
+            "repository_validation_failure_code": failure_code,
+            "retry_scope": (
+                "repository_validation" if status == "infrastructure_error" else None
+            ),
+        },
+    )
+
+
+def test_closed_loop_test_failure_is_an_implementation_failure():
+    attempt = AttemptResult(
+        runner_name="fixture",
+        status="completed",
+        worktree_path="fixture",
+        patch="diff --git a/a b/a",
+        exit_code=0,
+    )
+
+    category = classify_failure(
+        attempt,
+        _closed_loop_validation_verdict(
+            status="failed",
+            failure_code="repository_validation_test_failure",
+        ),
+    )
+
+    assert category == "implementation_failure"
+
+
+def test_closed_loop_validation_infrastructure_is_not_candidate_failure():
+    attempt = AttemptResult(
+        runner_name="fixture",
+        status="completed",
+        worktree_path="fixture",
+        patch="diff --git a/a b/a",
+        exit_code=0,
+    )
+
+    category = classify_failure(
+        attempt,
+        _closed_loop_validation_verdict(
+            status="infrastructure_error",
+            failure_code="repository_validation_timeout",
+        ),
+    )
+
+    assert category == "verification_failure"

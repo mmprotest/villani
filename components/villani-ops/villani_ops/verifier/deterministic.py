@@ -11,7 +11,7 @@ from .extract import (
 )
 from .timeline import build_timeline
 
-PROMPT_VERSION = "villani-ops-verifier-binary-tool-loop-v1"
+PROMPT_VERSION = "villani-ops-verifier-evidence-matrix-v2"
 RESULT_SCHEMA_VERSION = "villani-ops-verifier-result-v3"
 CATS = [
     "finalEndToEndValidation",
@@ -1160,6 +1160,7 @@ def build_packet(run: DebugRun, repo_dir=None):
                     if isinstance(e, dict)
                     else getattr(e, "deliverableLinks", [])
                 )
+                or []
             ]
         )
     )

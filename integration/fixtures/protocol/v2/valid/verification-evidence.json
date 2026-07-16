@@ -1,0 +1,30 @@
+{
+  "schema_version": "villani.verification_evidence.v2",
+  "run_id": "run_fixture",
+  "attempt_id": "attempt_001",
+  "requirements": [
+    {
+      "requirement_id": "req-fixture",
+      "description": "The candidate must preserve the documented behavior.",
+      "critical": true,
+      "evidence_type": "repository_validation",
+      "evidence_ids": [
+        "repository_validation:fixture"
+      ],
+      "deterministic_status": "passed",
+      "semantic_status": "passed",
+      "contradiction": false,
+      "final_status": "passed",
+      "reason": "Authoritative validation and semantic review agree."
+    }
+  ],
+  "repository_validation_status": "passed",
+  "candidate_eligibility_status": "eligible",
+  "semantic_verifier_status": "success",
+  "critical_requirements_proven": true,
+  "contradictions_present": false,
+  "infrastructure_failure_present": false,
+  "final_result": 1,
+  "final_reason_code": "accepted",
+  "final_reason": "Every deterministic acceptance gate passed."
+}

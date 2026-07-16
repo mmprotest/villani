@@ -46,6 +46,18 @@ class BackendOption:
     rejection_reasons: tuple[str, ...] = ()
     cost_components: Mapping[str, Any] = field(default_factory=dict)
     cost_source: str = "configured_estimate"
+    configured_capability_score: float | None = None
+    effective_capability_score: float | None = None
+    capability_provenance: str = "manual"
+    capability_confidence: str = "low"
+    uncertainty_penalty: float = 0.0
+    empirical_sample_count: int = 0
+    empirical_wilson_lower_bound: float | None = None
+    qualification_status: str = "estimated"
+    override_applied: bool = False
+    estimated_duration_ms: float | None = None
+    duration_accounting_status: AccountingStatus = "unknown"
+    reserve_impact: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +226,7 @@ class AttemptSummary:
     material_progress: bool = False
     duration_ms: int | None = None
     rate_limited: bool = False
+    progress_assessment: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,7 +237,12 @@ class VerificationSummary:
     recommended_action: str
     failure_category: str | None = None
     verifier_retry_count: int = 0
+    repository_validation_status: str | None = None
+    repository_validation_retry_count: int = 0
     disagreement: bool = False
+    actionable_correction: bool = False
+    major_regression: bool = False
+    incorrect_task_interpretation: bool = False
 
 
 @dataclass(frozen=True, slots=True)

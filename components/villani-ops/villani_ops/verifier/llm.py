@@ -10,95 +10,51 @@ from .tools import VerifierTools
 from .errors import VerifierConfigurationError, VerifierLlmError, VerifierSchemaError
 
 ROLES = {"review", "selection", "classification", "policy", "coding"}
-SYSTEM = """You are the mandatory binary verifier for Villani Code runs inside Villani Ops.
+SYSTEM = """You are Villani's semantic verification reviewer.
 
-You are the judge. The deterministic evidence collector is not authoritative.
-You are not a coding agent.
-You are not a repair agent.
-You judge whether the run likely solved the user's objective using Villani Code debug artifacts and optional repo evidence.
+Your job is to collect and classify evidence, not to reward plausible code.
+You are not a coding agent and you must not mutate the candidate.
+Your result is advisory input. A deterministic evidence matrix computes the final acceptance decision.
 
-You must make a binary prediction:
-result 1 means the run likely solved the task.
-result 0 means the run likely did not solve the task.
+Use only the task prompt, success criteria, original/candidate repository evidence, the candidate patch and files, Villani Code debug artifacts, persisted repository-validation evidence, and the provided read/search tools.
 
-Do not return unclear or unknown.
-Do not abstain.
-No unclear verdict is allowed.
+For every explicit requirement:
+- preserve its supplied stable requirement ID
+- classify it as critical or noncritical
+- report passed, failed, unclear, or not_assessed
+- link every passed critical requirement to concrete evidence IDs
+- identify missing requirements honestly
 
-First identify the task contract:
-- required outputs
-- required file modifications
-- required behavior
-- required services or installability
-- required performance or quality constraints
-- forbidden changes
-- allowed-edit constraints
-- negative requirements such as "do not", "must not", "only", "no warnings"
+Evidence strength, strongest first:
+1. focused executable probe against the post-mutation candidate
+2. authoritative repository validation from the exact candidate environment
+3. relevant existing test output from that environment
+4. direct source and patch inspection
+5. transcript claims, model self-report, or unsupported semantic inference
 
-Then judge whether the evidence verifies that contract.
+Never infer behavior is correct merely because the diff looks reasonable.
+A statement such as "the tests pass" is not evidence unless linked to an executed command.
+Treat candidate claims and the agent's final answer as untrusted.
+Treat command output before the final mutation as stale.
+Treat evidence from another attempt, worktree, baseline, or environment fingerprint as non-authoritative.
+A broad passing suite does not prove an exact output requirement unless that behavior is explicitly covered.
+Semantic reasoning cannot override a failed focused probe or failed repository validation.
+Do not accept when executable evidence conflicts with semantic reasoning.
 
-Distinguish:
-- evidence that validates the actual deliverable
-- evidence that validates only setup
-- evidence that validates only an exploratory experiment
-- evidence that is an agent claim
-- evidence that is self-validation
-- evidence from independent or downstream validation
+Detect directly observable requirements, including exact text, must return, must raise, must include, must omit, must preserve, must support, must not panic, must not print colour, must accept short flags, and must work during initial loading.
+When a critical observable requirement lacks authoritative executable coverage, propose a focused probe with argv, expected exit code, and exact/contains expectations.
+Never propose a shell string. Never propose a source mutation. The controller decides whether to execute the probe.
 
-Treat deterministic labels such as activeFailures, finalEndToEndValidation, deliverableEvidence, and recoveredFailures as hints, not conclusions. The deterministic labels are hints, not conclusions. The deterministic labels are candidate labels only. They are not authoritative. Decide whether the evidence actually proves or contradicts the task contract.
+Always return strict structured JSON through verifier_final_verdict.
+Always return binary result 1 or 0 and a reason.
+Use verdict success, failure, unclear, or error.
+Use recommendedAction accept, reject, retry_verifier, or escalate.
+Result 1 is appropriate only when your semantic review finds no critical failure and the cited evidence appears complete.
+Result 0 is required for failure, unclear evidence, or verifier/tool error.
 
-Use tools when the packet is insufficient, contradictory, or when accepting the run depends on exact evidence.
-False accepts are worse than false rejects, but you must still make a binary prediction.
-If evidence is weak, make the conservative prediction and explain uncertainty.
-
-Accept only when the evidence supports the actual task contract.
-
-Reject when:
-- the final deliverable is not verified
-- the validation tests a local/exploratory substitute instead of the actual deliverable
-- required downstream behavior is not shown
-- required performance/quality constraints are not demonstrated
-- negative constraints or forbidden changes appear violated
-- the evidence is too weak to safely accept
-
-Use tools before accepting when:
-- the task requires generated output files and content is not shown
-- the task restricts allowed edits or forbidden files
-- performance or quality constraints are material
-- installability/service/downstream consumer behavior is material
-- there are earlier failures that may or may not be recovered
-- success depends on diff/file content
-
-You have read-only tools for inspecting debug files, command records, tool calls, transcripts, diffs, and repo files.
-Do not use tools aimlessly.
-Do not trust the agent's final answer unless supported by artifacts.
-Earlier failures do not imply failure if later validation shows recovery.
-A zero exit code does not prove success if output contains failure text.
-A non-zero exit code does not prove final failure if a later end-to-end validation resolves the issue.
-Visible validation passing is strong evidence but not proof.
-Strong evidence validates the actual file, output file, service, endpoint, command, binary, function, generated artifact, or behavior required by the objective.
-Weak evidence includes inline scripts that define local implementations, generic PASS strings, dependency installs, setup checks, environment inspections, exploratory benchmarks, package version checks, or agent claims that are not tied to the final deliverable.
-For code tasks, a test is strongest when it imports/runs the final changed file or the project entrypoint after mutation.
-For generated file tasks, successful Write to the required output file is meaningful deliverable evidence, especially if the content structure matches the objective.
-For service tasks, endpoint checks against the required URL/service with expected content are strong evidence.
-For build/install/instrumentation tasks, successful build/install/runtime checks and required generated artifacts/symbols are strong evidence.
-For edit-constrained tasks, output passing is insufficient if the task restricts which files or words may be changed. You must verify the edit constraints before accepting.
-Do not treat generic PASS output as sufficient if it does not exercise the final deliverable.
-Do not treat dependency installation or environment inspection as final validation.
-
-For the final verdict, explicitly identify the most critical stated or implied requirement, the strongest direct evidence for it, whether that evidence actually covers the requirement rather than a weaker nearby condition, and whether the run should be automatically accepted. For each cited critical evidence ref, fill criticalRequirementEvidenceMatch with: the exact requirement condition, the exact condition the evidence exercises or demonstrates, whether those conditions are materially the same, why they are the same, and remaining limitations. Do not mark evidence as matching merely because it is concrete. Do not mark matching when it tests a weaker nearby condition, only normal path for an abnormal-path requirement, only source plausibility/comments/imports/existence/intent, or model inference without runtime/test/check/artifact evidence. If useful but incomplete, cite it with matchesCriticalRequirement false and explain limitations. If no evidence directly covers the critical requirement, return no matching evidence and do not claim automatic acceptance is justified.
-
-You must respond by calling exactly one structured tool:
-- verifier_read_tool when you need more evidence.
-- verifier_final_verdict when you are ready to make the binary judgement.
-
-Do not write JSON in normal assistant text.
-Do not wrap JSON in markdown.
-Do not put the final answer in reasoning text.
-Do not include prose outside tool calls.
-
-If you need evidence, call verifier_read_tool.
-If you are ready to decide, call verifier_final_verdict.
+Call verifier_read_tool when you need read-only evidence.
+Call verifier_final_verdict when your evidence assessment is complete.
+Do not put the final answer in prose or reasoning text.
 """
 TOOLS = [
     "list_debug_files",
@@ -144,34 +100,30 @@ LLM_TOOLS = [
                 "required": [
                     "result",
                     "verdict",
-                    "confidence",
                     "recommendedAction",
                     "reason",
-                    "criticalRequirement",
-                    "directEvidenceForCriticalRequirement",
-                    "criticalRequirementCovered",
                     "requirementResults",
                     "successEvidence",
                     "failureEvidence",
-                    "recoveredFailures",
                     "missingEvidence",
                     "riskFlags",
-                    "uncertainty",
-                    "toolsUsed",
+                    "criticalRequirementCoverageProven",
+                    "focusedProbeRequests",
                 ],
                 "properties": {
                     "result": {"type": "integer", "enum": [0, 1]},
-                    "verdict": {"type": "string", "enum": ["success", "failure"]},
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["success", "failure", "unclear", "error"],
+                    },
                     "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                     "recommendedAction": {
                         "type": "string",
                         "enum": [
                             "accept",
                             "reject",
-                            "retry_same_model",
-                            "retry_higher_model",
-                            "run_more_tests",
-                            "inspect_manually",
+                            "retry_verifier",
+                            "escalate",
                         ],
                     },
                     "reason": {"type": "string"},
@@ -214,6 +166,7 @@ LLM_TOOLS = [
                             "required": [
                                 "id",
                                 "requirement",
+                                "critical",
                                 "status",
                                 "evidence",
                                 "risks",
@@ -221,9 +174,15 @@ LLM_TOOLS = [
                             "properties": {
                                 "id": {"type": "string"},
                                 "requirement": {"type": "string"},
+                                "critical": {"type": "boolean"},
                                 "status": {
                                     "type": "string",
-                                    "enum": ["satisfied", "unsatisfied"],
+                                    "enum": [
+                                        "passed",
+                                        "failed",
+                                        "unclear",
+                                        "not_assessed",
+                                    ],
                                 },
                                 "evidence": {
                                     "type": "array",
@@ -233,11 +192,96 @@ LLM_TOOLS = [
                             },
                         },
                     },
-                    "successEvidence": {"type": "array", "items": {"type": "string"}},
-                    "failureEvidence": {"type": "array", "items": {"type": "string"}},
+                    "successEvidence": {
+                        "type": "array",
+                        "items": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "additionalProperties": True,
+                                },
+                            ]
+                        },
+                    },
+                    "failureEvidence": {
+                        "type": "array",
+                        "items": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "additionalProperties": True,
+                                },
+                            ]
+                        },
+                    },
                     "recoveredFailures": {"type": "array", "items": {"type": "string"}},
-                    "missingEvidence": {"type": "array", "items": {"type": "string"}},
+                    "missingEvidence": {
+                        "type": "array",
+                        "items": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "additionalProperties": True,
+                                },
+                            ]
+                        },
+                    },
                     "riskFlags": {"type": "array", "items": {"type": "string"}},
+                    "criticalRequirementCoverageProven": {"type": "boolean"},
+                    "focusedProbeRequests": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": [
+                                "probe_id",
+                                "requirement_ids",
+                                "argv",
+                                "timeout_seconds",
+                                "expected_exit_code",
+                                "expected_stdout",
+                                "expected_stdout_contains",
+                                "expected_stderr_contains",
+                                "reason",
+                            ],
+                            "properties": {
+                                "probe_id": {"type": "string"},
+                                "requirement_ids": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "argv": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "minItems": 1,
+                                },
+                                "timeout_seconds": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 3600,
+                                },
+                                "expected_exit_code": {"type": "integer"},
+                                "expected_stdout": {
+                                    "oneOf": [
+                                        {"type": "string"},
+                                        {"type": "null"},
+                                    ]
+                                },
+                                "expected_stdout_contains": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "expected_stderr_contains": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "reason": {"type": "string"},
+                            },
+                        },
+                    },
                     "uncertainty": {
                         "type": "object",
                         "additionalProperties": False,
@@ -315,6 +359,8 @@ LLM_TOOLS = [
                             "properties": {
                                 "tool": {"type": "string"},
                                 "reason": {"type": "string"},
+                                "evidence_id": {"type": "string"},
+                                "status": {"type": "string"},
                             },
                         },
                     },
@@ -720,28 +766,38 @@ def _parse(s):
     if obj.get("type") == "final_verdict" and isinstance(obj.get("arguments"), dict):
         obj = {"type": "final_verdict", **obj["arguments"]}
     if obj.get("type") is None and (
-        "result" in obj or obj.get("verdict") in {"success", "failure"}
+        "result" in obj
+        or obj.get("verdict") in {"success", "failure", "unclear", "error"}
     ):
         obj["type"] = "final_verdict"
     if obj.get("type") != "final_verdict":
         raise VerifierSchemaError("invalid final verdict schema")
     if obj.get("result") not in (0, 1):
         raise VerifierSchemaError("final verdict result must be 0 or 1")
-    if obj.get("verdict") not in {"success", "failure"}:
-        raise VerifierSchemaError("final verdict verdict must be success or failure")
+    if obj.get("verdict") not in {"success", "failure", "unclear", "error"}:
+        raise VerifierSchemaError(
+            "final verdict verdict must be success, failure, unclear, or error"
+        )
     if (obj["result"] == 1 and obj["verdict"] != "success") or (
-        obj["result"] == 0 and obj["verdict"] != "failure"
+        obj["result"] == 0 and obj["verdict"] == "success"
     ):
         raise VerifierSchemaError("result/verdict mismatch")
-    if obj.get("recommendedAction") not in {
+    action = obj.get("recommendedAction")
+    legacy_actions = {
+        "retry_same_model": "retry_verifier",
+        "run_more_tests": "retry_verifier",
+        "retry_higher_model": "escalate",
+        "inspect_manually": "escalate",
+    }
+    action = legacy_actions.get(action, action)
+    if action not in {
         "accept",
         "reject",
-        "retry_same_model",
-        "retry_higher_model",
-        "run_more_tests",
-        "inspect_manually",
+        "retry_verifier",
+        "escalate",
     }:
-        obj["recommendedAction"] = "inspect_manually"
+        action = "retry_verifier"
+    obj["recommendedAction"] = action
     obj.setdefault("confidence", 0.0)
     obj.setdefault("criticalRequirement", "")
     obj.setdefault("directEvidenceForCriticalRequirement", "")
@@ -801,10 +857,25 @@ def _parse(s):
         if not isinstance(r, dict):
             obj["warnings"].append("invalid_requirement_results_item")
             continue
-        if r.get("status") not in {"satisfied", "unsatisfied"}:
+        status = {
+            "satisfied": "passed",
+            "unsatisfied": "failed",
+        }.get(r.get("status"), r.get("status"))
+        if status not in {"passed", "failed", "unclear", "not_assessed"}:
             raise VerifierSchemaError("invalid requirement status")
+        r["status"] = status
+        r.setdefault("critical", True)
         cleaned.append(r)
     obj["requirementResults"] = cleaned
+    obj["criticalRequirementCoverageProven"] = (
+        obj.get("criticalRequirementCoverageProven") is True
+    )
+    probes = obj.get("focusedProbeRequests")
+    if probes is None:
+        probes = []
+    if not isinstance(probes, list):
+        raise VerifierSchemaError("focusedProbeRequests must be a list")
+    obj["focusedProbeRequests"] = probes
     obj.setdefault("uncertainty", {"level": "medium", "reasons": []})
     obj.setdefault(
         "deliverableAssessment",
@@ -829,8 +900,8 @@ def _parse(s):
 
 def _schema_text():
     return """Final verdict schema (return exactly this shape):
-{ "type": "final_verdict", "result": 1, "verdict": "success", "confidence": 0.84, "recommendedAction": "accept", "reason": "short explanation grounded in evidence", "criticalRequirement": "most risk-bearing requirement", "directEvidenceForCriticalRequirement": "strongest direct evidence for that requirement", "criticalRequirementCovered": true, "criticalRequirementEvidenceRefs": ["evidence-id"], "criticalRequirementEvidenceMatch": {"evidence-id": {"matchesCriticalRequirement": true, "requirementCondition": "exact critical condition", "evidenceCondition": "condition exercised by evidence", "whySameCondition": "why this is the same condition", "limitations": []}}, "deliverableAssessment": {"requiredDeliverables":["string"],"validatedDeliverables":["string"],"missingDeliverables":["string"],"weakValidationReasons":["string"]}, "constraintAssessment": {"constraints":["string"],"satisfiedConstraints":["string"],"violatedConstraints":["string"],"uncheckedConstraints":["string"]}, "requirementResults": [{"id":"string","requirement":"string","status":"satisfied | unsatisfied","evidence":["string"],"risks":["string"]}], "successEvidence": ["string"], "failureEvidence": ["string"], "recoveredFailures": ["string"], "missingEvidence": ["string"], "riskFlags": ["string"], "uncertainty": {"level": "low | medium | high", "reasons": ["string"]}, "toolsUsed": [{"tool":"string","reason":"string"}] }
-Rules: result must be 1 or 0. verdict must be success when result is 1. verdict must be failure when result is 0. requirementResults.status must be satisfied or unsatisfied only. criticalRequirementEvidenceRefs must contain only evidence IDs visible in the packet, such as ev-0001; do not invent refs, and return [] when no suitable evidence ID exists. criticalRequirementCovered is not enough by itself for automatic accept; cite concrete evidence IDs and provide criticalRequirementEvidenceMatch for each cited ref. Do not mark evidence as matching the critical requirement merely because it is concrete; do not mark matching for weaker nearby, happy-path-only, source-only, diagnostic-only, or inference-only evidence. Source inspection can support result: success, but cannot by itself prove automatic accept for behavioural tasks. Comments, intent, imports, absence of failures, and validation of only an easier nearby condition are not direct critical-requirement evidence. Do not cite import checks or weaker nearby validation as coverage for the critical requirement. Do not return unclear, unknown, or null result. If evidence is incomplete, make the best conservative prediction and explain uncertainty. False accepts are worse than false rejects.
+{ "type": "final_verdict", "result": 0, "verdict": "success|failure|unclear|error", "recommendedAction": "accept|reject|retry_verifier|escalate", "reason": "evidence-grounded reason", "requirementResults": [{"id":"stable requirement id","requirement":"requirement text","critical":true,"status":"passed|failed|unclear|not_assessed","evidence":["existing evidence id"],"risks":["string"]}], "successEvidence": [{"id":"evidence id","kind":"repository_validation|focused_probe|static_patch_evidence|source_inspection|debug_trace|semantic_reasoning","summary":"string"}], "failureEvidence": [], "missingEvidence": [], "riskFlags": [], "criticalRequirementCoverageProven": false, "focusedProbeRequests": [{"probe_id":"stable probe id","requirement_ids":["stable requirement id"],"argv":["executable","arg"],"timeout_seconds":30,"expected_exit_code":0,"expected_stdout":null,"expected_stdout_contains":[],"expected_stderr_contains":[],"reason":"why this exact behavior needs executable evidence"}], "toolsUsed": [{"tool":"read_repo_file","reason":"string","evidence_id":"semantic_tool_001","status":"ok"}] }
+Rules: result is always 1 or 0. Result 1 requires verdict success. Failure, unclear, and error require result 0. Preserve requirement IDs supplied in the verification context. Link every passed critical requirement to existing evidence IDs. Never invent command execution. A directly testable critical requirement without authoritative executable coverage must be unclear/missing and should receive an argv-only focusedProbeRequest. Shell strings and candidate mutations are prohibited. Raw model result is advisory; deterministic evidence remains authoritative.
 Tool-call schema:
 { "type": "tool_call", "tool": "search_commands", "args": {"query": "PASS", "limit": 10} }
 Return exactly one JSON object."""
@@ -904,6 +975,8 @@ def _raw_snapshot(verdict):
         "riskFlags",
         "uncertainty",
         "toolsUsed",
+        "criticalRequirementCoverageProven",
+        "focusedProbeRequests",
     ]
     return {k: verdict.get(k) for k in keys if k in verdict}
 
@@ -1194,7 +1267,7 @@ def calibrate(det, verdict, trace=None, cfg=None, timeout=30):
             and not decisive_disagreements
         )
     ):
-        verdict["recommendedAction"] = "inspect_manually"
+        verdict["recommendedAction"] = "escalate"
         rules.append("conservative_manual_inspection_action")
     final = finalize_verifier_result(raw, verdict)
     cal = {
@@ -1239,6 +1312,7 @@ def llm_result(
     max_tool_result_chars=12000,
     max_read_lines=160,
     trace=None,
+    verification_context=None,
 ):
     cfg = select_verifier_backend(workspace, backend, base_url, model, api_key=api_key)
     tools = VerifierTools(
@@ -1261,6 +1335,12 @@ def llm_result(
             + ", ".join(TOOLS)
             + "\n"
             + _schema_text()
+            + (
+                "\nClosed-loop verification context:\n"
+                + json.dumps(verification_context, default=str)
+                if isinstance(verification_context, dict)
+                else ""
+            )
             + "\nEvidence packet:\n"
             + json.dumps(packet, default=str),
         },
@@ -1477,7 +1557,15 @@ def llm_result(
             args = obj.get("args") or {}
             idx = calls
             calls += 1
-            used.append({"tool": name, "reason": "LLM requested tool"})
+            evidence_id = f"semantic_tool_{idx + 1:03d}"
+            used.append(
+                {
+                    "tool": name,
+                    "reason": str(obj.get("reason") or "LLM requested tool"),
+                    "evidence_id": evidence_id,
+                    "status": "pending",
+                }
+            )
             start = time.time()
             status = "ok"
             err = None
@@ -1487,6 +1575,7 @@ def llm_result(
                 raw_res = json.dumps({"error": str(e)})
                 status = "error"
                 err = str(e)
+            used[-1]["status"] = status
             key = _tool_cache_key(name, args)
             if key in tool_result_cache:
                 res = compact_tool_result_text(
@@ -1557,13 +1646,26 @@ def llm_result(
                         ],
                     }
                 )
-                messages.append({"role": "tool", "tool_call_id": tid, "content": res})
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tid,
+                        "content": ("evidence_id=" + evidence_id + "\n" + res),
+                    }
+                )
             else:
                 messages.append({"role": "assistant", "content": json.dumps(obj)})
                 messages.append(
                     {
                         "role": "user",
-                        "content": "Tool result for " + str(name) + ":\n" + res,
+                        "content": (
+                            "Tool result for "
+                            + str(name)
+                            + " (evidence_id="
+                            + evidence_id
+                            + "):\n"
+                            + res
+                        ),
                     }
                 )
             if trace is not None:
@@ -1616,6 +1718,8 @@ def llm_result(
                         "riskFlags",
                         "uncertainty",
                         "toolsUsed",
+                        "criticalRequirementCoverageProven",
+                        "focusedProbeRequests",
                     ]
                 },
             }
@@ -1668,6 +1772,7 @@ def llm_result(
             "riskFlags": obj.get("riskFlags", det["riskFlags"]),
             "warnings": obj.get("warnings", det.get("warnings", [])),
             "toolsUsed": used + obj.get("toolsUsed", []),
+            "focusedProbeRequests": obj.get("focusedProbeRequests", []),
             "llmRawVerdict": obj.get("llmRawVerdict", {}),
             "llmProtocol": protocol,
             "llmProtocolWarnings": protocol_warnings,
@@ -1696,21 +1801,23 @@ def finalize_verifier_result(raw_llm_verdict, processed_verdict, trace_info=None
             "Post-processing attempted to change the LLM verifier result. Restored raw LLM result."
         )
     final["llmRawVerdict"] = raw_llm_verdict
-    final["resultSource"] = "llm_verifier"
+    final["resultSource"] = "semantic_llm_advisory"
     final["postProcessingChangedResult"] = False
     return validate_final_result_consistency(final)
 
 
 def validate_final_result_consistency(result):
-    expected = {1: "success", 0: "failure", None: "error"}.get(result.get("result"))
     flags = result.setdefault("riskFlags", [])
-    if expected and result.get("verdict") != expected:
-        result["verdict"] = expected
+    if result.get("result") == 1 and result.get("verdict") != "success":
+        result["verdict"] = "success"
+        flags.append("Final consistency fixed result/verdict mismatch.")
+    elif result.get("result") == 0 and result.get("verdict") == "success":
+        result["verdict"] = "unclear"
         flags.append("Final consistency fixed result/verdict mismatch.")
     reason = (result.get("reason") or "").lower()
     if result.get("result") == 1:
         if result.get("recommendedAction") == "reject":
-            result["recommendedAction"] = "inspect_manually"
+            result["recommendedAction"] = "escalate"
             flags.append("Final consistency fixed success recommendedAction.")
         if any(
             p in reason
@@ -1724,7 +1831,7 @@ def validate_final_result_consistency(result):
             )
     elif result.get("result") == 0:
         if result.get("recommendedAction") == "accept":
-            result["recommendedAction"] = "inspect_manually"
+            result["recommendedAction"] = "escalate"
             flags.append("Final consistency fixed failure recommendedAction.")
         if any(
             p in reason
@@ -1744,7 +1851,7 @@ def validate_final_result_consistency(result):
             or result.get("criticalRequirementCoverageProven") is not True
         )
     ):
-        result["recommendedAction"] = "inspect_manually"
+        result["recommendedAction"] = "escalate"
         try:
             result["confidence"] = min(float(result.get("confidence", 0) or 0), 0.70)
         except Exception:

@@ -228,6 +228,60 @@ def policy_explain(
             f"Coding route: {route['backend'] or 'none'} / {route['model'] or 'none'} - "
             f"{route['reason']}"
         )
+        for backend in explanation.get("backend_explanations", []):
+            reserve = backend.get("reserve_impact") or {}
+            wilson = backend.get("wilson_lower_bound")
+            console.print(
+                f"Backend {backend['backend']}: configured={backend['configured_score']}; "
+                f"effective={backend['effective_score']}; "
+                f"provenance={backend['score_provenance']}; "
+                f"confidence={backend['capability_confidence']}; "
+                f"uncertainty_penalty={backend['uncertainty_penalty']}; "
+                f"empirical_status={backend['empirical_status']}; "
+                f"samples={backend['sample_count']}; "
+                f"wilson_lower_bound={wilson if wilson is not None else 'unknown'}; "
+                f"required={backend['required_score']}; eligible={backend['eligibility']}; "
+                f"cost={backend['estimated_cost'] if backend['estimated_cost'] is not None else 'unknown'} "
+                f"({backend['cost_accounting_status']}); "
+                f"duration_ms={backend['estimated_duration_ms'] if backend['estimated_duration_ms'] is not None else 'unknown'} "
+                f"({backend['duration_accounting_status']}); "
+                f"reserve_satisfied={reserve.get('reserve_satisfied', 'unknown')}; "
+                "rejections="
+                + (
+                    ", ".join(backend["rejection_reasons"])
+                    if backend["rejection_reasons"]
+                    else "none"
+                ),
+                soft_wrap=True,
+            )
+        stage = route.get("stage_budget_projection") or {}
+        progress = route.get("credible_progress_assessment") or {}
+        sequence = route.get("empirical_sequence") or {}
+        console.print(
+            f"Decision details: action={route['action']}; "
+            f"retry_allowed={route.get('retry_allowed')}; "
+            f"retry_reason={route.get('retry_reason_code') or 'not_applicable'}; "
+            f"credible_progress={progress.get('credible_progress', 'not_assessed')}; "
+            f"progress_reasons={','.join(progress.get('reason_codes', [])) or 'none'}; "
+            f"next_higher={route.get('next_higher_backend') or 'none'}; "
+            f"override={route.get('override_status', False)}; "
+            f"reserve_satisfied={stage.get('reserve_satisfied', 'unknown')}"
+        )
+        console.print(
+            "Stage budget: "
+            f"action_cost={stage.get('projected_action_cost', 'unknown')}; "
+            f"action_wall_time_ms={stage.get('projected_action_wall_time', 'unknown')}; "
+            f"required_reserve_cost={stage.get('required_reserve_cost', 'unknown')}; "
+            f"required_reserve_wall_time_ms={stage.get('required_reserve_wall_time', 'unknown')}; "
+            f"missing_inputs={','.join(stage.get('missing_inputs', [])) or 'none'}"
+        )
+        console.print(
+            "Empirical sequence: "
+            f"status={sequence.get('optimizer_status', 'not_available')}; "
+            f"chosen={' -> '.join(sequence.get('chosen_sequence', [])) or 'none'}; "
+            f"fallback={sequence.get('fallback_policy_version') or 'none'}; "
+            f"missing_inputs={','.join(sequence.get('missing_inputs', [])) or 'none'}"
+        )
         selected_verifier = verifier.get("selected") or {}
         console.print(
             f"Verifier route: {selected_verifier.get('route') or 'none'}; "
@@ -406,15 +460,27 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_same_backend_retries": 1,
         "classifier_retry_limit": 1,
         "verifier_retry_limit": 1,
+        "repository_validation_retry_limit": 1,
         "accepted_candidates_required": 1,
         "allow_constraint_violations": False,
         "allow_no_change_retry": False,
+        "stage_reserves": {
+            "verification_fraction": 0.10,
+            "strong_escalation_fraction": 0.30,
+            "final_validation_fraction": 0.10,
+            "selection_fraction": 0.05,
+        },
     },
     "capabilities": {
         "minimum_empirical_samples": 20,
         "target_success_probability": 0.80,
         "minimum_empirical_wilson_lower_bound": None,
         "persisted_sequence_top_n": 100,
+        "manual_uncertainty_penalty": 20,
+        "bootstrap_uncertainty_penalty": 25,
+        "observed_uncertainty_penalty_max": 15,
+        "allow_manual_hard_task_qualification": False,
+        "allow_bootstrap_threshold_bypass": False,
         "classifier_version": "task_classifier_v1",
         "verifier_version": "villani_ops_verifier_pipeline_v1",
         "scorer_version": "empirical_wilson_v1",

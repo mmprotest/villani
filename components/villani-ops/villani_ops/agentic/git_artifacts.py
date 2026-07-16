@@ -97,6 +97,12 @@ def _is_excluded(path: str, patterns: list[str] | None = None) -> bool:
     return False
 
 
+def is_patch_excluded(path: str, patterns: list[str] | None = None) -> bool:
+    """Expose the canonical patch exclusion decision to durable bundle writers."""
+
+    return _is_excluded(path, patterns)
+
+
 def is_scratch_artifact_path(path: str) -> bool:
     p = path.replace("\\", "/").lstrip("./")
     name = Path(p).name
@@ -186,6 +192,8 @@ def ensure_git_baseline(worktree_path: Path) -> None:
     if (worktree_path / ".git").exists():
         return
     _run(["git", "init"], worktree_path)
+    _run(["git", "config", "core.autocrlf", "false"], worktree_path)
+    _run(["git", "config", "core.whitespace", "cr-at-eol"], worktree_path)
     _run(["git", "config", "user.email", "villani-ops@example.invalid"], worktree_path)
     _run(["git", "config", "user.name", "Villani Ops"], worktree_path)
     clean_runner_artifacts_from_worktree(worktree_path)
@@ -193,15 +201,24 @@ def ensure_git_baseline(worktree_path: Path) -> None:
     _run(["git", "commit", "-m", "baseline"], worktree_path)
 
 
-def _parse_name_status(text: str):
-    changed = []
-    added = []
-    deleted = []
-    modified = []
-    renamed = []
-    rows = []
+def _parse_name_status(
+    text: str,
+) -> tuple[
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+    list[dict[str, str | list[str]]],
+]:
+    changed: list[str] = []
+    added: list[str] = []
+    deleted: list[str] = []
+    modified: list[str] = []
+    renamed: list[str] = []
+    rows: list[dict[str, str | list[str]]] = []
 
-    def add(lst, x):
+    def add(lst: list[str], x: str) -> None:
         if x and x not in lst:
             lst.append(x)
 
@@ -210,7 +227,10 @@ def _parse_name_status(text: str):
         if not parts:
             continue
         status = parts[0]
-        row = {"status": status, "paths": parts[1:]}
+        row: dict[str, str | list[str]] = {
+            "status": status,
+            "paths": parts[1:],
+        }
         rows.append(row)
         code = status[0]
         path = parts[-1] if len(parts) > 1 else ""

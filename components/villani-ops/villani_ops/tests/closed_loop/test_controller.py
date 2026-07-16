@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,10 @@ from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
 from villani_ops.closed_loop.interfaces import (
     ClosedLoopRunRequest,
     DependencyFailure,
+    EvidenceItem,
     Materialization,
+    Requirement,
+    Verification,
 )
 from villani_ops.closed_loop.schema_validation import (
     validate_jsonl_event_stream,
@@ -87,11 +91,13 @@ def _controller(
     materializer: FakeMaterializer | None = None,
     monotonic: FakeMonotonic | None = None,
     policy_engine: FakePolicyEngine | None = None,
+    attempt_runner: Any | None = None,
+    verifier_dependency: Any | None = None,
 ) -> tuple[ClosedLoopController, dict[str, Any]]:
     classifier = FakeClassifier()
     policy_dependency = policy_engine or FakePolicyEngine(decisions)
-    runner = FakeAttemptRunner(attempts)
-    verifier = FakeVerifier(verifications)
+    runner = attempt_runner or FakeAttemptRunner(attempts)
+    verifier = verifier_dependency or FakeVerifier(verifications)
     selector_dependency = selector or FakeSelector()
     materializer_dependency = materializer or FakeMaterializer()
     dependencies = {
@@ -120,6 +126,162 @@ def _controller(
 
 def _events(run_directory: Path) -> list[dict[str, Any]]:
     return read_jsonl_tolerant(run_directory / "events.jsonl")
+
+
+class RetryableValidationAttemptRunner(FakeAttemptRunner):
+    def __init__(self, results: list[Any]) -> None:
+        super().__init__(results)
+        self.validation_retry_calls: list[tuple[Any, Any]] = []
+
+    def retry_repository_validation(
+        self,
+        context: Any,
+        prior_result: Any,
+    ) -> Any:
+        self.validation_retry_calls.append((context, prior_result))
+        return replace(
+            prior_result,
+            metadata={
+                **prior_result.metadata,
+                "repository_validation_status": "passed",
+                "repository_validation_failure_code": ("repository_validation_passed"),
+                "repository_validation_retry_count": 1,
+            },
+        )
+
+
+class FocusedProbeAttemptRunner(FakeAttemptRunner):
+    def __init__(self, results: list[Any]) -> None:
+        super().__init__(results)
+        self.probe_calls: list[tuple[Any, Any, Any]] = []
+
+    def execute_focused_probes(
+        self,
+        context: Any,
+        prior_result: Any,
+        requests: Any,
+    ) -> Any:
+        self.probe_calls.append((context, prior_result, requests))
+        passed = len(self.probe_calls) > 1
+        return replace(
+            prior_result,
+            metadata={
+                **prior_result.metadata,
+                "focused_probe_status": (
+                    "passed" if passed else "infrastructure_error"
+                ),
+                "focused_probe_failure_code": (
+                    "focused_probe_passed" if passed else "focused_probe_timeout"
+                ),
+                "focused_probe_retry_count": len(self.probe_calls) - 1,
+            },
+        )
+
+
+class RetryableFocusedProbeVerifier:
+    def __init__(self) -> None:
+        self.verify_calls = 0
+        self.finalize_calls = 0
+
+    @staticmethod
+    def _request() -> dict[str, Any]:
+        return {
+            "probe_id": "probe-1",
+            "requirement_ids": ["req-1"],
+            "argv": ["fixture-probe"],
+            "timeout_seconds": 5,
+            "expected_exit_code": 0,
+            "expected_stdout": "ok",
+            "expected_stdout_contains": [],
+            "expected_stderr_contains": [],
+            "reason": "exact evidence",
+        }
+
+    def verify(self, _context: Any, _result: Any) -> Verification:
+        self.verify_calls += 1
+        return Verification(
+            verifier="focused-probe-fixture",
+            outcome="unclear",
+            acceptance_eligible=False,
+            confidence=None,
+            reason="Focused evidence is pending.",
+            recommended_action="retry_verifier",
+            requirement_results=(
+                Requirement(
+                    requirement_id="req-1",
+                    description="Exact behavior.",
+                    outcome="missing",
+                    evidence_ids=("focused_probe_request:probe-1",),
+                ),
+            ),
+            missing_evidence=(
+                EvidenceItem(
+                    evidence_id="focused_probe_request:probe-1",
+                    kind="focused_probe",
+                    summary="pending",
+                ),
+            ),
+            metadata={
+                "invocation_status": "completed",
+                "focused_probe_requests": [self._request()],
+                "focused_probe_requests_pending": True,
+                "computed_final_result": 0,
+                "computed_final_reason_code": "focused_probe_missing",
+            },
+        )
+
+    def finalize_with_focused_probes(
+        self,
+        _context: Any,
+        result: Any,
+        initial: Verification,
+    ) -> Verification:
+        self.finalize_calls += 1
+        if result.metadata.get("focused_probe_status") != "passed":
+            return replace(
+                initial,
+                outcome="error",
+                reason="Focused probe infrastructure failed.",
+                metadata={
+                    **initial.metadata,
+                    "focused_probe_status": "infrastructure_error",
+                    "focused_probe_failure_code": "focused_probe_timeout",
+                    "focused_probe_requests_pending": True,
+                    "computed_final_result": 0,
+                    "computed_final_reason_code": "verifier_tool_failure",
+                },
+            )
+        return Verification(
+            verifier="focused-probe-fixture",
+            outcome="accepted",
+            acceptance_eligible=True,
+            confidence=1.0,
+            reason="Focused probe passed.",
+            recommended_action="accept",
+            requirement_results=(
+                Requirement(
+                    requirement_id="req-1",
+                    description="Exact behavior.",
+                    outcome="passed",
+                    evidence_ids=("focused_probe:probe-1",),
+                ),
+            ),
+            success_evidence=(
+                EvidenceItem(
+                    evidence_id="focused_probe:probe-1",
+                    kind="focused_probe",
+                    summary="passed",
+                ),
+            ),
+            metadata={
+                "invocation_status": "completed",
+                "focused_probe_status": "passed",
+                "focused_probe_requests": [],
+                "focused_probe_requests_pending": False,
+                "computed_final_result": 1,
+                "computed_final_reason_code": "accepted",
+            },
+        )
 
 
 def test_first_attempt_accepted_and_materialized(tmp_path: Path) -> None:
@@ -173,6 +335,126 @@ def test_rejected_attempt_retries_same_backend_then_accepts(tmp_path: Path) -> N
     assert "retry_selected" in {
         event["event_type"] for event in _events(result.run_directory)
     }
+
+
+def test_repository_validation_retry_reuses_candidate_without_coding_or_tokens(
+    tmp_path: Path,
+) -> None:
+    low = backend("low")
+    runner = RetryableValidationAttemptRunner([attempt(patch=PATCH_ONE)])
+    infrastructure_verification = Verification(
+        verifier="fake_verifier",
+        outcome="error",
+        acceptance_eligible=False,
+        confidence=None,
+        reason="Repository validation timed out.",
+        recommended_action="retry_verifier",
+        metadata={
+            "repository_validation_status": "infrastructure_error",
+            "repository_validation_failure_code": "repository_validation_timeout",
+            "repository_validation_retry_count": 0,
+            "retry_scope": "repository_validation",
+        },
+    )
+    retry_decision = replace(
+        policy("retry", backend_option=low),
+        metadata={"retry_scope": "repository_validation"},
+    )
+    controller, dependencies = _controller(
+        [
+            policy("attempt", backend_option=low),
+            retry_decision,
+            policy("select"),
+        ],
+        [],
+        [infrastructure_verification, accepted_verification()],
+        attempt_runner=runner,
+    )
+
+    result = controller.run(_request(tmp_path, max_attempts=1))
+
+    assert result.terminal_state == "COMPLETED"
+    assert len(dependencies["runner"].calls) == 1
+    assert len(runner.validation_retry_calls) == 1
+    assert (
+        runner.validation_retry_calls[0][0].attempt_id
+        == dependencies["runner"].calls[0].attempt_id
+        == "attempt_001"
+    )
+    attempt_snapshot = json.loads(
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert attempt_snapshot["input_tokens"] == 10
+    assert attempt_snapshot["output_tokens"] == 5
+    assert attempt_snapshot["metadata"]["repository_validation_retry_count"] == 1
+    retry_event = next(
+        event
+        for event in _events(result.run_directory)
+        if event["event_type"] == "repository_validation_retry_completed"
+    )
+    assert retry_event["payload"]["coding_attempt_rerun"] is False
+    assert retry_event["payload"]["coding_tokens_spent"] == 0
+
+
+def test_focused_probe_infrastructure_retry_does_not_rerun_coding(
+    tmp_path: Path,
+) -> None:
+    low = backend("low")
+    runner = FocusedProbeAttemptRunner([attempt(patch=PATCH_ONE)])
+    verifier = RetryableFocusedProbeVerifier()
+    controller, dependencies = _controller(
+        [policy("attempt", backend_option=low), policy("select")],
+        [],
+        [],
+        attempt_runner=runner,
+        verifier_dependency=verifier,
+    )
+    request = replace(
+        _request(tmp_path, max_attempts=1),
+        policy_configuration={
+            "version": "fake_v1",
+            "collect_candidates": 1,
+            "policy": {
+                "version": "bootstrap_v1",
+                "verifier_retry_limit": 1,
+            },
+        },
+    )
+
+    result = controller.run(request)
+
+    assert result.terminal_state == "COMPLETED"
+    assert len(dependencies["runner"].calls) == 1
+    assert len(runner.probe_calls) == 2
+    assert verifier.verify_calls == 1
+    assert verifier.finalize_calls == 2
+    attempt_snapshot = json.loads(
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert attempt_snapshot["input_tokens"] == 10
+    assert attempt_snapshot["output_tokens"] == 5
+    probe_events = [
+        event
+        for event in _events(result.run_directory)
+        if event["event_type"] == "focused_probe_execution_started"
+    ]
+    assert len(probe_events) == 2
+    assert all(
+        event["payload"]["coding_attempt_rerun"] is False
+        and event["payload"]["coding_tokens_spent"] == 0
+        for event in probe_events
+    )
+    retry_event = next(
+        event
+        for event in _events(result.run_directory)
+        if event["event_type"] == "verification_retry_started"
+    )
+    assert retry_event["payload"]["retry_scope"] == "focused_probe"
+    assert retry_event["payload"]["semantic_verifier_rerun"] is False
 
 
 def test_capability_rejection_escalates_backend_then_accepts(

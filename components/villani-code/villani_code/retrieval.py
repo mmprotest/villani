@@ -21,6 +21,9 @@ class Hit:
     path: str
     score: float
     reason: str
+    matching_symbols: tuple[str, ...] = ()
+    snippet: str = ""
+    file_sha256: str = ""
 
 
 class BM25:
@@ -78,7 +81,21 @@ class Retriever:
                 continue
             fi = self.files[idx]
             reason = _build_reason(fi.path, fi.symbols, fi.snippet, q_tokens)
-            hits.append(Hit(path=fi.path, score=score, reason=reason))
+            matching_symbols = tuple(
+                symbol
+                for symbol in fi.symbols
+                if set(tokenize(symbol)) & set(q_tokens)
+            )
+            hits.append(
+                Hit(
+                    path=fi.path,
+                    score=score,
+                    reason=reason,
+                    matching_symbols=matching_symbols,
+                    snippet=fi.snippet,
+                    file_sha256=fi.content_sha256,
+                )
+            )
             if len(hits) >= k:
                 break
         return hits

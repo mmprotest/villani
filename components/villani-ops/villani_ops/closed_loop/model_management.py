@@ -20,6 +20,7 @@ import yaml
 from villani_ops.core.backend import Backend
 from villani_ops.providers import CANONICAL_PROVIDERS, canonical_provider
 
+from .capabilities.effective import explicit_capability_override
 from .capabilities.models import CapabilityProfile, CapabilitySnapshot
 from .durable_io import write_json_atomic
 
@@ -285,10 +286,7 @@ def default_bootstrap_backend(configuration: Mapping[str, Any]) -> str | None:
 
 
 def manual_override(backend: Backend) -> bool:
-    return bool(
-        backend.metadata.get("manual_capability_override")
-        or backend.capability_score_source in {"manual_override", "user_configured"}
-    )
+    return explicit_capability_override(backend)
 
 
 def _capability_values(configuration: Mapping[str, Any]) -> tuple[int, float]:
@@ -296,11 +294,7 @@ def _capability_values(configuration: Mapping[str, Any]) -> tuple[int, float]:
     values = raw if isinstance(raw, Mapping) else {}
     minimum = int(values.get("minimum_empirical_samples", 20))
     configured = values.get("minimum_empirical_wilson_lower_bound")
-    bound = float(
-        configured
-        if configured is not None
-        else values.get("target_success_probability", 0.80)
-    )
+    bound = float(configured if configured is not None else 0.0)
     return minimum, bound
 
 

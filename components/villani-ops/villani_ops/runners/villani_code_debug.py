@@ -53,6 +53,32 @@ class VillaniCodeTelemetry(BaseModel):
     first_command_tool_index: int | None = None
     first_command_seconds: float | None = None
 
+    time_to_first_relevant_file: float | None = None
+    tool_calls_to_first_relevant_file: int | None = None
+    time_to_first_relevant_patch: float | None = None
+    tool_calls_to_first_relevant_patch: int | None = None
+    tokens_to_first_relevant_patch: int | None = None
+    unique_relevant_files_read: int = 0
+    duplicate_file_reads: int = 0
+    duplicate_searches: int = 0
+    repeated_commands: int = 0
+    repeated_command_failures: int = 0
+    tokens_after_last_relevant_progress: int = 0
+    turns_after_last_relevant_progress: int = 0
+    relevant_patch_revisions: int = 0
+    validation_improvement_count: int = 0
+    duplicate_tool_results: int = 0
+    context_items_added: int = 0
+    context_items_reused: int = 0
+    context_items_compacted: int = 0
+    tokens_removed_by_compaction: int = 0
+    estimated_tokens_before_projection: int = 0
+    estimated_tokens_after_projection: int = 0
+    unique_command_failures: int = 0
+    failed_command_ratio: float = 0.0
+    commands_retried_without_state_change: int = 0
+    relevant_files_read: list[str] = Field(default_factory=list)
+
     token_accounting_status: str = "missing"
     token_accounting_warnings: list[str] = Field(default_factory=list)
     raw_summary: dict[str, Any] = Field(default_factory=dict)
@@ -67,7 +93,7 @@ def _read_json(path: Path, warnings: list[str]) -> dict[str, Any] | None:
 
 
 def _jsonl(path: Path, warnings: list[str]) -> list[dict[str, Any]]:
-    rows = []
+    rows: list[dict[str, Any]] = []
     if not path.exists():
         warnings.append(f"Missing optional artifact: {path.name}")
         return rows
@@ -259,6 +285,46 @@ def parse_villani_code_debug_artifact(debug_dir: Path) -> VillaniCodeTelemetry:
     ]:
         if summary.get(k) is not None:
             setattr(tel, k, int(summary.get(k) or 0))
+    for k in [
+        "unique_relevant_files_read",
+        "duplicate_file_reads",
+        "duplicate_searches",
+        "repeated_commands",
+        "repeated_command_failures",
+        "tokens_after_last_relevant_progress",
+        "turns_after_last_relevant_progress",
+        "relevant_patch_revisions",
+        "validation_improvement_count",
+        "duplicate_tool_results",
+        "context_items_added",
+        "context_items_reused",
+        "context_items_compacted",
+        "tokens_removed_by_compaction",
+        "estimated_tokens_before_projection",
+        "estimated_tokens_after_projection",
+        "unique_command_failures",
+        "commands_retried_without_state_change",
+    ]:
+        if summary.get(k) is not None:
+            setattr(tel, k, int(summary.get(k) or 0))
+    for k in [
+        "time_to_first_relevant_file",
+        "time_to_first_relevant_patch",
+        "failed_command_ratio",
+    ]:
+        if summary.get(k) is not None:
+            setattr(tel, k, float(summary[k]))
+    for k in [
+        "tool_calls_to_first_relevant_file",
+        "tool_calls_to_first_relevant_patch",
+        "tokens_to_first_relevant_patch",
+    ]:
+        if summary.get(k) is not None:
+            setattr(tel, k, int(summary[k]))
+    if isinstance(summary.get("relevant_files_read"), list):
+        tel.relevant_files_read = [
+            str(value) for value in summary["relevant_files_read"]
+        ]
     tel.input_tokens = int(
         summary.get("tokens_input") or summary.get("input_tokens") or 0
     )
@@ -355,7 +421,7 @@ def parse_villani_code_debug_artifact(debug_dir: Path) -> VillaniCodeTelemetry:
                 tel.first_substantive_file_read_seconds = sec
             if tel.first_file_mutation_tool_index is None and (
                 cat == "file_mutation"
-                or name in {"Write", "Edit", "MultiEdit", "Patch", "ApplyPatch"}
+                or name in {"Write", "Edit", "MultiEdit", "Patch", "PatchRange", "ApplyPatch"}
             ):
                 tel.first_file_mutation_tool_index = idx
                 tel.first_file_mutation_seconds = sec

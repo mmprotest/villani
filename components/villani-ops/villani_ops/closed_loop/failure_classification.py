@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal, TypeAlias
 
 from .interfaces import AttemptResult, Verification
+from .progress import assess_attempt_progress
 
 
 FailureCategory: TypeAlias = Literal[
@@ -22,6 +23,28 @@ RunnerFailureCategory: TypeAlias = Literal[
     "backend_auth_error",
     "backend_rate_limited",
     "runner_nonzero_exit",
+]
+RepositoryValidationReasonCode: TypeAlias = Literal[
+    "repository_validation_passed",
+    "repository_validation_test_failure",
+    "repository_validation_timeout",
+    "repository_validation_executable_missing",
+    "repository_validation_environment_mismatch",
+    "repository_validation_provider_failure",
+    "repository_validation_policy_denied",
+    "repository_validation_unavailable",
+    "repository_validation_malformed_result",
+]
+FocusedProbeReasonCode: TypeAlias = Literal[
+    "focused_probe_passed",
+    "focused_probe_behavior_failure",
+    "focused_probe_timeout",
+    "focused_probe_executable_missing",
+    "focused_probe_environment_mismatch",
+    "focused_probe_provider_failure",
+    "focused_probe_policy_denied",
+    "focused_probe_malformed_result",
+    "focused_probe_missing",
 ]
 
 
@@ -135,19 +158,9 @@ _CAPABILITY_MARKERS = (
 
 
 def material_progress(attempt: AttemptResult) -> bool:
-    if attempt.patch and attempt.patch.strip():
-        return True
-    metrics = attempt.metadata.get("runner_metrics")
-    telemetry = metrics if isinstance(metrics, dict) else attempt.runner_telemetry
-    return any(
-        int(telemetry.get(name) or 0) > 0
-        for name in (
-            "model_requests",
-            "total_file_reads",
-            "total_file_writes",
-            "commands_executed",
-        )
-    )
+    """Backward-compatible name for the stricter credible-progress decision."""
+
+    return assess_attempt_progress(attempt).credible_progress
 
 
 def _infrastructure_failure(attempt: AttemptResult) -> bool:
@@ -201,6 +214,49 @@ def classify_failure(
         return "infrastructure_failure"
     if requires_file_changes and not (attempt.patch and attempt.patch.strip()):
         return "no_change_failure"
+    if verification is not None:
+        repository_status = str(
+            verification.metadata.get("repository_validation_status") or ""
+        )
+        repository_reason = str(
+            verification.metadata.get("repository_validation_failure_code") or ""
+        )
+        if (
+            repository_status == "failed"
+            or repository_reason == "repository_validation_test_failure"
+        ):
+            return "implementation_failure"
+        if repository_status == "infrastructure_error" or repository_reason in {
+            "repository_validation_timeout",
+            "repository_validation_executable_missing",
+            "repository_validation_environment_mismatch",
+            "repository_validation_provider_failure",
+            "repository_validation_policy_denied",
+            "repository_validation_unavailable",
+            "repository_validation_malformed_result",
+        }:
+            return "verification_failure"
+        focused_status = str(verification.metadata.get("focused_probe_status") or "")
+        focused_reason = str(
+            verification.metadata.get("focused_probe_failure_code") or ""
+        )
+        if (
+            focused_status == "failed"
+            or focused_reason == "focused_probe_behavior_failure"
+            or verification.metadata.get("computed_final_reason_code")
+            == "focused_probe_failed"
+        ):
+            return "implementation_failure"
+        if focused_status == "infrastructure_error" or focused_reason in {
+            "focused_probe_timeout",
+            "focused_probe_executable_missing",
+            "focused_probe_environment_mismatch",
+            "focused_probe_provider_failure",
+            "focused_probe_policy_denied",
+            "focused_probe_malformed_result",
+            "focused_probe_missing",
+        }:
+            return "verification_failure"
     if verification is not None and _verification_failure(verification):
         return "verification_failure"
     if verification is not None and _capability_failure(verification):
@@ -208,5 +264,5 @@ def classify_failure(
     if verification is not None and not verification.acceptance_eligible:
         return "implementation_failure"
     if attempt.status != "completed" or attempt.exit_code not in {0, None}:
-        return "implementation_failure" if material_progress(attempt) else None
+        return "implementation_failure"
     return None

@@ -203,7 +203,7 @@ def test_unrated_model_and_unknown_price_are_explicit() -> None:
     assert configuration["backends"]["new-local"]["capability_score_source"] == "unrated"
 
 
-def test_bootstrap_routing_records_basis_without_fabricating_capability() -> None:
+def test_bootstrap_default_does_not_fabricate_hard_task_qualification() -> None:
     backend = _backend("bootstrap")
     configuration = _configuration(backend)
     set_bootstrap_default(configuration, backend.name)
@@ -212,9 +212,11 @@ def test_bootstrap_routing_records_basis_without_fabricating_capability() -> Non
         initial_policy_context(_classification(difficulty="hard"), configuration, run_id="preview")
     )
 
-    assert decision.chosen_backend == backend.name
-    assert decision.metadata["route_provenance"]["basis"] == "bootstrap_default"
-    assert decision.metadata["route_provenance"]["empirical_evidence_used"] is False
+    assert decision.chosen_backend is None
+    option = decision.considered_backends[0]
+    assert option.capability_provenance == "bootstrap"
+    assert option.qualification_status == "estimated"
+    assert option.cost_components["bootstrap_eligible"] is False
     assert capability_status(backend, configuration, None) == CapabilityStatus.BOOTSTRAP
 
 
@@ -257,7 +259,7 @@ def test_observed_and_qualified_routes_record_the_evidence_basis() -> None:
     )
 
     assert decision.chosen_backend == backend.name
-    assert decision.metadata["route_provenance"]["basis"] == "qualified_empirical_policy"
+    assert decision.metadata["route_provenance"]["basis"] == "qualified_empirical"
     assert decision.metadata["route_provenance"]["empirical_evidence_used"] is True
 
 
@@ -327,7 +329,7 @@ def test_unavailable_model_and_detected_context_are_exposed() -> None:
 
 
 def test_local_first_starts_local_and_escalates_to_stronger_eligible_model() -> None:
-    local = _backend("local-bootstrap")
+    local = _backend("local-bootstrap", capability=45)
     expert = _backend(
         "expert",
         capability=80,
@@ -424,6 +426,17 @@ def test_policy_preview_includes_adjustment_and_verifier_route_explanation() -> 
     assert preview["selected_verifier_route"]["selected"]["route"] == "deterministic-verifier"
     assert preview["selected_verifier_route"]["repository_validation_required"] is True
     assert preview["estimated_cost"]["status"] == "complete"
+    backend_explanation = preview["backend_explanations"][0]
+    assert backend_explanation["configured_score"] == 80
+    assert backend_explanation["effective_score"] == 80
+    assert backend_explanation["score_provenance"] == "explicit_override"
+    assert "reserve_satisfied" in backend_explanation["reserve_impact"]
+    assert (
+        preview["selected_coding_route"]["stage_budget_projection"][
+            "reserve_satisfied"
+        ]
+        is True
+    )
 
 
 def test_policy_simulation_reports_evidence_limitations_without_causal_claims(

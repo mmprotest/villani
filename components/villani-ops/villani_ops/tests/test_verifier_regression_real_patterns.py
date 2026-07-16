@@ -1,4 +1,11 @@
 import json
+from villani_ops.closed_loop.verification_evidence import (
+    CandidateEligibility,
+    RepositoryValidationDecisionInput,
+    RequirementEvidence,
+    SemanticReviewDecisionInput,
+    compute_final_verification_decision,
+)
 from villani_ops.core.backend import Backend
 from villani_ops.storage.files import FileStorage
 from villani_ops.tests._http_transport import patch_backend_post
@@ -324,3 +331,74 @@ def test_fixture_g_overfull_valid_synonym(tmp_path):
     res = deterministic_result(load_debug_run(d))
     assert not res["constraintAssessment"]["violatedConstraints"]
     assert res["evidenceByCategory"]["constraintEvidence"]
+
+
+def test_axios_unwanted_prefix_probe_overrides_semantic_acceptance():
+    requirement = RequirementEvidence(
+        requirement_id="req-axios-exact-message",
+        description="Axios must return exact error text wanted with no prefix.",
+        critical=True,
+        evidence_type="focused_probe",
+        evidence_ids=["focused_probe:axios-exact-message"],
+        deterministic_status="failed",
+        semantic_status="passed",
+        contradiction=True,
+        final_status="failed",
+        reason=(
+            "The focused probe observed 'AggregateError: wanted' instead of "
+            "the required exact text 'wanted'."
+        ),
+    )
+
+    decision = compute_final_verification_decision(
+        CandidateEligibility(
+            status="eligible",
+            runner_completed_sufficiently=True,
+            reason="Candidate patch captured.",
+        ),
+        RepositoryValidationDecisionInput(
+            status="passed",
+            authoritative=True,
+            required=True,
+        ),
+        [requirement],
+        SemanticReviewDecisionInput(
+            raw_result=1,
+            verdict="success",
+            recommended_action="accept",
+            schema_valid=True,
+        ),
+        "completed",
+    )
+
+    assert decision.result == 0
+    assert decision.reason_code == "focused_probe_failed"
+    assert "AggregateError: wanted" in decision.reason
+
+
+def test_external_environment_mismatch_is_infrastructure_not_candidate_failure():
+    decision = compute_final_verification_decision(
+        CandidateEligibility(
+            status="eligible",
+            runner_completed_sufficiently=True,
+            reason="Candidate patch captured.",
+        ),
+        RepositoryValidationDecisionInput(
+            status="infrastructure_error",
+            authoritative=False,
+            required=True,
+            failure_code="repository_validation_environment_mismatch",
+        ),
+        [],
+        SemanticReviewDecisionInput(
+            raw_result=1,
+            verdict="success",
+            recommended_action="accept",
+            schema_valid=True,
+        ),
+        "completed",
+    )
+
+    assert decision.result == 0
+    assert decision.reason_code == "repository_validation_infrastructure_error"
+    assert decision.retry_scope == "repository_validation"

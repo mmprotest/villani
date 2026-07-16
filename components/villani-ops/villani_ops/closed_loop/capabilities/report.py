@@ -8,42 +8,9 @@ from typing import Any
 from villani_ops.core.backend import Backend
 
 from ..protocol import ClassificationSnapshot
-from .ingest import SCORER_VERSION
-from .models import CapabilitySnapshot, EmpiricalBackendInput, ProfileKey
+from .effective import resolve_effective_capability
+from .models import CapabilitySnapshot, EmpiricalBackendInput
 from .optimizer import optimize_sequence
-from .scoring import resolve_empirical_score
-
-
-def version_inputs(configuration: Mapping[str, Any]) -> tuple[str, str, str]:
-    capabilities = configuration.get("capabilities")
-    values = capabilities if isinstance(capabilities, Mapping) else {}
-    return (
-        str(values.get("classifier_version") or "task_classifier_v1"),
-        str(values.get("verifier_version") or "villani_ops_verifier_pipeline_v1"),
-        str(values.get("scorer_version") or SCORER_VERSION),
-    )
-
-
-def profile_key_for(
-    backend: Backend,
-    classification: ClassificationSnapshot,
-    configuration: Mapping[str, Any],
-) -> ProfileKey:
-    classifier, verifier, scorer = version_inputs(configuration)
-    explicit_classifier = classification.metadata.get("classifier_version")
-    return ProfileKey(
-        backend_name=backend.name,
-        provider=backend.provider,
-        model=backend.model,
-        task_category=classification.category,
-        difficulty=classification.difficulty,
-        risk=classification.risk,
-        classifier_version=(
-            str(explicit_classifier) if explicit_classifier else classifier
-        ),
-        verifier_version=verifier,
-        scorer_version=scorer,
-    )
 
 
 def backend_score_rows(
@@ -119,31 +86,36 @@ def explain_routing(
     target = float(values.get("target_success_probability", 0.80))
     configured_threshold = values.get("minimum_empirical_wilson_lower_bound")
     wilson_threshold = (
-        float(configured_threshold) if configured_threshold is not None else target
+        float(configured_threshold) if configured_threshold is not None else None
     )
     resolutions = []
     optimizer_inputs = []
     for backend in sorted(backends.values(), key=lambda item: item.name):
         if "coding" not in backend.roles:
             continue
-        resolution = resolve_empirical_score(
+        resolution = resolve_effective_capability(
+            backend,
+            classification,
             snapshot,
-            profile_key_for(backend, classification, configuration),
-            static_capability_score=backend.capability_score,
-            minimum_empirical_samples=minimum,
+            configuration,
         )
         resolutions.append(resolution)
         if eligible_backend_names is None or backend.name in eligible_backend_names:
             optimizer_inputs.append(
                 EmpiricalBackendInput(
                     backend_name=backend.name,
-                    conservative_success_probability=resolution.conservative_success_probability,
+                    conservative_success_probability=(
+                        resolution.conservative_success_probability
+                    ),
                     mean_actual_attempt_cost=resolution.mean_actual_attempt_cost,
                     sufficient_probability_data=(
-                        resolution.empirical_status == "sufficient_data"
+                        resolution.capability_provenance == "qualified_empirical"
                         and resolution.conservative_success_probability is not None
-                        and resolution.conservative_success_probability
-                        >= wilson_threshold
+                        and (
+                            wilson_threshold is None
+                            or resolution.conservative_success_probability
+                            >= wilson_threshold
+                        )
                     ),
                     profile_version=(
                         resolution.selected_profile_key.scorer_version
@@ -151,7 +123,43 @@ def explain_routing(
                         else None
                     ),
                     profile_digest=resolution.selected_profile_digest,
-                    sample_count=resolution.selected_sample_count,
+                    sample_count=resolution.empirical_sample_count,
+                    effective_capability_score=(
+                        resolution.effective_capability_score
+                    ),
+                    mean_duration_ms=resolution.mean_duration_ms,
+                    median_duration_ms=resolution.median_duration_ms,
+                    profile_level=resolution.selected_level,
+                    task_category_profile=(
+                        resolution.selected_profile_key.task_category
+                        if resolution.selected_profile_key
+                        else None
+                    ),
+                    difficulty_profile=(
+                        resolution.selected_profile_key.difficulty
+                        if resolution.selected_profile_key
+                        else None
+                    ),
+                    risk_profile=(
+                        resolution.selected_profile_key.risk
+                        if resolution.selected_profile_key
+                        else None
+                    ),
+                    execution_environment_profile=(
+                        backend.execution_environment
+                    ),
+                    probability_source=(
+                        "wilson_lower_bound"
+                        if resolution.capability_provenance
+                        == "qualified_empirical"
+                        else "missing"
+                    ),
+                    cost_source=(
+                        "actual_profile_mean"
+                        if resolution.mean_actual_attempt_cost is not None
+                        else "missing"
+                    ),
+                    fallback_assumptions=tuple(resolution.missing_inputs),
                 )
             )
     optimization = optimize_sequence(
@@ -175,12 +183,14 @@ def explain_routing(
             "minimum_empirical_samples": minimum,
             "minimum_empirical_wilson_lower_bound": wilson_threshold,
             "target_success_probability": target,
-            "backend_scores": [value.model_dump(mode="json") for value in resolutions],
+            "backend_scores": [
+                value.model_dump(mode="json") for value in resolutions
+            ],
             "optimization": optimization.model_dump(mode="json"),
             "path_used": (
-                "empirical_sequence_v1"
+                "empirical_sequence_v2"
                 if optimization.optimizer_status == "empirical"
-                else "bootstrap_v1"
+                else "bootstrap_fallback"
             ),
         },
     }

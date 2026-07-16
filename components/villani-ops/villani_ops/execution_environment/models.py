@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import platform
 import re
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -228,6 +231,187 @@ class CommandResult(StrictModel):
     ) = None
 
 
+CandidateCommandRole: TypeAlias = Literal[
+    "coding_attempt",
+    "repository_validation",
+    "verifier_probe",
+    "final_acceptance_validation",
+]
+CandidateCommandStatus: TypeAlias = Literal[
+    "passed",
+    "failed",
+    "timed_out",
+    "infrastructure_error",
+    "policy_denied",
+]
+RepositoryValidationFailureCode: TypeAlias = Literal[
+    "repository_validation_passed",
+    "repository_validation_test_failure",
+    "repository_validation_timeout",
+    "repository_validation_executable_missing",
+    "repository_validation_environment_mismatch",
+    "repository_validation_provider_failure",
+    "repository_validation_policy_denied",
+    "repository_validation_unavailable",
+    "repository_validation_malformed_result",
+]
+FocusedProbeFailureCode: TypeAlias = Literal[
+    "focused_probe_passed",
+    "focused_probe_behavior_failure",
+    "focused_probe_timeout",
+    "focused_probe_executable_missing",
+    "focused_probe_environment_mismatch",
+    "focused_probe_provider_failure",
+    "focused_probe_policy_denied",
+    "focused_probe_malformed_result",
+]
+CandidateCommandFailureCode: TypeAlias = (
+    RepositoryValidationFailureCode | FocusedProbeFailureCode
+)
+
+
+class CandidateCommandResult(StrictModel):
+    validation_id: str = Field(min_length=1)
+    argv: list[str] = Field(min_length=1)
+    command_role: CandidateCommandRole
+    status: CandidateCommandStatus
+    exit_code: int | None
+    duration_ms: int = Field(ge=0)
+    stdout: str
+    stderr: str
+    stdout_bytes: int = Field(ge=0)
+    stderr_bytes: int = Field(ge=0)
+    stdout_truncated: bool
+    stderr_truncated: bool
+    execution_environment_fingerprint: str = Field(min_length=1)
+    execution_provider: str = Field(min_length=1)
+    worktree_path: str = Field(min_length=1)
+    baseline_sha256: str = Field(min_length=1)
+    candidate_state: Literal["post_mutation"]
+    started_at: str = Field(min_length=1)
+    completed_at: str = Field(min_length=1)
+    failure_code: CandidateCommandFailureCode | None
+
+
+class RepositoryValidationCommandResult(CandidateCommandResult):
+    command_role: Literal["repository_validation"]
+    failure_code: RepositoryValidationFailureCode | None
+
+
+class RepositoryValidationReport(StrictModel):
+    schema_version: Literal["villani.repository_validation.v2"]
+    run_id: str = Field(min_length=1)
+    attempt_id: str = Field(min_length=1)
+    candidate_id: str = Field(min_length=1)
+    execution_environment_fingerprint: str = Field(min_length=1)
+    execution_provider: str = Field(min_length=1)
+    commands: list[RepositoryValidationCommandResult]
+    status: Literal[
+        "passed",
+        "failed",
+        "unavailable",
+        "infrastructure_error",
+    ]
+    authoritative: bool
+    completed_at: str = Field(min_length=1)
+    retry_count: int = Field(default=0, ge=0)
+    failure_code: RepositoryValidationFailureCode | None = None
+    authority_source: Literal[
+        "repository_validation_v2",
+        "legacy_runtime_events",
+    ] = "repository_validation_v2"
+
+    @model_validator(mode="after")
+    def validate_authority(self) -> "RepositoryValidationReport":
+        if self.status == "passed":
+            if not self.commands or any(
+                item.status != "passed" for item in self.commands
+            ):
+                raise ValueError(
+                    "passed validation requires one or more passed commands"
+                )
+            if not self.authoritative:
+                raise ValueError("passed validation must be authoritative")
+        elif self.status == "failed":
+            if not any(item.status == "failed" for item in self.commands):
+                raise ValueError("failed validation requires a failed command")
+            if not self.authoritative:
+                raise ValueError("failed validation must be authoritative")
+        elif self.authoritative:
+            raise ValueError(
+                "unavailable and infrastructure-error validation cannot be authoritative"
+            )
+        return self
+
+
+class CandidatePatchQuality(StrictModel):
+    schema_version: Literal["villani.candidate_patch_quality.v1"]
+    candidate_id: str = Field(min_length=1)
+    status: Literal["eligible", "ineligible", "warning"]
+    tracked_files_changed: list[str]
+    relevant_files_changed: list[str]
+    untracked_files: list[str]
+    ignored_files: list[str]
+    villani_owned_files: list[str]
+    generated_files: list[str]
+    semantic_lines_added: int = Field(ge=0)
+    semantic_lines_removed: int = Field(ge=0)
+    line_ending_only_lines: int = Field(ge=0)
+    whitespace_only_lines: int = Field(ge=0)
+    file_mode_only_changes: list[str]
+    bulk_rewrite_files: list[str]
+    relevant_diff_ratio: float = Field(ge=0.0, le=1.0)
+    reason_codes: list[str]
+
+
+class CandidateBundleManifest(StrictModel):
+    schema_version: Literal["villani.candidate.v1"]
+    candidate_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    attempt_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    base_commit: str | None
+    baseline_sha256: str = Field(min_length=1)
+    patch_path: str = Field(min_length=1)
+    patch_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    patch_bytes: int = Field(ge=0)
+    changed_files: list[str]
+    untracked_files: list[str]
+    worktree_status: dict[str, Any]
+    execution_provider: str = Field(min_length=1)
+    execution_environment_fingerprint: str = Field(min_length=1)
+    repository_validation_path: str = Field(min_length=1)
+    candidate_patch_quality_path: str | None = None
+    created_at: str = Field(min_length=1)
+    materialization_status: Literal["not_materialized", "succeeded", "failed"]
+
+
+def _safe_runtime_value(value: Any, secrets: tuple[str, ...]) -> Any:
+    if isinstance(value, str):
+        redacted = value
+        for secret in secrets:
+            if secret:
+                redacted = redacted.replace(secret, "[REDACTED]")
+        return redacted
+    if isinstance(value, list):
+        return [_safe_runtime_value(item, secrets) for item in value]
+    if isinstance(value, tuple):
+        return [_safe_runtime_value(item, secrets) for item in value]
+    if isinstance(value, dict):
+        mapping_output: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized = str(key).lower().replace("-", "_")
+            if any(
+                marker in normalized
+                for marker in ("api_key", "password", "secret_value", "token_value")
+            ):
+                mapping_output[str(key)] = "[REDACTED]"
+            else:
+                mapping_output[str(key)] = _safe_runtime_value(item, secrets)
+        return mapping_output
+    return value
+
+
 class PreparedEnvironment(StrictModel):
     provider: Literal["inherit", "setup-command", "container", "devcontainer"]
     provider_version: str
@@ -242,13 +426,69 @@ class PreparedEnvironment(StrictModel):
     inspection: dict[str, Any]
     runtime_state: dict[str, Any] = Field(default_factory=dict)
     policy_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    execution_environment_selection: str | None = None
+    command_prefix_digest: str | None = None
+    configuration_digest: str | None = None
 
     def durable_report(self) -> dict[str, Any]:
-        report = self.model_dump(mode="json", exclude={"environment"})
+        from .secrets import registered_secret_values
+
+        secrets = registered_secret_values()
+        path_value = self.environment.get("PATH", self.environment.get("Path", ""))
+        setup_status = (
+            "not_configured"
+            if self.setup_result is None
+            else "passed"
+            if self.setup_result.exit_code == 0
+            else "failed"
+        )
+        runtime_state = _safe_runtime_value(self.runtime_state, secrets)
+        policy_decisions = _safe_runtime_value(self.policy_decisions, secrets)
+        report = self.model_dump(
+            mode="json",
+            exclude={
+                "environment",
+                "runtime_state",
+                "policy_decisions",
+                "execution_environment_selection",
+                "command_prefix_digest",
+                "configuration_digest",
+            },
+        )
         setup = report.get("setup_result")
         if isinstance(setup, dict):
             # Counts and truncation evidence are durable; command output may contain credentials.
             setup["stdout"] = ""
             setup["stderr"] = ""
             setup["content_persisted"] = False
-        return report
+        return {
+            "schema_version": "villani.execution_environment.v2",
+            **report,
+            "execution_environment_selection": (
+                self.execution_environment_selection or self.provider
+            ),
+            "setup_status": setup_status,
+            "runtime_state_summary": runtime_state,
+            # Preserve the pre-v2 key for existing readers while keeping the
+            # same redacted summary as the new descriptor.
+            "runtime_state": runtime_state,
+            "policy_decisions": policy_decisions,
+            "command_prefix_digest": self.command_prefix_digest
+            or hashlib.sha256(b"[]").hexdigest(),
+            "environment_variable_names": sorted(self.environment),
+            "path_digest": hashlib.sha256(path_value.encode()).hexdigest(),
+            "configuration_digest": self.configuration_digest
+            or hashlib.sha256(
+                json.dumps(
+                    {"provider": self.provider},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            "platform": {
+                "system": platform.system(),
+                "release": platform.release(),
+                "machine": platform.machine(),
+                "python": platform.python_version(),
+            },
+        }

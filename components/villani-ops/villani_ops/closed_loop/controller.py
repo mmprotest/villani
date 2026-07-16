@@ -7,7 +7,7 @@ import json
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import MappingProxyType
@@ -18,7 +18,7 @@ from villani_ops.materialize import inspect_patch_application
 
 from .event_writer import EventWriter, failure_payload, redact_data, redact_message
 from .event_sink import RunEventSink
-from .failure_classification import classify_failure, material_progress
+from .failure_classification import classify_failure
 from .classification_adjustments import apply_classification_policy
 from .interfaces import (
     AttemptContext,
@@ -104,9 +104,24 @@ from .policy import (
     BootstrapPolicyEngine,
     configured_backends,
 )
+from .progress import (
+    AttemptProgressAssessment,
+    assess_attempt_progress,
+    empty_progress_assessment,
+    verification_actionable_correction,
+)
 from .costs import estimate_attempt_cost
 from .approvals import ApprovalRecord, ApprovalScope
 from .adapters.git_isolation import validate_target_lineage
+from .candidate_bundle import (
+    read_patch_text,
+    update_candidate_materialization_status,
+)
+from .verification_evidence import (
+    RequirementEvidence,
+    VerificationEvidenceMatrix,
+    extract_requirements,
+)
 from villani_ops.isolation.copy_git import remove_tree
 from villani_ops.providers import (
     validate_closed_loop_backend,
@@ -465,6 +480,12 @@ class ClosedLoopController:
                 break
 
             assert attempt_id is not None
+            if (
+                action.action == "retry"
+                and action.metadata.get("retry_scope") == "repository_validation"
+            ):
+                self._retry_repository_validation(runtime, action, attempt_id)
+                continue
             budget_reason = self._attempt_budget_block(runtime, action)
             if budget_reason is not None:
                 if runtime.eligible_candidate_ids:
@@ -888,9 +909,7 @@ class ClosedLoopController:
         path = (runtime.store.run_directory / value).resolve()
         if not path.is_relative_to(runtime.store.run_directory.resolve()):
             raise RunStoreError("attempt artifact path escapes the run directory")
-        return (
-            path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
-        )
+        return read_patch_text(path, errors="replace") if path.is_file() else ""
 
     def _attempt_result_from_snapshot(
         self, runtime: _Runtime, attempt: AttemptSnapshot
@@ -1331,7 +1350,7 @@ class ClosedLoopController:
         )
         runtime.attempt_results[attempt_id] = result
         self._record_attempt_failure(
-            runtime, attempt_id, "infrastructure_failure", False
+            runtime, attempt_id, "infrastructure_failure"
         )
         self._transition(
             runtime,
@@ -1491,13 +1510,11 @@ class ClosedLoopController:
                 runtime,
                 verification.attempt_id,
                 failure_category,
-                bool(
-                    next(
-                        item
-                        for item in runtime.attempts
-                        if item.attempt_id == verification.attempt_id
-                    ).metadata.get("material_progress", False)
-                ),
+                verification,
+            )
+        else:
+            self._record_attempt_progress(
+                runtime, verification.attempt_id, verification=verification
             )
         if verification.acceptance_eligible:
             if verification.attempt_id not in runtime.eligible_candidate_ids:
@@ -1700,7 +1717,7 @@ class ClosedLoopController:
         patch_path = (runtime.store.run_directory / patch_value).resolve()
         if not patch_path.is_relative_to(runtime.store.run_directory.resolve()):
             raise RunStoreError("selected patch escapes the canonical run directory")
-        patch_text = patch_path.read_text(encoding="utf-8", errors="replace")
+        patch_text = read_patch_text(patch_path, errors="replace")
         if patch_text != candidate.patch:
             raise RunStoreError(
                 "selected patch bytes differ from the recorded candidate"
@@ -2131,6 +2148,21 @@ class ClosedLoopController:
                     material_progress=bool(
                         attempt.metadata.get("material_progress", False)
                     ),
+                    progress_assessment=(
+                        _mapping_copy(
+                            cast(
+                                Mapping[str, Any],
+                                attempt.metadata.get(
+                                    "attempt_progress_assessment"
+                                ),
+                            )
+                        )
+                        if isinstance(
+                            attempt.metadata.get("attempt_progress_assessment"),
+                            Mapping,
+                        )
+                        else {}
+                    ),
                     duration_ms=attempt.duration_ms,
                     rate_limited=(
                         str(attempt.metadata.get("failure_category") or "")
@@ -2153,8 +2185,38 @@ class ClosedLoopController:
                     verifier_retry_count=int(
                         verification.metadata.get("verifier_retry_count") or 0
                     ),
+                    repository_validation_status=(
+                        str(
+                            verification.metadata.get("repository_validation_status")
+                            or ""
+                        )
+                        or None
+                    ),
+                    repository_validation_retry_count=int(
+                        verification.metadata.get("repository_validation_retry_count")
+                        or 0
+                    ),
                     disagreement=bool(
                         verification.metadata.get("verifier_disagreement", False)
+                    ),
+                    actionable_correction=verification_actionable_correction(
+                        verification
+                    ),
+                    major_regression=bool(
+                        verification.metadata.get("major_regression", False)
+                        or any(
+                            "major_regression" in flag.lower()
+                            for flag in verification.risk_flags
+                        )
+                    ),
+                    incorrect_task_interpretation=bool(
+                        verification.metadata.get(
+                            "incorrect_task_interpretation", False
+                        )
+                        or any(
+                            "incorrect_task_interpretation" in flag.lower()
+                            for flag in verification.risk_flags
+                        )
                     ),
                 )
                 for verification in runtime.verifications
@@ -2203,8 +2265,13 @@ class ClosedLoopController:
                 guarded.model_dump(mode="json"),
             )
             self._validate_policy_semantics(runtime, returned)
+            retry_scope = returned.metadata.get("retry_scope")
             attempt_id = (
-                self._next_attempt_id(runtime)
+                runtime.attempts[-1].attempt_id
+                if returned.action == "retry"
+                and retry_scope == "repository_validation"
+                and runtime.attempts
+                else self._next_attempt_id(runtime)
                 if returned.action in {"attempt", "retry", "escalate"}
                 else None
             )
@@ -2358,7 +2425,14 @@ class ClosedLoopController:
                 for item in decision.considered_backends
                 if item.backend_name == decision.chosen_backend
             ]
-            if not matching or not any(item.eligible for item in matching):
+            repository_validation_retry = (
+                decision.action == "retry"
+                and decision.metadata.get("retry_scope") == "repository_validation"
+            )
+            if not matching or (
+                not repository_validation_retry
+                and not any(item.eligible for item in matching)
+            ):
                 raise ValueError("chosen backend must be an eligible consideration")
         if decision.action == "select" and not runtime.eligible_candidate_ids:
             raise ValueError("policy cannot select without an eligible candidate")
@@ -2447,6 +2521,14 @@ class ClosedLoopController:
                 "required_capability_score"
             ),
             "attempt_id": snapshot.attempt_id,
+            "retry_scope": decision.metadata.get("retry_scope"),
+            "policy_reason_code": decision.metadata.get("policy_reason_code"),
+            "credible_progress_assessment": decision.metadata.get(
+                "credible_progress_assessment"
+            ),
+            "stage_budget_projection": decision.metadata.get(
+                "stage_budget_projection"
+            ),
         }
         current = runtime.machine.state
         if decision.action in {"exhaust", "fail"}:
@@ -2969,7 +3051,6 @@ class ClosedLoopController:
                     runtime,
                     attempt_id,
                     initial_failure,
-                    material_progress(returned),
                 )
         except Exception as error:
             if isinstance(error, ExecutionPolicyDenied):
@@ -3108,6 +3189,132 @@ class ClosedLoopController:
             # must not leave an attempt export behind by accident.
             self._cleanup_attempt_worktree(runtime, context)
 
+    def _retry_repository_validation(
+        self,
+        runtime: _Runtime,
+        decision: PolicyDecision,
+        attempt_id: str,
+    ) -> None:
+        """Rerun validation for one preserved candidate without invoking coding."""
+
+        if not runtime.attempts or runtime.attempts[-1].attempt_id != attempt_id:
+            self._fail(
+                runtime,
+                "repository_validation_retry_invalid",
+                "Repository validation retry did not reference the latest attempt.",
+            )
+            return
+        context = runtime.attempt_contexts.get(attempt_id)
+        prior_result = runtime.attempt_results.get(attempt_id)
+        retry = getattr(self._attempt_runner, "retry_repository_validation", None)
+        if context is None or prior_result is None or not callable(retry):
+            self._fail(
+                runtime,
+                "repository_validation_retry_unavailable",
+                "Attempt runner cannot rehydrate repository validation.",
+            )
+            return
+        runtime.active_attempt_id = attempt_id
+        parent_event_id = runtime.attempt_start_events.get(attempt_id)
+        started = self._transition(
+            runtime,
+            "VERIFYING",
+            "repository_validation_retry_started",
+            {
+                "attempt_id": attempt_id,
+                "retry_scope": "repository_validation",
+                "coding_attempt_rerun": False,
+                "coding_tokens_spent": 0,
+                "policy_reason": decision.reason,
+            },
+            attempt_id=attempt_id,
+            parent_event_id=parent_event_id,
+        )
+        try:
+            returned = retry(context, prior_result)
+            if not isinstance(returned, AttemptResult):
+                raise TypeError(
+                    "repository validation retry returned an invalid AttemptResult"
+                )
+            runtime.attempt_results[attempt_id] = returned
+            runtime.store.write_json(
+                f"attempts/{attempt_id}/runner_telemetry.json",
+                _mapping_copy(returned.runner_telemetry),
+            )
+            for index, attempt in enumerate(runtime.attempts):
+                if attempt.attempt_id != attempt_id:
+                    continue
+                metadata = _mapping_copy(attempt.metadata)
+                metadata.update(_mapping_copy(returned.metadata))
+                if (
+                    returned.metadata.get("repository_validation_status")
+                    != "infrastructure_error"
+                ):
+                    metadata.pop("failure_category", None)
+                updated = attempt.model_copy(
+                    update={
+                        "worktree_path": returned.worktree_path,
+                        "metadata": metadata,
+                    }
+                )
+                runtime.attempts[index] = updated
+                runtime.store.write_protocol(
+                    f"attempts/{attempt_id}/attempt.json", updated
+                )
+                break
+            self._emit_runtime_events(runtime, returned, started.event_id)
+            self._emit_state_event(
+                runtime,
+                "repository_validation_retry_completed",
+                {
+                    "attempt_id": attempt_id,
+                    "retry_scope": "repository_validation",
+                    "coding_attempt_rerun": False,
+                    "coding_tokens_spent": 0,
+                    "repository_validation_status": returned.metadata.get(
+                        "repository_validation_status"
+                    ),
+                    "repository_validation_failure_code": returned.metadata.get(
+                        "repository_validation_failure_code"
+                    ),
+                    "repository_validation_retry_count": returned.metadata.get(
+                        "repository_validation_retry_count"
+                    ),
+                },
+                attempt_id=attempt_id,
+                parent_event_id=started.event_id,
+            )
+            runtime.verifications = [
+                item for item in runtime.verifications if item.attempt_id != attempt_id
+            ]
+            runtime.eligible_candidate_ids = [
+                item for item in runtime.eligible_candidate_ids if item != attempt_id
+            ]
+            self._verify_attempt(
+                runtime,
+                context,
+                returned,
+                parent_event_id or started.event_id,
+                already_started=True,
+            )
+        except Exception as error:
+            self._emit_failure_event(
+                runtime,
+                "repository_validation_retry_failed",
+                error,
+                "repository_validation_retry",
+                attempt_id=attempt_id,
+                parent_event_id=started.event_id,
+            )
+            self._fail(
+                runtime,
+                "repository_validation_retry_failed",
+                redact_message(str(error)),
+                error=error,
+            )
+        finally:
+            self._cleanup_attempt_worktree(runtime, context)
+
     def _cleanup_attempt_worktree(
         self, runtime: _Runtime, context: AttemptContext
     ) -> None:
@@ -3159,18 +3366,52 @@ class ClosedLoopController:
         runtime: _Runtime,
         attempt_id: str,
         category: str,
-        has_material_progress: bool,
+        verification: object | None = None,
+    ) -> None:
+        self._record_attempt_progress(
+            runtime,
+            attempt_id,
+            verification=verification,
+            failure_category=category,
+        )
+
+    def _record_attempt_progress(
+        self,
+        runtime: _Runtime,
+        attempt_id: str,
+        *,
+        verification: object | None = None,
+        failure_category: str | None = None,
     ) -> None:
         for index, attempt in enumerate(runtime.attempts):
             if attempt.attempt_id != attempt_id:
                 continue
             metadata = _mapping_copy(attempt.metadata)
+            result = runtime.attempt_results.get(attempt_id)
+            if result is not None:
+                assessment = assess_attempt_progress(result, verification)
+            else:
+                persisted = metadata.get("attempt_progress_assessment")
+                try:
+                    assessment = (
+                        empty_progress_assessment()
+                        if not isinstance(persisted, Mapping)
+                        else AttemptProgressAssessment.model_validate(dict(persisted))
+                    )
+                except (TypeError, ValueError):
+                    assessment = empty_progress_assessment(
+                        "progress_evidence_malformed"
+                    )
             metadata.update(
                 {
-                    "failure_category": category,
-                    "material_progress": has_material_progress,
+                    "attempt_progress_assessment": assessment.model_dump(
+                        mode="json"
+                    ),
+                    "material_progress": assessment.credible_progress,
                 }
             )
+            if failure_category is not None:
+                metadata["failure_category"] = failure_category
             updated = attempt.model_copy(update={"metadata": metadata})
             runtime.attempts[index] = updated
             runtime.store.write_protocol(f"attempts/{attempt_id}/attempt.json", updated)
@@ -3231,6 +3472,13 @@ class ClosedLoopController:
                     if candidate_plan is not None
                     else context.attempt_id
                 ),
+            }
+        )
+        progress = assess_attempt_progress(result)
+        attempt_metadata.update(
+            {
+                "attempt_progress_assessment": progress.model_dump(mode="json"),
+                "material_progress": progress.credible_progress,
             }
         )
         configured_backend = configured_backends(
@@ -3300,13 +3548,106 @@ class ClosedLoopController:
                 trace_id=runtime.trace_id,
                 attempt_id=runtime.active_attempt_id,
                 parent_event_id=parent_event_id,
-                source="villani_code",
+                source=(
+                    "villani_ops_candidate_execution"
+                    if translated.event_type.startswith(
+                        ("repository_validation_", "focused_probe_")
+                    )
+                    else "villani_code"
+                ),
                 event_type=translated.event_type,
                 payload=payload,
             )
             runtime.last_event = event
+            runtime.committed_events.append(event)
         if result.runtime_events:
             self._persist_state(runtime)
+
+    def _resolve_focused_probe_requests(
+        self,
+        runtime: _Runtime,
+        context: AttemptContext,
+        result: AttemptResult,
+        verification: Verification,
+        parent_event_id: str,
+    ) -> tuple[AttemptResult, Verification]:
+        requests = verification.metadata.get("focused_probe_requests")
+        if not (
+            verification.metadata.get("focused_probe_requests_pending")
+            and isinstance(requests, list)
+            and requests
+        ):
+            return result, verification
+
+        execute = getattr(self._attempt_runner, "execute_focused_probes", None)
+        finalize = getattr(self._verifier, "finalize_with_focused_probes", None)
+        if not callable(execute) or not callable(finalize):
+            return result, verification
+
+        self._emit_state_event(
+            runtime,
+            "focused_probe_execution_started",
+            {
+                "attempt_id": context.attempt_id,
+                "probe_count": len(requests),
+                "coding_attempt_rerun": False,
+                "coding_tokens_spent": 0,
+            },
+            attempt_id=context.attempt_id,
+            parent_event_id=parent_event_id,
+        )
+        updated_result = execute(context, result, requests)
+        if not isinstance(updated_result, AttemptResult):
+            raise TypeError("focused probe execution returned an invalid AttemptResult")
+
+        runtime.attempt_results[context.attempt_id] = updated_result
+        runtime.store.write_json(
+            f"attempts/{context.attempt_id}/runner_telemetry.json",
+            _mapping_copy(updated_result.runner_telemetry),
+        )
+        for index, attempt in enumerate(runtime.attempts):
+            if attempt.attempt_id != context.attempt_id:
+                continue
+            metadata = _mapping_copy(attempt.metadata)
+            metadata.update(_mapping_copy(updated_result.metadata))
+            updated_attempt = attempt.model_copy(update={"metadata": metadata})
+            runtime.attempts[index] = updated_attempt
+            runtime.store.write_protocol(
+                f"attempts/{context.attempt_id}/attempt.json", updated_attempt
+            )
+            break
+        self._emit_runtime_events(runtime, updated_result, parent_event_id)
+
+        finalized = finalize(context, updated_result, verification)
+        if not isinstance(finalized, Verification):
+            raise TypeError(
+                "focused probe finalization returned an invalid Verification"
+            )
+        self._emit_state_event(
+            runtime,
+            "focused_probe_execution_completed",
+            {
+                "attempt_id": context.attempt_id,
+                "focused_probe_status": updated_result.metadata.get(
+                    "focused_probe_status"
+                ),
+                "focused_probe_failure_code": updated_result.metadata.get(
+                    "focused_probe_failure_code"
+                ),
+                "focused_probe_retry_count": updated_result.metadata.get(
+                    "focused_probe_retry_count"
+                ),
+                "coding_attempt_rerun": False,
+                "coding_tokens_spent": 0,
+                "computed_final_result": finalized.metadata.get(
+                    "computed_final_result"
+                ),
+            },
+            attempt_id=context.attempt_id,
+            parent_event_id=parent_event_id,
+        )
+        self._persist_manifest(runtime)
+        return updated_result, finalized
 
     def _persist_synthetic_failed_attempt(
         self,
@@ -3367,6 +3708,7 @@ class ClosedLoopController:
         normalized: VerificationSnapshot | None = None
         while True:
             verification_started = self._monotonic()
+            completed_verification: Verification | None = None
             try:
                 returned = (
                     returned_override
@@ -3376,12 +3718,14 @@ class ClosedLoopController:
                 returned_override = None
                 if not isinstance(returned, Verification):
                     raise TypeError("verifier returned an invalid Verification")
-                self._emit_repository_validation_events(
+                result, returned = self._resolve_focused_probe_requests(
                     runtime,
-                    context.attempt_id,
+                    context,
+                    result,
                     returned,
                     attempt_start_event_id,
                 )
+                completed_verification = returned
                 verification_usage.extend(
                     StageUsage.model_validate(dict(item))
                     for item in returned.llm_usage
@@ -3417,7 +3761,24 @@ class ClosedLoopController:
                     runtime, context.attempt_id, error
                 )
 
-            if failure_category == "verification_failure" and retry_count < retry_limit:
+            repository_validation_retry_required = bool(
+                normalized is not None
+                and normalized.metadata.get("repository_validation_status")
+                == "infrastructure_error"
+            )
+            focused_probe_retry_required = bool(
+                completed_verification is not None
+                and completed_verification.metadata.get("focused_probe_status")
+                == "infrastructure_error"
+                and completed_verification.metadata.get(
+                    "focused_probe_requests_pending"
+                )
+            )
+            if (
+                failure_category == "verification_failure"
+                and not repository_validation_retry_required
+                and retry_count < retry_limit
+            ):
                 retry_count += 1
                 self._emit_state_event(
                     runtime,
@@ -3438,10 +3799,25 @@ class ClosedLoopController:
                 self._emit_state_event(
                     runtime,
                     "verification_retry_started",
-                    {"retry_count": retry_count, "coding_attempt_rerun": False},
+                    {
+                        "retry_count": retry_count,
+                        "retry_scope": (
+                            "focused_probe"
+                            if focused_probe_retry_required
+                            else "verification"
+                        ),
+                        "coding_attempt_rerun": False,
+                        "semantic_verifier_rerun": not focused_probe_retry_required,
+                    },
                     attempt_id=context.attempt_id,
                     parent_event_id=attempt_start_event_id,
                 )
+                if focused_probe_retry_required:
+                    assert completed_verification is not None
+                    returned_override = replace(
+                        completed_verification,
+                        llm_usage=(),
+                    )
                 continue
             break
 
@@ -3491,13 +3867,12 @@ class ClosedLoopController:
             parent_event_id=attempt_start_event_id,
         )
 
-        if failure_category is not None:
-            self._record_attempt_failure(
-                runtime,
-                context.attempt_id,
-                failure_category,
-                material_progress(result),
-            )
+        self._record_attempt_progress(
+            runtime,
+            context.attempt_id,
+            verification=normalized,
+            failure_category=failure_category,
+        )
 
         if runtime.machine.terminal:
             return
@@ -3518,65 +3893,6 @@ class ClosedLoopController:
                 parent_event_id=attempt_start_event_id,
             )
 
-    def _emit_repository_validation_events(
-        self,
-        runtime: _Runtime,
-        attempt_id: str,
-        verification: Verification,
-        parent_event_id: str,
-    ) -> None:
-        """Persist controller-owned validation commands returned as verifier evidence."""
-
-        records = verification.metadata.get("repository_validation_events")
-        if not isinstance(records, list):
-            return
-        delivered = {
-            str(event.payload.get("source_event_id"))
-            for event in runtime.committed_events
-            if event.payload.get("source_event_id")
-        }
-        appended = False
-        for record in records:
-            if not isinstance(record, Mapping):
-                continue
-            payload = record.get("payload")
-            if not isinstance(payload, Mapping):
-                continue
-            source_event_id = str(record.get("source_event_id") or "")
-            if source_event_id and source_event_id in delivered:
-                continue
-            timestamp = self._now()
-            raw_timestamp = record.get("timestamp")
-            if isinstance(raw_timestamp, str):
-                try:
-                    timestamp = datetime.fromisoformat(
-                        raw_timestamp.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    pass
-            event_payload = _mapping_copy(payload)
-            if source_event_id:
-                event_payload["source_event_id"] = source_event_id
-            event_type = str(record.get("event_type") or "command_failed")
-            if event_type not in {"command_completed", "command_failed"}:
-                event_type = "command_failed"
-            event = runtime.store.append_event(
-                timestamp=timestamp,
-                trace_id=runtime.trace_id,
-                attempt_id=attempt_id,
-                parent_event_id=parent_event_id,
-                source="villani_ops_verifier",
-                event_type=event_type,
-                payload=event_payload,
-            )
-            runtime.last_event = event
-            runtime.committed_events.append(event)
-            appended = True
-            if source_event_id:
-                delivered.add(source_event_id)
-        if appended:
-            self._persist_state(runtime)
-
     def _normalize_verification(
         self, runtime: _Runtime, attempt_id: str, returned: Verification
     ) -> VerificationSnapshot:
@@ -3587,20 +3903,53 @@ class ClosedLoopController:
         blockers_absent = not any(
             "blocker" in flag.lower() for flag in returned.risk_flags
         )
-        eligible = bool(
+        verification_metadata = _mapping_copy(returned.metadata)
+        evidence_matrix_authority = (
+            verification_metadata.get("verification_mode")
+            == "deterministic_evidence_matrix_v2"
+        )
+        evidence_matrix_path = verification_metadata.get("verification_evidence_path")
+        matrix_exists = False
+        if evidence_matrix_path:
+            try:
+                resolved_matrix = (
+                    runtime.store.run_directory / str(evidence_matrix_path)
+                ).resolve()
+                resolved_matrix.relative_to(runtime.store.run_directory.resolve())
+                matrix_exists = resolved_matrix.is_file()
+            except (OSError, ValueError):
+                matrix_exists = False
+        deterministic_result_valid = bool(
+            not evidence_matrix_authority
+            or (
+                verification_metadata.get("computed_final_result") == 1
+                and verification_metadata.get("computed_final_reason_code")
+                == "accepted"
+                and matrix_exists
+            )
+        )
+        common_eligibility = bool(
             returned.acceptance_eligible
             and returned.outcome == "accepted"
             and returned.recommended_action == "accept"
+            and deterministic_result_valid
             and requirements_ok
-            and returned.success_evidence
-            and not returned.missing_evidence
-            and blockers_absent
             and (
                 not runtime.request.requires_file_changes
                 or bool(runtime.attempt_patches.get(attempt_id, "").strip())
             )
         )
-        verification_metadata = _mapping_copy(returned.metadata)
+        eligible = bool(
+            common_eligibility
+            and (
+                evidence_matrix_authority
+                or (
+                    returned.success_evidence
+                    and not returned.missing_evidence
+                    and blockers_absent
+                )
+            )
+        )
         verification_metadata.setdefault("verifier_version", returned.verifier)
         return VerificationSnapshot(
             schema_version="villani.verification.v1",
@@ -3651,6 +4000,39 @@ class ClosedLoopController:
     def _empty_patch_verification(
         self, runtime: _Runtime, attempt_id: str
     ) -> VerificationSnapshot:
+        evidence_path = f"verification/{attempt_id}-evidence.json"
+        matrix = VerificationEvidenceMatrix(
+            schema_version="villani.verification_evidence.v2",
+            run_id=runtime.run_id,
+            attempt_id=attempt_id,
+            requirements=[
+                RequirementEvidence(
+                    requirement_id="file_change",
+                    description="A non-empty candidate patch is required.",
+                    critical=True,
+                    evidence_type="static_patch_evidence",
+                    evidence_ids=["empty_patch"],
+                    deterministic_status="failed",
+                    semantic_status="not_assessed",
+                    contradiction=False,
+                    final_status="failed",
+                    reason=(
+                        "The task requires file changes, but the candidate patch "
+                        "is empty."
+                    ),
+                )
+            ],
+            repository_validation_status="unavailable",
+            candidate_eligibility_status="empty_patch",
+            semantic_verifier_status="not_invoked",
+            critical_requirements_proven=False,
+            contradictions_present=False,
+            infrastructure_failure_present=False,
+            final_result=0,
+            final_reason_code="empty_patch",
+            final_reason=("Candidate has no non-empty patch for a file-changing task."),
+        )
+        runtime.store.write_json(evidence_path, matrix.model_dump(mode="json"))
         return VerificationSnapshot(
             schema_version="villani.verification.v1",
             run_id=runtime.run_id,
@@ -3684,15 +4066,84 @@ class ClosedLoopController:
             raw_verifier_artifact=None,
             metadata={
                 "normalized_without_verifier": True,
-                "verifier_version": "controller_normalizer_v1",
+                "verifier_version": "controller_normalizer_v2",
                 "failure_category": "no_change_failure",
                 "verifier_retry_count": 0,
+                "raw_llm_result": None,
+                "computed_final_result": 0,
+                "computed_final_reason_code": "empty_patch",
+                "verifier_disagreement": False,
+                "verification_evidence_path": evidence_path,
             },
         )
 
     def _verifier_error_snapshot(
         self, runtime: _Runtime, attempt_id: str, error: Exception
     ) -> VerificationSnapshot:
+        evidence_path = f"verification/{attempt_id}-evidence.json"
+        definitions = extract_requirements(
+            task_instruction=runtime.request.task,
+            success_criteria=runtime.request.success_criteria,
+            policy_configuration=runtime.request.policy_configuration,
+        )
+        requirements = [
+            RequirementEvidence(
+                requirement_id=item.requirement_id,
+                description=item.description,
+                critical=item.critical,
+                evidence_type="debug_trace",
+                evidence_ids=["verifier_error"],
+                deterministic_status="infrastructure_error",
+                semantic_status="not_assessed",
+                contradiction=False,
+                final_status="infrastructure_error",
+                reason=(
+                    "The verifier failed before this requirement could be "
+                    "assessed reliably."
+                ),
+            )
+            for item in definitions
+        ]
+        if not requirements:
+            requirements = [
+                RequirementEvidence(
+                    requirement_id="verifier_invocation",
+                    description="Verification must complete reliably.",
+                    critical=True,
+                    evidence_type="debug_trace",
+                    evidence_ids=["verifier_error"],
+                    deterministic_status="infrastructure_error",
+                    semantic_status="not_assessed",
+                    contradiction=False,
+                    final_status="infrastructure_error",
+                    reason="The verifier process failed.",
+                )
+            ]
+        attempt_result = runtime.attempt_results.get(attempt_id)
+        repository_status = str(
+            (
+                attempt_result.metadata.get("repository_validation_status")
+                if attempt_result is not None
+                else None
+            )
+            or "unavailable"
+        )
+        matrix = VerificationEvidenceMatrix(
+            schema_version="villani.verification_evidence.v2",
+            run_id=runtime.run_id,
+            attempt_id=attempt_id,
+            requirements=requirements,
+            repository_validation_status=repository_status,
+            candidate_eligibility_status="eligible",
+            semantic_verifier_status="error",
+            critical_requirements_proven=False,
+            contradictions_present=False,
+            infrastructure_failure_present=True,
+            final_result=0,
+            final_reason_code="verifier_tool_failure",
+            final_reason="Verifier failed; the candidate is not acceptance eligible.",
+        )
+        runtime.store.write_json(evidence_path, matrix.model_dump(mode="json"))
         return VerificationSnapshot(
             schema_version="villani.verification.v1",
             run_id=runtime.run_id,
@@ -3719,7 +4170,13 @@ class ClosedLoopController:
             raw_verifier_artifact=None,
             metadata={
                 "exception_class": error.__class__.__name__,
-                "verifier_version": "dependency_error_v1",
+                "verifier_version": "dependency_error_v2",
+                "raw_llm_result": None,
+                "computed_final_result": 0,
+                "computed_final_reason_code": "verifier_tool_failure",
+                "verifier_disagreement": False,
+                "verification_evidence_path": evidence_path,
+                "retry_scope": "verification",
             },
         )
 
@@ -5031,6 +5488,10 @@ class ClosedLoopController:
         )
         runtime.store.write_protocol("materialization.json", snapshot)
         runtime.materialization = snapshot
+        update_candidate_materialization_status(
+            runtime.store.run_directory / "attempts" / candidate.attempt.attempt_id,
+            returned.status,
+        )
         return snapshot
 
     def _write_evidence_matrix(self, runtime: _Runtime) -> None:
@@ -5126,7 +5587,10 @@ class ClosedLoopController:
     ) -> BudgetContext:
         if decision.action not in {"attempt", "retry", "escalate"}:
             return before
-        if decision.metadata.get("retry_scope") == "verification":
+        if decision.metadata.get("retry_scope") in {
+            "verification",
+            "repository_validation",
+        }:
             return before
         remaining_cost = before.remaining_cost_usd
         cost_status = before.cost_accounting_status
@@ -5539,6 +6003,46 @@ class ClosedLoopController:
                 "terminal_reason": runtime.terminal_reason,
                 "plugins": list(self._plugin_identities),
                 "lineage": redact_data(_mapping_copy(runtime.request.lineage)),
+                "repository_validation_reports": {
+                    attempt.attempt_id: attempt.metadata.get(
+                        "repository_validation_path"
+                    )
+                    for attempt in runtime.attempts
+                    if attempt.metadata.get("repository_validation_path")
+                },
+                "candidate_bundles": {
+                    attempt.attempt_id: attempt.metadata.get("candidate_bundle_path")
+                    for attempt in runtime.attempts
+                    if attempt.metadata.get("candidate_bundle_path")
+                },
+                "candidate_patch_quality_reports": {
+                    attempt.attempt_id: attempt.metadata.get(
+                        "candidate_patch_quality_path"
+                    )
+                    for attempt in runtime.attempts
+                    if attempt.metadata.get("candidate_patch_quality_path")
+                },
+                "attempt_progress_assessments": {
+                    attempt.attempt_id: attempt.metadata.get(
+                        "attempt_progress_assessment"
+                    )
+                    for attempt in runtime.attempts
+                    if attempt.metadata.get("attempt_progress_assessment")
+                },
+                "verification_evidence_reports": {
+                    verification.attempt_id: verification.metadata.get(
+                        "verification_evidence_path"
+                    )
+                    for verification in runtime.verifications
+                    if verification.metadata.get("verification_evidence_path")
+                },
+                "focused_probe_reports": {
+                    attempt.attempt_id: attempt.metadata.get(
+                        "focused_probe_report_path"
+                    )
+                    for attempt in runtime.attempts
+                    if attempt.metadata.get("focused_probe_report_path")
+                },
                 "delivery": (
                     redact_data(runtime.delivery.model_dump(mode="json"))
                     if runtime.delivery is not None

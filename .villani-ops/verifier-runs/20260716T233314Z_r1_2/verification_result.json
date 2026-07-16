@@ -1,0 +1,604 @@
+{
+  "schemaVersion": "villani-ops-verifier-result-v3",
+  "result": 0,
+  "verdict": "failure",
+  "confidence": 0.55,
+  "recommendedAction": "run_more_tests",
+  "reason": "No strong validation evidence was found.",
+  "requirementResults": [
+    {
+      "id": "be89dd3481",
+      "requirement": "set up Git server over SSH at git@localhost:/git/project",
+      "status": "unsatisfied",
+      "evidence": [],
+      "risks": [
+        {
+          "kind": "missing",
+          "source": "derived",
+          "confidence": "medium",
+          "text": "No validations.jsonl artifact was present.",
+          "commandId": null,
+          "turnIndex": null,
+          "timestamp": null,
+          "order": 0,
+          "path": null,
+          "toolCallId": null,
+          "deliverableLinked": null,
+          "deliverableLinks": [],
+          "validationStrength": null,
+          "validationWeakness": null
+        }
+      ]
+    },
+    {
+      "id": "6eb0a45203",
+      "requirement": "password authentication with password password",
+      "status": "unsatisfied",
+      "evidence": [],
+      "risks": [
+        {
+          "kind": "missing",
+          "source": "derived",
+          "confidence": "medium",
+          "text": "No validations.jsonl artifact was present.",
+          "commandId": null,
+          "turnIndex": null,
+          "timestamp": null,
+          "order": 0,
+          "path": null,
+          "toolCallId": null,
+          "deliverableLinked": null,
+          "deliverableLinks": [],
+          "validationStrength": null,
+          "validationWeakness": null
+        }
+      ]
+    },
+    {
+      "id": "3b07c78ae7",
+      "requirement": "deploy main and dev branches to HTTPS endpoints",
+      "status": "satisfied",
+      "evidence": [],
+      "risks": []
+    },
+    {
+      "id": "29831a7d3e",
+      "requirement": "self-signed certificate",
+      "status": "unsatisfied",
+      "evidence": [],
+      "risks": [
+        {
+          "kind": "missing",
+          "source": "derived",
+          "confidence": "medium",
+          "text": "No validations.jsonl artifact was present.",
+          "commandId": null,
+          "turnIndex": null,
+          "timestamp": null,
+          "order": 0,
+          "path": null,
+          "toolCallId": null,
+          "deliverableLinked": null,
+          "deliverableLinks": [],
+          "validationStrength": null,
+          "validationWeakness": null
+        }
+      ]
+    },
+    {
+      "id": "7f8795b2c1",
+      "requirement": "post-receive hook",
+      "status": "satisfied",
+      "evidence": [],
+      "risks": []
+    },
+    {
+      "id": "ee95e584b2",
+      "requirement": "deployment within 3 seconds",
+      "status": "unsatisfied",
+      "evidence": [],
+      "risks": [
+        {
+          "kind": "missing",
+          "source": "derived",
+          "confidence": "medium",
+          "text": "No validations.jsonl artifact was present.",
+          "commandId": null,
+          "turnIndex": null,
+          "timestamp": null,
+          "order": 0,
+          "path": null,
+          "toolCallId": null,
+          "deliverableLinked": null,
+          "deliverableLinks": [],
+          "validationStrength": null,
+          "validationWeakness": null
+        }
+      ]
+    }
+  ],
+  "deliverableAssessment": {
+    "requiredDeliverables": [
+      "/git/project"
+    ],
+    "validatedDeliverables": [],
+    "missingDeliverables": [
+      "/git/project"
+    ],
+    "weakValidationReasons": []
+  },
+  "constraintAssessment": {
+    "constraints": [],
+    "satisfiedConstraints": [],
+    "violatedConstraints": [],
+    "uncheckedConstraints": []
+  },
+  "successEvidence": [
+    {
+      "kind": "command",
+      "source": "commands",
+      "confidence": "medium",
+      "text": "command[0] exit=1: curl -sk https://localhost:8443/index.html :: FAIL: Main branch wrong content",
+      "commandId": null,
+      "turnIndex": null,
+      "timestamp": "1",
+      "order": 0,
+      "path": null,
+      "toolCallId": null,
+      "deliverableLinked": false,
+      "deliverableLinks": [],
+      "validationStrength": "weak",
+      "validationWeakness": "no meaningful validation/check evidence was observed",
+      "id": "ev-0001",
+      "category": "serviceValidation",
+      "evidenceKind": "validation",
+      "evidenceProvenance": "command_output"
+    },
+    {
+      "kind": "mutation",
+      "source": "patches",
+      "confidence": "medium",
+      "text": "Patch applied successfully to /git/project/hooks/post-receive",
+      "commandId": null,
+      "turnIndex": null,
+      "timestamp": null,
+      "order": 0,
+      "path": "/git/project/hooks/post-receive",
+      "toolCallId": null,
+      "deliverableLinked": null,
+      "deliverableLinks": [],
+      "validationStrength": null,
+      "validationWeakness": null,
+      "id": "ev-0002",
+      "category": "fileMutation",
+      "evidenceKind": "mutation",
+      "evidenceProvenance": "source_diff"
+    },
+    {
+      "kind": "mutation",
+      "source": "patches",
+      "confidence": "medium",
+      "text": "Patch applied successfully to /etc/nginx/sites-enabled/default",
+      "commandId": null,
+      "turnIndex": null,
+      "timestamp": null,
+      "order": 1,
+      "path": "/etc/nginx/sites-enabled/default",
+      "toolCallId": null,
+      "deliverableLinked": null,
+      "deliverableLinks": [],
+      "validationStrength": null,
+      "validationWeakness": null,
+      "id": "ev-0003",
+      "category": "fileMutation",
+      "evidenceKind": "mutation",
+      "evidenceProvenance": "source_diff"
+    },
+    {
+      "kind": "file_edit",
+      "source": "tool_calls",
+      "confidence": "high",
+      "text": "apply_patch tool created or updated unknown file :: ok",
+      "commandId": "t2",
+      "turnIndex": 2,
+      "timestamp": null,
+      "order": 1,
+      "path": "unknown file",
+      "toolCallId": "t2",
+      "deliverableLinked": null,
+      "deliverableLinks": [],
+      "validationStrength": null,
+      "validationWeakness": null,
+      "id": "ev-0004",
+      "category": "fileMutation",
+      "evidenceKind": "mutation",
+      "evidenceProvenance": "source_diff"
+    },
+    {
+      "kind": "agent_claim",
+      "source": "model_responses",
+      "confidence": "low",
+      "text": "Done",
+      "commandId": null,
+      "turnIndex": null,
+      "timestamp": null,
+      "order": 0,
+      "path": null,
+      "toolCallId": null,
+      "deliverableLinked": null,
+      "deliverableLinks": [],
+      "validationStrength": null,
+      "validationWeakness": null,
+      "id": "ev-0005",
+      "category": "agentClaims",
+      "evidenceKind": "diagnostic",
+      "evidenceProvenance": "llm_reasoning"
+    }
+  ],
+  "failureEvidence": [
+    {
+      "kind": "failure_signal",
+      "source": "commands",
+      "confidence": "medium",
+      "text": "command[0] exit=1: curl -sk https://localhost:8443/index.html :: FAIL: Main branch wrong content",
+      "commandId": null,
+      "turnIndex": null,
+      "timestamp": "1",
+      "order": 2,
+      "path": null,
+      "toolCallId": null,
+      "deliverableLinked": null,
+      "deliverableLinks": [],
+      "validationStrength": null,
+      "validationWeakness": null,
+      "id": "ev-0006",
+      "category": "activeFailures",
+      "evidenceKind": "failure",
+      "evidenceProvenance": "command_output"
+    },
+    {
+      "kind": "failure_signal",
+      "source": "tool_calls",
+      "confidence": "medium",
+      "text": "tool[t1] shell failed: command refused: rm -rf blocked",
+      "commandId": "t1",
+      "turnIndex": 1,
+      "timestamp": null,
+      "order": 0,
+      "path": null,
+      "toolCallId": "t1",
+      "deliverableLinked": null,
+      "deliverableLinks": [],
+      "validationStrength": null,
+      "validationWeakness": null,
+      "id": "ev-0007",
+      "category": "activeFailures",
+      "evidenceKind": "failure",
+      "evidenceProvenance": "tool_observation"
+    }
+  ],
+  "recoveredFailures": [],
+  "missingEvidence": [
+    {
+      "kind": "missing",
+      "source": "derived",
+      "confidence": "medium",
+      "text": "No validations.jsonl artifact was present.",
+      "commandId": null,
+      "turnIndex": null,
+      "timestamp": null,
+      "order": 0,
+      "path": null,
+      "toolCallId": null,
+      "deliverableLinked": null,
+      "deliverableLinks": [],
+      "validationStrength": null,
+      "validationWeakness": null,
+      "id": "ev-0008",
+      "category": "missingEvidence",
+      "evidenceKind": "missing_deliverable",
+      "evidenceProvenance": "deterministic_analysis"
+    }
+  ],
+  "riskFlags": [
+    {
+      "kind": "risk",
+      "source": "derived",
+      "confidence": "high",
+      "text": "LLM verifier was explicitly disabled; deterministic binary prediction is not authoritative."
+    }
+  ],
+  "uncertainty": {
+    "level": "high",
+    "reasons": [
+      "No strong validation evidence was found."
+    ]
+  },
+  "evidenceByCategory": {
+    "finalEndToEndValidation": [],
+    "testValidation": [],
+    "serviceValidation": [
+      {
+        "kind": "command",
+        "source": "commands",
+        "confidence": "medium",
+        "text": "command[0] exit=1: curl -sk https://localhost:8443/index.html :: FAIL: Main branch wrong content",
+        "commandId": null,
+        "turnIndex": null,
+        "timestamp": "1",
+        "order": 0,
+        "path": null,
+        "toolCallId": null,
+        "deliverableLinked": false,
+        "deliverableLinks": [],
+        "validationStrength": "weak",
+        "validationWeakness": "no meaningful validation/check evidence was observed",
+        "id": "ev-0001",
+        "category": "serviceValidation",
+        "evidenceKind": "validation",
+        "evidenceProvenance": "command_output"
+      }
+    ],
+    "deliverableEvidence": [],
+    "constraintEvidence": [],
+    "repoMutation": [],
+    "fileMutation": [
+      {
+        "kind": "mutation",
+        "source": "patches",
+        "confidence": "medium",
+        "text": "Patch applied successfully to /git/project/hooks/post-receive",
+        "commandId": null,
+        "turnIndex": null,
+        "timestamp": null,
+        "order": 0,
+        "path": "/git/project/hooks/post-receive",
+        "toolCallId": null,
+        "deliverableLinked": null,
+        "deliverableLinks": [],
+        "validationStrength": null,
+        "validationWeakness": null,
+        "id": "ev-0002",
+        "category": "fileMutation",
+        "evidenceKind": "mutation",
+        "evidenceProvenance": "source_diff"
+      },
+      {
+        "kind": "mutation",
+        "source": "patches",
+        "confidence": "medium",
+        "text": "Patch applied successfully to /etc/nginx/sites-enabled/default",
+        "commandId": null,
+        "turnIndex": null,
+        "timestamp": null,
+        "order": 1,
+        "path": "/etc/nginx/sites-enabled/default",
+        "toolCallId": null,
+        "deliverableLinked": null,
+        "deliverableLinks": [],
+        "validationStrength": null,
+        "validationWeakness": null,
+        "id": "ev-0003",
+        "category": "fileMutation",
+        "evidenceKind": "mutation",
+        "evidenceProvenance": "source_diff"
+      },
+      {
+        "kind": "file_edit",
+        "source": "tool_calls",
+        "confidence": "high",
+        "text": "apply_patch tool created or updated unknown file :: ok",
+        "commandId": "t2",
+        "turnIndex": 2,
+        "timestamp": null,
+        "order": 1,
+        "path": "unknown file",
+        "toolCallId": "t2",
+        "deliverableLinked": null,
+        "deliverableLinks": [],
+        "validationStrength": null,
+        "validationWeakness": null,
+        "id": "ev-0004",
+        "category": "fileMutation",
+        "evidenceKind": "mutation",
+        "evidenceProvenance": "source_diff"
+      }
+    ],
+    "setupEvidence": [],
+    "inspectionEvidence": [],
+    "cleanupEvidence": [],
+    "agentClaims": [
+      {
+        "kind": "agent_claim",
+        "source": "model_responses",
+        "confidence": "low",
+        "text": "Done",
+        "commandId": null,
+        "turnIndex": null,
+        "timestamp": null,
+        "order": 0,
+        "path": null,
+        "toolCallId": null,
+        "deliverableLinked": null,
+        "deliverableLinks": [],
+        "validationStrength": null,
+        "validationWeakness": null,
+        "id": "ev-0005",
+        "category": "agentClaims",
+        "evidenceKind": "diagnostic",
+        "evidenceProvenance": "llm_reasoning"
+      }
+    ],
+    "activeFailures": [
+      {
+        "kind": "failure_signal",
+        "source": "commands",
+        "confidence": "medium",
+        "text": "command[0] exit=1: curl -sk https://localhost:8443/index.html :: FAIL: Main branch wrong content",
+        "commandId": null,
+        "turnIndex": null,
+        "timestamp": "1",
+        "order": 2,
+        "path": null,
+        "toolCallId": null,
+        "deliverableLinked": null,
+        "deliverableLinks": [],
+        "validationStrength": null,
+        "validationWeakness": null,
+        "id": "ev-0006",
+        "category": "activeFailures",
+        "evidenceKind": "failure",
+        "evidenceProvenance": "command_output"
+      },
+      {
+        "kind": "failure_signal",
+        "source": "tool_calls",
+        "confidence": "medium",
+        "text": "tool[t1] shell failed: command refused: rm -rf blocked",
+        "commandId": "t1",
+        "turnIndex": 1,
+        "timestamp": null,
+        "order": 0,
+        "path": null,
+        "toolCallId": "t1",
+        "deliverableLinked": null,
+        "deliverableLinks": [],
+        "validationStrength": null,
+        "validationWeakness": null,
+        "id": "ev-0007",
+        "category": "activeFailures",
+        "evidenceKind": "failure",
+        "evidenceProvenance": "tool_observation"
+      }
+    ],
+    "recoveredFailures": [],
+    "missingEvidence": [
+      {
+        "kind": "missing",
+        "source": "derived",
+        "confidence": "medium",
+        "text": "No validations.jsonl artifact was present.",
+        "commandId": null,
+        "turnIndex": null,
+        "timestamp": null,
+        "order": 0,
+        "path": null,
+        "toolCallId": null,
+        "deliverableLinked": null,
+        "deliverableLinks": [],
+        "validationStrength": null,
+        "validationWeakness": null,
+        "id": "ev-0008",
+        "category": "missingEvidence",
+        "evidenceKind": "missing_deliverable",
+        "evidenceProvenance": "deterministic_analysis"
+      }
+    ],
+    "riskFlags": [
+      {
+        "kind": "risk",
+        "source": "derived",
+        "confidence": "high",
+        "text": "LLM verifier was explicitly disabled; deterministic binary prediction is not authoritative."
+      }
+    ]
+  },
+  "evidenceRegistry": {
+    "ev-0001": {
+      "id": "ev-0001",
+      "category": "serviceValidation",
+      "kind": "validation",
+      "provenance": "command_output",
+      "strength": "weak",
+      "summary": "command[0] exit=1: curl -sk https://localhost:8443/index.html :: FAIL: Main branch wrong content"
+    },
+    "ev-0002": {
+      "id": "ev-0002",
+      "category": "fileMutation",
+      "kind": "mutation",
+      "provenance": "source_diff",
+      "strength": "medium",
+      "summary": "Patch applied successfully to /git/project/hooks/post-receive"
+    },
+    "ev-0003": {
+      "id": "ev-0003",
+      "category": "fileMutation",
+      "kind": "mutation",
+      "provenance": "source_diff",
+      "strength": "medium",
+      "summary": "Patch applied successfully to /etc/nginx/sites-enabled/default"
+    },
+    "ev-0004": {
+      "id": "ev-0004",
+      "category": "fileMutation",
+      "kind": "mutation",
+      "provenance": "source_diff",
+      "strength": "high",
+      "summary": "apply_patch tool created or updated unknown file :: ok"
+    },
+    "ev-0005": {
+      "id": "ev-0005",
+      "category": "agentClaims",
+      "kind": "diagnostic",
+      "provenance": "llm_reasoning",
+      "strength": "low",
+      "summary": "Done"
+    },
+    "ev-0006": {
+      "id": "ev-0006",
+      "category": "activeFailures",
+      "kind": "failure",
+      "provenance": "command_output",
+      "strength": "medium",
+      "summary": "command[0] exit=1: curl -sk https://localhost:8443/index.html :: FAIL: Main branch wrong content"
+    },
+    "ev-0007": {
+      "id": "ev-0007",
+      "category": "activeFailures",
+      "kind": "failure",
+      "provenance": "tool_observation",
+      "strength": "medium",
+      "summary": "tool[t1] shell failed: command refused: rm -rf blocked"
+    },
+    "ev-0008": {
+      "id": "ev-0008",
+      "category": "missingEvidence",
+      "kind": "missing_deliverable",
+      "provenance": "deterministic_analysis",
+      "strength": "medium",
+      "summary": "No validations.jsonl artifact was present."
+    }
+  },
+  "toolsUsed": [],
+  "llmRawVerdict": {},
+  "artifactsUsed": {
+    "debugFiles": [],
+    "commandCount": 1,
+    "toolCallCount": 2,
+    "patchCount": 2,
+    "modelResponseCount": 1
+  },
+  "deterministicChecks": {
+    "finalValidationWindow": null,
+    "activeFailureCount": 2,
+    "recoveredFailureCount": 0,
+    "postValidationRiskCount": 0,
+    "validationEvidenceCount": 0,
+    "requirementCoverage": 0.3333333333333333
+  },
+  "debugDir": "C:\\Users\\Simon\\OneDrive\\Documents\\Python Scripts\\villani\\components\\villani-ops\\villani_ops\\tests\\fixtures\\verifier_failure",
+  "repoDir": null,
+  "createdAt": "2026-07-16T23:33:14.812978+00:00",
+  "verifier": {
+    "mode": "deterministic",
+    "model": null,
+    "baseUrl": null,
+    "promptVersion": "villani-ops-verifier-evidence-matrix-v2"
+  },
+  "traceDir": ".villani-ops\\verifier-runs\\20260716T233314Z_r1_2",
+  "traceId": "20260716T233314Z_r1_2",
+  "traceLevel": "full",
+  "toolCallCount": 0,
+  "llmCallCount": 0,
+  "invocationStatus": "completed"
+}

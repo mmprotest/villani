@@ -16,8 +16,12 @@ from villani_ops.execution_environment.container import ContainerProvider
 from villani_ops.execution_environment.devcontainer import DevcontainerProvider
 from villani_ops.execution_environment.models import (
     ActionPolicy,
+    CommandResult,
     ExecutionEnvironmentConfig,
     SecretRequest,
+)
+from villani_ops.execution_environment.candidate_execution import (
+    execute_candidate_command,
 )
 from villani_ops.execution_environment.security import (
     ExecutionPolicyDenied,
@@ -496,6 +500,109 @@ def test_devcontainer_fixture_runs_tests_and_produces_patch(
 
     assert result.exit_code == 0, result.stderr
     assert "return a + b" in patch
+    provider.cleanup(prepared)
+
+
+def test_candidate_execution_dispatches_through_container_provider(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import villani_ops.execution_environment.container as module
+
+    _fake_runtime(monkeypatch, module)
+    provider = ContainerProvider(_container_config(), source_environment={})
+    prepared = provider.prepare(repository=tmp_path, worktree=tmp_path)
+    calls: list[list[str]] = []
+
+    def execute(prepared_value, argv):
+        assert prepared_value is prepared
+        calls.append(list(argv))
+        return CommandResult(
+            exit_code=0,
+            duration_ms=1,
+            stdout="ok",
+            stderr="",
+            stdout_bytes=2,
+            stderr_bytes=0,
+            stdout_truncated=False,
+            stderr_truncated=False,
+            timed_out=False,
+            disk_limit_exceeded=False,
+            process_limit_exceeded=False,
+        )
+
+    monkeypatch.setattr(provider, "execute", execute)
+    result = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=["fixture-validation"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="container",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+
+    assert result.status == "passed"
+    assert result.execution_provider == "container"
+    assert calls == [["fixture-validation"]]
+    provider.cleanup(prepared)
+
+
+def test_candidate_execution_dispatches_through_devcontainer_provider(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import villani_ops.execution_environment.devcontainer as module
+
+    _fake_runtime(monkeypatch, module)
+    config_dir = tmp_path / ".devcontainer"
+    config_dir.mkdir()
+    (config_dir / "devcontainer.json").write_text(
+        json.dumps({"image": "fixture:image"}), encoding="utf-8"
+    )
+    provider = DevcontainerProvider(
+        ExecutionEnvironmentConfig(
+            provider="devcontainer",
+            mode="controlled",
+        ),
+        source_environment={},
+    )
+    prepared = provider.prepare(repository=tmp_path, worktree=tmp_path)
+    calls: list[list[str]] = []
+
+    def execute(prepared_value, argv):
+        assert prepared_value is prepared
+        calls.append(list(argv))
+        return CommandResult(
+            exit_code=0,
+            duration_ms=1,
+            stdout="ok",
+            stderr="",
+            stdout_bytes=2,
+            stderr_bytes=0,
+            stdout_truncated=False,
+            stderr_truncated=False,
+            timed_out=False,
+            disk_limit_exceeded=False,
+            process_limit_exceeded=False,
+        )
+
+    monkeypatch.setattr(provider, "execute", execute)
+    result = execute_candidate_command(
+        provider=provider,
+        prepared_environment=prepared,
+        argv=["fixture-validation"],
+        command_role="repository_validation",
+        run_id="run_1",
+        attempt_id="attempt_001",
+        validation_id="devcontainer",
+        baseline_sha256="a" * 64,
+        candidate_state="post_mutation",
+    )
+
+    assert result.status == "passed"
+    assert result.execution_provider == "devcontainer"
+    assert calls == [["fixture-validation"]]
     provider.cleanup(prepared)
 
 

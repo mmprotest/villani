@@ -111,6 +111,18 @@ class GitIsolationAdapter:
             max_file_size_bytes=max_file_size,
             max_total_size_bytes=max_total_size,
         )
+        autocrlf = _git(
+            copied.worktree_path,
+            "config",
+            "core.autocrlf",
+            "false",
+        )
+        if autocrlf.returncode != 0:
+            remove_tree(copied.worktree_path)
+            raise RuntimeError(
+                "could not configure deterministic line-ending behavior for "
+                "the isolated worktree"
+            )
         patch_path = attempt_dir / "patch.diff"
         metadata = {
             "source_repository": baseline,
@@ -121,6 +133,7 @@ class GitIsolationAdapter:
             "include_untracked_attempt_files": include_untracked,
             "max_file_size_bytes": max_file_size,
             "max_total_size_bytes": max_total_size,
+            "git_core_autocrlf": "false",
         }
         write_json_atomic(attempt_dir / "worktree.json", metadata)
         return IsolatedAttempt(copied, patch_path, metadata)

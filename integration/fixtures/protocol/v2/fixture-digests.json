@@ -15,5 +15,6 @@
   "valid/resource.json": "f5dcb00ecfb6072812ee366621cef16c507659b1e1d4af0d6eb11554979cc040",
   "valid/span.json": "0d3b33e4af5c66b14f53b0358f8505ae710a6a2766264544229fe533a8dcb4d4",
   "valid/telemetry-envelope.json": "761649da1175b2be9468b7da9020b6401ce2d959009c097ad79283508ed2dac3",
+  "valid/verification-evidence.json": "5f8d580a42adba859607eaf01643caaf40015cfadf6c4afda0f8383bd40e8509",
   "valid/verifier-capability.json": "25d3a304fb1ef3ccc76661ea299c3d486432fb9041d01d945fb76c9ce44265f4"
 }

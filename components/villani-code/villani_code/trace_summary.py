@@ -182,9 +182,17 @@ def _bool(value: Any, default: bool = False) -> bool:
 
 def _infer_tool_category(name: str) -> str:
     lowered = name.lower()
-    if lowered in {"write", "patch", "edit"}:
+    if lowered in {"write", "patch", "patchrange", "edit"}:
         return "file_mutation"
-    if lowered in {"read", "grep", "glob", "search", "ls"}:
+    if lowered in {
+        "read",
+        "grep",
+        "glob",
+        "search",
+        "findsymbol",
+        "findreferences",
+        "ls",
+    }:
         return "file_read"
     if _is_shell_tool(name):
         return "shell"
@@ -292,6 +300,11 @@ def build_tool_call_records_from_events(run_dir: Path) -> tuple[list[dict[str, A
             entry["failure_reason"] = payload.get("failure_reason") or payload.get("error")
             entry["hunks_attempted"] = payload.get("hunks_attempted")
             entry["hunks_failed"] = payload.get("hunks_failed")
+            entry["content_sha256"] = payload.get("content_sha256")
+            entry["start_line"] = payload.get("start_line")
+            entry["end_line"] = payload.get("end_line")
+            entry["total_lines"] = payload.get("total_lines")
+            entry["truncated"] = payload.get("truncated")
             continue
 
     records: list[dict[str, Any]] = []
@@ -357,6 +370,11 @@ def build_tool_call_records_from_events(run_dir: Path) -> tuple[list[dict[str, A
                 "lines_read": file_data.get("lines_read"),
                 "preview": file_data.get("preview"),
                 "preview_truncated": False,
+                "content_sha256": file_data.get("content_sha256"),
+                "start_line": file_data.get("start_line"),
+                "end_line": file_data.get("end_line"),
+                "total_lines": file_data.get("total_lines"),
+                "truncated": _bool(file_data.get("truncated"), False),
             }
         elif lowered == "write" and file_data:
             result_summary = {
@@ -367,7 +385,7 @@ def build_tool_call_records_from_events(run_dir: Path) -> tuple[list[dict[str, A
                 "created": file_data.get("created"),
                 "overwrote": file_data.get("overwrote"),
             }
-        elif lowered == "patch" and file_data:
+        elif lowered in {"patch", "patchrange"} and file_data:
             result_summary = {
                 "kind": "file_patch_result",
                 "path": file_data.get("normalized_path"),
@@ -480,6 +498,7 @@ def aggregate_summary_from_events(run_dir: Path, *, status_override: str | None 
     run_started_count = 0
     run_terminal_count = 0
     patch_failed_event_tool_ids: set[str] = set()
+    efficiency_metrics: dict[str, Any] = {}
 
     for event in events:
         event_type = str(event.get("event_type") or event.get("type") or "")
@@ -508,6 +527,11 @@ def aggregate_summary_from_events(run_dir: Path, *, status_override: str | None 
             continue
         if event_type == "run_started":
             run_started_count += 1
+            continue
+        if event_type == "efficiency_telemetry":
+            metrics = payload.get("metrics")
+            if isinstance(metrics, dict):
+                efficiency_metrics = dict(metrics)
             continue
 
         if event_type == "tool_call_started":
@@ -649,6 +673,7 @@ def aggregate_summary_from_events(run_dir: Path, *, status_override: str | None 
         "artifacts": artifacts,
         "aggregation_version": AGGREGATION_VERSION,
     }
+    summary.update(efficiency_metrics)
 
     if saw_turn_events and summary["turn_count"] == 0:
         validation_errors.append("Canonical turn events exist but turn_count is zero.")
@@ -718,7 +743,8 @@ def aggregate_summary_from_events(run_dir: Path, *, status_override: str | None 
     patch_tool_rows = {
         str(row.get("tool_call_id", "")).strip(): row
         for row in tool_rows
-        if str(row.get("tool_name", "")).strip().lower() == "patch"
+        if str(row.get("tool_name", "")).strip().lower()
+        in {"patch", "patchrange"}
     }
     failed_patch_tool_ids = {
         tool_id

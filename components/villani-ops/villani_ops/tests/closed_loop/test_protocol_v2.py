@@ -29,8 +29,8 @@ def _json(path: Path) -> dict[str, object]:
     return value
 
 
-def test_all_eight_v2_schemas_and_strict_models_accept_shared_valid_bytes() -> None:
-    assert len(SCHEMA_V2_VERSION_TO_PATH) == 8
+def test_all_nine_v2_schemas_and_strict_models_accept_shared_valid_bytes() -> None:
+    assert len(SCHEMA_V2_VERSION_TO_PATH) == 9
     versions: set[str] = set()
     for path in sorted((FIXTURES / "valid").glob("*.json")):
         parsed = parse_protocol_document(_json(path))

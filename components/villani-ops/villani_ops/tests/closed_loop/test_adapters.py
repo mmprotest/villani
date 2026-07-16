@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
+import sys
 from collections import deque
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,11 @@ from villani_ops.closed_loop.interfaces import (
 )
 from villani_ops.closed_loop.protocol import AttemptSnapshot, VerificationSnapshot
 from villani_ops.core.backend import Backend
+from villani_ops.execution_environment.models import (
+    CommandResult,
+    ExecutionEnvironmentConfig,
+)
+from villani_ops.execution_environment.providers import InheritProvider
 from villani_ops.materialize import apply_patch_safely
 from villani_ops.runners.base import RunnerContext, RunnerResult
 from villani_ops.tests.closed_loop.fakes import (
@@ -131,7 +139,9 @@ class InjectedVillaniCodeRunner:
                         "ts": timestamp,
                         "command": command,
                         "command_role": (
-                            "repository_validation" if quality == "strong" else "inspection"
+                            "repository_validation"
+                            if quality == "strong"
+                            else "inspection"
                         ),
                         "candidate_state": "post_mutation",
                         "cwd": context.repo_path,
@@ -295,6 +305,74 @@ def _rejected_raw(**kwargs: Any) -> dict[str, Any]:
     }
 
 
+def _exact_output_raw(expected: str, calls: list[dict[str, Any]]):
+    def verifier(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        context = kwargs["verification_context"]
+        requirements = context["requirements"]
+        observable_ids = [
+            item["requirement_id"]
+            for item in requirements
+            if item["observable"] and item["source"] != "repository_validation_command"
+        ]
+        assert observable_ids
+        return {
+            "result": 1,
+            "verdict": "success",
+            "confidence": 0.99,
+            "recommendedAction": "accept",
+            "reason": "The change appears semantically correct.",
+            "requirementResults": [
+                {
+                    "id": item["requirement_id"],
+                    "requirement": item["description"],
+                    "critical": item["critical"],
+                    "status": "passed",
+                    "evidence": ["semantic-claim"],
+                    "risks": [],
+                }
+                for item in requirements
+            ],
+            "successEvidence": [
+                {
+                    "id": "semantic-claim",
+                    "kind": "semantic_reasoning",
+                    "summary": "The diff appears to implement the requested output.",
+                }
+            ],
+            "failureEvidence": [],
+            "missingEvidence": [],
+            "riskFlags": [],
+            "criticalRequirementCoverageProven": True,
+            "focusedProbeRequests": [
+                {
+                    "probe_id": "exact-example-output",
+                    "requirement_ids": observable_ids,
+                    "argv": [
+                        sys.executable,
+                        "-c",
+                        (
+                            "from pathlib import Path; "
+                            "import os, sys; "
+                            "assert os.environ.get('FROB') is None; "
+                            "value=Path('example.txt').read_text(); "
+                            "sys.stdout.buffer.write("
+                            "value.replace('\\r\\n', '\\n').encode())"
+                        ),
+                    ],
+                    "timeout_seconds": 30,
+                    "expected_exit_code": 0,
+                    "expected_stdout": expected,
+                    "expected_stdout_contains": [],
+                    "expected_stderr_contains": [],
+                    "reason": "Exact observable output needs executable evidence.",
+                }
+            ],
+        }
+
+    return verifier
+
+
 class SequenceVerifier:
     def __init__(self, results: list[Any]) -> None:
         self.results = deque(results)
@@ -317,13 +395,23 @@ def _request(
     max_attempts: int = 3,
     policy_configuration: dict[str, Any] | None = None,
 ) -> ClosedLoopRunRequest:
+    configuration = dict(policy_configuration or {"version": "m4_test"})
+    configuration.setdefault(
+        "repository_validation_commands",
+        [
+            {
+                "validation_id": "git_diff_check",
+                "argv": ["git", "diff", "--check"],
+            }
+        ],
+    )
     return ClosedLoopRunRequest(
         task="Change example.txt through the real M4 adapter path.",
         repository_path=repo,
         success_criteria="example.txt contains the selected candidate value.",
         runs_root=tmp_path / "runs",
         max_attempts=max_attempts,
-        policy_configuration=policy_configuration or {"version": "m4_test"},
+        policy_configuration=configuration,
     )
 
 
@@ -341,6 +429,7 @@ def _controller(
         provider="local",
         model="fake-model",
         api_key=secret,
+        env={"FROB": secret},
     )
     return ClosedLoopController(
         classifier=FakeClassifier(),
@@ -381,6 +470,8 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
         "worktree.json",
         "attempt.json",
         "patch.diff",
+        "candidate-patch-quality.json",
+        "repository-validation.json",
         "stdout.log",
         "stderr.log",
     ):
@@ -393,13 +484,46 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
     assert worktree_metadata["retained"] is False
     assert worktree_metadata["cleanup_status"] == "removed"
     assert (attempt_dir / "patch.diff").read_text(encoding="utf-8").strip()
+    for name in (
+        "candidate.json",
+        "patch.diff",
+        "changed-files.json",
+        "untracked-files.json",
+        "candidate-patch-quality.json",
+        "repository-validation.json",
+        "execution-environment.json",
+    ):
+        assert (attempt_dir / "candidate" / name).is_file()
+    candidate_quality = json.loads(
+        (attempt_dir / "candidate-patch-quality.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    candidate_manifest = json.loads(
+        (attempt_dir / "candidate" / "candidate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    verification = json.loads(
+        (result.run_directory / "verification" / "attempt_001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert candidate_quality["status"] == "eligible"
+    assert candidate_quality["relevant_files_changed"] == ["example.txt"]
+    assert (
+        candidate_manifest["candidate_patch_quality_path"]
+        == "candidate-patch-quality.json"
+    )
+    assert (
+        verification["metadata"]["candidate_quality_report"]["status"]
+        == "eligible"
+    )
     materialization = json.loads(
         (result.run_directory / "materialization.json").read_text(encoding="utf-8")
     )
     assert materialization["changed_files"] == ["example.txt"]
-    assert materialization["metadata"]["safe_apply"]["changed_files"] == [
-        "example.txt"
-    ]
+    assert materialization["metadata"]["safe_apply"]["changed_files"] == ["example.txt"]
     assert runner.calls[0].env["VILLANI_RUN_ID"] == result.run_id
     assert runner.calls[0].env["VILLANI_TRACE_ID"].startswith("trace_")
     assert runner.calls[0].env["VILLANI_ATTEMPT_ID"] == "attempt_001"
@@ -408,6 +532,124 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
         result.run_directory / "verification" / "raw" / "attempt_001.json"
     ).is_file()
     assert not (tmp_path / ".villani-ops" / "orchestrations").exists()
+
+
+def test_axios_style_prefix_is_rejected_by_controller_owned_exact_probe(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "AggregateError: wanted\n"}])
+    verifier_calls: list[dict[str, Any]] = []
+    controller = _controller(
+        [_attempt_policy(), policy("exhaust")],
+        runner,
+        _exact_output_raw("wanted\n", verifier_calls),
+    )
+    request = replace(
+        _request(tmp_path, repo),
+        task="Change example.txt so its exact contents are wanted.",
+        success_criteria=(
+            "Reading example.txt must return exact text wanted with no prefix."
+        ),
+    )
+
+    result = controller.run(request)
+
+    verification = json.loads(
+        (result.run_directory / "verification" / "attempt_001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    probe = json.loads(
+        (
+            result.run_directory / "verification" / "attempt_001-focused-probes.json"
+        ).read_text(encoding="utf-8")
+    )
+    matrix = json.loads(
+        (result.run_directory / "verification" / "attempt_001-evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert result.terminal_state == "EXHAUSTED"
+    assert len(runner.calls) == 1
+    assert len(verifier_calls) == 1
+    assert verification["metadata"]["raw_llm_result"] == 1
+    assert verification["metadata"]["computed_final_result"] == 0
+    assert (
+        verification["metadata"]["computed_final_reason_code"] == "focused_probe_failed"
+    )
+    assert verification["metadata"]["verifier_disagreement"] is True
+    assert verification["acceptance_eligible"] is False
+    persisted_evidence_ids = {
+        item["evidence_id"]
+        for bucket in (
+            "success_evidence",
+            "failure_evidence",
+            "missing_evidence",
+        )
+        for item in verification[bucket]
+    }
+    assert all(
+        set(requirement["evidence_ids"]) <= persisted_evidence_ids
+        for requirement in matrix["requirements"]
+    )
+    assert probe["status"] == "failed"
+    assert probe["results"][0]["command_result"]["stdout"].startswith(
+        "AggregateError: wanted"
+    )
+    assert (
+        result.run_directory / "attempts" / "attempt_001" / "candidate" / "patch.diff"
+    ).is_file()
+
+
+def test_exact_output_probe_passes_without_rerunning_coding(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "wanted\n"}])
+    verifier_calls: list[dict[str, Any]] = []
+    controller = _controller(
+        [_attempt_policy(), policy("select")],
+        runner,
+        _exact_output_raw("wanted\n", verifier_calls),
+    )
+    request = replace(
+        _request(tmp_path, repo),
+        task="Change example.txt so its exact contents are wanted.",
+        success_criteria=(
+            "Reading example.txt must return exact text wanted with no prefix."
+        ),
+    )
+
+    result = controller.run(request)
+
+    verification = json.loads(
+        (result.run_directory / "verification" / "attempt_001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    attempt = json.loads(
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    probe = json.loads(
+        (
+            result.run_directory / "verification" / "attempt_001-focused-probes.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert result.terminal_state == "COMPLETED"
+    assert len(runner.calls) == 1
+    assert len(verifier_calls) == 1
+    assert probe["status"] == "passed"
+    assert verification["metadata"]["raw_llm_result"] == 1
+    assert verification["metadata"]["computed_final_result"] == 1
+    assert verification["metadata"]["verifier_disagreement"] is False
+    assert verification["acceptance_eligible"] is True
+    assert (
+        probe["execution_environment_fingerprint"]
+        == attempt["metadata"]["execution_environment_fingerprint"]
+    )
 
 
 def test_materialization_preserves_captured_files_when_apply_helper_omits_names(
@@ -517,7 +759,11 @@ def test_missing_villani_code_trace_is_rejected(tmp_path: Path) -> None:
     )
     assert result.terminal_state == "EXHAUSTED"
     assert verification["acceptance_eligible"] is False
-    assert "missing_compatible_trace" in verification["reason"]
+    assert "missing_trace" in verification["reason"]
+    assert (
+        verification["metadata"]["computed_final_reason_code"]
+        == "verifier_tool_failure"
+    )
     assert (repo / "example.txt").read_text(encoding="utf-8") == "original\n"
 
 
@@ -537,6 +783,17 @@ def test_empty_patch_is_rejected_for_code_change_task(tmp_path: Path) -> None:
     assert result.terminal_state == "EXHAUSTED"
     assert verification["metadata"]["normalized_without_verifier"] is True
     assert not raw.calls
+    candidate = json.loads(
+        (
+            result.run_directory
+            / "attempts"
+            / "attempt_001"
+            / "candidate"
+            / "candidate.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert candidate["patch_bytes"] == 0
+    assert candidate["patch_sha256"] == hashlib.sha256(b"").hexdigest()
 
 
 def test_verifier_malformed_output_is_rejected(tmp_path: Path) -> None:
@@ -557,6 +814,11 @@ def test_verifier_malformed_output_is_rejected(tmp_path: Path) -> None:
     assert verification["outcome"] == "error"
     assert verification["acceptance_eligible"] is False
     assert verification["metadata"]["invocation_status"] == "malformed_output"
+    assert (
+        (result.run_directory / "attempts" / "attempt_001" / "candidate" / "patch.diff")
+        .read_text(encoding="utf-8")
+        .strip()
+    )
 
 
 def test_verifier_timeout_is_rejected(tmp_path: Path) -> None:
@@ -605,7 +867,9 @@ def test_candidate_exit_127_is_infrastructure_failure_and_not_accepted(
         == "infrastructure_failure"
     )
     assert verification["acceptance_eligible"] is False
-    assert "runner_nonzero_exit" in verification["reason"]
+    assert (
+        verification["metadata"]["computed_final_reason_code"] == "candidate_ineligible"
+    )
 
 
 def test_patch_path_outside_selected_attempt_directory_is_rejected(
@@ -762,15 +1026,292 @@ def test_controller_configured_repository_validation_is_canonical_evidence(
     validation_events = [
         event
         for event in events
-        if event["event_type"] in {"command_completed", "command_failed"}
+        if event["event_type"]
+        in {
+            "repository_validation_started",
+            "repository_validation_completed",
+            "repository_validation_failed",
+            "repository_validation_infrastructure_error",
+        }
         and event["payload"].get("command_role") == "repository_validation"
-        and event["source"] == "villani_ops_verifier"
+        and event["source"] == "villani_ops_candidate_execution"
     ]
-    assert len(validation_events) == 1
-    assert validation_events[0]["event_type"] == "command_completed"
-    assert validation_events[0]["payload"]["argv"] == ["git", "diff", "--check"]
-    assert validation_events[0]["payload"]["exit_code"] == 0
-    assert validation_events[0]["payload"]["validation_id"] == "git_diff_check"
+    assert [event["event_type"] for event in validation_events] == [
+        "repository_validation_started",
+        "repository_validation_completed",
+    ]
+    assert validation_events[-1]["payload"]["argv"] == ["git", "diff", "--check"]
+    assert validation_events[-1]["payload"]["exit_code"] == 0
+    assert validation_events[-1]["payload"]["validation_id"] == "git_diff_check"
+
+
+def test_repository_validation_reuses_runner_path_fingerprint_and_final_mutation(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
+    controller = _controller(
+        [_attempt_policy(), policy("select")], runner, _accepted_raw
+    )
+    script = (
+        "import hashlib, os; from pathlib import Path; "
+        "assert Path('example.txt').read_text() == 'changed\\n'; "
+        "print(hashlib.sha256(os.environ.get('PATH', '').encode()).hexdigest())"
+    )
+    result = controller.run(
+        _request(
+            tmp_path,
+            repo,
+            policy_configuration={
+                "version": "m4_test",
+                "repository_validation_commands": [
+                    {
+                        "validation_id": "post_mutation_path",
+                        "argv": [sys.executable, "-c", script],
+                    }
+                ],
+            },
+        )
+    )
+
+    assert result.terminal_state == "COMPLETED"
+    report = json.loads(
+        (
+            result.run_directory
+            / "attempts"
+            / "attempt_001"
+            / "repository-validation.json"
+        ).read_text(encoding="utf-8")
+    )
+    attempt = json.loads(
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["status"] == "passed"
+    assert (
+        report["execution_environment_fingerprint"]
+        == attempt["metadata"]["execution_environment_fingerprint"]
+        == runner.calls[0].env["VILLANI_EXECUTION_ENVIRONMENT_FINGERPRINT"]
+    )
+    assert (
+        report["commands"][0]["stdout"].strip()
+        == hashlib.sha256(runner.calls[0].env["PATH"].encode()).hexdigest()
+    )
+
+
+def test_validation_infrastructure_retry_rehydrates_candidate_without_coding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import villani_ops.closed_loop.adapters.villani_code_attempt as attempt_module
+
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
+    shared = {"validation_calls": 0}
+
+    class FlakyValidationProvider(InheritProvider):
+        def execute(self, prepared, command):
+            shared["validation_calls"] += 1
+            if shared["validation_calls"] == 1:
+                return CommandResult(
+                    exit_code=124,
+                    duration_ms=1,
+                    stdout="",
+                    stderr="timed out",
+                    stdout_bytes=0,
+                    stderr_bytes=9,
+                    stdout_truncated=False,
+                    stderr_truncated=False,
+                    timed_out=True,
+                    disk_limit_exceeded=False,
+                    process_limit_exceeded=False,
+                    failure_classification="timeout",
+                )
+            return super().execute(prepared, command)
+
+    def provider_factory(
+        configuration,
+        *,
+        source_environment=None,
+        cache_root=None,
+        selection=None,
+        pluginized=False,
+    ):
+        del cache_root, selection, pluginized
+        return FlakyValidationProvider(
+            ExecutionEnvironmentConfig.from_configuration(configuration),
+            source_environment=source_environment,
+        )
+
+    monkeypatch.setattr(attempt_module, "provider_from_configuration", provider_factory)
+    retry = replace(
+        _attempt_policy("retry"),
+        metadata={"retry_scope": "repository_validation"},
+    )
+    raw = SequenceVerifier([_accepted_raw])
+    controller = _controller(
+        [_attempt_policy(), retry, policy("select")],
+        runner,
+        raw,
+    )
+    request = _request(
+        tmp_path,
+        repo,
+        max_attempts=1,
+        policy_configuration={
+            "version": "m4_test",
+            "repository_validation_commands": [
+                {
+                    "validation_id": "retry_validation",
+                    "argv": [
+                        sys.executable,
+                        "-c",
+                        "from pathlib import Path; assert Path('example.txt').read_text() == 'changed\\n'",
+                    ],
+                }
+            ],
+        },
+    )
+
+    result = controller.run(request)
+
+    assert result.terminal_state == "COMPLETED"
+    assert len(runner.calls) == 1
+    assert len(raw.calls) == 1
+    assert shared["validation_calls"] == 2
+    report = json.loads(
+        (
+            result.run_directory
+            / "attempts"
+            / "attempt_001"
+            / "repository-validation.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["status"] == "passed"
+    assert report["retry_count"] == 1
+    policies = read_jsonl_tolerant(result.run_directory / "policy_decisions.jsonl")
+    assert [item["attempt_id"] for item in policies] == [
+        "attempt_001",
+        "attempt_001",
+        None,
+    ]
+    assert policies[1]["metadata"]["retry_scope"] == "repository_validation"
+    manifest = json.loads(
+        (result.run_directory / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["total_input_tokens"] == 11
+    assert manifest["total_output_tokens"] == 5
+
+
+def test_prepared_environment_is_cleaned_when_candidate_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import villani_ops.closed_loop.adapters.villani_code_attempt as attempt_module
+
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
+
+    class TrackingProvider(InheritProvider):
+        cleanup_calls = 0
+
+        def cleanup(self, prepared) -> None:
+            self.cleanup_calls += 1
+
+    provider = TrackingProvider(ExecutionEnvironmentConfig())
+    monkeypatch.setattr(
+        attempt_module,
+        "provider_from_configuration",
+        lambda *args, **kwargs: provider,
+    )
+
+    def fail_bundle(**kwargs: Any) -> Any:
+        raise RuntimeError("injected candidate persistence failure")
+
+    monkeypatch.setattr(attempt_module, "write_candidate_bundle", fail_bundle)
+    controller = _controller([_attempt_policy()], runner, _accepted_raw)
+
+    result = controller.run(_request(tmp_path, repo))
+
+    assert result.terminal_state == "FAILED"
+    assert provider.cleanup_calls == 1
+
+
+def test_candidate_bundle_reconstructs_tracked_repository_state(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
+    controller = _controller(
+        [_attempt_policy(), policy("select")], runner, _accepted_raw
+    )
+    result = controller.run(_request(tmp_path, repo))
+    candidate = result.run_directory / "attempts" / "attempt_001" / "candidate"
+    fresh = tmp_path / "fresh"
+    subprocess.run(
+        ["git", "clone", "--no-hardlinks", str(repo), str(fresh)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "apply",
+            "--binary",
+            "--whitespace=nowarn",
+            str((candidate / "patch.diff").resolve()),
+        ],
+        cwd=fresh,
+        check=True,
+        capture_output=True,
+    )
+
+    def tracked_state(path: Path) -> dict[str, bytes]:
+        files = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
+        return {
+            name.decode("utf-8"): (path / name.decode("utf-8")).read_bytes()
+            for name in files
+            if name
+        }
+
+    assert tracked_state(fresh) == tracked_state(repo)
+
+
+def test_rejected_candidate_patch_remains_in_durable_bundle(tmp_path: Path) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
+    controller = _controller(
+        [_attempt_policy(), policy("exhaust")],
+        runner,
+        _rejected_raw,
+    )
+
+    result = controller.run(_request(tmp_path, repo))
+
+    assert result.terminal_state == "EXHAUSTED"
+    candidate_patch = (
+        result.run_directory / "attempts" / "attempt_001" / "candidate" / "patch.diff"
+    )
+    assert candidate_patch.read_text(encoding="utf-8").strip()
+
+
+def test_verifier_source_has_no_candidate_validation_subprocess_path() -> None:
+    source = (
+        _repository_root()
+        / "components"
+        / "villani-ops"
+        / "villani_ops"
+        / "closed_loop"
+        / "adapters"
+        / "villani_verifier.py"
+    ).read_text(encoding="utf-8")
+    assert "_execute_configured_repository_validation" not in source
+    assert "subprocess.run" not in source
 
 
 def test_structured_write_event_repairs_underreported_runner_write_count(
