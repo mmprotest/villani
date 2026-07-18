@@ -1,0 +1,554 @@
+{
+  "milestone": "PT1",
+  "title": "Unify the Visual System and Information Architecture",
+  "date": "2026-07-17",
+  "status": "COMPLETE",
+  "pt2_started": false,
+  "acceptance_criteria": {
+    "onboarding_and_product_share_one_identity": "passed",
+    "default_navigation_is_new_task_activity_agents_settings": "passed",
+    "healthy_infrastructure_is_silent": "passed",
+    "advanced_capabilities_remain_reachable": "passed",
+    "first_screen_is_outcome_focused": "passed",
+    "acceptance_routing_and_delivery_behavior_unchanged": "passed",
+    "later_milestone_not_started": "passed"
+  },
+  "files": {
+    "added": [
+      "components/villani-web/e2e/pt1-fixtures.ts",
+      "components/villani-web/e2e/pt1-visual.spec.ts",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/activity-mixed.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/advanced-navigation.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/keyboard-focus.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/new-task-empty.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/new-task-mobile-320.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/new-task-populated.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/onboarding-complete.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/onboarding-detected-agent.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/onboarding-setup-error.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/onboarding-start.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/service-failure-actionable.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/settings-healthy.png",
+      "components/villani-web/src/OnboardingPage.tsx",
+      "components/villani-web/src/ProductPages.tsx",
+      "components/villani-web/dist/assets/index-D0m9i5XQ.css",
+      "components/villani-web/dist/assets/index-DJq66jpi.js",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-D0m9i5XQ.css",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-DJq66jpi.js",
+      "docs/PT1_COMPLETION_REPORT.md",
+      "docs/PT1_COMPLETION_REPORT.json"
+    ],
+    "changed": [
+      "PLANS.md",
+      "components/villani-ui/README.md",
+      "components/villani-ui/index.js",
+      "components/villani-ui/react.d.ts",
+      "components/villani-ui/react.js",
+      "components/villani-ui/test/theme.test.js",
+      "components/villani-ui/theme-source.js",
+      "components/villani-ui/theme.css",
+      "components/villani-web/README.md",
+      "components/villani-web/e2e/console.spec.ts",
+      "components/villani-web/e2e/release-connected.mjs",
+      "components/villani-web/playwright.config.ts",
+      "components/villani-web/src/App.tsx",
+      "components/villani-web/src/ConsoleApp.tsx",
+      "components/villani-web/src/ProductShell.tsx",
+      "components/villani-web/src/styles.css",
+      "components/villani-web/test/console.test.tsx",
+      "components/villani-web/test/staticExport.test.ts",
+      "components/villani-web/tsconfig.app.json",
+      "components/villani-web/dist/index.html",
+      "components/villani-agentd/tests/test_console.py",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-flight-recorder/src/render/sessionBrowserTheme.ts",
+      "components/villani-flight-recorder/src/render/theme.ts",
+      "components/villani-flight-recorder/dist/render/theme.js",
+      "components/villani-flight-recorder/test/helpers/villaniFixture.ts",
+      "components/villani-flight-recorder/test/sessionBrowser.test.ts",
+      "onboarding-verification/run_onboarding_gate.py",
+      "scripts/sync-console-assets.py",
+      "tests/final_foundation/test_frontend_assets.py",
+      "tests/final_foundation/test_ui_theme_contract.py"
+    ],
+    "deleted": [],
+    "generated_asset_migrations": [
+      {
+        "scope": "components/villani-web/dist/assets",
+        "from": [
+          "index-BwtYjqYI.js",
+          "index-meSgV0bo.css"
+        ],
+        "to": [
+          "index-DJq66jpi.js",
+          "index-D0m9i5XQ.css"
+        ]
+      },
+      {
+        "scope": "components/villani-agentd/villani_agentd/console_assets/assets",
+        "from": [
+          "index-BwtYjqYI.js",
+          "index-meSgV0bo.css"
+        ],
+        "to": [
+          "index-DJq66jpi.js",
+          "index-D0m9i5XQ.css"
+        ]
+      }
+    ]
+  },
+  "architecture_and_product_decisions": [
+    "components/villani-ui is the only token and shared primitive source for source Web, packaged Console, onboarding transcript, and Flight Recorder presentation.",
+    "The default navigation has exactly New task, Activity, Agents, and Settings; Team remains hidden and advanced routes live under Settings or direct deep links.",
+    "New task owns /console; legacy /console/home and /console/run redirect there. Activity owns /console/activity; /console/history redirects there. Existing run, session, replay, fleet, model, policy, cost, alert, task, and audit links remain valid.",
+    "Healthy infrastructure emits no permanent strip. Setup, service, storage, synchronization, migration, credential, and page recovery conditions alone create an actionable notice.",
+    "Public screens translate controller language without mutating technical artifacts or Evidence disclosures.",
+    "Onboarding resumption is browser-local presentation state. Safe repository and configured-agent choices are preselected; endpoint, pricing, capability, and service details remain under Advanced.",
+    "Activity is one chronological surface for Villani tasks and imported coding sessions, with unknown cost and duration preserved.",
+    "Exact-match packaged Console synchronization is idempotent and avoids replacing an already-correct directory.",
+    "Flight Recorder validates only its curated public protocol set while run-specific parsing continues to read internal PT0 evidence artifacts."
+  ],
+  "schema_and_configuration_migrations": {
+    "durable_schema_changes": [],
+    "configuration_changes": [],
+    "browser_presentation_state": {
+      "key": "villani.onboarding.v1",
+      "fields": [
+        "stage",
+        "repository",
+        "backend"
+      ],
+      "failure_behavior": "Setup continues when browser storage is unavailable; only cross-reload resumption is lost."
+    },
+    "route_redirects": {
+      "/": "/console",
+      "/run": "/console",
+      "/console/run": "/console",
+      "/console/home": "/console",
+      "/history": "/console/activity",
+      "/console/history": "/console/activity"
+    }
+  },
+  "tests_added_or_extended": [
+    "Shared UI light-token, reduced-motion, focus, WCAG-AA contrast, component-export, and standalone-onboarding-palette contracts.",
+    "Web route migration, exact default navigation, healthy-status silence, actionable setup/service notices, onboarding resumption/Ready repository handoff, associated form errors, empty Activity, mixed Activity, and Agents coverage.",
+    "Playwright route/deep-link/keyboard coverage plus 12 deterministic visual-regression states and a 320px overflow assertion.",
+    "Agentd source-distribution/package byte parity.",
+    "Idempotent packaged-asset synchronization.",
+    "Flight Recorder shared semantic token use and supported-protocol fixture filtering."
+  ],
+  "validations": [
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-ui",
+      "exit_code": 0,
+      "result": "theme.css generated; index.js and react.js syntax checks passed"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-ui",
+      "phase": "initial contract update",
+      "exit_code": 1,
+      "result": "3 passed, 1 failed because the test still expected the removed standalone dark palette"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-ui",
+      "phase": "final",
+      "exit_code": 0,
+      "result": "4 passed, 0 failed"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-web",
+      "phase": "pre-contract update",
+      "exit_code": 1,
+      "result": "5 legacy navigation/language assertions failed while PT1 routes were being rewritten"
+    },
+    {
+      "command": "npm test -- --reporter=json --outputFile C:\\tmp\\villani-pt1-vitest.json",
+      "cwd": "components/villani-web",
+      "exit_code": 0,
+      "result": "4 files passed; 20 tests passed"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-web",
+      "phase": "Playwright determinism update",
+      "exit_code": 1,
+      "result": "playwright.config.ts rejected unsupported reducedMotion option"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-web",
+      "phase": "final",
+      "exit_code": 0,
+      "result": "application and Node TypeScript projects passed"
+    },
+    {
+      "command": "npm run e2e -- e2e/console.spec.ts --reporter=line",
+      "cwd": "components/villani-web",
+      "phase": "sandbox",
+      "exit_code": 1,
+      "result": "Vite/esbuild subprocess could not read vite.config.ts under sandbox policy"
+    },
+    {
+      "command": "npm run e2e -- e2e/console.spec.ts --reporter=line",
+      "cwd": "components/villani-web",
+      "phase": "approved local subprocess",
+      "exit_code": 0,
+      "result": "4 passed"
+    },
+    {
+      "command": "npm run e2e -- e2e/pt1-visual.spec.ts --update-snapshots --reporter=line",
+      "cwd": "components/villani-web",
+      "phase": "first baseline capture",
+      "exit_code": 1,
+      "result": "8 passed, 4 failed due test locators; eight baselines written"
+    },
+    {
+      "command": "npm run e2e -- e2e/pt1-visual.spec.ts --update-snapshots --reporter=line",
+      "cwd": "components/villani-web",
+      "phase": "second baseline capture",
+      "exit_code": 1,
+      "result": "11 passed, 1 failed due imported-session badge locator"
+    },
+    {
+      "command": "npm run e2e -- e2e/pt1-visual.spec.ts --update-snapshots --reporter=line",
+      "cwd": "components/villani-web",
+      "phase": "baseline generation complete",
+      "exit_code": 0,
+      "result": "12 passed; all required baselines present"
+    },
+    {
+      "command": "npm run e2e -- --reporter=line",
+      "cwd": "components/villani-web",
+      "exit_code": 0,
+      "result": "26 passed, including routes, deep links, accessibility, responsive layout, and visual regression"
+    },
+    {
+      "command": "npm run e2e -- e2e/pt1-visual.spec.ts --reporter=line",
+      "cwd": "components/villani-web",
+      "phase": "final locked baselines",
+      "exit_code": 0,
+      "result": "12 passed"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-web",
+      "phase": "before formatting",
+      "exit_code": 1,
+      "result": "14 modified source/test files required Prettier"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-web",
+      "phase": "after documentation update",
+      "exit_code": 1,
+      "result": "README.md and vite.config.ts required Prettier"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-web",
+      "phase": "final",
+      "exit_code": 0,
+      "result": "all matched files use Prettier code style"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-web",
+      "phase": "sandbox",
+      "exit_code": 1,
+      "result": "typecheck and model build passed; Vite/esbuild config load was sandbox-denied"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-web",
+      "phase": "final approved production build",
+      "exit_code": 0,
+      "result": "53 modules transformed; index.html 0.57 kB, CSS 35.18 kB, JavaScript 300.39 kB"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-web",
+      "phase": "sandbox",
+      "exit_code": 1,
+      "result": "Vitest startup was blocked by the same Vite/esbuild sandbox restriction"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-web",
+      "phase": "final approved local subprocess",
+      "exit_code": 0,
+      "result": "4 files passed; 20 tests passed"
+    },
+    {
+      "command": "python scripts\\sync-console-assets.py --check",
+      "cwd": ".",
+      "phase": "final",
+      "exit_code": 0,
+      "result": "Console assets verified: 3 files"
+    },
+    {
+      "command": "python -m pytest -q components\\villani-agentd\\tests\\test_console.py::test_packaged_console_references_existing_assets components\\villani-agentd\\tests\\test_console.py::test_packaged_console_matches_source_distribution",
+      "cwd": ".",
+      "exit_code": 0,
+      "result": "2 passed; source distribution and packaged bytes match"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "phase": "initial",
+      "exit_code": 1,
+      "result": "110 passed, 1 failed because two PT0 internal evidence artifacts were incorrectly included in the curated public-protocol fixture set"
+    },
+    {
+      "command": "npx vitest run test/villaniProvider.test.ts -t \"copies and parses the immutable canonical fixture concurrently\"",
+      "cwd": "components/villani-flight-recorder",
+      "exit_code": 1,
+      "result": "1 failed, 16 skipped; reproduced the unsupported internal-schema fixture issue"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "phase": "before formatting",
+      "exit_code": 1,
+      "result": "4 modified files required Prettier"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "phase": "final",
+      "exit_code": 0,
+      "result": "21 files passed; 111 tests passed"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-flight-recorder",
+      "exit_code": 0,
+      "result": "tsc --noEmit passed"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-flight-recorder",
+      "exit_code": 0,
+      "result": "tsc build passed"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "phase": "final",
+      "exit_code": 0,
+      "result": "all matched files use Prettier code style"
+    },
+    {
+      "command": "python -m pytest -q",
+      "cwd": "components/villani-code",
+      "phase": "default Windows temp",
+      "exit_code": 1,
+      "result": "all 686 runnable test bodies passed and 1 skipped; pytest session cleanup failed on AppData pytest-current permission"
+    },
+    {
+      "command": "python -m pytest -q --basetemp C:\\tmp\\villani-pt1-vcode-20260717",
+      "cwd": "components/villani-code",
+      "phase": "sandbox C:\\tmp",
+      "exit_code": 1,
+      "result": "212 passed, 1 skipped, 474 setup errors because sandbox policy denied creation of C:\\tmp"
+    },
+    {
+      "command": "python -m pytest -q --basetemp .pytest-tmp-pt1",
+      "cwd": "components/villani-code",
+      "phase": "repository-local temp",
+      "exit_code": 1,
+      "result": "612 passed, 1 skipped, 74 failed because placing Git-sensitive fixtures inside the source repository changed test semantics"
+    },
+    {
+      "command": "python -m pytest -q --basetemp C:\\tmp\\villani-pt1-vcode-escalated-20260717",
+      "cwd": "components/villani-code",
+      "phase": "final isolated run",
+      "exit_code": 0,
+      "result": "686 passed, 1 skipped, 28 warnings"
+    },
+    {
+      "command": "python -m pytest -q --basetemp C:\\tmp\\villani-pt1-vops-escalated-20260717",
+      "cwd": "components/villani-ops",
+      "exit_code": 0,
+      "result": "1139 passed, 2 skipped, 114 deselected, 1 warning"
+    },
+    {
+      "command": "python -m pytest -q --basetemp C:\\tmp\\villani-pt1-agentd-escalated-20260717",
+      "cwd": "components/villani-agentd",
+      "phase": "elevated OneDrive context",
+      "exit_code": 1,
+      "result": "74 passed, 5 permission-only failures because the elevated context could not read OneDrive-hosted packaged assets"
+    },
+    {
+      "command": "python -m pytest -q --basetemp .pytest-tmp-pt1-agentd",
+      "cwd": "components/villani-agentd",
+      "phase": "final workspace-permitted context",
+      "exit_code": 0,
+      "result": "79 passed"
+    },
+    {
+      "command": "python -m pytest -q --basetemp .pytest-tmp-pt1-distribution",
+      "cwd": "components/villani",
+      "exit_code": 1,
+      "result": "65 passed, 1 failed; clean installer reached npm build and sandbox denied Vite/esbuild"
+    },
+    {
+      "command": "python -m pytest -q tests\\test_install_local.py::test_install_local_bootstraps_a_real_clean_environment --basetemp .pytest-tmp-pt1-distribution-install",
+      "cwd": "components/villani",
+      "phase": "elevated retry",
+      "exit_code": 1,
+      "result": "frontend builds and Python installation passed; packaged directory rename was denied by OneDrive permissions"
+    },
+    {
+      "command": "python -m pytest -q tests\\test_install_local.py::test_install_local_bootstraps_a_real_clean_environment --basetemp .pytest-tmp-pt1-distribution-install",
+      "cwd": "components/villani",
+      "phase": "idempotency retry",
+      "exit_code": 1,
+      "result": "same OneDrive elevated-context visibility prevented the exact-match fast path and directory rename"
+    },
+    {
+      "command": "python -m pytest tests\\closed_loop -q --basetemp C:\\tmp\\villani-pt1-closed-loop-escalated-20260717",
+      "cwd": ".",
+      "exit_code": 0,
+      "result": "11 passed, 1 warning"
+    },
+    {
+      "command": "python -m pytest -q tests\\final_foundation\\test_ui_theme_contract.py",
+      "cwd": ".",
+      "exit_code": 0,
+      "result": "2 passed, 1 pytest-cache warning"
+    },
+    {
+      "command": "python -m pytest tests\\final_foundation -q --basetemp C:\\tmp\\villani-pt1-final-foundation-escalated-20260717",
+      "cwd": ".",
+      "phase": "before idempotency test",
+      "exit_code": 0,
+      "result": "37 passed"
+    },
+    {
+      "command": "python -m pytest -q tests\\final_foundation\\test_frontend_assets.py --basetemp C:\\tmp\\villani-pt1-frontend-assets-escalated-20260717",
+      "cwd": ".",
+      "exit_code": 0,
+      "result": "2 passed"
+    },
+    {
+      "command": "python -m pytest tests\\final_foundation -q --basetemp C:\\tmp\\villani-pt1-final-foundation-escalated-20260717",
+      "cwd": ".",
+      "phase": "final",
+      "exit_code": 0,
+      "result": "38 passed"
+    },
+    {
+      "command": "python -m ruff check onboarding-verification\\run_onboarding_gate.py scripts\\sync-console-assets.py components\\villani-agentd\\tests\\test_console.py tests\\final_foundation\\test_frontend_assets.py",
+      "cwd": ".",
+      "exit_code": 0,
+      "result": "all checks passed"
+    },
+    {
+      "command": "git diff --check",
+      "cwd": ".",
+      "exit_code": 0,
+      "result": "no whitespace errors; Git emitted only existing CRLF conversion warnings"
+    }
+  ],
+  "end_to_end_artifacts": {
+    "production_web_build": [
+      "components/villani-web/dist/index.html",
+      "components/villani-web/dist/assets/index-D0m9i5XQ.css",
+      "components/villani-web/dist/assets/index-DJq66jpi.js"
+    ],
+    "packaged_console_build": [
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-D0m9i5XQ.css",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-DJq66jpi.js"
+    ],
+    "screenshots": [
+      "onboarding-start.png",
+      "onboarding-detected-agent.png",
+      "onboarding-setup-error.png",
+      "onboarding-complete.png",
+      "new-task-empty.png",
+      "new-task-populated.png",
+      "activity-mixed.png",
+      "settings-healthy.png",
+      "service-failure-actionable.png",
+      "advanced-navigation.png",
+      "new-task-mobile-320.png",
+      "keyboard-focus.png"
+    ],
+    "screenshot_directory": "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts"
+  },
+  "known_failures": [
+    {
+      "scope": "components/villani clean-install integration test",
+      "status": "environment-blocked",
+      "reason": "Sandboxed npm cannot launch Vite/esbuild; elevating the entire pytest process loses directory-rename visibility for the OneDrive-hosted packaged Console directory.",
+      "mitigating_evidence": [
+        "Production web build passed.",
+        "Asset digest check passed for all 3 files.",
+        "Agentd passed 79 tests, including Console serving.",
+        "Source/package byte parity passed 2 tests.",
+        "The other 65 distribution/onboarding tests passed."
+      ]
+    }
+  ],
+  "skipped_and_deselected": [
+    {
+      "suite": "Villani Code",
+      "count": 1,
+      "reason": "RUN_CLAUDE_CODE_SMOKE was not set; the external Claude Code smoke test is explicitly opt-in."
+    },
+    {
+      "suite": "Villani Ops",
+      "count": 2,
+      "reason": "Windows host capability guards skipped Unix-domain socket and FIFO workspace tests."
+    },
+    {
+      "suite": "Villani Ops",
+      "count": 114,
+      "kind": "deselected",
+      "reason": "The component default addopts excludes slow, integration, and e2e markers; required closed-loop e2e coverage ran separately and passed."
+    }
+  ],
+  "security_privacy_data_loss_compatibility_risks": [
+    "No API keys, credentials, host user data, or real run content are present in screenshot fixtures or reports.",
+    "Onboarding browser state stores only stage, repository selection, and backend identifier locally; blocking storage disables resumption but not setup.",
+    "Packaged synchronization remains fail-closed on any digest or manifest mismatch and now avoids directory replacement on exact equality.",
+    "Unknown cost and duration remain unknown; no values are fabricated.",
+    "Legacy routes and bookmarked run/session/replay links are preserved through redirects or direct route support.",
+    "No controller state, acceptance eligibility, routing, retry, selection, materialization, or delivery contract changed.",
+    "The in-app browser connector was unavailable; deterministic repository Playwright/Chromium screenshots were used and visually inspected instead."
+  ],
+  "user_facing_before_after": [
+    {
+      "before": "Home and Run were separate primary concepts with a broad control-plane navigation.",
+      "after": "New task is the root and the default navigation has only New task, Activity, Agents, and Settings."
+    },
+    {
+      "before": "Onboarding used standalone rounded blue/green SaaS styling.",
+      "after": "Onboarding uses the same shared light monochrome shell, tokens, typography, focus, and controls as the product."
+    },
+    {
+      "before": "Healthy service/local status occupied permanent shell space.",
+      "after": "Healthy infrastructure is silent; only actionable failures or incomplete setup create a compact notice."
+    },
+    {
+      "before": "History and connected surfaces exposed infrastructure-oriented terms.",
+      "after": "Activity merges Villani tasks and imported sessions and primary screens use outcome-focused user language."
+    },
+    {
+      "before": "Advanced control-plane destinations dominated navigation.",
+      "after": "Models, Policies, Replay, Fleet, Tasks, Costs, Alerts, and Audit remain reachable from Settings or deep links."
+    }
+  ],
+  "assumptions": [
+    "Existing PT0 and unrelated user working-tree changes are the preserved baseline and are not claimed as PT1 work.",
+    "The configured Agentd run-options and model inventory remain authoritative setup inputs; PT1 adds no new backend setup contract.",
+    "The repository Playwright Chromium version is the visual-regression reference environment."
+  ]
+}

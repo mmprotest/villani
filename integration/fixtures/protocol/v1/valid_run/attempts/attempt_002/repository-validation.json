@@ -1,0 +1,38 @@
+{
+  "schema_version": "villani.repository_validation.v2",
+  "run_id": "run_protocol_fixture",
+  "attempt_id": "attempt_002",
+  "candidate_id": "attempt_002",
+  "execution_environment_fingerprint": "fixture-environment-fingerprint",
+  "execution_provider": "fixture-local",
+  "commands": [
+    {
+      "validation_id": "repository_validation_001",
+      "argv": ["python", "-m", "pytest", "-q", "tests/test_calculator.py"],
+      "command_role": "repository_validation",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_ms": 1000,
+      "stdout": "1 passed",
+      "stderr": "",
+      "stdout_bytes": 8,
+      "stderr_bytes": 0,
+      "stdout_truncated": false,
+      "stderr_truncated": false,
+      "execution_environment_fingerprint": "fixture-environment-fingerprint",
+      "execution_provider": "fixture-local",
+      "worktree_path": ".worktrees/attempt_002",
+      "baseline_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "candidate_state": "post_mutation",
+      "started_at": "2026-07-10T00:00:17Z",
+      "completed_at": "2026-07-10T00:00:18Z",
+      "failure_code": null
+    }
+  ],
+  "status": "passed",
+  "authoritative": true,
+  "completed_at": "2026-07-10T00:00:18Z",
+  "retry_count": 0,
+  "failure_code": "repository_validation_passed",
+  "authority_source": "repository_validation_v2"
+}

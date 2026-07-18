@@ -8,9 +8,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
+  AgentSystemCapabilityAssessment,
+  AgentSystemIdentity,
   ConsoleBootstrap,
   ConsoleHistoryEntry,
   ConsoleReplaySnapshot,
+  ProductRun,
 } from "@villani/run-model";
 
 import ConsoleApp, {
@@ -71,6 +74,115 @@ const bootstrap = (connected = false): ConsoleBootstrap => ({
   ],
   active_policy: "bootstrap_v1",
 });
+
+const unknownCapability: AgentSystemCapabilityAssessment = {
+  state: "unknown",
+  evidence: [],
+  notes: null,
+};
+
+const agentSystem: AgentSystemIdentity = {
+  schema_version: "villani.agent_system.v1",
+  system_id: "asys_44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  route_name: "default",
+  production_enabled: true,
+  qualification_status: "qualified",
+  harness: {
+    harness_id: "villani-code",
+    display_name: "Villani Code",
+    version: "0.1.0rc1",
+    adapter_id: "villani-code-attempt",
+    adapter_version: "1.0.0",
+    protocol: "villani.harness_adapter.v1",
+    protocol_version: "1.0.0",
+    transport: "structured_headless_cli",
+    executable_digest: null,
+  },
+  model_provider: {
+    provider: "local",
+    model_id: "local-model",
+    model_revision: null,
+    endpoint_identity: "http://127.0.0.1:1234/v1",
+    serving_engine: null,
+    serving_engine_version: null,
+    context_metadata: { authoritative: false },
+    tool_metadata: { authoritative: false },
+  },
+  execution: {
+    execution_provider: "inherit",
+    environment_fingerprint: null,
+    permission_profile: "workspace-write",
+    network_policy: "restricted",
+    sandbox_identity: null,
+  },
+  route_profile: {
+    repository_profile: "generic",
+    task_profile: "generic",
+    verification_policy: "acceptance-grade",
+    tool_protocol: "villani-code-tools-v1",
+    prompt_protocol: "villani-code-prompt-v1",
+  },
+  capabilities: {
+    file_editing: {
+      state: "supported",
+      evidence: [
+        {
+          source: "conformance_tested",
+          reference: "fixture:patch-correctness",
+          observed_at: "2026-07-18T00:00:00Z",
+          digest: null,
+        },
+      ],
+      notes: null,
+    },
+    command_execution: unknownCapability,
+    streaming: unknownCapability,
+    cancellation: unknownCapability,
+    usage_reporting: unknownCapability,
+    cost_reporting: unknownCapability,
+    model_identity: unknownCapability,
+    session_identity: unknownCapability,
+    resume: unknownCapability,
+    fork: unknownCapability,
+    permission_requests: unknownCapability,
+    custom_model: unknownCapability,
+    custom_provider: unknownCapability,
+    local_model: unknownCapability,
+    mcp: unknownCapability,
+    acp: {
+      state: "unsupported",
+      evidence: [
+        {
+          source: "unsupported",
+          reference: "fixture:transport",
+          observed_at: "2026-07-18T00:00:00Z",
+          digest: null,
+        },
+      ],
+      notes: null,
+    },
+    structured_result: unknownCapability,
+    complete_trace: unknownCapability,
+    isolated_worktree: unknownCapability,
+    non_interactive_execution: unknownCapability,
+  },
+  qualification_references: [
+    { kind: "conformance", reference: "fixture", digest: null },
+  ],
+  billing: {
+    mode: "unknown",
+    cost_source: null,
+    currency: null,
+    unknown_fields: ["cost"],
+  },
+  detection_time: "2026-07-18T00:00:00Z",
+  detection_source: "configuration_migration",
+  configuration_digest:
+    "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  configuration: {},
+  redaction_status: "redacted",
+  unknown_fields: ["model_revision", "environment_fingerprint"],
+};
 
 const entries: ConsoleHistoryEntry[] = [
   {
@@ -204,14 +316,128 @@ function response(value: unknown) {
   });
 }
 
-function mockConsole(connected = false, awaitingApproval = false) {
+function productRun(
+  options: { awaiting?: boolean; applied?: boolean } = {},
+): ProductRun {
+  const action = options.awaiting
+    ? [
+        {
+          id: "apply_change" as const,
+          label: "Apply change",
+          method: "POST" as const,
+          href: "/v1/console/runs/run_new/approval",
+        },
+      ]
+    : [];
+  return {
+    schema_version: "villani.product_run.v1",
+    run_identity: { run_id: "run_new", trace_id: "trace_new" },
+    task_summary: {
+      task: "Fix repeated separators in the parser.",
+      success_criteria: "The repository test passes.",
+      repository: "C:/repo",
+    },
+    current_stage: "Ready",
+    stage_sentence: "Verification proved the selected change acceptable.",
+    stage_transitions: [
+      {
+        sequence: 1,
+        timestamp: "2026-07-14T00:00:00Z",
+        stage: "Understanding",
+        sentence: "Understanding the task and choosing a safe route.",
+      },
+      {
+        sequence: 12,
+        timestamp: "2026-07-14T00:01:00Z",
+        stage: "Ready",
+        sentence: "The proved change is ready for your decision.",
+      },
+    ],
+    final_verdict: "Ready to apply",
+    verdict_reason: "Verification proved the selected change acceptable.",
+    change_summary: "2 files changed in the selected candidate.",
+    changed_files: ["src/parser.ts", "test/parser.test.ts"],
+    checks_summary: {
+      passed: 18,
+      failed: 0,
+      not_run: 0,
+      unavailable: 0,
+      accounting_status: "complete",
+    },
+    requirement_summary: {
+      proved: 2,
+      not_proved: 0,
+      accounting_status: "complete",
+    },
+    cost: { value: 0.17, currency: "USD", accounting_status: "complete" },
+    duration: { value_ms: 60_000, accounting_status: "complete" },
+    agent_system: {
+      name: "Villani agent system",
+      backend: "default",
+      model: "local-model",
+    },
+    escalation_summary: {
+      attempts: 1,
+      retries: 0,
+      escalations: 0,
+      summary: "No retry or escalation was needed.",
+    },
+    available_actions: [
+      ...action,
+      {
+        id: "review_evidence",
+        label: "Review evidence",
+        method: "GET",
+        href: "/console/runs/run_new/replay",
+      },
+    ],
+    evidence_links: [
+      {
+        label: "Recorded evidence",
+        href: "/console/runs/run_new/replay",
+        artifact: "events.jsonl",
+      },
+    ],
+    recovery_action: null,
+    technical_detail_references: ["events.jsonl", "verification/attempt_001.json"],
+    target_repository: {
+      modified: options.applied === true,
+      accounting_status: "known",
+      statement: options.applied
+        ? "The target repository was modified."
+        : "The target repository was not modified.",
+    },
+    last_event_sequence: 12,
+    updated_at: "2026-07-14T00:01:00Z",
+  };
+}
+
+function mockConsole(
+  connected = false,
+  awaitingApproval = false,
+  options: {
+    environment?: ConsoleBootstrap;
+    activity?: ConsoleHistoryEntry[];
+    dirtyRepository?: boolean;
+    runOptionsError?: boolean;
+    statusProduct?: ProductRun;
+    eventProduct?: ProductRun;
+    cancelProduct?: ProductRun;
+  } = {},
+) {
+  const environment = options.environment ?? bootstrap(connected);
   let approvalResolved = false;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/v1/console/bootstrap")) return response(bootstrap(connected));
-      if (url.includes("/v1/console/run-options"))
+      if (url.includes("/v1/console/bootstrap")) return response(environment);
+      if (url.includes("/v1/console/run-options")) {
+        if (options.runOptionsError)
+          return new Response(JSON.stringify({ detail: "service unavailable" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
         return response({
           schema_version: "villani.console.run_options.v1",
           repositories: [
@@ -219,7 +445,7 @@ function mockConsole(connected = false, awaitingApproval = false) {
               path: "C:/repo",
               name: "repo",
               valid: true,
-              dirty: false,
+              dirty: options.dirtyRepository ?? false,
               source: "setup",
             },
           ],
@@ -244,6 +470,14 @@ function mockConsole(connected = false, awaitingApproval = false) {
             { id: "review", label: "Review before apply", description: "Review" },
           ],
           policy_presets: [
+            {
+              id: "performance",
+              label: "Performance",
+              description: "Use the strongest eligible agent system.",
+              active: true,
+              advanced: false,
+              policy_version: "villani-public-policy-v1",
+            },
             {
               id: "reliable",
               label: "Reliable",
@@ -306,7 +540,7 @@ function mockConsole(connected = false, awaitingApproval = false) {
           defaults: {
             delivery_mode: "suggest",
             approval_mode: "automatic",
-            policy_preset: "balanced",
+            policy_preset: "performance",
             policy_selection: "configured",
             routing_mode: "observe",
             max_attempts: 3,
@@ -315,6 +549,7 @@ function mockConsole(connected = false, awaitingApproval = false) {
           },
           setup_issues: [],
         });
+      }
       if (url.includes("/v1/console/validation:discover"))
         return response({
           schema_version: "villani.console.validation_discovery.v1",
@@ -384,6 +619,35 @@ function mockConsole(connected = false, awaitingApproval = false) {
           },
           coding_attempt_executed: false,
         });
+      if (
+        url.includes("/v1/console/runs/run_new/approval") &&
+        init?.method === "POST"
+      ) {
+        approvalResolved = true;
+        return response(productRun({ applied: true }));
+      }
+      if (url.includes("/v1/console/runs/run_new/cancel"))
+        return response(options.cancelProduct ?? productRun());
+      if (url.includes("/v1/console/runs/run_new/events")) {
+        if (options.eventProduct) return response(options.eventProduct);
+        if (options.statusProduct)
+          return new Promise<Response>(() => {
+            // A pending long-lived request models the service event subscription.
+          });
+      }
+      if (url.includes("/v1/console/runs/run_new/status") && options.statusProduct)
+        return response(options.statusProduct);
+      if (
+        url.includes("/v1/console/runs/run_new/status") &&
+        awaitingApproval &&
+        !approvalResolved
+      )
+        return response(productRun({ awaiting: true }));
+      if (
+        url.includes("/v1/console/runs/run_new/status") ||
+        url.includes("/v1/console/runs/run_new/events")
+      )
+        return response(productRun());
       if (
         url.includes("/v1/console/runs/run_new/approval") &&
         init?.method === "POST"
@@ -565,8 +829,56 @@ function mockConsole(connected = false, awaitingApproval = false) {
             ],
             checks_passed: 1,
             checks_failed: 0,
+            checks_not_run: 0,
+            checks_unavailable: 0,
+            checks_accounting_status: "complete",
+            focused_probes_passed: 0,
+            focused_probes_failed: 0,
+            focused_probes_not_run: 0,
+            focused_probes_unavailable: 0,
+            focused_probes_accounting_status: "complete",
+            requirements_proved: 2,
+            requirements_not_proved: 0,
             requirements_verified: 2,
+            requirements_accounting_status: "complete",
             authority: "executed_repository_validation",
+          },
+          canonical_summary: {
+            schema_version: "villani.run_summary.v1",
+            run_id: "run_new",
+            attempt_id: "attempt_001",
+            checks: {
+              passed: 1,
+              failed: 0,
+              not_run: 0,
+              unavailable: 0,
+              accounting_status: "complete",
+            },
+            focused_probes: {
+              passed: 0,
+              failed: 0,
+              not_run: 0,
+              unavailable: 0,
+              accounting_status: "complete",
+            },
+            requirements: {
+              proved: 2,
+              not_proved: 0,
+              accounting_status: "complete",
+            },
+            accounting: {
+              known: true,
+              accounting_status: "complete",
+              total_cost: 0.17,
+              currency: "USD",
+            },
+            acceptance: {
+              decision: true,
+              reason_code: "accepted",
+              reason: "Acceptance-grade evidence is complete.",
+            },
+            source_artifacts: ["run-summary.json"],
+            generated_at: "2026-07-14T00:01:00Z",
           },
           remaining_risks: ["No remaining risk was recorded by the verifier."],
           cost: {
@@ -636,20 +948,33 @@ function mockConsole(connected = false, awaitingApproval = false) {
       if (url.includes("/v1/console/history"))
         return response({
           schema_version: "villani.console.history.v1",
-          entries,
+          entries: options.activity ?? entries,
           warnings: [],
         });
       if (url.includes("/v1/console/sessions/claude_1")) return response(replay);
+      if (url.includes("/v1/console/models:test"))
+        return response({
+          schema_version: "villani.console.model_test.v1",
+          results: [
+            {
+              backend_name: "default",
+              availability: "available",
+              diagnostic: "Connection verified.",
+              tested_at: "2026-07-17T00:00:00Z",
+              model_tokens_used: 0,
+            },
+          ],
+          model_tokens_used: 0,
+        });
       if (
         url.includes("/v1/console/models:detect") ||
-        url.includes("/v1/console/models:test") ||
         url.includes("/v1/console/models:add") ||
         url.includes("/v1/console/models:remove") ||
         url.includes("/v1/console/models:default")
       )
         return response({
           schema_version: "villani.console.models.v1",
-          models: bootstrap(connected).models,
+          models: environment.models,
           bootstrap_default: "default",
           capability_states: [
             "UNRATED",
@@ -662,7 +987,8 @@ function mockConsole(connected = false, awaitingApproval = false) {
       if (url.includes("/v1/console/models"))
         return response({
           schema_version: "villani.console.models.v1",
-          models: bootstrap(connected).models,
+          models: environment.models,
+          agent_systems: [agentSystem],
           bootstrap_default: "default",
           capability_states: [
             "UNRATED",
@@ -671,6 +997,16 @@ function mockConsole(connected = false, awaitingApproval = false) {
             "QUALIFIED",
             "DISABLED",
           ],
+        });
+      if (url.includes("/v1/console/settings"))
+        return response({
+          schema_version: "villani.console.settings.v1",
+          setup: environment.setup,
+          service: environment.service,
+          storage: environment.storage,
+          privacy: { secrets_exposed: false, local_first: true },
+          synchronization: environment.synchronization,
+          workspace: environment.workspace,
         });
       if (url.includes("/v1/console/policies:simulate"))
         return response({
@@ -704,6 +1040,14 @@ function mockConsole(connected = false, awaitingApproval = false) {
           schema_version: "villani.console.policies.v1",
           active_preset: "balanced",
           presets: [
+            {
+              id: "performance",
+              label: "Performance",
+              description: "Use the strongest eligible agent system.",
+              active: false,
+              advanced: false,
+              policy_version: "villani-public-policy-v1",
+            },
             {
               id: "reliable",
               label: "Reliable",
@@ -763,6 +1107,8 @@ function mockConsole(connected = false, awaitingApproval = false) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
+  sessionStorage.clear();
   history.replaceState(null, "", "/");
 });
 
@@ -778,31 +1124,170 @@ describe("Console routing and migration", () => {
       "/console/sessions/session_1/events/e1",
     );
     expect(migrateLegacyPath("/fleet")).toBe("/console/fleet");
-    expect(migrateLegacyPath("/history")).toBe("/console/history");
+    expect(migrateLegacyPath("/history")).toBe("/console/activity");
+    expect(migrateLegacyPath("/console/history")).toBe("/console/activity");
+    expect(migrateLegacyPath("/console/run")).toBe("/console");
+    expect(migrateLegacyPath("/console/home")).toBe("/console");
   });
 
-  it("keeps Team navigation hidden locally and reveals it after enrolment", async () => {
+  it("renders only the four PT1 navigation destinations and keeps advanced links in Settings", async () => {
     mockConsole(false);
     history.replaceState(null, "", "/console/models");
     const view = render(<ConsoleApp />);
     await screen.findByRole("heading", { name: "Models" });
+    const navigation = screen.getByTestId("primary-navigation");
+    expect(within(navigation).getAllByRole("link")).toHaveLength(4);
+    for (const name of ["New task", "Activity", "Agents", "Settings"])
+      expect(within(navigation).getByRole("link", { name })).toBeInTheDocument();
     expect(screen.queryByTestId("team-navigation")).not.toBeInTheDocument();
+    expect(
+      within(navigation).queryByRole("link", { name: "Fleet" }),
+    ).not.toBeInTheDocument();
     view.unmount();
     mockConsole(true);
+    history.replaceState(null, "", "/console/settings");
     render(<ConsoleApp />);
-    await screen.findByRole("heading", { name: "Models" });
-    expect(screen.getByTestId("team-navigation")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Fleet" })).toHaveAttribute(
-      "href",
-      "/console/fleet",
-    );
+    await screen.findByRole("heading", { name: "Settings" });
+    expect(screen.queryByTestId("team-navigation")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("advanced-navigation")).getByRole("link", {
+        name: /Fleet/,
+      }),
+    ).toHaveAttribute("href", "/console/fleet");
   });
 });
 
-describe("merged History", () => {
-  it("shows local runs and imported providers once with public synchronization states", async () => {
+describe("PT1 shell, setup, and accessibility", () => {
+  it("makes New task the healthy silent root", async () => {
     mockConsole(false);
-    history.replaceState(null, "", "/console/history");
+    history.replaceState(null, "", "/console");
+    render(<ConsoleApp />);
+
+    await screen.findByRole("heading", {
+      name: "What would you like Villani to change?",
+    });
+    expect(screen.queryByTestId("actionable-system-notice")).not.toBeInTheDocument();
+    expect(screen.queryByText(/SERVICE \/ RUNNING/)).not.toBeInTheDocument();
+  });
+
+  it("shows one actionable notice when setup or the service needs attention", async () => {
+    const incomplete: ConsoleBootstrap = {
+      ...bootstrap(false),
+      setup: {
+        configured: true,
+        valid: false,
+        schema_version: 1,
+        issues: ["Agent verification is incomplete."],
+      },
+    };
+    mockConsole(false, false, { environment: incomplete });
+    history.replaceState(null, "", "/console");
+    const first = render(<ConsoleApp />);
+    expect(await screen.findByTestId("actionable-system-notice")).toHaveTextContent(
+      "Finish setup",
+    );
+    expect(screen.getByRole("link", { name: "Continue setup" })).toHaveAttribute(
+      "href",
+      "/console/onboarding",
+    );
+    first.unmount();
+
+    const stopped: ConsoleBootstrap = {
+      ...bootstrap(false),
+      service: {
+        ...bootstrap(false).service,
+        status: "stopped",
+        last_error: "The local service stopped unexpectedly.",
+      },
+    };
+    mockConsole(false, false, { environment: stopped });
+    render(<ConsoleApp />);
+    expect(await screen.findByTestId("actionable-system-notice")).toHaveTextContent(
+      "Villani service is unavailable",
+    );
+    expect(screen.getByRole("link", { name: "View recovery" })).toHaveAttribute(
+      "href",
+      "/console/settings#service",
+    );
+  });
+
+  it("resumes onboarding at the saved stage and opens New task with the repository", async () => {
+    const incomplete: ConsoleBootstrap = {
+      ...bootstrap(false),
+      setup: {
+        configured: true,
+        valid: false,
+        schema_version: 1,
+        issues: ["Verification is incomplete."],
+      },
+    };
+    localStorage.setItem(
+      "villani.onboarding.v1",
+      JSON.stringify({ stage: 1, repository: "C:/repo", backend: "default" }),
+    );
+    mockConsole(false, false, { environment: incomplete });
+    history.replaceState(null, "", "/console/onboarding");
+    const first = render(<ConsoleApp />);
+    await screen.findByRole("heading", {
+      name: "Which agent system should Villani use?",
+    });
+    expect(screen.getByLabelText("Agent system")).toHaveValue("default");
+    fireEvent.click(screen.getByRole("button", { name: "Use this agent" }));
+    await screen.findByRole("heading", { name: "Verify the agent connection" });
+    first.unmount();
+
+    render(<ConsoleApp />);
+    await screen.findByRole("heading", { name: "Verify the agent connection" });
+    fireEvent.click(screen.getByRole("button", { name: "Verify connection" }));
+    await screen.findByTestId("setup-complete");
+    expect(screen.getByRole("link", { name: "Open New task" })).toHaveAttribute(
+      "href",
+      "/console?repository=C%3A%2Frepo",
+    );
+  });
+
+  it("associates repository errors with the labelled form control", async () => {
+    mockConsole(false, false, { dirtyRepository: true });
+    history.replaceState(null, "", "/console");
+    render(<ConsoleApp />);
+    const repository = await screen.findByLabelText(/^Repository/);
+    const error = screen.getByText(
+      "Commit or stash existing changes before starting a task.",
+    );
+    expect(repository).toHaveAttribute("aria-invalid", "true");
+    expect(repository.getAttribute("aria-describedby")).toContain(error.id);
+    expect(screen.getByLabelText(/^Task/)).toHaveAttribute("required");
+  });
+
+  it("links empty Activity to New task and presents configured Agents as systems", async () => {
+    mockConsole(false, false, { activity: [] });
+    history.replaceState(null, "", "/console/activity");
+    const activity = render(<ConsoleApp />);
+    await screen.findByRole("heading", { name: "No activity yet" });
+    expect(screen.getByRole("link", { name: "Open New task" })).toHaveAttribute(
+      "href",
+      "/console",
+    );
+    activity.unmount();
+
+    mockConsole(false);
+    history.replaceState(null, "", "/console/agents");
+    render(<ConsoleApp />);
+    await screen.findByRole("heading", { name: "Agents" });
+    expect(
+      await screen.findByRole("heading", { name: "Villani Code · local-model" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ready for tasks")).toBeInTheDocument();
+    expect(screen.getByText("Complete system identity")).toBeInTheDocument();
+    expect(screen.getByText("SELECTABLE")).toBeInTheDocument();
+    expect(screen.getByText("qualified")).toBeInTheDocument();
+  });
+});
+
+describe("Activity", () => {
+  it("shows Villani tasks and imported sessions once with outcome-first columns", async () => {
+    mockConsole(false);
+    history.replaceState(null, "", "/console/activity");
     render(<ConsoleApp />);
     const table = await screen.findByTestId("merged-history");
     expect(
@@ -811,9 +1296,26 @@ describe("merged History", () => {
     expect(
       within(table).getByRole("link", { name: "Imported task" }),
     ).toBeInTheDocument();
-    expect(within(table).getByText("Claude Code")).toBeInTheDocument();
-    expect(within(table).getByText("LOCAL")).toBeInTheDocument();
-    expect(within(table).getByText("SYNCHRONIZED")).toBeInTheDocument();
+    expect(within(table).getByText("IMPORTED")).toBeInTheDocument();
+    expect(within(table).getByText("claude-model")).toBeInTheDocument();
+    expect(within(table).getAllByText("1.0 min")).toHaveLength(2);
+    expect(within(table).getByText("USD 0.1000")).toBeInTheDocument();
+    expect(within(table).getByText("Unknown (unknown)")).toBeInTheDocument();
+    for (const heading of [
+      "Task",
+      "Result",
+      "Repository",
+      "Elapsed time",
+      "Known cost",
+      "Agent system",
+      "Next action",
+    ])
+      expect(
+        within(table).getByRole("columnheader", { name: heading }),
+      ).toBeInTheDocument();
+    expect(screen.getByText("Advanced filters").closest("details")).not.toHaveAttribute(
+      "open",
+    );
   });
 
   it("filters providers, sync states, cost availability, and task text", () => {
@@ -872,6 +1374,7 @@ describe("model and policy management", () => {
 
     await screen.findByRole("heading", { name: "Policies" });
     for (const label of [
+      "Performance",
       "Reliable",
       "Balanced",
       "Local first",
@@ -896,53 +1399,235 @@ describe("model and policy management", () => {
 });
 
 describe("Console run workflow", () => {
+  it("restores an unsent multiline draft exactly", async () => {
+    const task = "Keep this first line.\n\n  Preserve the indented line.\n";
+    localStorage.setItem(
+      "villani.new-task.draft.v1",
+      JSON.stringify({
+        repository: "C:/repo",
+        task,
+        successCriteria: "",
+        referenceText: "ISSUE-42\nsecond line",
+        manualValidation: "",
+      }),
+    );
+    mockConsole(false);
+    history.replaceState(null, "", "/console");
+    render(<ConsoleApp />);
+
+    expect(await screen.findByLabelText(/^Task/)).toHaveValue(task);
+    fireEvent.click(screen.getByText("Details (optional)"));
+    expect(screen.getByLabelText("Issue or reference text")).toHaveValue(
+      "ISSUE-42\nsecond line",
+    );
+    expect(screen.getByRole("button", { name: "Run safely" })).toBeInTheDocument();
+  });
+
+  it("reconnects to a server-side run after refresh without resubmitting", async () => {
+    const running: ProductRun = {
+      ...productRun(),
+      current_stage: "Checking",
+      stage_sentence: "Verification needs another check.",
+      stage_transitions: [
+        {
+          sequence: 1,
+          timestamp: "2026-07-14T00:00:00Z",
+          stage: "Understanding",
+          sentence: "Understanding the task and choosing a safe route.",
+        },
+        {
+          sequence: 3,
+          timestamp: "2026-07-14T00:00:01Z",
+          stage: "Working",
+          sentence: "Working on the change in an isolated copy.",
+        },
+        {
+          sequence: 8,
+          timestamp: "2026-07-14T00:00:04Z",
+          stage: "Checking",
+          sentence: "Verification needs another check.",
+        },
+      ],
+      final_verdict: null,
+      verdict_reason: null,
+      change_summary: "No file changes were recorded.",
+      duration: { value_ms: 4_230, accounting_status: "partial" },
+      cost: { value: null, currency: null, accounting_status: "unknown" },
+      available_actions: [
+        {
+          id: "cancel",
+          label: "Cancel",
+          method: "POST",
+          href: "/v1/console/runs/run_new/cancel",
+        },
+      ],
+      last_event_sequence: 8,
+    };
+    const cancelled: ProductRun = {
+      ...running,
+      current_stage: "Ready",
+      stage_sentence: "The task was cancelled safely.",
+      final_verdict: "Cancelled",
+      verdict_reason:
+        "Cancellation stopped future work and preserved recorded evidence.",
+      available_actions: [
+        {
+          id: "retry",
+          label: "Start again",
+          method: "GET",
+          href: "/console",
+        },
+      ],
+      target_repository: {
+        modified: false,
+        accounting_status: "known",
+        statement: "The target repository was not modified.",
+      },
+    };
+    mockConsole(false, false, {
+      statusProduct: running,
+      cancelProduct: cancelled,
+    });
+    history.replaceState(null, "", "/console?run=run_new");
+    render(<ConsoleApp />);
+
+    const progress = await screen.findByLabelText("Task progress");
+    for (const stage of ["Understanding", "Working", "Checking", "Ready"])
+      expect(within(progress).getByText(stage)).toBeInTheDocument();
+    expect(screen.getByText("Verification needs another check.")).toBeInTheDocument();
+    expect(screen.getByText("Unknown (unknown)")).toBeInTheDocument();
+    expect(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([input, init]) =>
+          String(input).endsWith("/v1/console/runs") && init?.method === "POST",
+      ),
+    ).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    const result = await screen.findByTestId("run-presentation");
+    expect(within(result).getByText("Cancelled")).toBeInTheDocument();
+    expect(
+      within(result).getByText("The target repository was not modified."),
+    ).toBeInTheDocument();
+  });
+
+  it("submits one click once with safe PT2 defaults and no invented wall time", async () => {
+    mockConsole(false);
+    history.replaceState(null, "", "/console");
+    render(<ConsoleApp />);
+    fireEvent.change(await screen.findByLabelText(/^Task/), {
+      target: { value: "Keep line one.\n\nKeep line three." },
+    });
+    const button = screen.getByRole("button", { name: "Run safely" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await screen.findByTestId("run-presentation");
+
+    const submissions = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([input, init]) =>
+        String(input).endsWith("/v1/console/runs") && init?.method === "POST",
+    );
+    expect(submissions).toHaveLength(1);
+    const request = JSON.parse(String(submissions[0]?.[1]?.body));
+    expect(request).toMatchObject({
+      task: "Keep line one.\n\nKeep line three.",
+      policy_preset: "performance",
+      delivery_mode: "approve",
+      verification_required: true,
+    });
+    expect(request.submission_id).toEqual(expect.any(String));
+    expect(request).not.toHaveProperty("max_wall_time");
+  });
+
+  it("never offers delivery for work that could not be proved", async () => {
+    const failed: ProductRun = {
+      ...productRun(),
+      stage_sentence: "The change could not be proved acceptable.",
+      final_verdict: "Could not prove",
+      verdict_reason: "Verification evidence was missing.",
+      change_summary: "A candidate was preserved for review.",
+      available_actions: [
+        {
+          id: "retry",
+          label: "Start again",
+          method: "GET",
+          href: "/console",
+        },
+        {
+          id: "review_evidence",
+          label: "Review evidence",
+          method: "GET",
+          href: "/console/runs/run_new/replay",
+        },
+      ],
+      recovery_action: {
+        label: "Start again",
+        instruction: "Review the missing evidence, then run the task again.",
+        href: "/console",
+      },
+    };
+    mockConsole(false, false, { statusProduct: failed });
+    history.replaceState(null, "", "/console?run=run_new");
+    render(<ConsoleApp />);
+
+    const result = await screen.findByTestId("run-presentation");
+    expect(within(result).getByText("Could not prove")).toBeInTheDocument();
+    for (const action of ["Apply change", "Create branch", "Open pull request"])
+      expect(within(result).queryByRole("button", { name: action })).toBeNull();
+    expect(
+      within(result).getByRole("button", { name: "Start again" }),
+    ).toBeInTheDocument();
+  });
+
   it("submits the complete run form and answers the outcome questions", async () => {
     mockConsole(false);
     history.replaceState(null, "", "/console/run");
     render(<ConsoleApp />);
 
-    await screen.findByRole("heading", { name: "Run" });
+    await screen.findByRole("heading", {
+      name: "What would you like Villani to change?",
+    });
     expect(
       await screen.findByText("npm test", { selector: "code" }),
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Task instruction"), {
+    fireEvent.change(screen.getByLabelText(/^Task/), {
       target: { value: "Fix repeated separators in the parser." },
     });
     fireEvent.change(screen.getByLabelText("Success criteria (optional)"), {
       target: { value: "The repository test passes." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview routing" }));
-    const preview = await screen.findByRole("region", { name: "Policy preview" });
-    expect(within(preview).getByText(/easy difficulty, low risk/)).toBeInTheDocument();
-    expect(within(preview).getByText("bootstrap_default")).toBeInTheDocument();
-    expect(within(preview).getByText("deterministic-verifier")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Preview task assessment" }));
+    fireEvent.click(await screen.findByText("Advanced task assessment"));
+    const preview = await screen.findByRole("region", { name: "Task assessment" });
+    expect(within(preview).getByText("default / local-model")).toBeInTheDocument();
+    expect(within(preview).getByText("Available")).toBeInTheDocument();
     expect(within(preview).getByText("Unknown (unknown)")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run safely" }));
 
     const result = await screen.findByTestId("run-presentation");
-    expect(
-      within(result).getByRole("heading", { name: "ACCEPTED" }),
-    ).toBeInTheDocument();
+    expect(within(result).getByText("Ready to apply")).toBeInTheDocument();
     expect(within(result).getByText("src/parser.ts")).toBeInTheDocument();
     for (const heading of [
-      "DELIVERY",
-      "CONFIDENCE AND AUTHORITY",
-      "VALIDATION",
-      "REMAINING RISKS",
-      "COST",
-      "VILLANI RECOVERY",
-      "NEXT",
+      "WHAT CHANGED",
+      "FILES CHANGED",
+      "CHECKS AND TESTS",
+      "REQUIREMENT COVERAGE",
+      "KNOWN COST",
+      "ELAPSED TIME",
     ])
       expect(
         within(result).getByRole("heading", { name: heading }),
       ).toBeInTheDocument();
     expect(within(result).getByText("USD 0.1700")).toBeInTheDocument();
+    expect(within(result).getByText("1.0 min")).toBeInTheDocument();
+    expect(within(result).getByText("Proved")).toBeInTheDocument();
     const submissionCall = (fetch as ReturnType<typeof vi.fn>).mock.calls.find(
       ([input, init]) =>
         String(input).endsWith("/v1/console/runs") && init?.method === "POST",
     );
     expect(JSON.parse(String(submissionCall?.[1]?.body))).toMatchObject({
-      policy_preset: "balanced",
+      policy_preset: "performance",
+      delivery_mode: "approve",
       task: "Fix repeated separators in the parser.",
     });
     await waitFor(() =>
@@ -957,50 +1642,31 @@ describe("Console run workflow", () => {
     history.replaceState(null, "", "/console/run");
     render(<ConsoleApp />);
 
-    await screen.findByRole("heading", { name: "Run" });
-    fireEvent.change(screen.getByLabelText("Task instruction"), {
+    await screen.findByRole("heading", {
+      name: "What would you like Villani to change?",
+    });
+    fireEvent.change(screen.getByLabelText(/^Task/), {
       target: { value: "Fix repeated separators in the parser." },
     });
     fireEvent.change(screen.getByLabelText("Delivery mode"), {
       target: { value: "approve" },
     });
-    expect(screen.getByText("Explicit approval after selection")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run safely" }));
 
     const review = await screen.findByTestId("run-presentation");
+    expect(within(review).getByText("Ready to apply")).toBeInTheDocument();
     expect(
-      within(review).getByRole("heading", { name: "AWAITING APPROVAL" }),
+      within(review).getByRole("heading", { name: "CHECKS AND TESTS" }),
     ).toBeInTheDocument();
-    expect(
-      within(review).getByRole("heading", { name: "PATCH REVIEW" }),
-    ).toBeInTheDocument();
-    expect(within(review).getByText("18 repository checks passed")).toBeInTheDocument();
-    expect(within(review).getByText(/attempt_001 · rank 1/)).toBeInTheDocument();
-    expect(within(review).getByText(/attempt_002 · rank 2/)).toBeInTheDocument();
-    expect(within(review).getAllByText("repository_validation").length).toBeGreaterThan(
-      0,
-    );
-    expect(
-      within(review).getByText("One scope warning was recorded."),
-    ).toBeInTheDocument();
-    expect(
-      within(review).getByRole("button", { name: "Reject delivery" }),
-    ).toBeInTheDocument();
-    expect(
-      within(review).getByRole("button", { name: "Request rerun" }),
-    ).toBeInTheDocument();
+    expect(within(review).getByText("18")).toBeInTheDocument();
 
-    fireEvent.change(within(review).getByLabelText("Decision reason (optional)"), {
-      target: { value: "Reviewed evidence and patch." },
-    });
-    fireEvent.click(within(review).getByRole("button", { name: "Approve and apply" }));
+    fireEvent.click(within(review).getByRole("button", { name: "Apply change" }));
 
     await waitFor(() =>
       expect(
-        within(review).getByRole("heading", { name: "ACCEPTED" }),
+        within(review).getByText("The target repository was modified."),
       ).toBeInTheDocument(),
     );
-    expect(within(review).getAllByText("Applied").length).toBeGreaterThan(0);
     const approvalCall = (fetch as ReturnType<typeof vi.fn>).mock.calls.find(
       ([input, init]) =>
         String(input).includes("/v1/console/runs/run_new/approval") &&
@@ -1008,7 +1674,7 @@ describe("Console run workflow", () => {
     );
     expect(JSON.parse(String(approvalCall?.[1]?.body))).toMatchObject({
       action: "approve",
-      reason: "Reviewed evidence and patch.",
+      reason: "Apply change selected from the product result.",
     });
   });
 
@@ -1019,19 +1685,12 @@ describe("Console run workflow", () => {
     render(<ConsoleApp />);
 
     expect(
-      await screen.findByText(
-        "Console attempted the authenticated local service boundary.",
-      ),
+      await screen.findByText("Villani Service is unavailable"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("No live local service connection is available."),
+      screen.getByText("No run was started. The target repository was not modified."),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("No run was started, so no patch was created."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Run `villani service start`, then retry."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("villani service start")).toBeInTheDocument();
   });
 });
 

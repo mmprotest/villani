@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from villani_ops.closed_loop.focused_probes import execute_focused_probes
+from villani_ops.closed_loop.focused_probes import (
+    execute_focused_probes,
+    focused_probe_runtime_events,
+)
 from villani_ops.closed_loop.verification_evidence import FocusedProbeRequest
 from villani_ops.execution_environment.models import (
     CommandResult,
@@ -142,6 +145,35 @@ def test_expected_nonzero_exit_can_be_a_passing_probe(tmp_path: Path) -> None:
         _request(expected_exit_code=2, expected_stdout=""),
     )
     assert report.status == "passed"
+
+
+def test_behavior_mismatch_is_distinct_from_probe_infrastructure_failure(
+    tmp_path: Path,
+) -> None:
+    report = _run(tmp_path, Provider(_command(stdout="wrong")))
+
+    assert report.status == "failed"
+    assert report.failure_code == "focused_probe_behavior_failure"
+    assert report.results[0].status == "failed"
+    assert report.results[0].command_result.status == "passed"
+    assert "stdout did not exactly match" in report.results[0].reason
+
+
+def test_probe_result_and_events_link_candidate_requirement_and_evidence(
+    tmp_path: Path,
+) -> None:
+    report = _run(tmp_path, Provider(_command()))
+    events = focused_probe_runtime_events(report)
+
+    assert report.attempt_id == "attempt-1"
+    assert report.candidate_id == "attempt-1"
+    assert report.results[0].requirement_ids == ["req-1"]
+    assert report.results[0].evidence_id == "focused_probe:probe-1"
+    assert [event.event_type for event in events] == [
+        "focused_probe_started",
+        "focused_probe_completed",
+    ]
+    assert events[-1].payload["requirement_ids"] == ["req-1"]
 
 
 def test_probe_timeout_is_infrastructure_error(tmp_path: Path) -> None:

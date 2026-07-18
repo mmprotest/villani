@@ -1,0 +1,562 @@
+{
+  "$defs": {
+    "BillingIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "cost_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Source"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "mode": {
+          "enum": [
+            "token",
+            "compute_time",
+            "fixed",
+            "hybrid",
+            "unknown"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "unknown_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknown Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "BillingIdentity",
+      "type": "object"
+    },
+    "CapabilityAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/CapabilityEvidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "CapabilityAssessment",
+      "type": "object"
+    },
+    "CapabilityEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "reference": {
+          "minLength": 1,
+          "title": "Reference",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/CapabilitySource"
+        }
+      },
+      "required": [
+        "source",
+        "reference"
+      ],
+      "title": "CapabilityEvidence",
+      "type": "object"
+    },
+    "CapabilitySource": {
+      "enum": [
+        "declared",
+        "detected",
+        "conformance_tested",
+        "unsupported"
+      ],
+      "title": "CapabilitySource",
+      "type": "string"
+    },
+    "CapabilityState": {
+      "enum": [
+        "supported",
+        "unsupported",
+        "unknown"
+      ],
+      "title": "CapabilityState",
+      "type": "string"
+    },
+    "ExecutionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Environment Fingerprint"
+        },
+        "execution_provider": {
+          "minLength": 1,
+          "title": "Execution Provider",
+          "type": "string"
+        },
+        "network_policy": {
+          "enum": [
+            "none",
+            "restricted",
+            "allowed",
+            "unknown"
+          ],
+          "title": "Network Policy",
+          "type": "string"
+        },
+        "permission_profile": {
+          "minLength": 1,
+          "title": "Permission Profile",
+          "type": "string"
+        },
+        "sandbox_identity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sandbox Identity"
+        }
+      },
+      "required": [
+        "execution_provider",
+        "permission_profile",
+        "network_policy"
+      ],
+      "title": "ExecutionIdentity",
+      "type": "object"
+    },
+    "HarnessIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": {
+          "minLength": 1,
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "executable_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable Digest"
+        },
+        "harness_id": {
+          "minLength": 1,
+          "title": "Harness Id",
+          "type": "string"
+        },
+        "protocol": {
+          "minLength": 1,
+          "title": "Protocol",
+          "type": "string"
+        },
+        "protocol_version": {
+          "minLength": 1,
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "transport": {
+          "enum": [
+            "local_subprocess",
+            "acp_stdio",
+            "direct_protocol",
+            "structured_headless_cli"
+          ],
+          "title": "Transport",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "harness_id",
+        "display_name",
+        "version",
+        "adapter_id",
+        "adapter_version",
+        "protocol",
+        "protocol_version",
+        "transport"
+      ],
+      "title": "HarnessIdentity",
+      "type": "object"
+    },
+    "ModelProviderIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "context_metadata": {
+          "additionalProperties": true,
+          "title": "Context Metadata",
+          "type": "object"
+        },
+        "endpoint_identity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint Identity"
+        },
+        "model_id": {
+          "minLength": 1,
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Revision"
+        },
+        "provider": {
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "serving_engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Serving Engine"
+        },
+        "serving_engine_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Serving Engine Version"
+        },
+        "tool_metadata": {
+          "additionalProperties": true,
+          "title": "Tool Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "provider",
+        "model_id"
+      ],
+      "title": "ModelProviderIdentity",
+      "type": "object"
+    },
+    "QualificationReference": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "kind": {
+          "enum": [
+            "declared",
+            "detected",
+            "conformance",
+            "operator"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "reference": {
+          "minLength": 1,
+          "title": "Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reference"
+      ],
+      "title": "QualificationReference",
+      "type": "object"
+    },
+    "RouteProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "prompt_protocol": {
+          "minLength": 1,
+          "title": "Prompt Protocol",
+          "type": "string"
+        },
+        "repository_profile": {
+          "minLength": 1,
+          "title": "Repository Profile",
+          "type": "string"
+        },
+        "task_profile": {
+          "minLength": 1,
+          "title": "Task Profile",
+          "type": "string"
+        },
+        "tool_protocol": {
+          "minLength": 1,
+          "title": "Tool Protocol",
+          "type": "string"
+        },
+        "verification_policy": {
+          "minLength": 1,
+          "title": "Verification Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository_profile",
+        "task_profile",
+        "verification_policy",
+        "tool_protocol",
+        "prompt_protocol"
+      ],
+      "title": "RouteProfile",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/agent-system.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "billing": {
+      "$ref": "#/$defs/BillingIdentity"
+    },
+    "capabilities": {
+      "additionalProperties": {
+        "$ref": "#/$defs/CapabilityAssessment"
+      },
+      "title": "Capabilities",
+      "type": "object"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "configuration_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Configuration Digest",
+      "type": "string"
+    },
+    "detection_source": {
+      "minLength": 1,
+      "title": "Detection Source",
+      "type": "string"
+    },
+    "detection_time": {
+      "format": "date-time",
+      "title": "Detection Time",
+      "type": "string"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionIdentity"
+    },
+    "harness": {
+      "$ref": "#/$defs/HarnessIdentity"
+    },
+    "model_provider": {
+      "$ref": "#/$defs/ModelProviderIdentity"
+    },
+    "production_enabled": {
+      "title": "Production Enabled",
+      "type": "boolean"
+    },
+    "qualification_references": {
+      "items": {
+        "$ref": "#/$defs/QualificationReference"
+      },
+      "title": "Qualification References",
+      "type": "array"
+    },
+    "qualification_status": {
+      "enum": [
+        "qualified",
+        "bootstrap",
+        "unqualified",
+        "unsupported",
+        "disabled"
+      ],
+      "title": "Qualification Status",
+      "type": "string"
+    },
+    "redaction_status": {
+      "enum": [
+        "redacted",
+        "no_sensitive_values_detected"
+      ],
+      "title": "Redaction Status",
+      "type": "string"
+    },
+    "route_name": {
+      "minLength": 1,
+      "title": "Route Name",
+      "type": "string"
+    },
+    "route_profile": {
+      "$ref": "#/$defs/RouteProfile"
+    },
+    "schema_version": {
+      "const": "villani.agent_system.v1",
+      "default": "villani.agent_system.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "system_id": {
+      "pattern": "^asys_[0-9a-f]{64}$",
+      "title": "System Id",
+      "type": "string"
+    },
+    "unknown_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unknown Fields",
+      "type": "array"
+    }
+  },
+  "required": [
+    "system_id",
+    "route_name",
+    "production_enabled",
+    "qualification_status",
+    "harness",
+    "model_provider",
+    "execution",
+    "route_profile",
+    "capabilities",
+    "qualification_references",
+    "billing",
+    "detection_time",
+    "detection_source",
+    "configuration_digest",
+    "configuration",
+    "redaction_status",
+    "unknown_fields"
+  ],
+  "title": "AgentSystemIdentity",
+  "type": "object"
+}

@@ -1,0 +1,390 @@
+{
+  "schema_version": "villani.milestone_completion.v1",
+  "milestone": "PT3",
+  "title": "Build the Founder Thesis Lab",
+  "date": "2026-07-17",
+  "generated_at": "2026-07-17T21:25:15.3997355+10:00",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "implementation_status": "COMPLETE",
+  "status_reason": "The PT3 product implementation and every PT3 acceptance criterion are covered, but Gate B truthfully remains INSUFFICIENT_EVIDENCE because no real founder task corpus or paired founder trials were supplied. Synthetic fixtures are excluded by contract.",
+  "gate_b": {
+    "status": "INSUFFICIENT_EVIDENCE",
+    "report": "docs/PT3_GATE_B.json",
+    "paired_real_tasks": 0,
+    "required_paired_real_tasks": 30,
+    "synthetic_trials_counted": 0
+  },
+  "pt4_started": false,
+  "acceptance_criteria": [
+    {
+      "criterion": "Real code tasks can be packaged reproducibly.",
+      "status": "PASS",
+      "evidence": "The CLI capture/freeze/export test restores a content-addressed Git snapshot, validates it, freezes it, and verifies that the portable archive contains actual allowed code and no evaluator-only material."
+    },
+    {
+      "criterion": "Both arms use identical baselines.",
+      "status": "PASS",
+      "evidence": "Paired runner tests assert the same immutable and restored digest for direct and Villani arms after the source repository changes."
+    },
+    {
+      "criterion": "Future solutions cannot leak.",
+      "status": "PASS",
+      "evidence": "Runner payload and portable bundle tests exclude task identity, future context, hidden checks, expected patch facts, arm, route, harness, cost, and competing candidates."
+    },
+    {
+      "criterion": "Human review is first-class.",
+      "status": "PASS",
+      "evidence": "The blinded queue and append-only villani.human_review.v1 ledger preserve amendments, correction details, rollback/reopened facts, review time, severity, false acceptance, and false rejection."
+    },
+    {
+      "criterion": "Reliability, cost, time, and supervision burden are measured.",
+      "status": "PASS",
+      "evidence": "Metric tests cover rates, raw counts, Wilson intervals, median bootstrap intervals, review time, attempts, escalation, disagreement, exclusions, paired deltas, unknown cost, and mixed-currency refusal."
+    },
+    {
+      "criterion": "No passive monitoring exists.",
+      "status": "PASS",
+      "evidence": "The evaluation workflow only runs explicit commands; suite validation reports passive_monitoring=false and CLI initialization states that passive monitoring is disabled."
+    },
+    {
+      "criterion": "No external harness is added.",
+      "status": "PASS",
+      "evidence": "The direct arm reuses VillaniCodeRunner once and the Villani arm reuses the existing public product CLI. Suite validation reports external_harness=false."
+    },
+    {
+      "criterion": "No later milestone is started.",
+      "status": "PASS",
+      "evidence": "No PT4 qualification, team, SaaS, learned routing, or later-milestone behavior was introduced."
+    }
+  ],
+  "files": {
+    "added": [
+      "components/villani-ops/villani_ops/evaluation_lab/__init__.py",
+      "components/villani-ops/villani_ops/evaluation_lab/models.py",
+      "components/villani-ops/villani_ops/evaluation_lab/workspace.py",
+      "components/villani-ops/villani_ops/evaluation_lab/runner.py",
+      "components/villani-ops/villani_ops/evaluation_lab/reviews.py",
+      "components/villani-ops/villani_ops/evaluation_lab/reporting.py",
+      "components/villani-ops/villani_ops/schemas/v1/evaluation-suite.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/evaluation-task.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/evaluation-trial.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/human-review.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/evaluation-report.schema.json",
+      "components/villani-ops/villani_ops/tests/test_founder_thesis_lab.py",
+      "components/villani-run-model/src/evaluation.ts",
+      "components/villani-run-model/dist/evaluation.js",
+      "components/villani-run-model/dist/evaluation.d.ts",
+      "components/villani-run-model/test/evaluation.test.ts",
+      "schemas/v1/evaluation-suite.schema.json",
+      "schemas/v1/evaluation-task.schema.json",
+      "schemas/v1/evaluation-trial.schema.json",
+      "schemas/v1/human-review.schema.json",
+      "schemas/v1/evaluation-report.schema.json",
+      "integration/fixtures/protocol/v1/valid_run/evaluation-suite.json",
+      "integration/fixtures/protocol/v1/valid_run/evaluation-task.json",
+      "integration/fixtures/protocol/v1/valid_run/evaluation-trial.json",
+      "integration/fixtures/protocol/v1/valid_run/human-review.json",
+      "integration/fixtures/protocol/v1/valid_run/evaluation-report.json",
+      "scripts/generate-evaluation-schemas.py",
+      "docs/FOUNDER_THESIS_LAB.md",
+      "docs/PT3_GATE_B.json",
+      "docs/PT3_COMPLETION_REPORT.json",
+      "docs/PT3_COMPLETION_REPORT.md"
+    ],
+    "changed": [
+      "PLANS.md",
+      "README.md",
+      "components/villani-ops/README.md",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-run-model/src/index.ts",
+      "components/villani-run-model/dist/index.js",
+      "components/villani-run-model/dist/index.d.ts"
+    ],
+    "deleted": [],
+    "migrated": []
+  },
+  "architecture_and_product_decisions": [
+    "Five strict Pydantic contracts generate the normative and packaged JSON Schemas and have matching TypeScript models. Existing run-bundle contracts are untouched.",
+    "Baselines are exact Git commits captured as deterministic regular-file ZIP archives with path safety, executable-mode preservation, built-in/operator exclusions, high-confidence secret rejection, archive hashing, and byte-for-byte restore proof.",
+    "Future context and hidden checks live under evaluator-only storage. The only runner payload omits task identity, future/expected solution facts, evaluator material, arm, route, harness, cost, and competing candidates; portable exports use opaque task slots.",
+    "The direct arm chooses the strongest enabled coding backend, invokes VillaniCodeRunner exactly once, receives the same runner-visible task/criteria/validation context, and gets no Villani retry, selection, or corrective verifier feedback.",
+    "The Villani arm invokes the normal performance-mode public product path with mandatory verification and non-delivery approval. Both arms restore fresh isolation and never mutate the source repository.",
+    "A second fresh baseline and one arm-blind authoritative verifier evaluate both patches. Verification inputs contain no arm, harness, route, cost, or competing-candidate identity.",
+    "A persisted deterministic randomized plan and atomic suite lock prevent duplicates. Completed/excluded trials skip on resume; interrupted identities resume; a hard-crash stale lock fails closed with one exact removal action.",
+    "Cost values come only from captured provider telemetry/configured billing facts and optional measured local watts/runtime/electricity price. Unknown stays null; incompatible currencies are never combined or compared.",
+    "Human labels are a separate append-only JSONL ledger. Amendments name an earlier record and never rewrite it. The review queue hides arm identity where feasible.",
+    "Reports include raw counts, Wilson proportion intervals, deterministic median bootstrap intervals, paired deltas, confusion matrix, precision/recall/specificity/F1 where defined, undefined calibration rather than a fabricated probability, cost/route decomposition, wrong cases, and trial links.",
+    "Gate B is conservative: synthetic evidence is ineligible and insufficient volume never creates a significance claim."
+  ],
+  "schema_and_configuration_migrations": [
+    {
+      "contract": "villani.evaluation_suite.v1",
+      "type": "additive",
+      "compatibility": "New content-addressed suite metadata; no existing configuration or run bundle changes."
+    },
+    {
+      "contract": "villani.evaluation_task.v1",
+      "type": "additive",
+      "compatibility": "New frozen task/snapshot/evaluator contract; runner-safe projection is explicit and existing artifacts remain readable."
+    },
+    {
+      "contract": "villani.evaluation_trial.v1",
+      "type": "additive",
+      "compatibility": "New paired-trial artifact with truthful unknown accounting and full identity metadata."
+    },
+    {
+      "contract": "villani.human_review.v1",
+      "type": "additive",
+      "compatibility": "New append-only human label record; it does not overwrite trial or verifier judgments."
+    },
+    {
+      "contract": "villani.evaluation_report.v1",
+      "type": "additive",
+      "compatibility": "New confidentiality-marked report contract; no existing report schema changed."
+    },
+    {
+      "contract": "configuration",
+      "type": "no migration",
+      "compatibility": "Evaluation workspaces are opt-in directories. Existing backend, policy, delivery, and run configuration remain unchanged."
+    }
+  ],
+  "tests_added_or_extended": [
+    "15 Python PT3 tests cover immutable capture, same-baseline pairing, deterministic randomized order, interrupted resume, concurrent duplicate lockout, direct-arm isolation, evaluator/future non-leakage, portable actual-code export, secret exclusion, secret patch rejection, setup contamination, append-only review, metric/accounting correctness, all Gate states, report structure/redaction, cross-platform external paths, CLI workflow, no passive monitoring, no external harness, and strongest-backend selection.",
+    "Two TypeScript tests cover all five exact schema identities, evaluator-only expected-patch absence, and explicit unknown cost units.",
+    "Shared protocol tests now validate all five fixtures, root/package schema parity, semantic parsing, and a total of 18 v1 protocol schemas."
+  ],
+  "mandatory_test_mapping": {
+    "snapshot_immutability": "test_snapshot_is_immutable_both_arms_share_it_and_resume_prevents_duplicates",
+    "future_diff_non_leakage": "test_future_solution_and_hidden_material_never_enter_runner_or_export",
+    "secret_exclusion": "test_secret_exclusion_fails_closed_and_forbidden_secret_files_are_omitted and test_secret_candidate_is_excluded_and_removed_from_trial_artifacts",
+    "paired_baseline_equality": "test_snapshot_is_immutable_both_arms_share_it_and_resume_prevents_duplicates",
+    "randomized_order_persistence": "test_snapshot_is_immutable_both_arms_share_it_and_resume_prevents_duplicates",
+    "interrupted_resumption": "test_interrupted_trial_resumes_under_the_same_identity",
+    "duplicate_prevention": "test_atomic_suite_lock_prevents_concurrent_duplicate_trials plus completed-trial skip assertions",
+    "direct_arm_isolation": "one call per arm assertion and strongest configured backend test",
+    "append_only_review": "test_review_ledger_is_blinded_append_only_and_amendments_preserve_history",
+    "metric_correctness": "test_metric_correctness_and_unknown_accounting",
+    "unknown_accounting": "test_metric_correctness_and_unknown_accounting",
+    "gate_states": "test_founder_gate_pass_fail_and_insufficient_states",
+    "cross_platform_paths": "test_external_path_compaction_and_cli_contracts",
+    "report_redaction": "test_report_is_redacted_answer_first_and_synthetic_trials_never_count plus repository secret scan",
+    "synthetic_exclusion": "test_report_is_redacted_answer_first_and_synthetic_trials_never_count"
+  },
+  "validations": [
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_founder_thesis_lab.py villani_ops\\tests\\closed_loop\\test_protocol.py --basetemp .test-temp\\pt3-focused",
+      "cwd": "components/villani-ops",
+      "result": "Initial FAIL: 22 passed, 4 failed in 7.97s; all four exposed Windows read-only Git-object cleanup.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_founder_thesis_lab.py villani_ops\\tests\\closed_loop\\test_protocol.py --basetemp .test-temp\\pt3-focused",
+      "cwd": "components/villani-ops",
+      "result": "PASS: 26 passed in 12.45s.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_founder_thesis_lab.py villani_ops\\tests\\closed_loop\\test_protocol.py --basetemp .test-temp\\pt3-focused-lock",
+      "cwd": "components/villani-ops",
+      "result": "FINAL PASS: 32 passed in 14.12s.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt3-full",
+      "cwd": "components/villani-ops",
+      "result": "Environment timeout after 121 seconds at 30%; no failure had appeared.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt3-full-rerun",
+      "cwd": "components/villani-ops",
+      "result": "PASS: 1,178 passed, 2 skipped, 114 deselected in 236.08s.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt3-full-final",
+      "cwd": "components/villani-ops",
+      "result": "FINAL PASS: 1,178 passed, 2 skipped, 114 deselected in 244.81s.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_hardened_execution_environment.py -rs --basetemp .test-temp\\pt3-skip-reasons",
+      "cwd": "components/villani-ops",
+      "result": "PASS: 23 passed, 2 host-capability skips (no Unix-domain socket or FIFO support) in 3.35s.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m ruff check villani_ops\\evaluation_lab villani_ops\\tests\\test_founder_thesis_lab.py villani_ops\\closed_loop\\schema_validation.py villani_ops\\cli\\unified.py",
+      "cwd": "components/villani-ops",
+      "result": "Initial FAIL: four unused imports; final PASS: all checks passed.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m mypy villani_ops\\evaluation_lab villani_ops\\closed_loop\\schema_validation.py",
+      "cwd": "components/villani-ops",
+      "result": "Broad followed-import FAIL: 206 existing errors in 43 files while checking 7 source files, mostly outside PT3.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m mypy --follow-imports=skip --ignore-missing-imports villani_ops\\evaluation_lab",
+      "cwd": "components/villani-ops",
+      "result": "FINAL PASS: no issues in 6 PT3 source files.",
+      "final": true
+    },
+    {
+      "command": "npm test and npm run typecheck",
+      "cwd": "components/villani-run-model",
+      "result": "Environment FAIL: this standalone checkout has no local vitest or tsc executable.",
+      "final": false
+    },
+    {
+      "command": "& ..\\villani-web\\node_modules\\.bin\\vitest.cmd run",
+      "cwd": "components/villani-run-model",
+      "result": "FINAL PASS: 2 files, 7 tests passed.",
+      "final": true
+    },
+    {
+      "command": "& ..\\villani-web\\node_modules\\.bin\\tsc.cmd --noEmit -p tsconfig.json",
+      "cwd": "components/villani-run-model",
+      "result": "FINAL PASS.",
+      "final": true
+    },
+    {
+      "command": "& ..\\villani-web\\node_modules\\.bin\\tsc.cmd -p tsconfig.json",
+      "cwd": "components/villani-run-model",
+      "result": "FINAL PASS; dist/evaluation.js and dist/evaluation.d.ts emitted.",
+      "final": true
+    },
+    {
+      "command": "& ..\\villani-web\\node_modules\\.bin\\prettier.cmd --check src\\evaluation.ts test\\evaluation.test.ts src\\index.ts",
+      "cwd": "components/villani-run-model",
+      "result": "Initial FAIL on evaluation.ts/index.ts; files formatted; final PASS: all matched files use Prettier style.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q --basetemp .test-temp\\pt3-closed-loop-final",
+      "cwd": ".",
+      "result": "PASS: 11 passed, 2 warnings in 43.01s.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt3-code",
+      "cwd": "components/villani-code",
+      "result": "Environment FAIL: custom base-temp parent did not exist; 212 passed, 1 skipped, 474 setup errors.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt3-code-rerun",
+      "cwd": "components/villani-code",
+      "result": "Baseline FAIL in untouched component: 74 failed, 612 passed, 1 skipped, 101 warnings in 73.30s; failures converge on context_projection.py receiving mocked subprocess stdout=None and Windows decoding warnings.",
+      "final": true
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS: build completed; 21 files, 111 tests passed.",
+      "final": true
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS.",
+      "final": true
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS.",
+      "final": true
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS: all matched files use Prettier style.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts\\generate-evaluation-schemas.py",
+      "cwd": ".",
+      "result": "Initial import-cycle FAIL during development; final repeated runs PASS and are idempotent.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -c \"from pathlib import Path; import hashlib; a=Path('schemas/v1'); b=Path('components/villani-ops/villani_ops/schemas/v1'); names=['evaluation-suite.schema.json','evaluation-task.schema.json','evaluation-trial.schema.json','human-review.schema.json','evaluation-report.schema.json']; bad=[n for n in names if hashlib.sha256((a/n).read_bytes()).digest()!=hashlib.sha256((b/n).read_bytes()).digest()]; print(f'PT3 schema parity: {len(names)-len(bad)}/{len(names)} identical'); print('mismatches:',bad); raise SystemExit(bool(bad))\"",
+      "cwd": ".",
+      "result": "PASS: 5/5 identical; no mismatches.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts\\check-secrets.py components\\villani-ops\\villani_ops\\evaluation_lab components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-ops\\villani_ops\\closed_loop\\schema_validation.py components\\villani-ops\\villani_ops\\tests\\test_founder_thesis_lab.py components\\villani-ops\\villani_ops\\tests\\closed_loop\\test_protocol.py components\\villani-run-model\\src\\evaluation.ts components\\villani-run-model\\src\\index.ts components\\villani-run-model\\test\\evaluation.test.ts components\\villani-run-model\\dist\\evaluation.js components\\villani-run-model\\dist\\evaluation.d.ts components\\villani-run-model\\dist\\index.js components\\villani-run-model\\dist\\index.d.ts docs\\FOUNDER_THESIS_LAB.md docs\\PT3_COMPLETION_REPORT.md docs\\PT3_COMPLETION_REPORT.json docs\\PT3_GATE_B.json scripts\\generate-evaluation-schemas.py schemas\\v1\\evaluation-suite.schema.json schemas\\v1\\evaluation-task.schema.json schemas\\v1\\evaluation-trial.schema.json schemas\\v1\\human-review.schema.json schemas\\v1\\evaluation-report.schema.json components\\villani-ops\\villani_ops\\schemas\\v1\\evaluation-suite.schema.json components\\villani-ops\\villani_ops\\schemas\\v1\\evaluation-task.schema.json components\\villani-ops\\villani_ops\\schemas\\v1\\evaluation-trial.schema.json components\\villani-ops\\villani_ops\\schemas\\v1\\human-review.schema.json components\\villani-ops\\villani_ops\\schemas\\v1\\evaluation-report.schema.json integration\\fixtures\\protocol\\v1\\valid_run\\evaluation-suite.json integration\\fixtures\\protocol\\v1\\valid_run\\evaluation-task.json integration\\fixtures\\protocol\\v1\\valid_run\\evaluation-trial.json integration\\fixtures\\protocol\\v1\\valid_run\\human-review.json integration\\fixtures\\protocol\\v1\\valid_run\\evaluation-report.json",
+      "cwd": ".",
+      "result": "Initial FAIL on two literal fake-credential test strings; fixtures changed to runtime construction; final PASS: 32 roots, 0 findings.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m build --wheel --outdir .test-temp\\pt3-wheel components\\villani-ops",
+      "cwd": ".",
+      "result": "Sandbox FAIL because isolated build requirements could not access the package index; approved network rerun PASS: villani_ops-0.2.0-py3-none-any.whl built.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -c \"from pathlib import Path; import zipfile; p=next(Path('.test-temp/pt3-wheel').glob('*.whl')); required={'villani_ops/evaluation_lab/__init__.py','villani_ops/evaluation_lab/models.py','villani_ops/evaluation_lab/workspace.py','villani_ops/evaluation_lab/runner.py','villani_ops/evaluation_lab/reviews.py','villani_ops/evaluation_lab/reporting.py','villani_ops/schemas/v1/evaluation-suite.schema.json','villani_ops/schemas/v1/evaluation-task.schema.json','villani_ops/schemas/v1/evaluation-trial.schema.json','villani_ops/schemas/v1/human-review.schema.json','villani_ops/schemas/v1/evaluation-report.schema.json'}; names=set(zipfile.ZipFile(p).namelist()); missing=sorted(required-names); print(f'pt3_wheel_required={len(required)} present={len(required)-len(missing)} missing={missing}'); assert not missing\"",
+      "cwd": ".",
+      "result": "Sandbox read denied on the approved-build artifact; approved rerun PASS: 11/11 required PT3 modules/schema files present, 0 missing.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -c \"import json,pathlib; files=['docs/PT3_COMPLETION_REPORT.json','docs/PT3_GATE_B.json']; [json.loads(pathlib.Path(f).read_text(encoding='utf-8')) for f in files]; print('completion_json=valid; gate_json=valid')\"",
+      "cwd": ".",
+      "result": "PASS: both machine-readable reports parse as JSON.",
+      "final": true
+    },
+    {
+      "command": "git diff --check",
+      "cwd": ".",
+      "result": "PASS: no whitespace errors; existing LF-to-CRLF working-copy warnings only.",
+      "final": true
+    }
+  ],
+  "end_to_end_artifacts_and_screenshots": {
+    "artifacts": [
+      "Five normative and five packaged JSON Schemas.",
+      "Five durable shared protocol fixtures.",
+      "CLI capture/freeze/export smoke artifact generated and inspected by test.",
+      "JSON, Markdown, and linked HTML evaluation reports generated and inspected by test.",
+      ".test-temp/pt3-wheel/villani_ops-0.2.0-py3-none-any.whl (ignored verification artifact; 11/11 PT3 files verified).",
+      "docs/PT3_GATE_B.json"
+    ],
+    "screenshots": [],
+    "screenshot_reason": "PT3 adds a CLI/evidence workflow, not a new browser surface; no screenshot contract was requested."
+  },
+  "known_failures_and_skips": [
+    "Gate B is INSUFFICIENT_EVIDENCE: 0 of 30 required paired real founder tasks and 0 of 2 required repositories are available. No synthetic evidence was counted.",
+    "The untouched Villani Code full suite has 74 baseline failures, 612 passes, and 1 opt-in Claude Code smoke skip. PT3 does not modify Villani Code and does not hide this failure.",
+    "Villani Ops skips two operating-system capability tests because host Python supports neither Unix-domain sockets nor FIFO creation; 114 slow/integration/e2e tests are deselected by the component's declared default pytest markers.",
+    "Broad followed-import mypy has 206 existing transitive errors. The complete direct PT3 module is clean under focused mypy.",
+    "The standalone Run Model checkout lacks local npm executables; the pinned repository TypeScript, Vitest, and Prettier binaries pass build, no-emit typecheck, 7 tests, and formatting."
+  ],
+  "security_privacy_data_loss_compatibility_risks": [
+    "High-confidence secret scanning and output redaction reduce accidental disclosure but cannot recognize every secret format. Operators must use exclusions and inspect portable bundles before sharing.",
+    "Portable bundles contain actual source code and reports disclose agent/model/provider metadata. The confidentiality marker is advisory; artifacts are local files and are not encrypted by this milestone.",
+    "Allowed setup, coding systems, and authoritative validation execute processes with the configured provider's permissions. Fresh Git isolation is not a kernel sandbox; hostile tasks should use an existing container/devcontainer execution provider.",
+    "The source repository is read only during capture and never receives a trial patch. Evaluation workspaces, review ledgers, reports, and trial bundles are new local data; no delete or migration occurs.",
+    "A hard-killed process may leave evaluation-run.lock. Execution then fails closed and prints the exact manual removal action rather than risking duplicate trials.",
+    "Blinding is feasible rather than cryptographic: reviewers must not open run-plan.json or trial.json before labeling, as documented.",
+    "All five contracts are additive. Existing run bundles, configurations, acceptance, routing, selection, verification, and delivery behavior remain readable and unchanged."
+  ],
+  "user_facing_behavior": {
+    "before": "Villani had offline capability evaluation and replay evidence, but no reproducible real-task suite capture, paired direct-versus-product runner, blinded review ledger, thesis metrics/report, or Founder Gate command.",
+    "after": "`villani eval` initializes a local suite, imports/restores an immutable commit, captures and validates tasks, freezes and exports runner-safe actual code, runs randomized resumable paired trials, queues blinded review, appends labels/amendments, generates JSON/Markdown/HTML reports, and returns PASS/FAIL/INSUFFICIENT_EVIDENCE for Gate B."
+  },
+  "assumptions": [
+    "No founder task corpus, trial credentials, measured task outcomes, or authorization to incur provider cost was supplied; the implementation therefore stops before any real paid trial.",
+    "Authoritative validation commands are supplied by the suite author and are appropriate for each task; the lab never invents hidden checks or expected solutions.",
+    "One configured process runs a suite at a time; the atomic lock rejects concurrent processes and gives a recovery action for a stale lock."
+  ],
+  "acceptance_failures": [],
+  "pt4_confirmation": "PT4 was not started."
+}

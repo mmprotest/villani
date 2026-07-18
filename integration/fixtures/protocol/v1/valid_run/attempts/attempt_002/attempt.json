@@ -27,5 +27,8 @@
   "cost_usd": 0.04,
   "cost_accounting_status": "complete",
   "error": null,
-  "metadata": {}
+  "metadata": {},
+  "agent_system_id": "asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa",
+  "agent_system_identity_path": "agent-systems/asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa.json",
+  "harness_result_path": "attempts/attempt_002/harness-result.json"
 }

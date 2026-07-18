@@ -1,0 +1,511 @@
+{
+  "$defs": {
+    "AccountingAmount": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "maxLength": 3,
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "AccountingAmount",
+      "type": "object"
+    },
+    "AgentSystemIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "minLength": 1,
+          "title": "Agent",
+          "type": "string"
+        },
+        "agent_version": {
+          "minLength": 1,
+          "title": "Agent Version",
+          "type": "string"
+        },
+        "environment_fingerprint": {
+          "minLength": 1,
+          "title": "Environment Fingerprint",
+          "type": "string"
+        },
+        "execution_provider": {
+          "minLength": 1,
+          "title": "Execution Provider",
+          "type": "string"
+        },
+        "harness": {
+          "minLength": 1,
+          "title": "Harness",
+          "type": "string"
+        },
+        "harness_version": {
+          "minLength": 1,
+          "title": "Harness Version",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "product": {
+          "minLength": 1,
+          "title": "Product",
+          "type": "string"
+        },
+        "product_version": {
+          "minLength": 1,
+          "title": "Product Version",
+          "type": "string"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "serving_engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Serving Engine"
+        },
+        "serving_engine_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Serving Engine Version"
+        }
+      },
+      "required": [
+        "product",
+        "product_version",
+        "harness",
+        "harness_version",
+        "agent",
+        "agent_version",
+        "execution_provider",
+        "environment_fingerprint"
+      ],
+      "title": "AgentSystemIdentity",
+      "type": "object"
+    },
+    "DurationAmount": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "value_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Ms"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "DurationAmount",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/evaluation-trial.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent_system": {
+      "$ref": "#/$defs/AgentSystemIdentity"
+    },
+    "arm": {
+      "enum": [
+        "direct",
+        "villani"
+      ],
+      "title": "Arm",
+      "type": "string"
+    },
+    "artifact_references": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact References",
+      "type": "array"
+    },
+    "attempts": {
+      "minimum": 0,
+      "title": "Attempts",
+      "type": "integer"
+    },
+    "baseline_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Baseline Digest",
+      "type": "string"
+    },
+    "baseline_restore_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Baseline Restore Digest",
+      "type": "string"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "configuration_mode": {
+      "enum": [
+        "automatic",
+        "manual"
+      ],
+      "title": "Configuration Mode",
+      "type": "string"
+    },
+    "correction_required": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correction Required"
+    },
+    "duration": {
+      "$ref": "#/$defs/DurationAmount"
+    },
+    "escalations": {
+      "minimum": 0,
+      "title": "Escalations",
+      "type": "integer"
+    },
+    "evidence_eligible": {
+      "title": "Evidence Eligible",
+      "type": "boolean"
+    },
+    "exclusion_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exclusion Reason"
+    },
+    "execution_cost": {
+      "$ref": "#/$defs/AccountingAmount"
+    },
+    "false_acceptance": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "False Acceptance"
+    },
+    "false_rejection": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "False Rejection"
+    },
+    "human_outcome": {
+      "anyOf": [
+        {
+          "enum": [
+            "accepted_as_is",
+            "accepted_after_correction",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Human Outcome"
+    },
+    "local_compute_cost": {
+      "$ref": "#/$defs/AccountingAmount"
+    },
+    "order_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Order Digest",
+      "type": "string"
+    },
+    "proved_acceptable": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proved Acceptable"
+    },
+    "randomized_order": {
+      "minimum": 1,
+      "title": "Randomized Order",
+      "type": "integer"
+    },
+    "repetition": {
+      "minimum": 1,
+      "title": "Repetition",
+      "type": "integer"
+    },
+    "review_minutes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Review Minutes"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "schema_version": {
+      "const": "villani.evaluation_trial.v1",
+      "default": "villani.evaluation_trial.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Started At"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "running",
+        "completed",
+        "excluded",
+        "interrupted"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "suite_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Suite Digest",
+      "type": "string"
+    },
+    "suite_id": {
+      "minLength": 1,
+      "title": "Suite Id",
+      "type": "string"
+    },
+    "target_repository_modified": {
+      "const": false,
+      "default": false,
+      "title": "Target Repository Modified",
+      "type": "boolean"
+    },
+    "task_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Task Digest",
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "title": "Task Id",
+      "type": "string"
+    },
+    "total_cost": {
+      "$ref": "#/$defs/AccountingAmount"
+    },
+    "trial_id": {
+      "minLength": 1,
+      "title": "Trial Id",
+      "type": "string"
+    },
+    "verification_cost": {
+      "$ref": "#/$defs/AccountingAmount"
+    },
+    "verification_status": {
+      "enum": [
+        "complete",
+        "infrastructure_failure",
+        "not_run"
+      ],
+      "title": "Verification Status",
+      "type": "string"
+    },
+    "verifier_disagreement": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verifier Disagreement"
+    }
+  },
+  "required": [
+    "trial_id",
+    "suite_id",
+    "suite_digest",
+    "task_id",
+    "task_digest",
+    "arm",
+    "repetition",
+    "randomized_order",
+    "order_digest",
+    "status",
+    "agent_system",
+    "baseline_digest",
+    "baseline_restore_digest",
+    "execution_cost",
+    "verification_cost",
+    "local_compute_cost",
+    "total_cost",
+    "duration",
+    "verification_status",
+    "attempts",
+    "escalations",
+    "configuration_mode",
+    "artifact_references",
+    "evidence_eligible"
+  ],
+  "title": "EvaluationTrial",
+  "type": "object"
+}

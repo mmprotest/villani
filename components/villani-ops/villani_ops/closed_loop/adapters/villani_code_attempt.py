@@ -32,7 +32,10 @@ from villani_ops.execution_environment import (
     RepositoryValidationReport,
     provider_from_configuration,
 )
-from villani_ops.execution_environment.models import FocusedProbeFailureCode
+from villani_ops.execution_environment.models import (
+    CandidatePatchQuality,
+    FocusedProbeFailureCode,
+)
 
 from ..durable_io import write_json_atomic
 from ..costs import actual_attempt_cost
@@ -74,6 +77,10 @@ from ..verification_evidence import (
     FocusedProbeReport,
     FocusedProbeRequest,
     FocusedProbeResult,
+)
+from ..validation_coverage import (
+    build_validation_coverage,
+    legacy_validation_coverage,
 )
 from villani_ops.providers import validate_runtime_credentials
 
@@ -586,6 +593,36 @@ class VillaniCodeAttemptAdapter:
             attempt_dir / "repository-validation.json",
             redact_data(repository_validation, secrets=secrets),
         )
+        try:
+            validation_coverage = build_validation_coverage(
+                worktree=isolated.copied.worktree_path,
+                task_instruction=attempt_context.task,
+                success_criteria=attempt_context.success_criteria,
+                policy_configuration=attempt_context.policy_configuration,
+                repository_validation=repository_validation,
+                candidate_quality=candidate_quality,
+            )
+        except Exception:
+            # Coverage-generation failure cannot convert a passing command into
+            # requirement proof.  Persist a conservative readable projection.
+            validation_coverage = legacy_validation_coverage(
+                repository_validation=repository_validation,
+                task_instruction=attempt_context.task,
+                success_criteria=attempt_context.success_criteria,
+                policy_configuration=attempt_context.policy_configuration,
+            ).model_copy(
+                update={
+                    "migration": {
+                        "source_schema_version": repository_validation.schema_version,
+                        "mode": "coverage_generation_failed_closed",
+                        "behavior_coverage_inferred": False,
+                    }
+                }
+            )
+        write_json_atomic(
+            attempt_dir / "validation-coverage.json",
+            redact_data(validation_coverage, secrets=secrets),
+        )
         runtime_events = (
             *runtime_events,
             *repository_validation_runtime_events(repository_validation),
@@ -605,6 +642,10 @@ class VillaniCodeAttemptAdapter:
             execution_provider=prepared_environment.provider,
             execution_environment_fingerprint=prepared_environment.fingerprint,
             secrets=secrets,
+        )
+        write_json_atomic(
+            attempt_dir / "candidate" / "validation-coverage.json",
+            redact_data(validation_coverage, secrets=secrets),
         )
         collection: dict[str, Any] = {}
         try:
@@ -717,6 +758,10 @@ class VillaniCodeAttemptAdapter:
                     f"attempts/{attempt_context.attempt_id}/repository-validation.json"
                 ),
                 "repository_validation": repository_validation.model_dump(mode="json"),
+                "validation_coverage_path": (
+                    f"attempts/{attempt_context.attempt_id}/validation-coverage.json"
+                ),
+                "validation_coverage": validation_coverage.model_dump(mode="json"),
                 "candidate_bundle_path": (
                     f"attempts/{attempt_context.attempt_id}/candidate/candidate.json"
                 ),
@@ -790,6 +835,10 @@ class VillaniCodeAttemptAdapter:
                 repository_validation.authoritative
             ),
             "repository_validation_retry_count": repository_validation.retry_count,
+            "validation_coverage_path": (
+                f"attempts/{attempt_context.attempt_id}/validation-coverage.json"
+            ),
+            "validation_coverage_schema_version": validation_coverage.schema_version,
             "candidate_bundle_path": (
                 f"attempts/{attempt_context.attempt_id}/candidate/candidate.json"
             ),
@@ -1454,6 +1503,40 @@ class VillaniCodeAttemptAdapter:
         write_json_atomic(
             candidate_dir / "repository-validation.json", redact_data(report)
         )
+        quality_path = attempt_dir / "candidate-patch-quality.json"
+        try:
+            candidate_quality = CandidatePatchQuality.model_validate_json(
+                quality_path.read_text(encoding="utf-8")
+            )
+            validation_coverage = build_validation_coverage(
+                worktree=isolated.copied.worktree_path,
+                task_instruction=attempt_context.task,
+                success_criteria=attempt_context.success_criteria,
+                policy_configuration=attempt_context.policy_configuration,
+                repository_validation=report,
+                candidate_quality=candidate_quality,
+            )
+        except Exception:
+            validation_coverage = legacy_validation_coverage(
+                repository_validation=report,
+                task_instruction=attempt_context.task,
+                success_criteria=attempt_context.success_criteria,
+                policy_configuration=attempt_context.policy_configuration,
+            ).model_copy(
+                update={
+                    "migration": {
+                        "source_schema_version": report.schema_version,
+                        "mode": "coverage_generation_failed_closed",
+                        "behavior_coverage_inferred": False,
+                    }
+                }
+            )
+        write_json_atomic(
+            attempt_dir / "validation-coverage.json", redact_data(validation_coverage)
+        )
+        write_json_atomic(
+            candidate_dir / "validation-coverage.json", redact_data(validation_coverage)
+        )
         retry_environment_path = (
             attempt_dir
             / f"execution-environment-validation-retry-{retry_count:03d}.json"
@@ -1468,6 +1551,10 @@ class VillaniCodeAttemptAdapter:
                 ),
                 "repository_validation": report.model_dump(mode="json"),
                 "repository_validation_retry_count": retry_count,
+                "validation_coverage_path": (
+                    f"attempts/{attempt_context.attempt_id}/validation-coverage.json"
+                ),
+                "validation_coverage": validation_coverage.model_dump(mode="json"),
             }
         )
         write_json_atomic(attempt_dir / "runner_telemetry.json", redact_data(telemetry))
@@ -1478,6 +1565,10 @@ class VillaniCodeAttemptAdapter:
                 "repository_validation_failure_code": report.failure_code,
                 "repository_validation_authoritative": report.authoritative,
                 "repository_validation_retry_count": retry_count,
+                "validation_coverage_path": (
+                    f"attempts/{attempt_context.attempt_id}/validation-coverage.json"
+                ),
+                "validation_coverage_schema_version": validation_coverage.schema_version,
                 "repository_validation_retry_environment_path": (
                     retry_environment_path.relative_to(
                         Path(attempt_context.run_directory)

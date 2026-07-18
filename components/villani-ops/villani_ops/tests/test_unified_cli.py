@@ -100,6 +100,7 @@ def _invoke_fake_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     state: str,
+    extra_args: tuple[str, ...] = (),
 ) -> tuple[Any, FakeController]:
     _init()
     repository = tmp_path / "repo"
@@ -126,6 +127,7 @@ def _invoke_fake_run(
             "Exact success criteria.  ",
             "--validation-command",
             "python -m pytest -q",
+            *extra_args,
         ],
     )
     assert len(calls) == 1
@@ -578,14 +580,53 @@ def test_bare_run_uses_initialized_delivery_default(
 
     assert result.exit_code == 0, result.output
     delivery = fake.requests[0].policy_configuration["delivery"]
-    assert delivery["mode"] == "apply"
-    assert delivery["authority_policy"]["allow_automatic"] is True
+    assert delivery["mode"] == "approve"
+    assert delivery["approval_mode"] == "explicit"
+    run_experience = fake.requests[0].policy_configuration["run_experience"]
+    assert run_experience["mode"] == "performance"
+    assert run_experience["verification_required"] is True
+    assert run_experience["default_wall_time_budget"] is None
 
 
 def test_progress_symbols_fall_back_on_legacy_windows_encoding() -> None:
     assert unified._display_progress_symbol("●", "cp1252") == "*"
     assert unified._display_progress_symbol("✓", "cp1252") == "+"
     assert unified._display_progress_symbol("●", "utf-8") == "●"
+
+
+def test_default_cli_progress_projects_exactly_four_product_stages(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    listener = unified._run_progress_listener(tmp_path)
+
+    def event(sequence: int, event_type: str, to_state: str) -> SimpleNamespace:
+        value = {
+            "schema_version": "villani.event.v1",
+            "sequence": sequence,
+            "timestamp": "2026-07-17T00:00:00Z",
+            "run_id": "run_stage_fixture",
+            "attempt_id": None,
+            "event_type": event_type,
+            "payload": {"to_state": to_state},
+        }
+        return SimpleNamespace(
+            **value,
+            model_dump=lambda mode="json", value=value: value,
+        )
+
+    listener(event(1, "run_created", "CREATED"))
+    listener(event(2, "attempt_started", "ATTEMPT_RUNNING"))
+    listener(event(3, "verification_started", "VERIFYING"))
+    listener(event(4, "run_completed", "COMPLETED"))
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if line]
+    assert [line.split(":", 1)[0] for line in lines] == [
+        "Understanding",
+        "Working",
+        "Checking",
+        "Ready",
+    ]
+    assert all("run_" not in line and "event" not in line for line in lines)
 
 
 def test_help_contains_no_architecture_selector() -> None:
@@ -625,6 +666,7 @@ def test_help_contains_no_architecture_selector() -> None:
         "choose-candidate",
         "runs",
         "inspect",
+        "evidence",
         "open",
     ):
         assert command in root_help.output
@@ -784,17 +826,34 @@ def test_completed_run_exits_zero_and_prints_evidence_summary(
     result, _ = _invoke_fake_run(tmp_path, monkeypatch, "COMPLETED")
     assert result.exit_code == 0
     assert "Run ID: run_protocol_fixture" in result.output
-    assert "Run directory:" in result.output
-    assert "ACCEPTED" in result.output
-    assert "Changed:" in result.output
+    assert "Ready to apply" in result.output
+    assert "ACCEPTED" not in result.output
+    assert "What changed:" in result.output
+    assert "Files changed:" in result.output
     assert "calculator.py" in result.output
-    assert "Confidence and authority:" in result.output
-    assert "Validation:" in result.output
-    assert "Remaining risks:" in result.output
-    assert "Villani recovery:" in result.output
-    assert "Total        USD 0.05" in result.output
-    assert "Next:" in result.output
+    assert "Checks and tests:" in result.output
+    assert "Requirement coverage:" in result.output
+    assert "Known cost:" in result.output
+    assert "Elapsed time:" in result.output
+    assert "Next action:" in result.output
+    assert "Evidence:" in result.output
     assert "Terminal state:" not in result.output
+
+
+def test_cli_json_equals_the_product_projection_consumed_by_web(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, _ = _invoke_fake_run(
+        tmp_path, monkeypatch, "COMPLETED", extra_args=("--json",)
+    )
+
+    assert result.exit_code == 0, result.output
+    cli_projection = json.loads(result.output)
+    web_projection = unified.build_product_run(
+        unified._runs_root() / "run_protocol_fixture"
+    ).model_dump(mode="json")
+    assert cli_projection == web_projection
+    assert cli_projection["schema_version"] == "villani.product_run.v1"
 
 
 def test_exhausted_run_exits_three(
@@ -802,15 +861,35 @@ def test_exhausted_run_exits_three(
 ) -> None:
     result, _ = _invoke_fake_run(tmp_path, monkeypatch, "EXHAUSTED")
     assert result.exit_code == 3
-    assert "EXHAUSTED" in result.output
-    assert "Failure details:" in result.output
+    assert "Could not prove" in result.output
+    assert "EXHAUSTED" not in result.output
+    assert "sufficient recorded evidence before the safe stop" in " ".join(
+        result.output.split()
+    )
 
 
 def test_failed_run_exits_four(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result, _ = _invoke_fake_run(tmp_path, monkeypatch, "FAILED")
     assert result.exit_code == 4
-    assert "FAILED" in result.output
-    assert "Evidence missing:" in result.output
+    assert "Could not prove" in result.output
+    assert "FAILED" not in result.output
+    assert "fake failed" in result.output
+
+
+def test_evidence_command_projects_the_shared_evidence_index() -> None:
+    _init()
+    _copy_valid_run(unified._runs_root())
+
+    result = runner.invoke(
+        unified.app, ["evidence", "run_protocol_fixture", "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["schema_version"] == "villani.evidence_index.v1"
+    assert payload["run_id"] == "run_protocol_fixture"
+    assert payload["evidence_links"]
+    assert "events.jsonl" in payload["technical_detail_references"]
 
 
 def test_runs_tolerates_one_corrupt_bundle() -> None:

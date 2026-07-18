@@ -1,0 +1,33 @@
+{
+  "schema_version": "villani.validation_coverage.v1",
+  "run_id": "run_protocol_fixture",
+  "attempt_id": "attempt_002",
+  "candidate_id": "attempt_002",
+  "commands": [
+    {
+      "validation_id": "repository_validation_001",
+      "command_identity": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "argv": ["python", "-m", "pytest", "-q", "tests/test_calculator.py"],
+      "safe_display": "python -m pytest -q tests/test_calculator.py",
+      "execution_role": "repository_validation",
+      "working_directory": ".worktrees/attempt_002",
+      "status": "passed",
+      "exit_status": 0,
+      "started_at": "2026-07-10T00:00:17Z",
+      "ended_at": "2026-07-10T00:00:18Z",
+      "explicitly_named_test_targets": ["tests/test_calculator.py"],
+      "changed_test_files_proven": ["tests/test_calculator.py"],
+      "changed_test_files_plausibly_included": [],
+      "requirement_ids_covered": ["req_addition"],
+      "coverage_provenance": ["changed_behavior_test_validation_graph"],
+      "confidence": "high",
+      "coverage_unestablished_reasons": [],
+      "artifact_references": ["attempts/attempt_002/repository-validation.json"]
+    }
+  ],
+  "requirement_ids": ["req_addition"],
+  "requirements_covered": ["req_addition"],
+  "requirements_not_covered": [],
+  "generated_at": "2026-07-10T00:00:18Z",
+  "migration": null
+}

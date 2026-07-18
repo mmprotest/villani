@@ -1,31 +1,40 @@
 import { villaniThemeCss } from "./theme-source.js";
 
 export const villaniTokens = Object.freeze({
-  backgroundRoot: "#050505",
-  backgroundPanel: "#090909",
-  backgroundElevated: "#0d0d0d",
-  backgroundSelected: "#161616",
-  textPrimary: "#f2f2f2",
-  textSecondary: "#b8b8b8",
-  textMuted: "#858585",
-  borderSubtle: "#303030",
-  borderDefault: "#555555",
-  borderStrong: "#a3a3a3",
-  focus: "#ffffff",
-  disabled: "#626262",
+  backgroundRoot: "#f6f6f3",
+  backgroundPanel: "#ffffff",
+  backgroundElevated: "#f0f0ec",
+  backgroundSelected: "#e7e7e1",
+  textPrimary: "#171717",
+  textSecondary: "#454542",
+  textMuted: "#62625d",
+  borderSubtle: "#ddddd7",
+  borderDefault: "#b8b8b0",
+  borderStrong: "#686862",
+  focus: "#171717",
+  disabled: "#777771",
+  danger: "#9a1b1b",
+  dangerBackground: "#fff3f2",
+  dangerBorder: "#c77873",
+  warning: "#765600",
+  warningBackground: "#fff8df",
+  warningBorder: "#b99a42",
   sidebarWidth: "232px",
-  headerHeight: "48px",
-  statusHeight: "30px",
-  font: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+  headerHeight: "56px",
+  statusHeight: "42px",
+  radius: "6px",
+  font: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  fontMono:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
 });
 
 export const chartTokens = Object.freeze({
-  grid: "#303030",
-  axis: "#858585",
-  primary: "#f2f2f2",
-  secondary: "#a3a3a3",
-  rejected: "#6f6f6f",
-  selected: "#ffffff",
+  grid: "#ddddd7",
+  axis: "#62625d",
+  primary: "#171717",
+  secondary: "#686862",
+  rejected: "#777771",
+  selected: "#171717",
 });
 
 export const statusDescriptors = Object.freeze({
@@ -52,6 +61,9 @@ export const uiClassNames = Object.freeze({
   metricCard: "v-metric-card",
   dataTable: "v-data-table",
   statusBadge: "v-status-badge",
+  pageIntro: "v-page-intro",
+  actionableSystemNotice: "v-actionable-notice",
+  progressStages: "v-progress-stages",
 });
 
 export { villaniThemeCss };

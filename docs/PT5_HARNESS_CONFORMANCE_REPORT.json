@@ -1,0 +1,230 @@
+{
+  "schema_version": "villani.harness_conformance_report.v1",
+  "report_id": "hconf_4ba9b31a838cc6636cdfdabc09422da67193f80726a1dc61fde29c807a231ddd",
+  "system_id": "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575",
+  "harness_id": "villani-code",
+  "harness_version": "0.1.0rc1",
+  "protocol_version": "villani.harness_adapter.v1",
+  "generated_at": "2026-07-17T23:50:00Z",
+  "status": "passed",
+  "checks": [
+    {
+      "check_id": "manifest",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence",
+          "closed_loop/test_protocol.py::test_all_versioned_root_schemas_are_valid_and_mapped"
+        ]
+      },
+      "reason": "The v2 runner manifest advertises the versioned lifecycle protocol and the protocol registry maps every PT5 schema."
+    },
+    {
+      "check_id": "protocol_negotiation",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence",
+          "test_pt5_agent_systems.py::test_external_harnesses_remain_visible_but_cannot_be_enabled_or_selected"
+        ]
+      },
+      "reason": "The adapter reports villani.harness_adapter.v1 and incompatible protocol versions are disabled and unqualified."
+    },
+    {
+      "check_id": "version_capture",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_legacy_configuration_migrates_without_secret_or_identity_instability"
+        ]
+      },
+      "reason": "Harness, adapter, and protocol versions are captured exactly; unresolved versions do not qualify."
+    },
+    {
+      "check_id": "worktree_enforcement",
+      "status": "pass",
+      "evidence": {
+        "result": "1202 passed, 2 skipped, 114 deselected in 289.26s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_cancellation_path_safety_event_ordering_and_bounds_fail_closed",
+          "test_agentic_git_artifacts.py::test_ensure_git_baseline_fails_closed_when_git_init_fails"
+        ]
+      },
+      "reason": "A result pointing at the target repository is rejected and failure to create a local Git baseline cannot fall through to an outer repository."
+    },
+    {
+      "check_id": "path_safety",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_cancellation_path_safety_event_ordering_and_bounds_fail_closed"
+        ]
+      },
+      "reason": "Changed-file and artifact paths must remain within their worktree and run roots; traversal is rejected."
+    },
+    {
+      "check_id": "event_ordering",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_cancellation_path_safety_event_ordering_and_bounds_fail_closed"
+        ]
+      },
+      "reason": "Sequences must be contiguous and legacy timestamp regressions are explicitly adjusted while preserving emission order."
+    },
+    {
+      "check_id": "cancellation",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_cancellation_path_safety_event_ordering_and_bounds_fail_closed"
+        ]
+      },
+      "reason": "Cancellation reaches the session signal and produces a terminal normalized cancellation event."
+    },
+    {
+      "check_id": "timeout",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_failure_classification_is_structured_and_not_inferred_as_success[runner_timeout-timeout]"
+        ]
+      },
+      "reason": "A runner timeout is a structured timeout infrastructure failure and is never inferred as success."
+    },
+    {
+      "check_id": "malformed_output",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_missing_executable_and_malformed_results_fail_closed"
+        ]
+      },
+      "reason": "Incomplete or malformed harness results fail strict model and schema validation."
+    },
+    {
+      "check_id": "oversized_output",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_cancellation_path_safety_event_ordering_and_bounds_fail_closed"
+        ]
+      },
+      "reason": "Stdout, stderr, event, and message bounds are explicit and oversized output is rejected."
+    },
+    {
+      "check_id": "process_crash",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_failure_classification_is_structured_and_not_inferred_as_success[process_crash-process]"
+        ]
+      },
+      "reason": "Process crashes are preserved as process-category infrastructure failures with no acceptance implication."
+    },
+    {
+      "check_id": "missing_executable",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_missing_executable_and_malformed_results_fail_closed"
+        ]
+      },
+      "reason": "Doctor marks a missing executable non-selectable and reports a failing executable check."
+    },
+    {
+      "check_id": "permissions",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_failure_classification_is_structured_and_not_inferred_as_success[permission_denied-permission]",
+          "test_pt5_agent_systems.py::test_cancellation_path_safety_event_ordering_and_bounds_fail_closed"
+        ]
+      },
+      "reason": "Permission failures are structured and permission request events require bounded request metadata."
+    },
+    {
+      "check_id": "artifacts",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence",
+          "test_pt5_agent_systems.py::test_controller_bundle_records_complete_system_identity_and_attempt_link"
+        ]
+      },
+      "reason": "Every attempt persists its identity link, harness result, isolated worktree evidence, streams, trace, usage, cost state, and cleanup result."
+    },
+    {
+      "check_id": "patch_correctness",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence"
+        ]
+      },
+      "reason": "The harness-neutral patch and changed-file list exactly match the isolated attempt result."
+    },
+    {
+      "check_id": "cleanup",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence"
+        ]
+      },
+      "reason": "Cleanup is an explicit lifecycle operation and its succeeded status is persisted in equivalent evidence."
+    },
+    {
+      "check_id": "secret_redaction",
+      "status": "pass",
+      "evidence": {
+        "result": "credential scan: 21 files, 0 matches",
+        "tests": [
+          "test_pt5_agent_systems.py::test_legacy_configuration_migrates_without_secret_or_identity_instability",
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence"
+        ]
+      },
+      "reason": "Content identity excludes credential values and persisted traces, configuration, CLI output, and evidence redact secret-shaped fields."
+    },
+    {
+      "check_id": "unknown_cost",
+      "status": "pass",
+      "evidence": {
+        "result": "30 passed in 1.46s",
+        "tests": [
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence",
+          "test_pt5_agent_systems.py::test_cancellation_path_safety_event_ordering_and_bounds_fail_closed"
+        ]
+      },
+      "reason": "Unknown cost is null with unknown accounting; numeric zero with unknown accounting is invalid."
+    },
+    {
+      "check_id": "cross_platform_paths",
+      "status": "pass",
+      "evidence": {
+        "result": "1202 passed, 2 skipped, 114 deselected in 289.26s on Windows",
+        "tests": [
+          "test_pt5_agent_systems.py::test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence",
+          "test_agentic_git_artifacts.py::test_ensure_git_baseline_allows_capture_in_copied_worktree"
+        ]
+      },
+      "reason": "Windows-style runner paths normalize to portable worktree-relative paths and Git baselines preserve effective line-ending policy."
+    }
+  ],
+  "production_qualification_authorized": true
+}

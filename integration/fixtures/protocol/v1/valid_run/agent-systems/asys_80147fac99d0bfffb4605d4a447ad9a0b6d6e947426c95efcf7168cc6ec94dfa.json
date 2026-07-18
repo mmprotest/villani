@@ -1,0 +1,392 @@
+{
+  "schema_version": "villani.agent_system.v1",
+  "system_id": "asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa",
+  "route_name": "fixture_capable",
+  "production_enabled": true,
+  "qualification_status": "bootstrap",
+  "harness": {
+    "harness_id": "villani-code",
+    "display_name": "Villani Code",
+    "version": "0.1.0rc1",
+    "executable_digest": null,
+    "adapter_id": "villani.villani_code_attempt",
+    "adapter_version": "1.0.0",
+    "protocol": "villani-harness",
+    "protocol_version": "villani.harness_adapter.v1",
+    "transport": "structured_headless_cli"
+  },
+  "model_provider": {
+    "provider": "local",
+    "model_id": "fixture-large",
+    "model_revision": null,
+    "endpoint_identity": "http://127.0.0.1:8000/v1",
+    "serving_engine": null,
+    "serving_engine_version": null,
+    "context_metadata": {},
+    "tool_metadata": {
+      "support": true,
+      "authoritative": false
+    }
+  },
+  "execution": {
+    "execution_provider": "inherit",
+    "environment_fingerprint": null,
+    "permission_profile": "configured_execution_environment",
+    "network_policy": "unknown",
+    "sandbox_identity": null
+  },
+  "route_profile": {
+    "repository_profile": "generic_repository",
+    "task_profile": "generic_coding_task",
+    "verification_policy": "controller_acceptance_evidence_v1",
+    "tool_protocol": "villani_code_tools_v1",
+    "prompt_protocol": "villani_code_headless_v1"
+  },
+  "capabilities": {
+    "file_editing": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "command_execution": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "streaming": {
+      "state": "unknown",
+      "evidence": [],
+      "notes": "No declaration or conformance evidence is available."
+    },
+    "cancellation": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "usage_reporting": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "detected",
+          "reference": "Villani Code structured attempt result",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "cost_reporting": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "detected",
+          "reference": "Villani Code structured attempt result",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "model_identity": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "detected",
+          "reference": "Villani Code structured attempt result",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "session_identity": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "resume": {
+      "state": "unsupported",
+      "evidence": [
+        {
+          "source": "unsupported",
+          "reference": "Villani Code PT5 adapter declaration",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "fork": {
+      "state": "unsupported",
+      "evidence": [
+        {
+          "source": "unsupported",
+          "reference": "Villani Code PT5 adapter declaration",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "permission_requests": {
+      "state": "unknown",
+      "evidence": [],
+      "notes": "No declaration or conformance evidence is available."
+    },
+    "custom_model": {
+      "state": "unknown",
+      "evidence": [],
+      "notes": "No declaration or conformance evidence is available."
+    },
+    "custom_provider": {
+      "state": "unknown",
+      "evidence": [],
+      "notes": "No declaration or conformance evidence is available."
+    },
+    "local_model": {
+      "state": "unknown",
+      "evidence": [],
+      "notes": "No declaration or conformance evidence is available."
+    },
+    "mcp": {
+      "state": "unsupported",
+      "evidence": [
+        {
+          "source": "unsupported",
+          "reference": "Villani Code PT5 adapter declaration",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "acp": {
+      "state": "unsupported",
+      "evidence": [
+        {
+          "source": "unsupported",
+          "reference": "Villani Code PT5 adapter declaration",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "structured_result": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "complete_trace": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "isolated_worktree": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    },
+    "non_interactive_execution": {
+      "state": "supported",
+      "evidence": [
+        {
+          "source": "conformance_tested",
+          "reference": "villani.harness_conformance_report.v1",
+          "observed_at": null,
+          "digest": null
+        }
+      ],
+      "notes": null
+    }
+  },
+  "qualification_references": [
+    {
+      "kind": "conformance",
+      "reference": "villani-code closed-loop regression suite",
+      "digest": null
+    }
+  ],
+  "billing": {
+    "mode": "unknown",
+    "cost_source": null,
+    "currency": null,
+    "unknown_fields": [
+      "billing.mode",
+      "billing.cost_source"
+    ]
+  },
+  "detection_time": "2026-07-10T00:00:00Z",
+  "detection_source": "configuration_migration_and_local_probe",
+  "configuration_digest": "sha256:80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa",
+  "configuration": {
+    "backend": {
+      "api_key_env": null,
+      "base_url": "http://127.0.0.1:8000/v1",
+      "billing_mode": "unknown",
+      "capability_score": 90,
+      "capability_score_source": "user_configured",
+      "command_name": null,
+      "compute_cost_per_hour": null,
+      "currency": "USD",
+      "enabled": true,
+      "env": {},
+      "estimated_duration_seconds": null,
+      "estimated_input_tokens": null,
+      "estimated_output_tokens": null,
+      "execution_environment": null,
+      "fixed_cost_per_attempt": null,
+      "input_cost_per_million": 0.0,
+      "max_parallel": 1,
+      "max_tokens": null,
+      "metadata": {
+        "tool_use_support": true
+      },
+      "model": "fixture-large",
+      "name": "fixture_capable",
+      "output_cost_per_million": 0.0,
+      "provider": "local",
+      "roles": [
+        "coding"
+      ],
+      "timeout_seconds": null
+    },
+    "execution_environment": {
+      "cache": true,
+      "container": {
+        "engine": "auto",
+        "image": null,
+        "network": {
+          "allowed_domains": [],
+          "allowed_hosts": [],
+          "denied_domains": [],
+          "denied_hosts": [],
+          "mode": "inherit",
+          "proxy_boundary_verified": false,
+          "proxy_network": null,
+          "proxy_url": null
+        },
+        "read_only_root": true,
+        "storage_opt_size": false,
+        "temporary_filesystem": true,
+        "user": null,
+        "workspace_target": "/workspace"
+      },
+      "denied_variables": [],
+      "devcontainer": {
+        "cli": "devcontainer",
+        "config_path": null,
+        "engine": "auto"
+      },
+      "limits": {
+        "cpu_count": 2.0,
+        "disk_bytes": 2147483648,
+        "memory_bytes": 2147483648,
+        "process_count": 32,
+        "stderr_bytes": 1048576,
+        "stdout_bytes": 1048576,
+        "timeout_seconds": 600,
+        "tmpfs_bytes": 268435456
+      },
+      "mode": "local",
+      "policy": {
+        "allow_symlinks": false,
+        "command_allow": [],
+        "command_deny": [],
+        "domain_allow": [],
+        "domain_deny": [],
+        "max_archive_entries": 10000,
+        "max_archive_ratio": 200.0,
+        "max_archive_uncompressed_bytes": 536870912,
+        "max_file_bytes": 67108864,
+        "path_allow": [],
+        "path_deny": []
+      },
+      "private_paths": [],
+      "provider": "inherit",
+      "required": true,
+      "secrets": [],
+      "sensitive_variables": [],
+      "setup_argv": null,
+      "shell": false,
+      "shell_command": null
+    },
+    "harness": {
+      "adapter_id": "villani.villani_code_attempt",
+      "adapter_version": "1.0.0",
+      "command": "villani-code",
+      "display_name": "Villani Code",
+      "id": "villani-code",
+      "protocol": "villani-harness",
+      "protocol_version": "villani.harness_adapter.v1",
+      "transport": "structured_headless_cli"
+    },
+    "network_policy": "unknown",
+    "permission_profile": "configured_execution_environment",
+    "prompt_protocol": "villani_code_headless_v1",
+    "repository_profile": "generic_repository",
+    "route_name": "fixture_capable",
+    "task_profile": "generic_coding_task",
+    "tool_protocol": "villani_code_tools_v1",
+    "verification_policy": "controller_acceptance_evidence_v1"
+  },
+  "redaction_status": "redacted",
+  "unknown_fields": [
+    "billing.cost_source",
+    "billing.mode",
+    "execution.environment_fingerprint",
+    "execution.sandbox_identity",
+    "model_provider.model_revision",
+    "model_provider.serving_engine",
+    "model_provider.serving_engine_version"
+  ]
+}

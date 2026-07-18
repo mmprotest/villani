@@ -169,6 +169,12 @@ def test_clean_first_time_setup_creates_runnable_unrated_configuration(
     configuration = load_configuration(home / "config.yaml")
     parsed = validate_configuration(configuration)
     assert configuration["config_version"] == 1
+    assert configuration["agent_systems"]["schema_version"] == (
+        "villani.agent_system_configuration.v1"
+    )
+    assert configuration["agent_systems"]["systems"]["default"]["harness"][
+        "id"
+    ] == "villani-code"
     assert configuration["policy"]["hard_min_capability"] == 0
     assert parsed["default"].capability_score_source == "unrated"
     assert parsed["default"].metadata["capability_status"] == "unrated"
@@ -211,8 +217,12 @@ def test_user_can_decline_every_optional_setup_action(
 def test_atomic_write_backs_up_existing_configuration(tmp_path: Path) -> None:
     path = tmp_path / "home" / "config.yaml"
     first = build_configuration(detection(), "fixture-coder", repository=None)
+    first.pop("agent_systems")
     second = build_configuration(detection(), "fixture-coder-2", repository=None)
     write_configuration_atomic(path, first)
+    assert load_configuration(path)["agent_systems"]["systems"]["default"][
+        "backend"
+    ] == "default"
     result = write_configuration_atomic(path, second)
     assert result.backup_path is not None
     backup = Path(result.backup_path)
@@ -401,6 +411,7 @@ def test_sample_repository_is_temporary_git_repo_and_runner_is_bounded(tmp_path:
     calls: list[list[str]] = []
     exit_code = run_sample_task(sample, runner=lambda command: calls.append(list(command)) or 0)
     assert exit_code == 0
+    assert calls[0][calls[0].index("--delivery") + 1] == "apply"
     assert calls[0][-2:] == ["--max-attempts", "1"]
     assert sample.task in calls[0]
 

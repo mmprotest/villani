@@ -1,18 +1,40 @@
 # Operating-system and editor files
 .DS_Store
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100/
+.Trashes/
+$RECYCLE.BIN/
 Thumbs.db
+ehthumbs.db
 Desktop.ini
 *.swp
 *.swo
 *~
 .idea/
 .vscode/
+.vs/
+.fleet/
+.history/
+*.sublime-project
+*.sublime-workspace
+
+# Local coding-agent state (keep AGENTS.md and repository instructions tracked)
+/.agents/
+/.codex/
 
 # Environment files and local secrets
 .env
 .env.*
 !.env.example
 !.env.*.example
+.envrc
+.direnv/
+.secrets/
+.pypirc
+pip.conf
+pip.ini
 
 # Python environments, caches, and build output
 .venv-experiment/
@@ -25,28 +47,47 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .mypy_cache/
+.dmypy.json
+dmypy.json
 .ruff_cache/
 .pyright/
+.pyre/
+.pytype/
 .hypothesis/
 .tox/
 .nox/
+.benchmarks/
+.ipynb_checkpoints/
+__pypackages__/
+cython_debug/
 .coverage
 .coverage.*
 htmlcov/
 coverage.xml
+coverage.json
+junit*.xml
+pytest-report*.xml
+nosetests.xml
 site/
 *.cover
 *.py,cover
+*.prof
+*.pstats
+*.whl
+*.egg
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
 wheelhouse/
 dist/
+!components/villani-flight-recorder/dist/
+!components/villani-flight-recorder/dist/**
 !components/villani-run-model/dist/
 !components/villani-run-model/dist/**
 !components/villani-web/dist/
 !components/villani-web/dist/**
 build/
+docs/_build/
 
 # Node, JavaScript, and TypeScript dependencies/build output
 node_modules/
@@ -65,11 +106,15 @@ node_modules/
 .eslintcache
 .stylelintcache
 .nyc_output/
+*.lcov
 coverage/
 playwright-report/
 test-results/
 out/
 *.tsbuildinfo
+.pnp.*
+storybook-static/
+vite.config.*.timestamp-*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -83,9 +128,16 @@ temp/
 *.tmp
 *.temp
 *.bak
+*.orig
+*.rej
+*.stackdump
 *.log
 *.pid
 *.pid.lock
+*.db-journal
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
 
 # Protocol fixtures intentionally include captured logs
 !integration/fixtures/**/*.log
@@ -96,7 +148,19 @@ temp/
 .onboarding-temp/
 .test-temp/
 .test-temp*/
+.pt*-test-temp*/
+.pytest-tmp/
+.pytest_tmp/
+pytest-of-*/
 build-smoke/
 root-*-temp-*/
+/artifacts/
 release-verification/artifacts/
 onboarding-verification/artifacts/
+
+# Villani runtime state must never be committed from a repository checkout
+/.villani/
+/.villani-ops/
+/.villani-agentd/
+/.villani-flight-recorder/
+/.villani_code/

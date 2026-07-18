@@ -12,12 +12,91 @@ from typing import Any, Mapping, Sequence
 
 from .durable_io import read_jsonl_tolerant
 from .event_writer import redact_data, redact_message
+from .run_summary import canonical_run_summary
 
 
 PRESENTATION_SCHEMA = "villani.run_presentation.v1"
 
 
 FAILURE_CATALOG: dict[str, dict[str, str]] = {
+    "no_repository": {
+        "failed": "No repository was selected.",
+        "tried": "Villani checked the task before creating a run.",
+        "missing": "A repository is required for isolated work and safe delivery.",
+        "next": "Select an accessible Git repository, then run the task again.",
+    },
+    "incomplete_setup": {
+        "failed": "Villani setup is incomplete.",
+        "tried": "Villani checked the local setup before creating a run.",
+        "missing": "A complete repository and agent connection are not yet available.",
+        "next": "Open Settings, finish Setup, then run the task again.",
+    },
+    "no_usable_agent": {
+        "failed": "No usable agent system is available.",
+        "tried": "Villani checked the configured agent systems before starting work.",
+        "missing": "No enabled agent system can understand and perform the task.",
+        "next": "Open Settings > Agents, connect one usable agent system, then try again.",
+    },
+    "validation_unavailable": {
+        "failed": "Repository validation is unavailable.",
+        "tried": "Villani inspected repository metadata without executing an unconfirmed command.",
+        "missing": "No confirmed repository check is available yet.",
+        "next": "Add a check under Details, or continue knowing alternative evidence is required.",
+    },
+    "runner_missing": {
+        "failed": "The coding runner is not installed or cannot be started.",
+        "tried": "Villani checked the selected agent runner before beginning paid work.",
+        "missing": "No running coding process was available.",
+        "next": "Install Villani Code, run `villani doctor`, then start the task again.",
+    },
+    "expired_credentials": {
+        "failed": "The configured credentials need attention.",
+        "tried": "Villani stopped after the provider rejected authentication and did not record the credential.",
+        "missing": "A successful authenticated agent response is missing.",
+        "next": "Refresh the credential in Settings, test the agent connection, then try again.",
+    },
+    "unavailable_model": {
+        "failed": "The configured model is unavailable.",
+        "tried": "Villani checked the selected agent system and stopped before treating availability as task failure.",
+        "missing": "No available model can execute the selected route.",
+        "next": "Load the model or select an available agent system, then try again.",
+    },
+    "verification_infrastructure_failure": {
+        "failed": "Verification infrastructure could not complete the check.",
+        "tried": "Villani preserved the candidate and retried verification without accepting incomplete output.",
+        "missing": "A usable verification result with sufficient recorded evidence is missing.",
+        "next": "Restore verification, then resume the preserved run or start again.",
+    },
+    "no_acceptable_candidate": {
+        "failed": "No candidate could be proved acceptable.",
+        "tried": "Villani checked each recorded candidate and excluded work without sufficient evidence.",
+        "missing": "No selected candidate has complete, passing verification evidence.",
+        "next": "Review Evidence, clarify the task or checks, then start again.",
+    },
+    "target_drift": {
+        "failed": "The target repository changed after verification.",
+        "tried": "Villani compared the current target with the verified baseline and refused an unsafe apply.",
+        "missing": "Proof that the selected patch still targets the verified repository state is missing.",
+        "next": "Review the preserved patch, restore or accept the new target state, then run again.",
+    },
+    "delivery_conflict": {
+        "failed": "The proved change conflicts with the current target.",
+        "tried": "Villani checked the exact selected patch without leaving a partial change.",
+        "missing": "A conflict-free delivery of the selected patch is missing.",
+        "next": "Resolve the target changes, then retry delivery from the preserved evidence.",
+    },
+    "service_interruption": {
+        "failed": "Villani Service was interrupted.",
+        "tried": "Console kept the server-side run identity and stopped reconnect attempts safely.",
+        "missing": "A live service connection is unavailable.",
+        "next": "Run `villani service start`, then refresh to reconnect to the same run.",
+    },
+    "cancellation": {
+        "failed": "The task was cancelled.",
+        "tried": "Villani stopped future work, requested runner cancellation, and preserved recorded evidence.",
+        "missing": "The cancelled task did not reach a proved result.",
+        "next": "Review Evidence or start the task again when ready.",
+    },
     "no_backend": {
         "failed": "No enabled coding and classification backend is configured.",
         "tried": "Villani checked the local configuration before creating a run.",
@@ -43,7 +122,7 @@ FAILURE_CATALOG: dict[str, dict[str, str]] = {
         "next": "Open a terminal in a Git repository or select a valid repository, then run again.",
     },
     "dirty_repository": {
-        "failed": "The repository has uncommitted changes, so safe materialization cannot be proven.",
+        "failed": "The repository has uncommitted changes, so applying a change safely cannot be proven.",
         "tried": "Villani checked the target repository before spending model cost.",
         "missing": "A clean, stable Git baseline is required.",
         "next": "Commit, stash, or discard the existing changes, then run again.",
@@ -236,7 +315,14 @@ def _is_structured_repository_validation(
     payload = _mapping(event.get("payload"))
     attempt_id = event.get("attempt_id")
     return bool(
-        event.get("event_type") in {"command_completed", "command_failed"}
+        event.get("event_type")
+        in {
+            "command_completed",
+            "command_failed",
+            "repository_validation_completed",
+            "repository_validation_failed",
+            "repository_validation_infrastructure_error",
+        }
         and payload.get("command_role") == "repository_validation"
         and isinstance(attempt_id, str)
         and attempt_id
@@ -655,6 +741,8 @@ def build_run_presentation(
     """Build a complete user-facing projection from one canonical run bundle."""
 
     run_dir = Path(run_directory)
+    canonical_summary = canonical_run_summary(run_dir)
+    canonical_summary_value = canonical_summary.model_dump(mode="json")
     manifest = _read_json(run_dir / "manifest.json")
     task = _read_json(run_dir / "task.json")
     state = _read_json(run_dir / "state.json")
@@ -709,10 +797,10 @@ def build_run_presentation(
     validation_rows = []
     for event in validation_events:
         payload = _mapping(event.get("payload"))
-        passed = (
-            event.get("event_type") == "command_completed"
-            and payload.get("exit_code") == 0
-        )
+        passed = event.get("event_type") in {
+            "command_completed",
+            "repository_validation_completed",
+        } and payload.get("exit_code") == 0
         validation_rows.append(
             {
                 "command": _command(payload),
@@ -722,11 +810,6 @@ def build_run_presentation(
                 "authority": "repository_validation",
             }
         )
-    requirement_results = _list(selected_verification.get("requirement_results"))
-    verified_requirements = sum(
-        _mapping(item).get("outcome") in {"passed", "not_applicable"}
-        for item in requirement_results
-    )
     missing_evidence = _list(selected_verification.get("missing_evidence"))
     authority = str(
         _mapping(selected_verification.get("metadata")).get("authority_source")
@@ -833,12 +916,7 @@ def build_run_presentation(
     else:
         coding_cost = None
     verification_cost, verification_status = _stage_cost(manifest, "verification")
-    total_cost = manifest.get("total_cost_usd")
-    total_cost = (
-        float(total_cost)
-        if isinstance(total_cost, (int, float)) and not isinstance(total_cost, bool)
-        else None
-    )
+    total_cost = canonical_summary.accounting.total_cost
 
     risks = [str(item) for item in _list(selected_verification.get("risk_flags"))]
     risks.extend(
@@ -1048,25 +1126,46 @@ def build_run_presentation(
         },
         "validation": {
             "commands": validation_rows,
-            "checks_passed": sum(bool(item["passed"]) for item in validation_rows),
-            "checks_failed": sum(not bool(item["passed"]) for item in validation_rows),
-            "requirements_verified": verified_requirements,
-            "missing_evidence_count": len(missing_evidence),
+            "checks_passed": canonical_summary.checks.passed,
+            "checks_failed": canonical_summary.checks.failed,
+            "checks_not_run": canonical_summary.checks.not_run,
+            "checks_unavailable": canonical_summary.checks.unavailable,
+            "checks_accounting_status": canonical_summary.checks.accounting_status,
+            "focused_probes_passed": canonical_summary.focused_probes.passed,
+            "focused_probes_failed": canonical_summary.focused_probes.failed,
+            "focused_probes_not_run": canonical_summary.focused_probes.not_run,
+            "focused_probes_unavailable": canonical_summary.focused_probes.unavailable,
+            "focused_probes_accounting_status": (
+                canonical_summary.focused_probes.accounting_status
+            ),
+            "requirements_proved": canonical_summary.requirements.proved,
+            "requirements_not_proved": canonical_summary.requirements.not_proved,
+            "requirements_accounting_status": (
+                canonical_summary.requirements.accounting_status
+            ),
+            # Backwards-readable aliases retain their old names but now consume
+            # the same canonical projection as every other surface.
+            "requirements_verified": canonical_summary.requirements.proved,
+            "missing_evidence_count": canonical_summary.requirements.not_proved,
             "authority": "executed_repository_validation"
-            if validation_rows
+            if canonical_summary.checks.accounting_status == "complete"
+            and (canonical_summary.checks.passed or 0) > 0
             else "none",
         },
+        "canonical_summary": canonical_summary_value,
         "remaining_risks": risks,
         "cost": {
-            "currency": str(manifest.get("currency") or "USD"),
+            "currency": str(
+                canonical_summary.accounting.currency
+                or manifest.get("currency")
+                or "USD"
+            ),
             "coding": coding_cost,
             "coding_status": coding_status,
             "verification": verification_cost,
             "verification_status": verification_status,
             "total": total_cost,
-            "accounting_status": str(
-                manifest.get("cost_accounting_status") or "unknown"
-            ),
+            "accounting_status": canonical_summary.accounting.accounting_status,
         },
         "recovery": recovery,
         "next_actions": next_actions,

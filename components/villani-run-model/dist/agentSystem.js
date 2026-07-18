@@ -1,0 +1,24 @@
+export const AGENT_SYSTEM_SCHEMA_VERSION = "villani.agent_system.v1";
+export const HARNESS_RESULT_SCHEMA_VERSION = "villani.harness_result.v1";
+export const HARNESS_CONFORMANCE_SCHEMA_VERSION = "villani.harness_conformance_report.v1";
+export const REQUIRED_HARNESS_CONFORMANCE_CHECKS = [
+    "manifest",
+    "protocol_negotiation",
+    "version_capture",
+    "worktree_enforcement",
+    "path_safety",
+    "event_ordering",
+    "cancellation",
+    "timeout",
+    "malformed_output",
+    "oversized_output",
+    "process_crash",
+    "missing_executable",
+    "permissions",
+    "artifacts",
+    "patch_correctness",
+    "cleanup",
+    "secret_redaction",
+    "unknown_cost",
+    "cross_platform_paths",
+];

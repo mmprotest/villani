@@ -16,6 +16,13 @@ covering authoritative validation, coding escalation, repeated canonical attempt
 and artifact withholding, heuristic-only rejection, verifier escalation, classification floors,
 and acknowledged candidate diversity.
 
+After the clean wheel install, the gate runs non-interactive setup against the deterministic local
+model fixture using the installed interpreter. It starts services, completes the disposable sample
+with exactly one selected acceptance-eligible attempt, checks canonical validation totals, proves
+non-destructive delivery, opens the UI, captures five onboarding screenshots, runs doctor, stops
+services, verifies zero unexplained dead letters, and scans the evidence for secrets. This evidence
+is preserved beneath `artifacts/latest/installed-user-onboarding/<UTC timestamp>/`.
+
 The connected run starts the PostgreSQL control plane and Agentd, enrolls and synchronizes the
 daemon, queries the real API, performs six-source canonical reconciliation, serves Villani Web and
 Flight Recorder, and runs Playwright at 1280x800, 1440x900, and 1920x1080. Seventeen screenshots
@@ -30,7 +37,8 @@ Mode policy is fail-closed:
   release-container vulnerability scanner. Missing, failed, or unavailable required tooling is a
   failed release, never a pass.
 
-Every run replaces `artifacts/latest`; stale reports are not reused. The directory contains the
+Every run replaces `artifacts/latest`; stale reports are not reused. Within that run, installed-user
+onboarding evidence has its own timestamped directory. The directory contains the
 gate report, package hashes and archives, compatibility/build/test/security manifests, PostgreSQL
 migration proof, verifier/diversity/classification/redaction evidence, canonical and API snapshots,
 browser results, logs, and screenshots. Any missing scenario, zero synchronized runs, unexpected

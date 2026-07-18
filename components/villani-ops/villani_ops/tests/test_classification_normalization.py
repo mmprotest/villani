@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from villani_ops.classification.classifier import (
     TaskClassifier,
@@ -8,6 +9,7 @@ from villani_ops.classification.classifier import (
     fallback_task_classification_payload,
     normalize_task_classification_payload,
 )
+from villani_ops.classification.context import RelevantFileSnippet
 from villani_ops.core.backend import Backend
 from villani_ops.core.task import Task, TaskClassification
 from villani_ops.llm.client import LLMCallResult
@@ -215,3 +217,36 @@ def test_likely_file_count_eight_is_hard_and_narrow_can_be_easy():
         [],
     )
     assert easy.difficulty == "easy"
+
+
+def test_generic_easy_medium_and_hard_calibration_fixtures():
+    fixture_path = (
+        Path(__file__).parent / "fixtures" / "classification_calibration.json"
+    )
+    fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    for fixture in fixtures:
+        raw = TaskClassification.model_validate(fixture["raw"])
+        snippets = [
+            RelevantFileSnippet(
+                path=path,
+                reason="calibration fixture",
+                content_excerpt="fixture",
+            )
+            for path in fixture["relevant_files"]
+        ]
+        effective = adjust_classification_from_task_shape(
+            raw, fixture["task"], snippets
+        )
+
+        assert effective.difficulty == fixture["expected"], fixture["name"]
+        assert effective.original_difficulty == raw.difficulty
+        assert effective.task_shape_signals["repository_breadth"] >= len(snippets)
+        assert "subsystem_count" in effective.task_shape_signals
+        assert "risk_signals" in effective.task_shape_signals
+        assert "validation_burden" in effective.task_shape_signals
+        if "expected_behavior_count" in fixture:
+            assert (
+                effective.task_shape_signals["behavior_count"]
+                == fixture["expected_behavior_count"]
+            )

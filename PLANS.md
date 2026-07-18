@@ -3896,3 +3896,396 @@ Remaining limitations, assumptions, and risks:
 
 Next permitted milestone:
 - Unchanged. This empirical routing milestone is complete; the next milestone was not started.
+
+#### 2026-07-17: Product Transformation Milestone PT0, product truth and first-run integrity
+
+Status: complete for PT0. The installed-user onboarding contradiction is repaired without weakening
+verification. Conservative validation coverage, controller-scheduled focused probes, one canonical
+summary projection, calibrated generic classification, transactional installation, and a recorded
+built-artifact release gate are now in place. PT1 was not started.
+
+Changed surface:
+- Added `villani.validation_coverage.v1` and `villani.run_summary.v1` normative/packaged schemas,
+  Python models, TypeScript models, protocol fixtures, legacy projections, and contract tests.
+- Updated Villani Ops verification orchestration, probe execution/linkage, plugin forwarding,
+  deterministic acceptance, presentation, CLI, classification, isolation, and materialization.
+- Updated Villani distribution installation/onboarding, documentation, release/onboarding gates,
+  agentd console assets, Villani Web, and Flight Recorder projections and tests.
+- Added readable and machine-readable completion reports at
+  `docs/PT0_COMPLETION_REPORT.{md,json}`.
+
+Architectural decisions:
+- Repository validation proves a requirement only through deterministic, conservative coverage;
+  generic suite success never proves an unrelated requirement.
+- Persisted verifier-requested probes execute in the same candidate environment before the final
+  controller-owned binary decision. Behavior and infrastructure failures remain distinct.
+- CLI, web, reports, static/support artifacts, and Flight Recorder consume
+  `villani.run_summary.v1`; unknown accounting is explicit and never displayed as zero.
+- Raw classification signals remain immutable and effective classification is derived from
+  normalized behaviors plus repository breadth, subsystems, risk, uncertainty, validation burden,
+  and scope.
+- Installer/configuration publication is staged, mandatory imports and executables are verified
+  before activation, and failure restores the prior working state with one repair command.
+
+Verification:
+- Villani distribution: 66 passed.
+- Villani Ops: 1,139 passed, 2 skipped, 114 deselected.
+- Villani Code: 686 passed, 1 skipped.
+- Villani agentd: 78 passed.
+- Root closed-loop integration: 11 passed.
+- Final foundation: 37 passed.
+- Villani Web: tests, typecheck, build, format check, and 14 Playwright tests passed.
+- Flight Recorder: 111 tests, typecheck, build, and format check passed.
+- Ruff over every changed Python file, targeted mypy over ten PT0 production/release modules, and
+  `git diff --check` passed.
+- Final `python release-verification/run_release_gate.py --mode release`: RELEASE GATE PASSED with
+  161 recorded commands; built-artifact onboarding selected one eligible easy-classified attempt,
+  recorded 1/0 repository checks and 3/0 requirements, captured five onboarding plus 17 connected
+  screenshots, passed all 8 connected scenarios and all required security scans, and produced zero
+  dead letters.
+
+Remaining limitations, assumptions, and risks:
+- Legacy evidence migrates conservatively and can remain unknown/not-run rather than gaining
+  retrospective proof.
+- Coverage linkage intentionally prefers false negatives over false positives.
+- Process-level providers are not kernel sandboxes; configured container/devcontainer providers
+  remain stronger for hostile code.
+- Two host-capability Villani Ops tests and the opt-in Claude Code smoke test were skipped. No
+  acceptance failure remains.
+
+Next permitted milestone:
+- Unchanged by this pass. PT0 is complete; PT1 and all later milestones were not started.
+
+#### 2026-07-17: Product Transformation Milestone PT1, unified visual system and information architecture
+
+Status: complete for PT1. Onboarding and the product now render from the same light monochrome
+`villani-ui` tokens and primitives. New task is the root experience, Activity merges Villani tasks
+and imported sessions, Agents presents configured systems, and Settings contains setup plus the
+Advanced index. The default navigation contains only New task, Activity, Agents, and Settings.
+PT2 was not started.
+
+Changed surface:
+- Consolidated shared shell, navigation, notice, page-intro, task-composer, setup-progress,
+  verdict, evidence, form, action, cost, duration, empty, loading, and error primitives in
+  `components/villani-ui` and applied WCAG-AA contrast, focus, reduced-motion, and 320px responsive
+  contracts.
+- Reworked Villani Web routes and public language, added resumable four-stage onboarding, merged
+  Activity, human-readable Agents, operational Settings, preserved legacy redirects/deep links,
+  and kept Team hidden.
+- Replaced standalone onboarding transcript colours and typography with the built shared theme;
+  synchronized the final web build into Agentd and made exact-match asset synchronization
+  idempotent.
+- Added 12 deterministic Playwright screenshot baselines plus route, notice, onboarding,
+  accessibility, responsive, packaged-parity, and palette-duplication tests.
+- Added readable and machine-readable completion reports at
+  `docs/PT1_COMPLETION_REPORT.{md,json}`.
+
+Architectural decisions:
+- Healthy local/service state is silent. Only setup, service, storage, synchronization, migration,
+  credential, or page-recovery conditions create an actionable shell notice.
+- `/console` is New task; `/console/run` and `/console/home` redirect there. `/console/activity`
+  replaces primary History and `/console/history` redirects to it. Run, session, replay, model,
+  policy, fleet, task, cost, alert, and audit deep links remain valid.
+- Primary screens translate internal controller terminology into user language while technical
+  Evidence disclosures and stored artifacts retain exact wire terms.
+- Onboarding state is resumable browser-local presentation state only; no configuration or wire
+  schema migration was introduced. Safe repository and configured-agent defaults are preselected,
+  and Ready opens New task with the repository selected.
+- Flight Recorder continues to validate its curated public protocol set while run-specific parsers
+  retain access to internal PT0 evidence artifacts. No controller, acceptance, routing, retry,
+  selection, or delivery behavior changed.
+
+Verification:
+- Shared UI: build passed; 4 tests passed, including computed WCAG-AA semantic/text contrast and
+  the no-standalone-onboarding-palette contract.
+- Villani Web: 20 unit tests passed; typecheck, production build, and format check passed; the full
+  Playwright suite passed 26 tests and the locked PT1 visual suite passed 12/12.
+- Packaged Console: digest check reported 3 verified files; Agentd passed 79 tests; explicit source
+  distribution/package byte-parity tests passed 2/2.
+- Flight Recorder: 111 tests passed; typecheck, build, and format check passed.
+- Villani Code: 686 passed, 1 skipped. Villani Ops: 1,139 passed, 2 skipped, 114 deselected.
+- Closed-loop integration: 11 passed. Final foundation: 38 passed. Ruff and `git diff --check`
+  passed.
+
+Remaining limitations, assumptions, and risks:
+- The distribution suite passed 65 tests, but its clean-install test is environment-blocked here:
+  sandboxed npm cannot launch esbuild, while elevating the whole test loses directory-rename access
+  to OneDrive-hosted packaged assets. Independent production build, synchronization, serving,
+  onboarding, and byte-parity evidence all pass.
+- Browser screenshot baselines use the repository Playwright/Chromium harness because the in-app
+  browser connector was unavailable in this session.
+- Onboarding resumption uses local storage; blocking browser storage affects only cross-reload
+  resumption, not setup completion.
+- Existing unrelated PT0/user working-tree changes were preserved. No schema/config migration,
+  controller-state mutation, acceptance change, or later-milestone work was introduced.
+
+Next permitted milestone:
+- Unchanged by this pass. PT1 is complete; PT2 and all later milestones were not started.
+
+#### 2026-07-17: Product Transformation Milestone PT2, magical single-task loop
+
+Status: complete for PT2. New task now starts from repository, one multiline task field, optional
+Details, and Run safely. Canonical events project to Understanding, Working, Checking, and Ready,
+then exactly one of Ready to apply, Needs review, Could not prove, or Cancelled. Gate A passes in
+`docs/PT2_GATE_A.json`. PT3 was not started.
+
+Changed surface:
+- Added the normative and packaged `villani.product_run.v1` contract, Python and TypeScript models,
+  a durable fixture/artifact, conservative legacy projection, and shared CLI/web consumption.
+- Added durable cancellation, runner cancellation requests, evidence-preserving cleanup, truthful
+  target modification state, idempotent submission, event subscription, refresh reconnection, and
+  repository-fingerprint discovery caching.
+- Replaced the default run form with the PT2 single-task surface, locally resumable drafts,
+  auto-detected repository validation, dirty/unavailable recovery states, shared result ordering,
+  Evidence disclosure, and fail-closed delivery actions.
+- Made Performance/strongest eligible, mandatory verification, no default wall-time, and deferred
+  non-destructive delivery the shared browser/CLI defaults while retaining explicit advanced flags.
+- Added 11 PT2 Playwright scenarios and 14 deterministic stage, verdict, delivery, recovery, and
+  reconnection screenshots. Synchronized the production build into packaged Agentd assets.
+- Added readable and machine-readable reports at `docs/PT2_COMPLETION_REPORT.{md,json}` and the
+  machine-readable Gate A report at `docs/PT2_GATE_A.json`.
+
+Architectural decisions:
+- The frontend never reimplements acceptance. `villani.product_run.v1` alone supplies stage,
+  verdict, reason, summaries, accounting, actions, Evidence links, and recovery.
+- Ready to apply requires selected acceptance-grade proof. Missing, malformed, unselected,
+  accepted-unverified, stale, or drifted work has no delivery action.
+- Progress is persisted canonical-event projection, not frontend time or percentage estimation.
+- Unknown cost, duration, and combined checks remain null/unknown; no evidence is fabricated.
+- Cancellation is durable and cooperative before delivery. An already-started atomic delivery is
+  not interrupted midway and its final target state remains authoritative.
+- Existing manifests remain readable through an optional product artifact path and conservative
+  legacy derivation. No durable configuration migration was needed.
+
+Verification:
+- Gate A: PASS with zero blocking or acceptance failures.
+- Villani Ops: 1,164 passed, 2 skipped, 114 deselected; focused product/summary/CLI suite 50 passed.
+- Villani Agentd: 86 passed. Villani Code: 686 passed, 1 skipped.
+- Closed-loop integration: 11 passed. Final foundation: 38 passed.
+- Villani Web: 24 unit tests, typecheck, production build, and format check passed; full Playwright
+  suite passed 37 tests, including all 11 PT2 scenarios.
+- Shared UI: build and 4 tests passed. Run Model: emit/no-emit typecheck and 5 tests passed.
+- Flight Recorder: 111 tests, typecheck, build, and format check passed.
+- Packaged Console: digest check verified 3 files; 2 byte-parity tests passed.
+- Ruff passed over the full PT2 Python/test surface; focused mypy passed all 11 PT2 production
+  files; `git diff --check` passed.
+
+Remaining limitations, assumptions, and risks:
+- The in-app Browser connector had no attached browser; deterministic Playwright/Chromium evidence
+  and individual screenshot inspection cover the required browser behavior.
+- The standalone Run Model checkout has no local `tsc`; pinned repository TypeScript/Vitest binaries
+  compiled and tested it successfully.
+- Broad followed-import mypy retains existing transitive repository debt. The complete direct PT2
+  production surface is clean under focused mypy and all component suites pass.
+- Browser-local draft storage affects only resumability. Existing PT0/PT1/user changes were
+  preserved. No qualification, team, SaaS, learned routing, or other PT3 behavior was introduced.
+
+Next permitted milestone:
+- Unchanged by this pass. PT2 is complete; PT3 and all later milestones were not started.
+
+#### 2026-07-17: Product Transformation Milestone PT3, Founder Thesis Lab
+
+Status: implementation complete; evidence insufficient for Founder Gate B. Villani now captures
+content-addressed real-task bundles, runs randomized paired direct-versus-Villani trials from the
+same immutable baseline, records append-only blinded human review, calculates supervision,
+reliability, time, and cost metrics, and emits answer-first JSON, Markdown, and HTML reports. Gate B
+correctly reports `INSUFFICIENT_EVIDENCE`: this workspace contains 0 of the required 30 paired real
+tasks across 0 of the required 2 repositories. Synthetic fixtures do not count. PT4 was not started.
+
+Changed surface:
+- Added strict `villani.evaluation_suite.v1`, `villani.evaluation_task.v1`,
+  `villani.evaluation_trial.v1`, `villani.human_review.v1`, and
+  `villani.evaluation_report.v1` contracts as Python models, normative and packaged JSON Schemas,
+  TypeScript models, generated distributions, fixtures, and protocol tests.
+- Added the Villani Ops `evaluation_lab` capture, workspace, paired-runner, review-ledger,
+  metrics/reporting, and Founder Gate implementation, exposed through the public `villani eval`
+  command group.
+- Added content-addressed Git snapshot capture, secret/forbidden-file exclusion, restore proof,
+  evaluator-only future context and hidden checks, runner-safe portable actual-code exports,
+  persisted randomized order, sequential resumability, atomic duplicate prevention, and
+  cross-platform external-path compaction.
+- Added blinded append-only human reviews and amendments plus JSON, Markdown, and linked HTML
+  reporting with raw counts, Wilson proportion intervals, deterministic bootstrap median intervals,
+  confusion metrics, cost and route decomposition, paired deltas, exclusions, unknowns, and Gate B.
+- Added the founder workflow guide, machine-readable Gate B result, and readable and
+  machine-readable completion reports at `docs/FOUNDER_THESIS_LAB.md`, `docs/PT3_GATE_B.json`, and
+  `docs/PT3_COMPLETION_REPORT.{md,json}`.
+
+Architectural decisions:
+- Runner-visible task data never contains the task identifier/name, expected or future patch,
+  expected file list, hidden checks, arm, route, harness, cost, or competing candidates. Future
+  context and hidden checks remain in evaluator-only storage, and both arms receive the same opaque
+  runner payload and immutable code archive.
+- Final verification is a common arm-blind function over independently restored output and the same
+  authoritative validation. Its interface cannot receive arm, route, harness, cost, or competing
+  candidate identity. The direct arm invokes the strongest configured coding system exactly once;
+  the Villani arm reuses normal mandatory-verification product defaults.
+- Trials use fresh isolation and never apply to the source repository. Baseline or setup drift,
+  secrets, malformed evidence, incompatible currencies, missing costs, and concurrent execution
+  fail closed. Unknown cost and duration remain null with explicit accounting status.
+- Human judgments are separate append-only records; amendments preserve history. Synthetic tasks
+  are permanently ineligible for founder evidence, and the workflow has no passive monitoring or
+  external harness.
+- Gate B always exposes raw eligibility counts and returns PASS, FAIL, or
+  INSUFFICIENT_EVIDENCE. It cannot infer significance from a small sample or manufacture cloud
+  equivalent pricing for local compute.
+
+Verification:
+- Focused PT3 plus shared protocol: 32 passed in 14.12 seconds.
+- Villani Ops: 1,178 passed, 2 skipped, 114 deselected in 244.81 seconds.
+- Run Model: 2 files and 7 tests passed; emit/no-emit TypeScript checks and Prettier passed.
+- Root closed-loop integration: 11 passed with 2 warnings in 43.01 seconds.
+- Flight Recorder: 21 files and 111 tests passed; typecheck, build, and format check passed.
+- Five normative/packaged schema pairs were byte-identical; the built Villani Ops wheel contained
+  all 11 expected PT3 modules and schemas; the scoped 32-root secret scan found 0 findings.
+- Ruff, focused mypy over all six direct PT3 production modules, schema generation/idempotence, JSON
+  report parsing, and `git diff --check` passed.
+
+Remaining limitations, assumptions, and risks:
+- No founder task corpus, provider credentials, measured founder outcomes, or authorization to incur
+  provider charges was supplied. Gate B therefore has no eligible evidence and no claims about
+  reliability, review savings, cost savings, or significance are made.
+- Portable bundles contain actual source code and reports disclose configured system/environment
+  identity; confidentiality is marked but artifacts are not encrypted. Secret scanning and bounded
+  redaction cannot recognize every credential format, so operators must inspect exports before
+  sharing.
+- Process isolation is not a kernel sandbox. Setup, coding, and validation commands use configured
+  permissions; hostile tasks should use an existing container/devcontainer provider. A hard-killed
+  runner can leave a lock, in which case resume fails closed with one exact recovery action.
+- The untouched Villani Code full suite has 74 existing failures, 612 passes, and 1 skipped test,
+  concentrated in mocked subprocess `stdout=None` handling and Windows decoding. Broad
+  followed-import mypy retains 206 transitive repository errors; the complete direct PT3 module set
+  passes focused mypy.
+
+Next permitted milestone:
+- PT3 implementation is complete, but Founder Gate B remains `INSUFFICIENT_EVIDENCE` until at least
+  30 qualifying paired real tasks from two repositories have blinded reviews and complete unknown
+  and exclusion disclosure. PT4 and all later milestones were not started.
+
+#### 2026-07-17: Product Transformation Milestone PT4, evidence-bounded core hardening
+
+Status: `INSUFFICIENT_EVIDENCE`. The required pre-change Founder Gate B execution found 0 paired
+real tasks across 0 repositories, unresolved real-baseline integrity, and 0 human-labelled founder
+outcomes. PT4 therefore made no speculative performance, routing, retry, selection, verifier, or
+delivery change. One independent accounting correctness defect was fixed: unknown trial duration
+now remains null/unknown in evaluation metrics instead of being coerced to numeric zero. PT5 was
+not started.
+
+Changed surface:
+- Added a fail-closed `evaluation_lab.hardening` analysis layer with the complete PT4 taxonomy,
+  evidence-only clustering, the exact prioritization equation, human-labelled verifier diagnostics,
+  exact frozen before/after identity checks, sufficiency assessment, redacted content-addressed
+  certificate generation on Gate B PASS only, and exact identifier leakage scanning.
+- Tightened paired-evidence counting so direct and Villani arms must share task identity, repetition,
+  task digest, and immutable baseline digest. Synthetic fixtures never contribute founder evidence.
+- Corrected evaluation duration aggregation so unknown duration remains `null` with explicit
+  unknown accounting. Added an identifier-free mechanism fixture and regression test.
+- Added the required sufficiency, hardening analysis, and completion evidence under `docs/product`
+  and `docs`, with no founder-proof certificate because Gate B did not pass.
+
+Architectural decisions:
+- Hardening analysis remains outside controller and policy packages and cannot mutate route, retry,
+  acceptance, candidate selection, materialization/delivery, or semantic-verifier inputs.
+- Infrastructure exclusions are disclosed separately from the verifier confusion matrix. Binary
+  verification has no fabricated calibration probability.
+- Failure clustering and prioritization consume only explicit real-founder observations. Raw task
+  and repository identities are replaced by opaque digests in analysis and certificate output.
+- A certificate requires Gate B PASS and zero known false acceptance. PT5 authorization remains
+  false for every other state.
+- No public schema, TypeScript model, CLI, UI, configuration, or bundle migration was introduced;
+  existing evaluation and run artifacts remain readable.
+
+Verification:
+- Final focused PT4 tests: 9 passed in 1.36 seconds. Combined PT3/PT4 contracts: 24 passed in 14.43
+  seconds. Ruff and focused mypy passed.
+- Final Villani Ops default suite: 1,188 passed, 2 host-capability tests skipped, and 114 configured
+  slow/integration/e2e tests deselected in 240.82 seconds.
+- Root closed-loop integration: 11 passed with 2 warnings in 39.90 seconds.
+- Flight Recorder: 21 files and 111 tests passed; typecheck, build, and format check passed.
+- Founder Gate B was recalculated through the installed CLI and returned
+  `INSUFFICIENT_EVIDENCE` with process exit 2. The durable hardening report was semantically equal
+  to a fresh final-code generation; its content digest verified exactly.
+- Production-identifier scan covered two evidence identifiers across three Villani Ops production
+  roots with 0 violations. Scoped secret scan covered 6 roots with 0 findings.
+
+Remaining limitations, assumptions, and risks:
+- There are no real frozen before/after task pairs, so no reliability, cost, review-time, supervision,
+  verifier-quality, or performance improvement is claimed and no failure cluster is ranked.
+- No certificate was issued. The next experiment remains at least 20 paired real tasks for PT4
+  hardening decisions and 30 across two repositories for Gate B, with complete append-only reviews.
+- The untouched Villani Code full suite retains its known 74 failures, 612 passes, and 1 skipped
+  test, concentrated in mocked subprocess `stdout=None` handling and Windows decoding. PT4 did not
+  edit that component.
+- The only user-visible data change is more truthful accounting: consumers that incorrectly treated
+  unknown elapsed time as zero will now receive null/unknown. There is no data loss or repository
+  mutation.
+
+Next permitted milestone:
+- Gate B remains `INSUFFICIENT_EVIDENCE`; PT5 is not authorized and was not started.
+
+#### 2026-07-18: Product Transformation Milestone PT5, complete agent-system and harness contract
+
+Status: `COMPLETE`. The public controller now resolves a versioned complete agent system through
+configuration and a registry instead of constructing the Villani Code adapter directly. Villani
+Code implements the same harness-neutral lifecycle and evidence contract intended for future
+harnesses and remains the only production-enabled harness. PT6 was not started.
+
+Changed surface:
+- Added the content-addressed `villani.agent_system.v1` identity, tri-state sourced capabilities,
+  complete lifecycle adapter contract, normalized event model, harness-neutral result, conformance
+  report, registry, legacy configuration projection, CLI inventory/inspection/doctor commands, and
+  Agents UI identity views.
+- Added normative and packaged schemas, Python and TypeScript models, cross-language fixtures,
+  migration coverage, conformance coverage, public documentation, and machine-readable and Markdown
+  completion evidence.
+- New run bundles persist exact agent-system identities and harness results through optional links;
+  old bundles and founder evidence remain readable. External systems are always disabled and
+  unsupported in PT5.
+- Hardened Git baseline creation so all failures stop locally and empty isolated repositories gain
+  an explicit empty baseline commit. Updated generic stream decoding and event timestamp handling
+  needed by the common harness contract.
+
+Architectural decisions:
+- A route is a complete non-secret agent-system identity, not a model name. Its system ID is derived
+  from canonical configuration, with explicit redaction and detection provenance.
+- Controller construction is plugin- and configuration-driven. Only Villani Code may be both
+  production-enabled and qualified; technically connected external harness definitions cannot be
+  selected.
+- Capability, usage, cost, duration, identity, qualification, and cleanup evidence is never
+  invented. Unknown values remain explicitly unknown, and missing or failed conformance evidence
+  fails closed.
+- Semantic verification remains blind to harness, route, cost, and competing candidates. Selection
+  receives only generic acceptance-eligible candidates, and only the selected recorded patch can be
+  materialized.
+- Normalized events preserve emission order, explicitly record corrected timestamp regressions,
+  omit unsafe reasoning, and preserve unknown namespaced raw events.
+
+Verification:
+- Villani Code: 686 passed, 1 skipped, 27 warnings in 146.76 seconds.
+- Villani Ops: 1,202 passed, 2 skipped, 114 deselected in 289.26 seconds.
+- Root closed-loop integration: 11 passed, 1 warning in 44.93 seconds.
+- Agentd: 86 passed in 18.78 seconds.
+- Flight Recorder: 21 files and 112 tests passed; typecheck, build, and format check passed.
+- Villani Web: 4 files and 24 tests passed; typecheck, 57-module production build, and format check
+  passed; packaged console assets matched all 3 files.
+- Run model: typecheck and build passed; 3 files and 9 tests passed in 411 milliseconds using the
+  pinned Web toolchain because the standalone package has no local binaries.
+- Distribution: 65 repository-sandbox cases passed and the sole sandbox-incompatible clean-install
+  case passed unchanged from a disposable non-OneDrive copy in 78.01 seconds. The complete
+  onboarding gate passed in 106.59 seconds.
+- Focused PT5 and protocol tests: 30 passed in 1.46 seconds. Ruff passed. Three of three normative
+  and packaged schema pairs were byte-identical. A 21-file credential-pattern scan found 0 matches.
+  Final `git diff --check` passed.
+
+Remaining limitations, assumptions, and risks:
+- No screenshot was captured because the in-app browser had no attached target. Web unit tests,
+  typecheck, production build, format check, and packaged-asset parity provide the UI evidence.
+- Two Villani Ops POSIX-only host-capability tests and one opt-in external Villani Code smoke test
+  were skipped for documented environmental reasons.
+- Raw traces and patches may contain repository data and are not encrypted. Redaction is bounded;
+  operators must inspect exports. Process isolation is not a kernel sandbox.
+- Old bundles without PT5 fields read those fields as unknown. External harnesses are inspectable
+  but deliberately non-operational. No unresolved PT5 acceptance failure remains.
+
+Next permitted milestone:
+- PT5 is complete. PT6 was not started and is not authorized by this pass.

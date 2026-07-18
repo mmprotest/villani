@@ -23,6 +23,17 @@ VALID_RUN = (
 def _bundle(tmp_path: Path, name: str = "run") -> Path:
     destination = tmp_path / name
     shutil.copytree(VALID_RUN, destination)
+    # These tests exercise the backwards-readable event-only projection. The
+    # shared protocol fixture now also contains authoritative PT0 artifacts,
+    # so remove them rather than allowing modern evidence to mask malformed
+    # legacy events.
+    for relative in (
+        "run-summary.json",
+        "validation-coverage.json",
+        "attempts/attempt_002/repository-validation.json",
+        "verification/attempt_002-evidence.json",
+    ):
+        (destination / relative).unlink(missing_ok=True)
     return destination
 
 
@@ -331,6 +342,44 @@ def test_every_terminal_failure_has_a_complete_recovery_experience(code: str) ->
     assert value["missing_evidence"]
     assert value["patch_status"]
     assert value["next_action"]
+
+
+def test_pt2_explicit_failure_states_are_actionable_public_language() -> None:
+    required = {
+        "no_repository",
+        "incomplete_setup",
+        "no_usable_agent",
+        "dirty_repository",
+        "validation_unavailable",
+        "runner_missing",
+        "expired_credentials",
+        "unavailable_model",
+        "verification_infrastructure_failure",
+        "no_acceptable_candidate",
+        "target_drift",
+        "delivery_conflict",
+        "service_interruption",
+        "cancellation",
+    }
+
+    assert required <= FAILURE_CATALOG.keys()
+    for code in required:
+        value = failure_experience(code)
+        assert value["what_failed"]
+        assert value["next_action"]
+        public_text = " ".join(
+            str(value[key])
+            for key in ("what_failed", "what_villani_tried", "missing_evidence", "next_action")
+        ).lower()
+        for internal_term in (
+            "acceptance eligible",
+            "acceptance-eligible",
+            "canonical truth",
+            "verifier authority",
+            "materialization",
+            "exhausted",
+        ):
+            assert internal_term not in public_text
 
 
 def test_raw_event_names_are_opt_in() -> None:

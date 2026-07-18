@@ -1,23 +1,23 @@
 import type { ReactNode } from "react";
 import {
+  ActionableSystemNotice,
   AppShell,
+  PrimaryNavigation,
   Sidebar,
-  SidebarItem,
-  SidebarSection,
-  StatusBadge,
   StatusStrip,
   TopHeader,
 } from "@villani/ui/react";
 import { useConsoleEnvironment } from "./consoleContext";
 
 export type Surface =
-  | "home"
-  | "run"
-  | "history"
+  | "new-task"
+  | "activity"
+  | "agents"
+  | "settings"
+  | "onboarding"
   | "replay"
   | "models"
   | "policies"
-  | "settings"
   | "fleet"
   | "tasks"
   | "costs"
@@ -25,23 +25,77 @@ export type Surface =
   | "audit"
   | "ask";
 
-const localItems: { id: Surface; label: string; href: string; glyph: string }[] = [
-  { id: "home", label: "Home", href: "/console", glyph: "H" },
-  { id: "run", label: "Run", href: "/console/run", glyph: ">" },
-  { id: "history", label: "History", href: "/console/history", glyph: "=" },
-  { id: "replay", label: "Replay", href: "/console/replay", glyph: "@" },
-  { id: "models", label: "Models", href: "/console/models", glyph: "M" },
-  { id: "policies", label: "Policies", href: "/console/policies", glyph: "P" },
+const primaryItems = [
+  { id: "new-task", label: "New task", href: "/console", glyph: "+" },
+  { id: "activity", label: "Activity", href: "/console/activity", glyph: "=" },
+];
+
+const secondaryItems = [
+  { id: "agents", label: "Agents", href: "/console/agents", glyph: "A" },
   { id: "settings", label: "Settings", href: "/console/settings", glyph: "S" },
 ];
 
-const teamItems: { id: Surface; label: string; href: string; glyph: string }[] = [
-  { id: "fleet", label: "Fleet", href: "/console/fleet", glyph: "F" },
-  { id: "tasks", label: "Tasks", href: "/console/tasks", glyph: "T" },
-  { id: "costs", label: "Costs", href: "/console/costs", glyph: "$" },
-  { id: "alerts", label: "Alerts", href: "/console/alerts", glyph: "!" },
-  { id: "audit", label: "Audit", href: "/console/audit", glyph: "A" },
-];
+type Notice = {
+  title: string;
+  detail: string;
+  href: string;
+  label: string;
+  kind: "warning" | "error";
+};
+
+function systemNotice(
+  environment: ReturnType<typeof useConsoleEnvironment>,
+  status: string,
+  statusText?: string,
+): Notice | null {
+  if (status === "failed" || status === "error")
+    return {
+      title: statusText ?? "This page needs attention",
+      detail: "Open diagnostics for the recorded error and recovery steps.",
+      href: "/console/settings#diagnostics",
+      label: "Open diagnostics",
+      kind: "error",
+    };
+  if (environment.service.status.toLowerCase() === "loading") return null;
+  if (!environment.setup.configured || !environment.setup.valid)
+    return {
+      title: "Finish setup",
+      detail:
+        environment.setup.issues[0] ??
+        "Choose a repository and confirm an agent connection before starting a task.",
+      href: "/console/onboarding",
+      label: "Continue setup",
+      kind: "warning",
+    };
+  if (!["running", "connected"].includes(environment.service.status.toLowerCase()))
+    return {
+      title: "Villani service is unavailable",
+      detail:
+        environment.service.last_error ??
+        "Start the local service to submit tasks and load recorded activity.",
+      href: "/console/settings#service",
+      label: "View recovery",
+      kind: "error",
+    };
+  if (environment.data_source === "local-service" && !environment.storage.writable)
+    return {
+      title: "Local storage needs attention",
+      detail:
+        "Villani cannot safely record new run evidence until storage is writable.",
+      href: "/console/settings#diagnostics",
+      label: "Open diagnostics",
+      kind: "error",
+    };
+  if (environment.synchronization.dead_letters > 0)
+    return {
+      title: "Some activity could not synchronize",
+      detail: `${environment.synchronization.dead_letters} item${environment.synchronization.dead_letters === 1 ? "" : "s"} need attention.`,
+      href: "/console/settings#diagnostics",
+      label: "Review sync",
+      kind: "warning",
+    };
+  return null;
+}
 
 export function ProductShell({
   surface,
@@ -59,51 +113,32 @@ export function ProductShell({
   children: ReactNode;
 }) {
   const environment = useConsoleEnvironment();
-  const connected = environment.workspace.connected;
-  const activeSurface = surface === "ask" ? "audit" : surface;
+  const activeSurface = ["new-task", "activity", "agents"].includes(surface)
+    ? surface
+    : "settings";
+  const notice = systemNotice(environment, status, statusText);
   const sidebar = (
     <Sidebar
       brand={
         <>
-          <span aria-hidden="true">[V]</span> VILLANI
+          <span aria-hidden="true">V</span> VILLANI
         </>
       }
       data-testid="shared-sidebar"
     >
-      <SidebarSection title="LOCAL">
-        {localItems.map((item) => (
-          <SidebarItem
-            key={item.id}
-            href={item.href}
-            glyph={item.glyph}
-            active={activeSurface === item.id}
-          >
-            {item.label}
-          </SidebarItem>
-        ))}
-      </SidebarSection>
-      {connected && (
-        <SidebarSection title="TEAM" data-testid="team-navigation">
-          {teamItems.map((item) => (
-            <SidebarItem
-              key={item.id}
-              href={item.href}
-              glyph={item.glyph}
-              active={activeSurface === item.id}
-            >
-              {item.label}
-            </SidebarItem>
-          ))}
-        </SidebarSection>
-      )}
-      <div className="web-shell-version">
-        VILLANI CONSOLE
+      <PrimaryNavigation
+        data-testid="primary-navigation"
+        primary={primaryItems}
+        secondary={secondaryItems}
+        activeId={activeSurface}
+      />
+      <div className="web-shell-version" aria-hidden="true">
+        VILLANI
         <br />
         {environment.version}
       </div>
     </Sidebar>
   );
-  const mode = connected ? "CONNECTED" : "LOCAL";
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -112,28 +147,19 @@ export function ProductShell({
       <AppShell
         data-testid="shared-app-shell"
         sidebar={sidebar}
-        header={
-          <TopHeader
-            data-testid="shared-header"
-            title={title}
-            detail={detail}
-            actions={<span className="v-muted">{mode}</span>}
-          />
-        }
+        header={<TopHeader data-testid="shared-header" title={title} detail={detail} />}
         statusStrip={
-          <StatusStrip>
-            <StatusBadge
-              status={status}
-              label={
-                statusText ?? `SERVICE / ${environment.service.status.toUpperCase()}`
-              }
-            />
-            <span>MODE / {mode}</span>
-            <span>SYNC / {environment.synchronization.pending} PENDING</span>
-            {environment.synchronization.dead_letters > 0 && (
-              <span>FAILED / {environment.synchronization.dead_letters}</span>
-            )}
-          </StatusStrip>
+          notice ? (
+            <StatusStrip data-testid="actionable-system-notice">
+              <ActionableSystemNotice
+                title={notice.title}
+                detail={notice.detail}
+                actionHref={notice.href}
+                actionLabel={notice.label}
+                kind={notice.kind}
+              />
+            </StatusStrip>
+          ) : undefined
         }
       >
         {children}

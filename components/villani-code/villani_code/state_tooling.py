@@ -863,10 +863,12 @@ def execute_tool_with_lifecycle(
                 cwd=runner.repo,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
             progress.observe_patch(
-                completed.stdout if completed.returncode == 0 else "",
+                (completed.stdout or "") if completed.returncode == 0 else "",
                 _benchmark_mutation_targets(tool_name, normalized_arguments),
             )
     if memory is not None:

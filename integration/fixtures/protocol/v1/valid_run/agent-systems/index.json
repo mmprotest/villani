@@ -1,0 +1,21 @@
+{
+  "schema_version": "villani.agent_system_index.v1",
+  "system_ids": [
+    "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575",
+    "asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa"
+  ],
+  "systems": [
+    {
+      "system_id": "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575",
+      "route_name": "fixture_economy",
+      "path": "agent-systems/asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575.json",
+      "production_enabled": true
+    },
+    {
+      "system_id": "asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa",
+      "route_name": "fixture_capable",
+      "path": "agent-systems/asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa.json",
+      "production_enabled": true
+    }
+  ]
+}

@@ -114,13 +114,13 @@ describe("session browser", () => {
       ]),
     );
     expect(html).toContain("Local investigation index");
-    expect(html).toContain("--v-bg-root: #050505");
+    expect(html).toContain("--v-bg-root: #f6f6f3");
     expect(html).toContain("background: var(--v-bg-root)");
-    expect(html).toContain("color-scheme: dark");
+    expect(html).toContain("color-scheme: light");
     expect(html).toContain('class="v-app-shell vfr-shell"');
     expect(html).toContain('data-testid="shared-sidebar"');
     expect(html).not.toMatch(
-      /#f8fafc|#f7f3ea|#334155|rgba\(255,255,255,\.(?:3|4|5|6|7|8|9)/i,
+      /#050505|#090d19|#11182a|#334155|rgba\(0,0,0,\.(?:8|9)/i,
     );
     expect(html).not.toContain("background: linear-gradient(180deg, #eef1f3");
     expect(html).not.toContain("#0f172a");

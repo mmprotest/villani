@@ -56,10 +56,25 @@ const snapshotPaths = [
   join(validRun, "verification", "attempt_002.json"),
   join(validRun, "selection.json"),
   join(validRun, "materialization.json"),
+  join(validRun, "validation-coverage.json"),
+  join(validRun, "run-summary.json"),
+  join(
+    validRun,
+    "agent-systems",
+    "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575.json",
+  ),
+  join(
+    validRun,
+    "agent-systems",
+    "asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa.json",
+  ),
+  join(validRun, "attempts", "attempt_001", "harness-result.json"),
+  join(validRun, "attempts", "attempt_002", "harness-result.json"),
+  join(validRun, "harness-conformance.json"),
 ];
 
 describe("canonical Villani protocol", () => {
-  it("accepts the complete shared bundle and all ten schema versions", () => {
+  it("accepts the complete shared bundle and all fifteen schema versions", () => {
     const versions = new Set<string>();
     for (const path of snapshotPaths) {
       const document = json(path);
@@ -130,5 +145,48 @@ describe("canonical Villani protocol", () => {
         json(join(invalid, "attempt_event_without_attempt_id.json")),
       ),
     ).toMatchObject({ valid: false });
+  });
+
+  it("fails closed on tampered PT5 identity, evidence, and qualification", () => {
+    const identity = structuredClone(
+      json(
+        join(
+          validRun,
+          "agent-systems",
+          "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575.json",
+        ),
+      ),
+    );
+    identity.qualification_status = "qualified";
+    identity.qualification_references = [];
+    expect(validator.validate(identity)).toMatchObject({ valid: false });
+
+    const harness = structuredClone(
+      json(join(validRun, "attempts", "attempt_001", "harness-result.json")),
+    );
+    harness.cost = {
+      amount: 0,
+      currency: "USD",
+      accounting_status: "unknown",
+      source: null,
+    };
+    harness.artifacts[0].path = "../outside.patch";
+    harness.normalized_events[1].sequence = 9;
+    const harnessValidation = validator.validate(harness);
+    expect(harnessValidation.valid).toBe(false);
+    if (harnessValidation.valid) throw new Error("expected evidence to fail");
+    expect(harnessValidation.errors.map((error) => error.keyword)).toEqual(
+      expect.arrayContaining([
+        "accounting_status",
+        "artifact_path_safety",
+        "event_sequence",
+      ]),
+    );
+
+    const conformance = structuredClone(
+      json(join(validRun, "harness-conformance.json")),
+    );
+    conformance.checks.pop();
+    expect(validator.validate(conformance)).toMatchObject({ valid: false });
   });
 });

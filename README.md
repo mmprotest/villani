@@ -185,7 +185,17 @@ From the repository root, install the development checkout on Windows, macOS, or
 python scripts/install-local.py
 ```
 
-The development installer requires Node.js 20 and npm to rebuild bundled observability assets. It does not start the service, collect telemetry, or download a model. Internal component and protocol details are documented in [distribution details](docs/DISTRIBUTION.md), [closed-loop architecture](docs/CLOSED_LOOP.md), and the [canonical run-bundle contract](docs/CLOSED_LOOP.md#canonical-run-bundle).
+This installs runtime dependencies only. Use `python scripts/install-local.py --development`
+when the test, lint, and type-check toolchain is also required. The installer requires Node.js 20
+and npm to rebuild bundled observability assets, stages the environment, verifies mandatory imports
+and every command entry point, and then publishes it atomically. An interrupted or failed install
+restores the prior environment and prints one exact repair command. It does not start the service,
+collect telemetry, or download a model. Internal component and protocol details are documented in
+[distribution details](docs/DISTRIBUTION.md), [closed-loop architecture](docs/CLOSED_LOOP.md), the
+[agent-system and harness contract](docs/AGENT_SYSTEMS.md), and the
+[canonical run-bundle contract](docs/CLOSED_LOOP.md#canonical-run-bundle). Paired founder-task
+capture, blinded review, evaluation reports, and Gate B are documented in the
+[Founder Thesis Lab guide](docs/FOUNDER_THESIS_LAB.md).
 
 ## Verification
 
@@ -203,4 +213,7 @@ The complete packaged connected-product gate remains:
 python release-verification/run_release_gate.py --mode local
 ```
 
-It builds release packages in isolation, applies PostgreSQL migrations, executes all connected scenarios, reconciles canonical data across packaged consumers, and runs browser tests.
+It builds release packages in isolation, installs only the built Villani artifacts into a clean
+environment, runs the timestamped installed-user onboarding gate with screenshots and a secret scan,
+applies PostgreSQL migrations, executes all connected scenarios, reconciles canonical data across
+packaged consumers, and runs browser tests.

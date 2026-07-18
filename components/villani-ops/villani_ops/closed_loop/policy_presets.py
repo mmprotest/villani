@@ -23,6 +23,12 @@ class PolicyPreset:
 
 POLICY_PRESETS: tuple[PolicyPreset, ...] = (
     PolicyPreset(
+        "performance",
+        "Performance",
+        "Use the strongest eligible route and require verification.",
+        "strongest_eligible",
+    ),
+    PolicyPreset(
         "reliable",
         "Reliable",
         "Prefer stronger validation and escalation evidence.",
@@ -130,7 +136,9 @@ def apply_policy_preset(
     # evidence gates or change controller transition/acceptance rules.
     policy = result.get("policy")
     policy_values = dict(policy) if isinstance(policy, Mapping) else {}
-    if selected == "reliable":
+    if selected == "performance":
+        policy_values["accepted_candidates_required"] = 1
+    elif selected == "reliable":
         policy_values["accepted_candidates_required"] = max(
             int(policy_values.get("accepted_candidates_required", 1)), 2
         )

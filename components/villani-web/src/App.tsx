@@ -570,14 +570,14 @@ function CanonicalEvidence({ snapshot }: { snapshot: CanonicalRunSnapshot }) {
           detail="Candidate execution"
         />
         <MetricCard
-          label="Verifier cost"
+          label="Verification cost"
           value={fmtMoney(snapshot.verifier_cost_usd)}
           detail={snapshot.verifier_identity ?? "No verifier call"}
         />
         <MetricCard
           label="Total cost"
           value={fmtMoney(snapshot.total_cost_usd)}
-          detail="Coding + verifier"
+          detail="Coding + verification"
         />
         <MetricCard
           label="Tokens"
@@ -592,12 +592,12 @@ function CanonicalEvidence({ snapshot }: { snapshot: CanonicalRunSnapshot }) {
         <MetricCard
           label="File writes"
           value={canonicalText(snapshot.file_write_count)}
-          detail={`${snapshot.selected_materialized_files.length} materialized files`}
+          detail={`${snapshot.selected_materialized_files.length} changed files`}
         />
       </div>
       <div className="v-grid v-grid--2">
         <Panel id="run-overview" data-testid="run-overview">
-          <PanelHeader title="RUN / CANONICAL TRUTH" meta={snapshot.run_id} />
+          <PanelHeader title="RUN / RECORDED EVIDENCE" meta={snapshot.run_id} />
           <KeyValueGrid
             items={[
               ["Task", snapshot.task ?? "Unknown"],
@@ -617,7 +617,7 @@ function CanonicalEvidence({ snapshot }: { snapshot: CanonicalRunSnapshot }) {
                   .join(" / ") || "Unknown",
               ],
               ["Selected attempt", snapshot.selected_attempt_id ?? "None"],
-              ["Materialization", snapshot.materialization_status ?? "Unknown"],
+              ["Apply change", snapshot.materialization_status ?? "Unknown"],
               [
                 "Duration",
                 snapshot.duration_ms == null ? "Unknown" : `${snapshot.duration_ms} ms`,
@@ -628,7 +628,7 @@ function CanonicalEvidence({ snapshot }: { snapshot: CanonicalRunSnapshot }) {
         </Panel>
         <Panel id="classification" data-testid="classification-adjustment">
           <PanelHeader
-            title="CLASSIFICATION / RAW → EFFECTIVE"
+            title="TASK ASSESSMENT"
             meta={`${adjustments.length} adjustment(s)`}
           />
           <div className="v-panel__body classification-grid">
@@ -667,14 +667,14 @@ function CanonicalEvidence({ snapshot }: { snapshot: CanonicalRunSnapshot }) {
       </div>
       <Panel id="verification-evidence" data-testid="verification-evidence">
         <PanelHeader
-          title="VERIFICATION / AUTHORITY"
+          title="VERIFICATION"
           actions={<StatusBadge status={snapshot.verification_outcome ?? "unknown"} />}
         />
         <KeyValueGrid
           items={[
             ["Outcome", snapshot.verification_outcome ?? "Unknown"],
             [
-              "Authority",
+              "Verification",
               snapshot.verification_authority ?? "No acceptance-grade authority",
             ],
             ["Verifier", snapshot.verifier_identity ?? "No LLM verifier call"],
@@ -817,8 +817,8 @@ export default function App() {
   if (!runId)
     return (
       <ProductShell
-        surface="run"
-        title="RUN DETAIL"
+        surface="activity"
+        title="Task detail"
         status="unknown"
         statusText="RUN / UNSELECTED"
       >
@@ -833,8 +833,8 @@ export default function App() {
   if (run.error)
     return (
       <ProductShell
-        surface="run"
-        title="RUN DETAIL"
+        surface="activity"
+        title="Task detail"
         detail={runId}
         status="failed"
         statusText="API / UNAVAILABLE"
@@ -848,8 +848,8 @@ export default function App() {
   if (!run.detail || !run.derived)
     return (
       <ProductShell
-        surface="run"
-        title="RUN DETAIL"
+        surface="activity"
+        title="Task detail"
         detail={runId}
         status="running"
         statusText="SYNC / LOADING"
@@ -892,8 +892,8 @@ export default function App() {
   };
   return (
     <ProductShell
-      surface="run"
-      title="RUN DETAIL"
+      surface="activity"
+      title="Task detail"
       detail={runId}
       status={run.derived.status.status}
       statusText={`RUN / ${run.derived.status.label.toUpperCase()}`}

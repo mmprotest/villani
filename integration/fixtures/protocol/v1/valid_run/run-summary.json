@@ -1,0 +1,43 @@
+{
+  "schema_version": "villani.run_summary.v1",
+  "run_id": "run_protocol_fixture",
+  "attempt_id": "attempt_002",
+  "checks": {
+    "passed": 1,
+    "failed": 0,
+    "not_run": 0,
+    "unavailable": 0,
+    "accounting_status": "complete"
+  },
+  "focused_probes": {
+    "passed": 0,
+    "failed": 0,
+    "not_run": 0,
+    "unavailable": 0,
+    "accounting_status": "complete"
+  },
+  "requirements": {
+    "proved": 1,
+    "not_proved": 0,
+    "accounting_status": "complete"
+  },
+  "accounting": {
+    "known": true,
+    "accounting_status": "complete",
+    "total_cost": 0.05,
+    "currency": "USD"
+  },
+  "acceptance": {
+    "decision": true,
+    "reason_code": "accepted",
+    "reason": "The selected candidate has complete deterministic evidence."
+  },
+  "source_artifacts": [
+    "events.jsonl",
+    "manifest.json",
+    "verification/attempt_002.json",
+    "validation-coverage.json"
+  ],
+  "generated_at": "2026-07-10T00:00:24Z",
+  "migration": null
+}

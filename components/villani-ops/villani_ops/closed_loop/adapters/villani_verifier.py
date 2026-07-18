@@ -34,6 +34,11 @@ from ..interfaces import (
 )
 from ..plugins.builtins import VERIFIER_MANIFEST
 from ..repository_validation import load_repository_validation_report
+from ..validation_coverage import (
+    ValidationCoverageReport,
+    legacy_validation_coverage,
+    load_validation_coverage_report,
+)
 from ..verification_evidence import (
     FinalVerificationDecision,
     FocusedProbeReport,
@@ -60,6 +65,31 @@ def _text(value: Any) -> str:
             value.get("text") or value.get("summary") or value.get("reason") or value
         )
     return str(value)
+
+
+_CANONICAL_RECOMMENDED_ACTIONS = frozenset(
+    {"accept", "reject", "retry_verifier", "escalate"}
+)
+_DETERMINISTIC_RECOMMENDED_ACTIONS = {
+    # These are legacy deterministic-verifier advisories.  They remain
+    # non-accepting and the controller, rather than the verifier, decides
+    # whether another coding attempt or more evidence should be scheduled.
+    "retry_same_model": "escalate",
+    "run_more_tests": "escalate",
+    "inspect_manually": "escalate",
+}
+
+
+def _normalized_recommended_action(
+    raw_action: str, *, semantic_verifier_invoked: bool
+) -> str:
+    """Project known verifier vocabularies into the closed-loop contract."""
+
+    if raw_action in _CANONICAL_RECOMMENDED_ACTIONS:
+        return raw_action
+    if not semantic_verifier_invoked:
+        return _DETERMINISTIC_RECOMMENDED_ACTIONS.get(raw_action, raw_action)
+    return raw_action
 
 
 def _evidence(items: list[Any], prefix: str, artifact: str) -> tuple[EvidenceItem, ...]:
@@ -868,9 +898,14 @@ class VillaniVerifierAdapter:
                 repository_report = None
         repository_evidence_by_validation_id: dict[str, str] = {}
         if repository_report is not None:
-            for command in repository_report.commands:
-                evidence_id = f"repository_validation:{command.validation_id}"
-                repository_evidence_by_validation_id[command.validation_id] = (
+            for repository_command in repository_report.commands:
+                evidence_id = (
+                    "repository_validation:"
+                    f"{repository_command.validation_id}"
+                )
+                repository_evidence_by_validation_id[
+                    repository_command.validation_id
+                ] = (
                     evidence_id
                 )
                 register(
@@ -878,31 +913,119 @@ class VillaniVerifierAdapter:
                         evidence_id=evidence_id,
                         kind="repository_validation",
                         summary=(
-                            f"Repository validation {command.validation_id} "
-                            f"{command.status}."
+                            "Repository validation "
+                            f"{repository_command.validation_id} "
+                            f"{repository_command.status}."
                         ),
                         artifact_path=repository_authority.report_path,
                         details={
-                            "validation_id": command.validation_id,
-                            "argv": list(command.argv),
-                            "status": command.status,
-                            "exit_code": command.exit_code,
-                            "failure_code": command.failure_code,
+                            "validation_id": repository_command.validation_id,
+                            "argv": list(repository_command.argv),
+                            "status": repository_command.status,
+                            "exit_code": repository_command.exit_code,
+                            "failure_code": repository_command.failure_code,
                             "execution_environment_fingerprint": (
-                                command.execution_environment_fingerprint
+                                repository_command.execution_environment_fingerprint
                             ),
-                            "worktree_path": command.worktree_path,
-                            "candidate_state": command.candidate_state,
+                            "worktree_path": repository_command.worktree_path,
+                            "candidate_state": repository_command.candidate_state,
                         },
                     ),
                     (
                         "success"
-                        if command.status == "passed"
+                        if repository_command.status == "passed"
                         else "failure"
-                        if command.status == "failed"
+                        if repository_command.status == "failed"
                         else "missing"
                     ),
                 )
+        coverage_path = (
+            Path(attempt_context.attempt_directory) / "validation-coverage.json"
+        )
+        validation_coverage: ValidationCoverageReport | None = None
+        coverage_error: str | None = None
+        try:
+            validation_coverage = load_validation_coverage_report(coverage_path)
+        except (OSError, ValueError, ValidationError) as error:
+            coverage_error = f"malformed validation coverage report: {error}"
+        if validation_coverage is None and coverage_error is None and repository_report:
+            validation_coverage = legacy_validation_coverage(
+                repository_validation=repository_report,
+                task_instruction=attempt_context.task,
+                success_criteria=attempt_context.success_criteria,
+                policy_configuration=attempt_context.policy_configuration,
+            )
+        if validation_coverage is not None and (
+            validation_coverage.run_id != attempt_context.run_id
+            or validation_coverage.attempt_id != attempt_context.attempt_id
+            or validation_coverage.candidate_id != attempt_context.attempt_id
+        ):
+            coverage_error = "validation coverage identity does not match the candidate"
+            validation_coverage = None
+        coverage_evidence_by_requirement: dict[str, list[str]] = {}
+        if validation_coverage is not None:
+            relative_coverage = (
+                coverage_path.relative_to(run_dir).as_posix()
+                if coverage_path.is_file()
+                else repository_authority.report_path
+            )
+            known_validation_ids = set(repository_evidence_by_validation_id)
+            for coverage_command in validation_coverage.commands:
+                if (
+                    coverage_command.validation_id not in known_validation_ids
+                    or coverage_command.status != "passed"
+                ):
+                    continue
+                for requirement_id in coverage_command.requirement_ids_covered:
+                    evidence_id = (
+                        "validation_coverage:"
+                        f"{coverage_command.validation_id}:{requirement_id}"
+                    )
+                    coverage_evidence_by_requirement.setdefault(
+                        requirement_id, []
+                    ).append(evidence_id)
+                    register(
+                        EvidenceItem(
+                            evidence_id=evidence_id,
+                            kind="repository_validation",
+                            summary=(
+                                f"Validation {coverage_command.validation_id} covered "
+                                f"requirement {requirement_id} with "
+                                f"{coverage_command.confidence} confidence."
+                            ),
+                            artifact_path=relative_coverage,
+                            details={
+                                "validation_id": coverage_command.validation_id,
+                                "command_identity": coverage_command.command_identity,
+                                "coverage_provenance": list(
+                                    coverage_command.coverage_provenance
+                                ),
+                                "confidence": coverage_command.confidence,
+                                "changed_test_files_proven": list(
+                                    coverage_command.changed_test_files_proven
+                                ),
+                                "changed_test_files_plausibly_included": list(
+                                    coverage_command.changed_test_files_plausibly_included
+                                ),
+                            },
+                        ),
+                        "success",
+                    )
+        covered_requirement_ids = set(coverage_evidence_by_requirement)
+        suppressed_probe_requests = [
+            request
+            for request in probe_requests
+            if request.requirement_ids
+            and set(request.requirement_ids).issubset(covered_requirement_ids)
+        ]
+        suppressed_probe_ids = {
+            request.probe_id for request in suppressed_probe_requests
+        }
+        probe_requests = [
+            request
+            for request in probe_requests
+            if request.probe_id not in suppressed_probe_ids
+        ]
         repository_aggregate_id = "repository_validation:aggregate"
         if repository_authority.source != "none":
             register(
@@ -995,7 +1118,7 @@ class VillaniVerifierAdapter:
         if focused_report is not None:
             relative_focused = focused_path.relative_to(run_dir).as_posix()
             for result in focused_report.results:
-                command = result.command_result
+                probe_command = result.command_result
                 register(
                     EvidenceItem(
                         evidence_id=result.evidence_id,
@@ -1006,16 +1129,16 @@ class VillaniVerifierAdapter:
                             "probe_id": result.probe_id,
                             "requirement_ids": list(result.requirement_ids),
                             "status": result.status,
-                            "argv": list(command.argv),
-                            "exit_code": command.exit_code,
-                            "stdout": command.stdout,
-                            "stderr": command.stderr,
-                            "failure_code": command.failure_code,
+                            "argv": list(probe_command.argv),
+                            "exit_code": probe_command.exit_code,
+                            "stdout": probe_command.stdout,
+                            "stderr": probe_command.stderr,
+                            "failure_code": probe_command.failure_code,
                             "execution_environment_fingerprint": (
-                                command.execution_environment_fingerprint
+                                probe_command.execution_environment_fingerprint
                             ),
-                            "worktree_path": command.worktree_path,
-                            "candidate_state": command.candidate_state,
+                            "worktree_path": probe_command.worktree_path,
+                            "candidate_state": probe_command.candidate_state,
                         },
                     ),
                     (
@@ -1130,25 +1253,9 @@ class VillaniVerifierAdapter:
                 deterministic_status = "infrastructure_error"
                 reason = focused_report_error
             else:
-                coverage = _configured_command_coverage(
-                    definition, attempt_context.policy_configuration
+                repository_ids = coverage_evidence_by_requirement.get(
+                    definition.requirement_id, []
                 )
-                repository_ids = [
-                    repository_evidence_by_validation_id[item]
-                    for item in sorted(coverage)
-                    if item in repository_evidence_by_validation_id
-                ]
-                negative_constraint = any(
-                    marker in definition.description.casefold()
-                    for marker in ("do not", "must not", "never", "without")
-                )
-                if (
-                    not repository_ids
-                    and repository_authority.source != "none"
-                    and not definition.observable
-                    and not negative_constraint
-                ):
-                    repository_ids = [repository_aggregate_id]
                 if repository_ids:
                     evidence_type = "repository_validation"
                     evidence_ids = repository_ids
@@ -1164,6 +1271,9 @@ class VillaniVerifierAdapter:
                             "Authoritative repository validation proved this "
                             "requirement."
                         )
+                elif coverage_error:
+                    deterministic_status = "infrastructure_error"
+                    reason = coverage_error
                 if deterministic_status == "missing":
                     source_ids = [
                         reference
@@ -1286,6 +1396,10 @@ class VillaniVerifierAdapter:
         result_value = raw.get("result")
         verdict = str(raw.get("verdict") or "").casefold()
         raw_action = str(raw.get("recommendedAction") or "").casefold()
+        normalized_action = _normalized_recommended_action(
+            raw_action,
+            semantic_verifier_invoked=semantic_verifier_invoked,
+        )
         raw_result: Literal[0, 1] | None = None
         if type(result_value) is int and result_value in {0, 1}:
             raw_result = 0 if result_value == 0 else 1
@@ -1302,7 +1416,7 @@ class VillaniVerifierAdapter:
         raw_shape_valid = bool(
             raw_result_valid
             and verdict in {"success", "failure", "unclear", "error"}
-            and raw_action in {"accept", "reject", "retry_verifier", "escalate"}
+            and normalized_action in _CANONICAL_RECOMMENDED_ACTIONS
             and isinstance(raw.get("requirementResults", []), list)
             and isinstance(raw.get("focusedProbeRequests", []), list)
         )
@@ -1335,7 +1449,7 @@ class VillaniVerifierAdapter:
         semantic_input = SemanticReviewDecisionInput(
             raw_result=raw_result,
             verdict=semantic_verdict,
-            recommended_action=raw_action,
+            recommended_action=normalized_action,
             schema_valid=raw_shape_valid,
             critical_failure_reported=any(
                 item.critical and item.semantic_status == "failed"
@@ -1465,6 +1579,17 @@ class VillaniVerifierAdapter:
                     repository_authority.failure_code
                 ),
                 "repository_validation_retry_count": (repository_authority.retry_count),
+                "validation_coverage_path": (
+                    coverage_path.relative_to(run_dir).as_posix()
+                    if coverage_path.is_file()
+                    else None
+                ),
+                "validation_coverage_schema_version": (
+                    validation_coverage.schema_version
+                    if validation_coverage is not None
+                    else None
+                ),
+                "validation_coverage_error": coverage_error,
                 "candidate_eligibility_status": eligibility.status,
                 "candidate_patch_quality_path": attempt_result.metadata.get(
                     "candidate_patch_quality_path"
@@ -1478,6 +1603,7 @@ class VillaniVerifierAdapter:
                 "raw_result": result_value,
                 "raw_verdict": verdict,
                 "raw_recommended_action": raw_action,
+                "normalized_recommended_action": normalized_action,
                 "computed_final_result": decision.result,
                 "computed_final_reason_code": decision.reason_code,
                 "verifier_disagreement": disagreement,
@@ -1490,10 +1616,29 @@ class VillaniVerifierAdapter:
                 ],
                 "focused_probe_requests_pending": bool(pending_requests),
                 "focused_probe_rejections": rejected_probes,
+                "focused_probe_requests_suppressed": [
+                    {
+                        "probe_id": item.probe_id,
+                        "requirement_ids": list(item.requirement_ids),
+                        "reason": "authoritative_validation_coverage_already_proved",
+                    }
+                    for item in suppressed_probe_requests
+                ],
                 "focused_probe_report_path": (
                     focused_path.relative_to(run_dir).as_posix()
                     if focused_path.is_file()
                     else None
+                ),
+                "focused_probe_status": (
+                    focused_report.status if focused_report is not None else None
+                ),
+                "focused_probe_failure_code": (
+                    focused_report.failure_code
+                    if focused_report is not None
+                    else None
+                ),
+                "focused_probe_retry_count": (
+                    focused_report.retry_count if focused_report is not None else 0
                 ),
                 "retry_scope": decision.retry_scope,
             },
@@ -1648,7 +1793,7 @@ class VillaniVerifierAdapter:
                     else "succeeded"
                 ),
             ),
-            semantic_verifier_invoked=True,
+            semantic_verifier_invoked=not self._no_llm,
         )
 
     def finalize_with_focused_probes(

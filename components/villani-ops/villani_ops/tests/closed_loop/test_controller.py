@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import subprocess
+import threading
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -639,7 +640,35 @@ def test_illegal_transition_fails_closed() -> None:
         machine.transition("COMPLETED")
 
     assert machine.state == "CREATED"
-    assert ALLOWED_TRANSITIONS["CREATED"] == frozenset({"CLASSIFYING"})
+    assert ALLOWED_TRANSITIONS["CREATED"] == frozenset({"CLASSIFYING", "CANCELLED"})
+
+
+def test_pre_requested_cancellation_is_terminal_truthful_and_non_mutating(
+    tmp_path: Path,
+) -> None:
+    signal = threading.Event()
+    signal.set()
+    controller, dependencies = _controller([], [], [])
+
+    result = controller.run(replace(_request(tmp_path), cancellation_event=signal))
+
+    assert result.terminal_state == "CANCELLED"
+    assert dependencies["classifier"].calls == []
+    state = json.loads((result.run_directory / "state.json").read_text(encoding="utf-8"))
+    product = json.loads(
+        (result.run_directory / "product-run.json").read_text(encoding="utf-8")
+    )
+    assert state["terminal"] is True
+    assert state["state"] == "CANCELLED"
+    assert product["final_verdict"] == "Cancelled"
+    assert product["target_repository"] == {
+        "modified": False,
+        "accounting_status": "known",
+        "statement": "The target repository was not modified.",
+    }
+    assert (result.run_directory / "events.jsonl").read_text(encoding="utf-8").count(
+        '"event_type":"run_cancelled"'
+    ) == 1
 
 
 def test_terminal_state_cannot_transition() -> None:

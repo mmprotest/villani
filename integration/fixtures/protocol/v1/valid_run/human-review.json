@@ -1,0 +1,20 @@
+{
+  "amends_review_id": null,
+  "arm_revealed_during_review": false,
+  "artifact_references": [],
+  "blinded": true,
+  "correction_required": false,
+  "correction_summary": null,
+  "created_at": "2026-07-17T00:00:00Z",
+  "false_acceptance": false,
+  "false_rejection": true,
+  "later_rollback": null,
+  "outcome": "accepted_as_is",
+  "reopened_defect": null,
+  "review_id": "review_fixture",
+  "review_minutes": 1.0,
+  "reviewer_id": "fixture-reviewer",
+  "schema_version": "villani.human_review.v1",
+  "severity": "none",
+  "trial_id": "trial_fixture"
+}

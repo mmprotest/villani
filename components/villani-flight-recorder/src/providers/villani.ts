@@ -5,16 +5,19 @@ import { isTestCommand } from "../normalize/events.js";
 import type { FlightEvent, FlightEventType, ParsedSession } from "./types.js";
 import type {
   VillaniAccountingStatus,
+  VillaniAgentSystemIdentity,
   VillaniAttemptSnapshot,
   VillaniClassificationSnapshot,
   VillaniEventEnvelope,
   VillaniMaterializationSnapshot,
   VillaniPolicyDecisionSnapshot,
   VillaniRunManifestSnapshot,
+  VillaniRunSummary,
   VillaniRunStateSnapshot,
   VillaniSelectionSnapshot,
   VillaniStageUsage,
   VillaniTaskSnapshot,
+  VillaniHarnessResult,
   VillaniVerificationSnapshot,
 } from "./villaniProtocol.js";
 import {
@@ -35,6 +38,7 @@ export interface VillaniAttemptData {
   traceEvents: unknown[];
   canonicalEvents?: VillaniEventEnvelope[];
   costComponents?: JsonObject;
+  harnessResult?: VillaniHarnessResult;
   artifactPaths: Record<string, string | null>;
 }
 
@@ -69,6 +73,8 @@ export interface VillaniRunData {
   candidateEvidenceMatrix?: unknown;
   selection?: VillaniSelectionSnapshot;
   materialization?: VillaniMaterializationSnapshot;
+  runSummary?: VillaniRunSummary;
+  agentSystems?: VillaniAgentSystemIdentity[];
   aggregate?: VillaniAggregateData;
   artifactPaths: Record<string, string>;
   corruptReason?: string;
@@ -274,6 +280,13 @@ async function loadAttempt(
   const metadata = record(snapshot.metadata);
   const costComponents =
     record(metadata?.cost_breakdown) ?? record(runnerTelemetry?.cost_breakdown);
+  const harnessResult = snapshot.harness_result_path
+    ? await optionalSnapshot<VillaniHarnessResult>(
+        runDirectory,
+        snapshot.harness_result_path,
+        validator,
+      )
+    : undefined;
   return {
     snapshot,
     provider:
@@ -285,6 +298,7 @@ async function loadAttempt(
     runnerTelemetry,
     traceEvents: await readTrace(runDirectory, snapshot.trace_path),
     costComponents,
+    harnessResult,
     artifactPaths: {
       attempt: `attempts/${attemptId}/attempt.json`,
       stdout: snapshot.stdout_path,
@@ -292,6 +306,8 @@ async function loadAttempt(
       patch: snapshot.patch_path,
       telemetry: snapshot.runner_telemetry_path,
       trace: snapshot.trace_path,
+      harness_result: snapshot.harness_result_path ?? null,
+      agent_system_identity: snapshot.agent_system_identity_path ?? null,
     },
   };
 }
@@ -664,6 +680,20 @@ export async function parseVillaniRun(
   const candidateEvidenceMatrix = (await exists(evidenceFile))
     ? await readJson(evidenceFile)
     : undefined;
+  const runSummary = await optionalSnapshot<VillaniRunSummary>(
+    runDirectory,
+    "run-summary.json",
+    validator,
+  );
+  const agentSystems: VillaniAgentSystemIdentity[] = [];
+  for (const systemId of manifest.agent_system_ids ?? []) {
+    const identity = await optionalSnapshot<VillaniAgentSystemIdentity>(
+      runDirectory,
+      `agent-systems/${systemId}.json`,
+      validator,
+    );
+    if (identity) agentSystems.push(identity);
+  }
 
   const data: VillaniRunData = {
     runDirectory,
@@ -677,6 +707,8 @@ export async function parseVillaniRun(
     candidateEvidenceMatrix,
     selection,
     materialization,
+    runSummary,
+    agentSystems,
     aggregate: aggregate(manifest, attempts, eventResult.value),
     artifactPaths: {
       manifest: "manifest.json",
@@ -688,6 +720,15 @@ export async function parseVillaniRun(
       selection: manifest.artifact_paths.selection,
       materialization: manifest.artifact_paths.materialization,
       evidence_matrix: "candidate_evidence_matrix.json",
+      ...(manifest.artifact_paths.validation_coverage
+        ? {
+            validation_coverage: manifest.artifact_paths.validation_coverage,
+          }
+        : {}),
+      run_summary: manifest.artifact_paths.run_summary ?? "run-summary.json",
+      ...(manifest.artifact_paths.agent_systems
+        ? { agent_systems: manifest.artifact_paths.agent_systems }
+        : {}),
     },
   };
   const events = eventResult.value

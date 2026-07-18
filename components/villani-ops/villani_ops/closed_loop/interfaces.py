@@ -327,6 +327,9 @@ class ClosedLoopRunRequest:
     requires_file_changes: bool = True
     run_id: str | None = None
     lineage: Mapping[str, Any] = field(default_factory=dict)
+    cancellation_event: Any | None = field(
+        default=None, repr=False, compare=False, metadata={"plugin_exclude": True}
+    )
 
     def __post_init__(self) -> None:
         if not self.task:
@@ -350,7 +353,9 @@ class ClosedLoopRunRequest:
 @dataclass(frozen=True, slots=True)
 class ClosedLoopRunResult:
     run_id: str
-    terminal_state: Literal["AWAITING_APPROVAL", "COMPLETED", "EXHAUSTED", "FAILED"]
+    terminal_state: Literal[
+        "AWAITING_APPROVAL", "COMPLETED", "EXHAUSTED", "FAILED", "CANCELLED"
+    ]
     selected_attempt_id: str | None
     run_directory: Path
     actual_known_cost_usd: float | None

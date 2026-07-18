@@ -1,11 +1,13 @@
 import {
   consoleReplayFromRunDetail,
   type ArtifactDescriptor,
+  type AgentSystemIdentity,
   type ConsoleBootstrap,
   type ConsoleHistoryEntry,
   type ConsoleReplaySnapshot,
   type RunDetail,
   type RunEvent,
+  type ProductRun,
 } from "@villani/run-model";
 import { ApiError } from "./api";
 
@@ -84,7 +86,11 @@ export interface ConsoleModelInventory {
   };
   setup_issues?: string[];
   detections?: Record<string, unknown>[];
+  agent_systems?: ConsoleAgentSystem[];
+  agent_system_migration?: Record<string, unknown>;
 }
+
+export type ConsoleAgentSystem = AgentSystemIdentity;
 
 export interface ConsolePolicies {
   schema_version: string;
@@ -171,6 +177,7 @@ export interface ValidationSuggestion {
 export interface ConsoleValidationDiscovery {
   schema_version: string;
   repository: RunRepositoryOption;
+  repository_fingerprint?: string;
   suggestions: ValidationSuggestion[];
   selected_suggestion_id: string | null;
   authority: string;
@@ -194,6 +201,7 @@ export interface ConsoleRunSubmission {
   run_url?: string;
   replay_url?: string;
   validation_commands?: string[];
+  deduplicated?: boolean;
   failure: RunFailure | null;
 }
 
@@ -275,10 +283,54 @@ export interface RunPresentation {
   };
   validation: {
     commands: { command: string; passed?: boolean; authority: string }[];
-    checks_passed: number;
-    checks_failed: number;
-    requirements_verified: number;
+    checks_passed: number | null;
+    checks_failed: number | null;
+    checks_not_run?: number | null;
+    checks_unavailable?: number | null;
+    checks_accounting_status?: "complete" | "unknown";
+    focused_probes_passed?: number | null;
+    focused_probes_failed?: number | null;
+    focused_probes_not_run?: number | null;
+    focused_probes_unavailable?: number | null;
+    focused_probes_accounting_status?: "complete" | "unknown";
+    requirements_proved?: number | null;
+    requirements_not_proved?: number | null;
+    requirements_verified: number | null;
+    requirements_accounting_status?: "complete" | "unknown";
     authority: string;
+  };
+  canonical_summary?: {
+    schema_version: "villani.run_summary.v1";
+    run_id: string;
+    attempt_id: string | null;
+    checks: {
+      passed: number | null;
+      failed: number | null;
+      not_run: number | null;
+      unavailable: number | null;
+      accounting_status: "complete" | "unknown";
+    };
+    focused_probes: {
+      passed: number | null;
+      failed: number | null;
+      not_run: number | null;
+      unavailable: number | null;
+      accounting_status: "complete" | "unknown";
+    };
+    requirements: {
+      proved: number | null;
+      not_proved: number | null;
+      accounting_status: "complete" | "unknown";
+    };
+    accounting: {
+      known: boolean;
+      accounting_status: string;
+      total_cost: number | null;
+      currency: string | null;
+    };
+    acceptance: { decision: boolean; reason_code: string; reason: string };
+    source_artifacts: string[];
+    generated_at: string;
   };
   remaining_risks?: string[];
   cost?: {
@@ -486,13 +538,53 @@ export class ConsoleClient {
   }
 
   runStatus(runId: string, signal?: AbortSignal) {
+    return this.get<ProductRun>(
+      `/v1/console/runs/${encodeURIComponent(runId)}/status`,
+      signal,
+    );
+  }
+
+  /** @deprecated Retained only while legacy source snapshots remain readable. */
+  runStatusLegacy(runId: string, signal?: AbortSignal) {
     return this.get<RunPresentation>(
       `/v1/console/runs/${encodeURIComponent(runId)}/status`,
       signal,
     );
   }
 
+  runEvents(runId: string, afterSequence: number, signal?: AbortSignal) {
+    return this.get<ProductRun>(
+      `/v1/console/runs/${encodeURIComponent(runId)}/events?after=${afterSequence}&wait=20`,
+      signal,
+    );
+  }
+
+  cancelRun(runId: string, signal?: AbortSignal) {
+    return this.post<ProductRun>(
+      `/v1/console/runs/${encodeURIComponent(runId)}/cancel`,
+      {},
+      signal,
+    );
+  }
+
   approvalAction(
+    runId: string,
+    value: {
+      action: "approve" | "reject" | "request_rerun" | "choose_candidate";
+      reason?: string;
+      candidate_id?: string;
+    },
+    signal?: AbortSignal,
+  ) {
+    return this.post<ProductRun>(
+      `/v1/console/runs/${encodeURIComponent(runId)}/approval`,
+      value,
+      signal,
+    );
+  }
+
+  /** @deprecated Retained only while legacy source snapshots remain readable. */
+  approvalActionLegacy(
     runId: string,
     value: {
       action: "approve" | "reject" | "request_rerun" | "choose_candidate";

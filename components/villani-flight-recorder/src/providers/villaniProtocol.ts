@@ -41,7 +41,8 @@ export type VillaniControllerState =
   | "MATERIALIZING"
   | "COMPLETED"
   | "EXHAUSTED"
-  | "FAILED";
+  | "FAILED"
+  | "CANCELLED";
 
 export interface VillaniFailureDetail {
   code: string;
@@ -70,6 +71,11 @@ export interface VillaniRunArtifactPaths {
   policy_decisions: string;
   selection: string;
   materialization: string;
+  /** Added after v1 launch; older bundles omit both fields. */
+  validation_coverage?: string | null;
+  run_summary?: string;
+  product_run?: string;
+  agent_systems?: string | null;
 }
 
 export interface VillaniRunManifestSnapshot {
@@ -99,6 +105,7 @@ export interface VillaniRunManifestSnapshot {
   model_call_accounting_status?: VillaniAccountingStatus;
   run_wall_clock_duration_ms?: number | null;
   run_wall_clock_duration_accounting_status?: VillaniAccountingStatus;
+  agent_system_ids?: string[];
 }
 
 export interface VillaniRunStateSnapshot {
@@ -219,6 +226,152 @@ export interface VillaniAttemptSnapshot {
   cost_accounting_status: VillaniAccountingStatus;
   error: VillaniFailureDetail | null;
   metadata: Record<string, unknown>;
+  agent_system_id?: string | null;
+  agent_system_identity_path?: string | null;
+  harness_result_path?: string | null;
+}
+
+export type VillaniCapabilityState = "supported" | "unsupported" | "unknown";
+export type VillaniCapabilitySource =
+  "declared" | "detected" | "conformance_tested" | "unsupported";
+
+export interface VillaniCapabilityAssessment {
+  state: VillaniCapabilityState;
+  evidence: Array<{
+    source: VillaniCapabilitySource;
+    reference: string;
+    observed_at: string | null;
+    digest: string | null;
+  }>;
+  notes: string | null;
+}
+
+export interface VillaniAgentSystemIdentity {
+  schema_version: "villani.agent_system.v1";
+  system_id: string;
+  route_name: string;
+  production_enabled: boolean;
+  qualification_status:
+    "qualified" | "bootstrap" | "unqualified" | "unsupported" | "disabled";
+  harness: {
+    harness_id: string;
+    display_name: string;
+    version: string;
+    executable_digest: string | null;
+    adapter_id: string;
+    adapter_version: string;
+    protocol: string;
+    protocol_version: string;
+    transport:
+      | "local_subprocess"
+      | "acp_stdio"
+      | "direct_protocol"
+      | "structured_headless_cli";
+  };
+  model_provider: {
+    provider: string;
+    model_id: string;
+    model_revision: string | null;
+    endpoint_identity: string | null;
+    serving_engine: string | null;
+    serving_engine_version: string | null;
+    context_metadata: Record<string, unknown>;
+    tool_metadata: Record<string, unknown>;
+  };
+  execution: {
+    execution_provider: string;
+    environment_fingerprint: string | null;
+    permission_profile: string;
+    network_policy: "none" | "restricted" | "allowed" | "unknown";
+    sandbox_identity: string | null;
+  };
+  route_profile: {
+    repository_profile: string;
+    task_profile: string;
+    verification_policy: string;
+    tool_protocol: string;
+    prompt_protocol: string;
+  };
+  capabilities: Record<string, VillaniCapabilityAssessment>;
+  qualification_references: Array<Record<string, unknown>>;
+  billing: {
+    mode: "token" | "compute_time" | "fixed" | "hybrid" | "unknown";
+    cost_source: string | null;
+    currency: string | null;
+    unknown_fields: string[];
+  };
+  detection_time: string;
+  detection_source: string;
+  configuration_digest: string;
+  configuration: Record<string, unknown>;
+  redaction_status: "redacted" | "no_sensitive_values_detected";
+  unknown_fields: string[];
+}
+
+export interface VillaniHarnessResult {
+  schema_version: "villani.harness_result.v1";
+  system_id: string;
+  session_id: string;
+  run_id: string;
+  attempt_id: string;
+  isolated_worktree: string;
+  baseline_digest: string;
+  patch: string | null;
+  changed_files: string[];
+  stdout: string;
+  stderr: string;
+  normalized_events: Array<{
+    sequence: number;
+    timestamp: string;
+    name: string;
+    payload: Record<string, unknown>;
+    raw_namespace: string | null;
+    raw_name: string | null;
+  }>;
+  raw_trace: Record<string, unknown>;
+  usage: Record<string, unknown>;
+  cost: Record<string, unknown>;
+  duration_ms: number | null;
+  duration_accounting_status: VillaniAccountingStatus;
+  harness_status: "completed" | "failed" | "cancelled";
+  infrastructure_failure: {
+    code: string;
+    category:
+      | "cancellation"
+      | "timeout"
+      | "protocol"
+      | "process"
+      | "missing_executable"
+      | "permission"
+      | "environment"
+      | "malformed_output"
+      | "oversized_output"
+      | "cleanup"
+      | "unknown";
+    message: string;
+    retryable: boolean | null;
+    details: Record<string, unknown>;
+  } | null;
+  artifacts: Array<Record<string, unknown>>;
+  cleanup: Record<string, unknown>;
+}
+
+export interface VillaniHarnessConformanceReport {
+  schema_version: "villani.harness_conformance_report.v1";
+  report_id: string;
+  system_id: string;
+  harness_id: string;
+  harness_version: string;
+  protocol_version: string;
+  generated_at: string;
+  status: "passed" | "failed" | "insufficient_evidence";
+  checks: Array<{
+    check_id: string;
+    status: "pass" | "fail" | "not_run";
+    evidence: Record<string, unknown>;
+    reason: string;
+  }>;
+  production_qualification_authorized: boolean;
 }
 
 export interface VillaniRequirementResult {
@@ -300,6 +453,76 @@ export interface VillaniMaterializationSnapshot {
   metadata: Record<string, unknown>;
 }
 
+export interface VillaniValidationCommandCoverage {
+  validation_id: string;
+  command_identity: string;
+  argv: string[];
+  safe_display: string;
+  execution_role: string;
+  working_directory: string;
+  status:
+    "passed" | "failed" | "not_run" | "unavailable" | "infrastructure_error";
+  exit_status: number | null;
+  started_at: string;
+  ended_at: string;
+  explicitly_named_test_targets: string[];
+  changed_test_files_proven: string[];
+  changed_test_files_plausibly_included: string[];
+  requirement_ids_covered: string[];
+  coverage_provenance: string[];
+  confidence: "high" | "medium" | "low" | "unknown";
+  coverage_unestablished_reasons: string[];
+  artifact_references: string[];
+}
+
+export interface VillaniValidationCoverage {
+  schema_version: "villani.validation_coverage.v1";
+  run_id: string;
+  attempt_id: string;
+  candidate_id: string;
+  commands: VillaniValidationCommandCoverage[];
+  requirement_ids: string[];
+  requirements_covered: string[];
+  requirements_not_covered: string[];
+  generated_at: string;
+  migration: Record<string, unknown> | null;
+}
+
+export interface VillaniRunSummary {
+  schema_version: "villani.run_summary.v1";
+  run_id: string;
+  attempt_id: string | null;
+  checks: {
+    passed: number | null;
+    failed: number | null;
+    not_run: number | null;
+    unavailable: number | null;
+    accounting_status: "complete" | "unknown";
+  };
+  focused_probes: {
+    passed: number | null;
+    failed: number | null;
+    not_run: number | null;
+    unavailable: number | null;
+    accounting_status: "complete" | "unknown";
+  };
+  requirements: {
+    proved: number | null;
+    not_proved: number | null;
+    accounting_status: "complete" | "unknown";
+  };
+  accounting: {
+    known: boolean;
+    accounting_status: string;
+    total_cost: number | null;
+    currency: string | null;
+  };
+  acceptance: { decision: boolean; reason_code: string; reason: string };
+  source_artifacts: string[];
+  generated_at: string;
+  migration: Record<string, unknown> | null;
+}
+
 export type VillaniProtocolDocument =
   | VillaniTaskSnapshot
   | VillaniRunManifestSnapshot
@@ -310,4 +533,9 @@ export type VillaniProtocolDocument =
   | VillaniAttemptSnapshot
   | VillaniVerificationSnapshot
   | VillaniSelectionSnapshot
-  | VillaniMaterializationSnapshot;
+  | VillaniMaterializationSnapshot
+  | VillaniValidationCoverage
+  | VillaniRunSummary
+  | VillaniAgentSystemIdentity
+  | VillaniHarnessResult
+  | VillaniHarnessConformanceReport;

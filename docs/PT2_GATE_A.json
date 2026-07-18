@@ -1,0 +1,133 @@
+{
+  "schema_version": "villani.product_transformation_gate.v1",
+  "milestone": "PT2",
+  "gate": "A",
+  "generated_at": "2026-07-17T19:13:23.6636586+10:00",
+  "status": "PASS",
+  "milestone_status": "COMPLETE",
+  "criteria": [
+    {
+      "id": "A-01",
+      "criterion": "A configured user starts with repository, task, optional Details, and Run safely.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-web/src/SingleTaskPage.tsx",
+        "components/villani-web/e2e/pt2-loop.spec.ts: PT2 clean success uses four canonical stages and safe defaults",
+        "Villani Web unit suite: 24 passed",
+        "Villani Web Playwright suite: 37 passed"
+      ]
+    },
+    {
+      "id": "A-02",
+      "criterion": "Strongest eligible, Performance, mandatory verification, no default wall-time, and non-destructive delivery are the shared defaults.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-ops/villani_ops/closed_loop/policy_presets.py",
+        "components/villani-ops/villani_ops/cli/unified.py",
+        "components/villani-agentd/villani_agentd/console.py",
+        "components/villani-web/e2e/pt2-loop.spec.ts: clean-success request assertions",
+        "Villani Ops final suite: 1164 passed, 2 skipped, 114 deselected"
+      ]
+    },
+    {
+      "id": "A-03",
+      "criterion": "Canonical events project to exactly Understanding, Working, Checking, and Ready without frontend timers or percentages.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-ops/villani_ops/closed_loop/product_run.py",
+        "components/villani-ops/villani_ops/tests/closed_loop/test_product_run.py",
+        "stage-understanding.png",
+        "stage-working.png",
+        "stage-checking.png",
+        "stage-ready-verdict-ready-to-apply.png"
+      ]
+    },
+    {
+      "id": "A-04",
+      "criterion": "Every terminal result has exactly one public verdict and unproved, stale, unselected, or accepted-unverified work cannot be delivered.",
+      "status": "PASS",
+      "evidence": [
+        "schemas/v1/product-run.schema.json",
+        "components/villani-ops/villani_ops/tests/closed_loop/test_product_run.py: contract rejects delivery action for unproved verdict",
+        "components/villani-web/e2e/pt2-loop.spec.ts: missing evidence and target drift scenarios",
+        "Villani Ops final suite: 1164 passed, 2 skipped, 114 deselected"
+      ]
+    },
+    {
+      "id": "A-05",
+      "criterion": "CLI and web consume the same villani.product_run.v1 projection.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-run-model/src/product.ts",
+        "components/villani-ops/villani_ops/tests/test_unified_cli.py: test_cli_json_equals_the_product_projection_consumed_by_web",
+        "Focused projection/CLI suite: 50 passed",
+        "Villani Run Model: TypeScript build and no-emit checks passed; 5 tests passed"
+      ]
+    },
+    {
+      "id": "A-06",
+      "criterion": "Cancellation, refresh reconnection, and idempotent submission preserve evidence and do not turn browser closure into cancellation.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-agentd/tests/test_console.py: cancellation, idempotency, and event endpoint tests",
+        "components/villani-web/e2e/pt2-loop.spec.ts: cancellation and browser refresh scenarios",
+        "Villani Agentd final suite: 86 passed",
+        "browser-refresh-reconnected.png",
+        "verdict-cancelled.png"
+      ]
+    },
+    {
+      "id": "A-07",
+      "criterion": "Repository discovery is cached and cancellable, task submission is one-click/idempotent, and running prefers event subscription.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-agentd/tests/test_console.py: repository-fingerprint cache and HTTP event subscription",
+        "components/villani-web/src/SingleTaskPage.tsx",
+        "Villani Web Playwright suite: 37 passed in 11.1 seconds"
+      ]
+    },
+    {
+      "id": "A-08",
+      "criterion": "Explicit failure states disclose what happened, target modification state, and one recovery action while preserving unknown cost/duration.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-ops/villani_ops/closed_loop/product_run.py",
+        "components/villani-agentd/villani_agentd/console.py",
+        "dirty-target-safe-action.png",
+        "unknown-cost.png",
+        "unavailable-agent.png",
+        "verdict-needs-review-target-drift.png"
+      ]
+    },
+    {
+      "id": "A-09",
+      "criterion": "All required PT2 end-to-end scenarios and deterministic stage/verdict screenshots are present.",
+      "status": "PASS",
+      "evidence": [
+        "components/villani-web/e2e/pt2-loop.spec.ts: 11 scenarios passed",
+        "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts: 14 deterministic PNGs",
+        "tests/closed_loop: 11 passed",
+        "Packaged Console parity: 3 files verified and 2 byte-parity tests passed"
+      ]
+    },
+    {
+      "id": "A-10",
+      "criterion": "Existing bundles remain readable, delivery remains fail closed, semantic verification inputs remain blind, and PT3 was not started.",
+      "status": "PASS",
+      "evidence": [
+        "villani.product_run.v1 is additive and legacy-derived",
+        "CANCELLED is additive to the durable run-state enum",
+        "Villani Code: 686 passed, 1 skipped",
+        "Root closed-loop integration: 11 passed",
+        "PT3 files and behavior were not introduced"
+      ]
+    }
+  ],
+  "blocking_failures": [],
+  "acceptance_failures": [],
+  "environment_limitations": [
+    "The in-app Browser connector reported no attached browsers; the repository Playwright/Chromium harness supplied deterministic browser evidence instead.",
+    "The standalone villani-run-model package has no local TypeScript binary installed; its source was compiled and tested with the pinned villani-web TypeScript/Vitest binaries."
+  ],
+  "pt3_started": false
+}

@@ -188,17 +188,34 @@ def clean_runner_artifacts_from_worktree(worktree_path: Path) -> None:
             p.unlink()
 
 
-def ensure_git_baseline(worktree_path: Path) -> None:
-    if (worktree_path / ".git").exists():
-        return
-    _run(["git", "init"], worktree_path)
-    _run(["git", "config", "core.autocrlf", "false"], worktree_path)
-    _run(["git", "config", "core.whitespace", "cr-at-eol"], worktree_path)
-    _run(["git", "config", "user.email", "villani-ops@example.invalid"], worktree_path)
-    _run(["git", "config", "user.name", "Villani Ops"], worktree_path)
-    clean_runner_artifacts_from_worktree(worktree_path)
-    _run(["git", "add", "-A"], worktree_path)
-    _run(["git", "commit", "-m", "baseline"], worktree_path)
+def ensure_git_baseline(
+    worktree_path: Path,
+    *,
+    core_autocrlf: str = "false",
+) -> None:
+    worktree_path = Path(worktree_path).resolve()
+
+    def checked(*args: str) -> subprocess.CompletedProcess:
+        completed = _run(["git", *args], worktree_path)
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "unknown Git error").strip()
+            raise RuntimeError(f"git {' '.join(args)} failed: {detail}")
+        return completed
+
+    if not (worktree_path / ".git").exists():
+        checked("init")
+        checked("config", "core.autocrlf", core_autocrlf)
+        checked("config", "core.whitespace", "cr-at-eol")
+        checked("config", "user.email", "villani-ops@example.invalid")
+        checked("config", "user.name", "Villani Ops")
+        clean_runner_artifacts_from_worktree(worktree_path)
+        checked("add", "-A")
+        checked("commit", "--allow-empty", "-m", "baseline")
+
+    root = checked("rev-parse", "--show-toplevel").stdout.strip()
+    if not root or Path(root).resolve() != worktree_path:
+        raise RuntimeError("isolated Git baseline resolved outside its worktree")
+    checked("rev-parse", "--verify", "HEAD")
 
 
 def _parse_name_status(

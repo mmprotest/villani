@@ -23,9 +23,17 @@
     "events": "events.jsonl",
     "policy_decisions": "policy_decisions.jsonl",
     "selection": "selection.json",
-    "materialization": "materialization.json"
+    "materialization": "materialization.json",
+    "validation_coverage": "validation-coverage.json",
+    "run_summary": "run-summary.json",
+    "product_run": "product-run.json",
+    "agent_systems": "agent-systems/index.json"
   },
   "metadata": {
     "fixture": true
-  }
+  },
+  "agent_system_ids": [
+    "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575",
+    "asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa"
+  ]
 }

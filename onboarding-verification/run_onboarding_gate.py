@@ -7,6 +7,7 @@ import argparse
 import html
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,12 +23,20 @@ from villani_ops.executables import (
     resolve_installed_executable,
     resolved_executable_prefix,
 )
+from villani_ops.closed_loop.presentation import build_run_presentation
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACTS = ROOT / "onboarding-verification" / "artifacts" / "latest"
 MODEL_FIXTURE = ROOT / "release-verification" / "fixtures" / "model_service.py"
 SCREENSHOT_SCRIPT = ROOT / "onboarding-verification" / "capture_screenshots.mjs"
+_SECRET_ENV_NAMES = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "GITHUB_TOKEN",
+    "VILLANI_MODEL_API_KEY_ENV",
+)
 _PACKAGE_IDENTITY_QUERY = """
 import importlib.metadata
 import json
@@ -262,7 +271,7 @@ def _delivery_repository(root: Path, name: str) -> Path:
     _git(repository, "config", "user.name", "Villani Design Partner Gate")
     _git(repository, "config", "user.email", "gate@villani.invalid")
     (repository / "calculator.py").write_text(
-        '"""Tiny disposable Villani delivery sample."""\n\n'
+        '"""Tiny disposable Villani setup sample."""\n\n'
         "\ndef add(left: int, right: int) -> int:\n"
         "    return left + right\n",
         encoding="utf-8",
@@ -326,17 +335,199 @@ def _new_run_directory(home: Path, previous: set[str]) -> Path:
 
 def _assert_terminal_explanation(output: str) -> None:
     for marker in (
-        "ACCEPTED",
-        "Delivery:",
-        "Changed:",
-        "Confidence and authority:",
-        "Validation:",
-        "Cost:",
-        "Villani recovery:",
-        "Next:",
+        "Ready to apply",
+        "What changed:",
+        "Files changed:",
+        "Checks and tests:",
+        "Requirement coverage:",
+        "Known cost:",
+        "Elapsed time:",
+        "Next action:",
+        "Evidence:",
+        "Run ID:",
     ):
         if marker not in output:
             raise GateFailure(f"terminal result omitted required section: {marker}")
+
+
+def _test_like_path(value: str) -> bool:
+    normalized = value.replace("\\", "/").casefold()
+    return bool(re.search(r"(?:^|[/_.-])(?:tests?|specs?)(?:[/_.-]|$)", normalized))
+
+
+def _assert_sample_evidence(run_root: Path) -> dict[str, Any]:
+    manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+    attempt_roots = sorted((run_root / "attempts").glob("attempt_*"))
+    eligible_verifications = []
+    for verification_path in sorted((run_root / "verification").glob("attempt_*.json")):
+        if verification_path.stem.endswith("-evidence") or verification_path.stem.endswith(
+            "-focused-probes"
+        ):
+            continue
+        document = json.loads(verification_path.read_text(encoding="utf-8"))
+        if document.get("acceptance_eligible") is True:
+            eligible_verifications.append(verification_path)
+    if len(attempt_roots) != 1 or len(eligible_verifications) != 1:
+        raise GateFailure(
+            "sample did not produce exactly one acceptance-eligible isolated attempt"
+        )
+    attempt_id = str(manifest.get("selected_attempt_id") or "")
+    if not attempt_id:
+        raise GateFailure("sample run has no selected attempt")
+    attempt_root = run_root / "attempts" / attempt_id
+    patch = (attempt_root / "patch.diff").read_text(encoding="utf-8")
+    quality = json.loads(
+        (attempt_root / "candidate-patch-quality.json").read_text(encoding="utf-8")
+    )
+    changed = [str(item) for item in quality.get("relevant_files_changed") or []]
+    if not patch.strip() or not changed:
+        raise GateFailure("sample candidate did not preserve a non-empty changed patch")
+    if not any(_test_like_path(path) for path in changed) or not any(
+        not _test_like_path(path) for path in changed
+    ):
+        raise GateFailure(
+            "sample candidate did not change both implementation and test evidence"
+        )
+
+    validation = json.loads(
+        (attempt_root / "repository-validation.json").read_text(encoding="utf-8")
+    )
+    commands = validation.get("commands") or []
+    if (
+        validation.get("status") != "passed"
+        or validation.get("authoritative") is not True
+        or len(commands) != 1
+        or commands[0].get("status") != "passed"
+        or commands[0].get("exit_code") != 0
+    ):
+        raise GateFailure("sample authoritative repository validation was not one pass")
+
+    coverage = json.loads(
+        (attempt_root / "validation-coverage.json").read_text(encoding="utf-8")
+    )
+    if coverage.get("requirements_not_covered") or not coverage.get(
+        "requirements_covered"
+    ):
+        raise GateFailure("sample validation coverage did not prove every requirement")
+
+    verification = json.loads(
+        (run_root / "verification" / f"{attempt_id}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    evidence = json.loads(
+        (run_root / "verification" / f"{attempt_id}-evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if (
+        verification.get("acceptance_eligible") is not True
+        or verification.get("metadata", {}).get("semantic_verifier_status")
+        != "success"
+        or evidence.get("final_result") != 1
+        or evidence.get("final_reason_code") != "accepted"
+    ):
+        raise GateFailure("sample semantic and deterministic acceptance did not agree")
+    suppressed = verification.get("metadata", {}).get(
+        "focused_probe_requests_suppressed"
+    )
+    if not isinstance(suppressed, list) or len(suppressed) != 1:
+        raise GateFailure(
+            "sample did not suppress the verifier's redundant covered probe"
+        )
+    if (run_root / "verification" / f"{attempt_id}-focused-probes.json").exists():
+        raise GateFailure("sample scheduled a redundant focused probe")
+
+    classification = json.loads(
+        (run_root / "classification.json").read_text(encoding="utf-8")
+    )
+    metadata = classification.get("metadata") or {}
+    signals = classification.get("signals") or {}
+    if (
+        classification.get("difficulty") != "easy"
+        or (metadata.get("raw_classification") or {}).get("difficulty") != "easy"
+        or (metadata.get("effective_classification") or {}).get("difficulty")
+        != "easy"
+        or signals.get("behavior_count") != 1
+    ):
+        raise GateFailure("narrow sample was not calibrated and persisted as easy")
+
+    summary = json.loads((run_root / "run-summary.json").read_text(encoding="utf-8"))
+    if (
+        summary.get("checks")
+        != {
+            "passed": 1,
+            "failed": 0,
+            "not_run": 0,
+            "unavailable": 0,
+            "accounting_status": "complete",
+        }
+        or summary.get("focused_probes", {}).get("passed") != 0
+        or summary.get("requirements", {}).get("not_proved") != 0
+        or summary.get("acceptance", {}).get("decision") is not True
+    ):
+        raise GateFailure("sample canonical summary does not match acceptance evidence")
+    presentation = build_run_presentation(run_root)
+    if presentation.get("canonical_summary") != summary:
+        raise GateFailure("sample presentation diverged from the canonical summary")
+    for name in ("final_report.md", "selection_report.md"):
+        report_text = (run_root / name).read_text(encoding="utf-8")
+        if "Repository checks: passed 1, failed 0, not run 0, unavailable 0." not in report_text:
+            raise GateFailure(f"{name} diverged from the canonical summary")
+    return {
+        "attempt_count": len(attempt_roots),
+        "acceptance_eligible_attempt_count": len(eligible_verifications),
+        "patch_bytes": len(patch.encode("utf-8")),
+        "changed_files": changed,
+        "repository_checks": summary["checks"],
+        "focused_probes": summary["focused_probes"],
+        "suppressed_redundant_probes": len(suppressed),
+        "requirements": summary["requirements"],
+        "acceptance": summary["acceptance"],
+        "classification": {
+            "raw": metadata["raw_classification"],
+            "effective": metadata["effective_classification"],
+            "signals": signals,
+        },
+        "coverage_schema_version": coverage.get("schema_version"),
+    }
+
+
+def _scan_evidence_for_secrets(
+    artifacts: Path, registered_values: set[str]
+) -> dict[str, Any]:
+    matches: list[dict[str, str]] = []
+    scanned = 0
+    generic = re.compile(
+        rb"(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})"
+    )
+    for path in sorted(item for item in artifacts.rglob("*") if item.is_file()):
+        try:
+            contents = path.read_bytes()
+        except OSError:
+            continue
+        scanned += 1
+        for value in registered_values:
+            if value and value.encode("utf-8") in contents:
+                matches.append(
+                    {
+                        "path": path.relative_to(artifacts).as_posix(),
+                        "reason": "registered_secret_value",
+                    }
+                )
+        if generic.search(contents):
+            matches.append(
+                {
+                    "path": path.relative_to(artifacts).as_posix(),
+                    "reason": "credential_shaped_value",
+                }
+            )
+    return {
+        "status": "passed" if not matches else "failed",
+        "files_scanned": scanned,
+        "registered_values_checked": len(registered_values),
+        "matches": matches,
+    }
 
 
 def _prove_delivery_modes(
@@ -611,24 +802,46 @@ def _prove_delivery_modes(
 def _transcript_html(setup: str, doctor: str, open_output: str) -> str:
     def panel(identifier: str, title: str, command: str, body: str) -> str:
         return (
-            f'<section id="{identifier}" class="panel"><header><i></i><b>{html.escape(title)}</b>'
-            f"<span>{html.escape(command)}</span></header><pre>{html.escape(body)}</pre></section>"
+            f'<section id="{identifier}" class="v-panel transcript-panel">'
+            f'<header class="v-panel-header"><h2 class="v-panel-header__title">'
+            f"{html.escape(title)}</h2><span class=\"v-panel-header__meta\">"
+            f"{html.escape(command)}</span></header>"
+            f'<div class="v-panel__body"><pre class="v-code">{html.escape(body)}</pre></div>'
+            f"</section>"
         )
 
+    shared_theme = (ROOT / "components" / "villani-ui" / "theme.css").read_text(
+        encoding="utf-8"
+    )
+    layout = """
+.transcript-content{width:min(100%,1120px);margin:0 auto;display:grid;gap:16px}
+.transcript-panel{overflow:hidden}.transcript-panel .v-code{border:0;min-height:120px}
+.transcript-nav-note{padding:12px;color:var(--v-text-muted);font-size:11px}
+@media(max-width:680px){.transcript-panel .v-panel-header{align-items:flex-start;flex-direction:column}}
+"""
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Villani guided setup recording</title><style>
-*{{box-sizing:border-box}}body{{margin:0;padding:42px;background:#090d19;color:#e7ecfb;font:15px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}}
-main{{width:1120px;margin:auto}}h1{{font:700 34px/1.2 Inter,system-ui,sans-serif;margin:0 0 8px}}.lede{{font:16px Inter,system-ui,sans-serif;color:#9caccf;margin:0 0 30px}}
-.panel{{margin:0 0 28px;border:1px solid #2b3858;border-radius:14px;overflow:hidden;background:#11182a;box-shadow:0 22px 55px #0007}}
-header{{height:52px;padding:0 18px;display:flex;align-items:center;gap:12px;background:#182238;border-bottom:1px solid #2b3858;font-family:Inter,system-ui,sans-serif}}
-header i{{width:11px;height:11px;border-radius:50%;background:#45dfa7;box-shadow:0 0 14px #45dfa7}}header b{{font-size:15px}}header span{{margin-left:auto;color:#8fa0c2;font:13px ui-monospace,monospace}}
-pre{{white-space:pre-wrap;word-break:break-word;margin:0;padding:22px;color:#dce6ff}}.stamp{{color:#56e0ae;font:700 14px Inter,system-ui,sans-serif;margin-bottom:12px}}
-</style></head><body><main><div class="stamp">RECORDED INTEGRATION · {html.escape(utc_now())}</div><h1>Villani first-run setup</h1>
-<p class="lede">Detected model → atomic configuration → service → diagnostic → sample task.</p>
-{panel("setup", "Guided setup and sample task", "villani setup", setup)}
-{panel("doctor", "Environment diagnostics", "villani doctor", doctor)}
-{panel("open", "Console handoff", "villani open", open_output)}
-</main></body></html>"""
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Villani guided setup recording</title><style>{shared_theme}{layout}</style></head>
+<body><div class="v-app-shell" data-has-notice="false">
+<aside class="v-sidebar"><div class="v-sidebar__brand">V VILLANI</div>
+<nav class="v-sidebar__body" aria-label="Primary navigation">
+<section class="v-sidebar-section"><h2 class="v-sidebar-section__title">Primary</h2>
+<a class="v-sidebar-item" aria-current="page" href="#setup"><span>New task</span></a>
+<a class="v-sidebar-item" href="#doctor"><span>Activity</span></a></section>
+<section class="v-sidebar-section"><h2 class="v-sidebar-section__title">Secondary</h2>
+<a class="v-sidebar-item" href="#open"><span>Agents</span></a>
+<a class="v-sidebar-item" href="#open"><span>Settings</span></a></section></nav>
+<div class="transcript-nav-note">RECORDED SETUP</div></aside>
+<header class="v-top-header"><div class="v-top-header__identity">
+<strong class="v-top-header__title">Setup</strong></div></header>
+<main class="v-canvas" id="main-content"><div class="transcript-content">
+<header class="v-page-intro"><h1>Set up Villani</h1>
+<p>Repository, agent connection, verification, then a real task.</p></header>
+<p class="v-muted">Recorded integration · {html.escape(utc_now())}</p>
+{panel("setup", "Repository and agent connection", "villani setup", setup)}
+{panel("doctor", "Verification", "villani doctor", doctor)}
+{panel("open", "Ready", "villani open", open_output)}
+</div></main></div></body></html>"""
 
 
 def run_gate(
@@ -705,6 +918,7 @@ def run_gate(
         },
         "villani_home": str(home.resolve()),
         "temporary_directory": str(temporary.resolve()),
+        "evidence_directory": str(artifacts),
         "commands": [],
         "screenshots": [],
     }
@@ -719,11 +933,10 @@ def run_gate(
     )
     env.pop("PYTHONHOME", None)
     env.pop("PYTHONPATH", None)
-    for secret_name in (
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "VILLANI_MODEL_API_KEY_ENV",
-    ):
+    registered_secret_values = {
+        str(env[name]) for name in _SECRET_ENV_NAMES if env.get(name)
+    }
+    for secret_name in _SECRET_ENV_NAMES:
         env.pop(secret_name, None)
     model_process_log = (artifacts / "model-service.log").open("wb")
     fixture = subprocess.Popen(
@@ -815,6 +1028,7 @@ def run_gate(
             "selected_attempt_id"
         ):
             raise GateFailure("sample run did not reach a selected COMPLETED result")
+        sample_evidence = _assert_sample_evidence(sample_run_root)
         doctor_json = _run(
             records,
             artifacts,
@@ -840,6 +1054,20 @@ def run_gate(
             if isinstance(item, dict)
         ):
             raise GateFailure("doctor did not prove zero model-token spending")
+        dead_letter_check = next(
+            (
+                item
+                for item in doctor_document.get("checks") or []
+                if isinstance(item, dict) and item.get("identifier") == "dead_letters"
+            ),
+            None,
+        )
+        if (
+            dead_letter_check is None
+            or dead_letter_check.get("status") != "pass"
+            or (dead_letter_check.get("details") or {}).get("count") != 0
+        ):
+            raise GateFailure("doctor did not prove that no dead letters exist")
         doctor_human = _run(
             records,
             artifacts,
@@ -935,6 +1163,8 @@ def run_gate(
                 "sample_run_id": manifest["run_id"],
                 "sample_final_state": manifest["final_state"],
                 "sample_selected_attempt": manifest["selected_attempt_id"],
+                "sample_evidence": sample_evidence,
+                "dead_letters": 0,
                 "delivery_modes": delivery_modes,
                 "screenshots": screenshots,
             }
@@ -973,6 +1203,46 @@ def run_gate(
         report["fixture_exit_code"] = fixture.returncode
         report["commands"] = [asdict(item) for item in records]
         report["completed_at"] = utc_now()
+        report["secret_scan"] = _scan_evidence_for_secrets(
+            artifacts, registered_secret_values
+        )
+        report_without_scan = dict(report)
+        report_without_scan["secret_scan"] = None
+        pending_report = json.dumps(
+            report_without_scan, sort_keys=True, default=str
+        ).encode("utf-8")
+        report_matches = report["secret_scan"]["matches"]
+        for value in registered_secret_values:
+            if value and value.encode("utf-8") in pending_report:
+                report_matches.append(
+                    {
+                        "path": "onboarding-report.json",
+                        "reason": "registered_secret_value",
+                    }
+                )
+        if re.search(
+            rb"(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})",
+            pending_report,
+        ):
+            report_matches.append(
+                {
+                    "path": "onboarding-report.json",
+                    "reason": "credential_shaped_value",
+                }
+            )
+        report["secret_scan"]["matches"] = [
+            dict(item)
+            for item in {
+                (str(item["path"]), str(item["reason"])): item
+                for item in report_matches
+            }.values()
+        ]
+        report["secret_scan"]["status"] = (
+            "passed" if not report["secret_scan"]["matches"] else "failed"
+        )
+        if report["secret_scan"]["status"] != "passed":
+            report["verdict"] = "ONBOARDING GATE FAILED"
+            report["failure"] = "secret scan found credential material"
         if not report.get("service_stopped"):
             report["verdict"] = "ONBOARDING GATE FAILED"
         (artifacts / "onboarding-report.json").write_text(
@@ -983,6 +1253,8 @@ def run_gate(
         )
     if not report.get("service_stopped"):
         raise GateFailure("Villani Service remained running after the recorded gate")
+    if report.get("secret_scan", {}).get("status") != "passed":
+        raise GateFailure("onboarding evidence bundle secret scan failed")
     return report
 
 

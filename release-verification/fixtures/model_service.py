@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import sys
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -210,8 +211,7 @@ def _verifier_response(model: str, messages: list[dict[str, Any]]) -> str:
         return "{ malformed verifier output"
     text = _message_text(messages)
     evidence = next(iter(EVIDENCE_RE.findall(text)), "ev-0001")
-    return json.dumps(
-        {
+    verdict: dict[str, Any] = {
             "type": "final_verdict",
             "result": 1,
             "verdict": "success",
@@ -259,9 +259,90 @@ def _verifier_response(model: str, messages: list[dict[str, Any]]) -> str:
             "riskFlags": [],
             "uncertainty": {"level": "low", "reasons": []},
             "toolsUsed": [],
-        },
-        sort_keys=True,
+        }
+    context_match = re.search(
+        r"Closed-loop verification context:\n(\{.*?\})\nEvidence packet:",
+        text,
+        re.DOTALL,
     )
+    context = json.loads(context_match.group(1)) if context_match else {}
+    if model == "fixture-onboarding":
+        observable = [
+            str(item["requirement_id"])
+            for item in context.get("requirements", [])
+            if item.get("observable")
+            and item.get("source") != "repository_validation_command"
+        ]
+        if observable:
+            verdict["focusedProbeRequests"] = [
+                {
+                    "probe_id": "redundant-covered-behavior",
+                    "requirement_ids": observable,
+                    "argv": [
+                        sys.executable,
+                        "-c",
+                        "raise SystemExit(91)",
+                    ],
+                    "timeout_seconds": 30,
+                    "expected_exit_code": 0,
+                    "expected_stdout": None,
+                    "expected_stdout_contains": [],
+                    "expected_stderr_contains": [],
+                    "reason": (
+                        "Fixture request proving authoritative coverage suppresses "
+                        "a redundant focused probe."
+                    ),
+                }
+            ]
+    elif _scenario(messages) == "scenario_d":
+        security_requirements = [
+            str(item["requirement_id"])
+            for item in context.get("requirements", [])
+            if item.get("source") != "repository_validation_command"
+            and any(
+                term in str(item.get("description") or "").casefold()
+                for term in (
+                    "authentication",
+                    "disclos",
+                    "preserv",
+                    "secret",
+                    "unsafe",
+                )
+            )
+        ]
+        if security_requirements:
+            verdict["focusedProbeRequests"] = [
+                {
+                    "probe_id": "preserved-authentication-fixture",
+                    "requirement_ids": security_requirements,
+                    "argv": [
+                        sys.executable,
+                        "-c",
+                        (
+                            "from pathlib import Path; import subprocess; "
+                            "text=Path('auth_fixture.py').read_text(encoding='utf-8'); "
+                            "diff=subprocess.run(['git','diff','--','auth_fixture.py'],"
+                            "capture_output=True,text=True,encoding='utf-8',"
+                            "errors='replace',check=False); "
+                            "ok=(diff.returncode == 0 and not diff.stdout and "
+                            "\"token = 'test-token'\" in text and "
+                            "'numeric_token_metric = 42' in text); "
+                            "raise SystemExit(0 if ok else 1)"
+                        ),
+                    ],
+                    "timeout_seconds": 30,
+                    "expected_exit_code": 0,
+                    "expected_stdout": None,
+                    "expected_stdout_contains": [],
+                    "expected_stderr_contains": [],
+                    "reason": (
+                        "The security and preservation requirements need a "
+                        "candidate-local proof that the authentication fixture "
+                        "is unchanged and still contains its harmless metrics."
+                    ),
+                }
+            ]
+    return json.dumps(verdict, sort_keys=True)
 
 
 class FixtureState:
@@ -350,10 +431,7 @@ def make_handler(state: FixtureState) -> type[BaseHTTPRequestHandler]:
             ):
                 message = {
                     "role": "assistant",
-                    "content": _verifier_response(
-                        "fixture-verifier-high" if model == "fixture-onboarding" else model,
-                        messages,
-                    ),
+                    "content": _verifier_response(model, messages),
                 }
             elif tools:
                 message = _tool_response(model, messages)

@@ -15,6 +15,8 @@ from villani_ops.closed_loop import (
     VillaniVerifierAdapter,
 )
 from villani_ops.closed_loop.plugins import (
+    BuiltinAgentRunnerPlugin,
+    BuiltinVerifierPlugin,
     PluginDiscoveryError,
     PluginExecutionError,
     PluginManifest,
@@ -25,6 +27,7 @@ from villani_ops.closed_loop.plugins import (
     run_echo_conformance,
     validate_manifest_conformance,
 )
+from villani_ops.tests.closed_loop.fakes import accepted_verification, attempt
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -88,6 +91,50 @@ def test_canonical_controller_records_all_used_plugin_identities() -> None:
     }
     assert all(
         item["version"] and item["digest"].startswith("sha256:") for item in identities
+    )
+
+
+def test_builtin_plugin_boundaries_forward_focused_probe_operations() -> None:
+    attempt_result = attempt()
+    initial_verification = accepted_verification()
+    request = {
+        "probe_id": "probe_1",
+        "requirement_ids": ["criterion_1"],
+        "argv": [sys.executable, "-c", "raise SystemExit(0)"],
+    }
+
+    class ProbeRunner:
+        def execute_focused_probes(self, context, result, requests):
+            assert context == {"run_id": "run_1"}
+            assert result is attempt_result
+            assert requests == [request]
+            return result
+
+    class ProbeVerifier:
+        def finalize_with_focused_probes(self, context, result, verification):
+            assert context == {"run_id": "run_1"}
+            assert result is attempt_result
+            assert verification is initial_verification
+            return verification
+
+    runner = BuiltinAgentRunnerPlugin(ProbeRunner())  # type: ignore[arg-type]
+    verifier = BuiltinVerifierPlugin(ProbeVerifier())  # type: ignore[arg-type]
+
+    assert (
+        runner.execute_focused_probes(
+            {"run_id": "run_1"},  # type: ignore[arg-type]
+            attempt_result,
+            [request],
+        )
+        is attempt_result
+    )
+    assert (
+        verifier.finalize_with_focused_probes(
+            {"run_id": "run_1"},  # type: ignore[arg-type]
+            attempt_result,
+            initial_verification,
+        )
+        is initial_verification
     )
 
 

@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 import subprocess
+import threading
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -35,13 +36,34 @@ from villani_ops.closed_loop import (
     ClosedLoopRunResult,
     EvidenceSelectorAdapter,
     PatchMaterializerAdapter,
-    VillaniCodeAttemptAdapter,
     VillaniVerifierAdapter,
+)
+from villani_ops.closed_loop.agent_systems.configuration import (
+    migrate_agent_system_configuration,
+)
+from villani_ops.closed_loop.agent_systems.registry import (
+    build_agent_system_registry,
 )
 from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
 from villani_ops.closed_loop.capabilities.report import backend_score_rows
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.offline_evaluation.replay import replay_file
+from villani_ops.evaluation_lab.models import (
+    FileChangeRequirement,
+    SetupCommand,
+    ValidationCommand,
+)
+from villani_ops.evaluation_lab.reporting import build_report, load_trials, write_reports
+from villani_ops.evaluation_lab.reviews import append_review, latest_reviews, load_reviews
+from villani_ops.evaluation_lab.runner import ProductArmExecutor, run_paired_suite
+from villani_ops.evaluation_lab.workspace import (
+    add_task as evaluation_add_task,
+    export_portable_suite,
+    freeze_suite,
+    import_baseline,
+    init_suite,
+    validate_suite,
+)
 from villani_ops.closed_loop.guarded_routing import resolve_routing_configuration
 from villani_ops.closed_loop.classification_adjustments import (
     apply_classification_policy,
@@ -74,6 +96,10 @@ from villani_ops.closed_loop.policy_preview import (
     build_policy_preview_document,
     initial_policy_context,
     simulate_historical_runs,
+)
+from villani_ops.closed_loop.product_run import (
+    build_product_run,
+    project_product_stage,
 )
 from villani_ops.closed_loop.presentation import (
     build_run_presentation,
@@ -134,6 +160,11 @@ evaluate_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+eval_app = typer.Typer(
+    help="Capture and run paired real-task Founder Thesis Lab evaluations.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 policy_app = typer.Typer(
     help="Preview and simulate user-facing policy presets.",
     no_args_is_help=True,
@@ -144,11 +175,18 @@ models_app = typer.Typer(
     invoke_without_command=True,
     add_completion=False,
 )
+agents_app = typer.Typer(
+    help="List, inspect, and diagnose complete agent systems.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 app.add_typer(backend_app, name="backend")
 app.add_typer(capability_app, name="capability")
 app.add_typer(evaluate_app, name="evaluate")
+app.add_typer(eval_app, name="eval")
 app.add_typer(policy_app, name="policy")
 app.add_typer(models_app, name="models")
+app.add_typer(agents_app, name="agents")
 
 
 @policy_app.command("explain")
@@ -431,6 +469,368 @@ def evaluate_replay(
     console.print(f"Markdown report: {markdown_output}")
 
 
+@eval_app.command("init")
+def evaluation_init(
+    suite: Path = typer.Argument(..., help="New evaluation suite directory."),
+    title: str = typer.Option(..., "--title"),
+    suite_id: str | None = typer.Option(None, "--suite-id"),
+    randomization_seed: str | None = typer.Option(None, "--randomization-seed"),
+    synthetic_fixture: bool = typer.Option(
+        False,
+        "--synthetic-fixture",
+        help="Mark test-only data that can never count toward Founder Gate evidence.",
+    ),
+    confidentiality: str = typer.Option("internal", "--confidentiality"),
+    measured_power_watts: float | None = typer.Option(
+        None, "--measured-power-watts", min=0.001
+    ),
+    electricity_price_per_kwh: float | None = typer.Option(
+        None, "--electricity-price-per-kwh", min=0
+    ),
+    currency: str | None = typer.Option(None, "--currency"),
+) -> None:
+    """Initialize a local, non-monitoring evaluation workspace."""
+
+    try:
+        created = init_suite(
+            suite,
+            title=title,
+            suite_id=suite_id,
+            randomization_seed=randomization_seed,
+            evidence_kind=(
+                "synthetic_fixture" if synthetic_fixture else "real_founder_work"
+            ),
+            confidentiality=confidentiality,
+            measured_power_watts=measured_power_watts,
+            electricity_price_per_kwh=electricity_price_per_kwh,
+            currency=currency,
+        )
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"evaluation initialization failed: {error}")
+    console.print(f"Evaluation suite initialized: {created.suite_id}")
+    console.print("Passive monitoring: disabled")
+
+
+@eval_app.command("import-baseline")
+def evaluation_import_baseline(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    repo: Path = typer.Option(..., "--repo", exists=True, file_okay=False),
+    commit: str = typer.Option("HEAD", "--commit"),
+    include: list[str] | None = typer.Option(None, "--include"),
+    exclude: list[str] | None = typer.Option(None, "--exclude"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Capture a secret-screened immutable Git snapshot and prove restoration."""
+
+    try:
+        snapshot = import_baseline(
+            suite,
+            repository=repo,
+            commit=commit,
+            include_patterns=tuple(include or ()),
+            exclude_patterns=tuple(exclude or ()),
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as error:
+        _usage_error(f"baseline import failed: {error}")
+    if json_output:
+        typer.echo(json.dumps(snapshot.model_dump(mode="json"), indent=2, sort_keys=True))
+        return
+    console.print(f"Baseline digest: {snapshot.baseline_digest}")
+    console.print(f"Files captured: {snapshot.file_count}; restore verified: yes")
+
+
+@eval_app.command("add-task")
+def evaluation_add_task_command(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    baseline: str = typer.Option(..., "--baseline"),
+    task: str | None = typer.Argument(None, help="Verbatim task instruction."),
+    task_file: Path | None = typer.Option(None, "--task-file", dir_okay=False),
+    task_id: str | None = typer.Option(None, "--task-id"),
+    success_criteria: list[str] | None = typer.Option(None, "--success-criteria"),
+    validation_command: list[str] | None = typer.Option(None, "--validation-command"),
+    hidden_validation_command: list[str] | None = typer.Option(
+        None, "--hidden-validation-command"
+    ),
+    setup_command: list[str] | None = typer.Option(None, "--setup-command"),
+    hidden_check_file: list[Path] | None = typer.Option(None, "--hidden-check-file"),
+    future_context_file: list[Path] | None = typer.Option(
+        None, "--future-context-file"
+    ),
+    file_change: str = typer.Option("required", "--file-change"),
+    allowed_path: list[str] | None = typer.Option(None, "--allowed-path"),
+    forbidden_path: list[str] | None = typer.Option(None, "--forbidden-path"),
+    risk: list[str] | None = typer.Option(None, "--risk"),
+    category: list[str] | None = typer.Option(None, "--category"),
+    confidentiality: str = typer.Option("internal", "--confidentiality"),
+    captured_by: str = typer.Option("founder", "--captured-by"),
+    source_reference: str = typer.Option("founder_work", "--source-reference"),
+) -> None:
+    """Add a real task while keeping future and hidden material evaluator-only."""
+
+    try:
+        task_text = resolve_task_input(task, task_file)
+        criteria = [value for value in (success_criteria or []) if value.strip()]
+        if not criteria:
+            raise ValueError("at least one --success-criteria is required")
+        visible = [
+            ValidationCommand(
+                validation_id=f"visible_{index:03d}",
+                argv=list(parse_manual_command(value)),
+                visibility="runner_visible",
+            )
+            for index, value in enumerate(validation_command or [], start=1)
+        ]
+        hidden = [
+            ValidationCommand(
+                validation_id=f"hidden_{index:03d}",
+                argv=list(parse_manual_command(value)),
+                visibility="evaluator_only",
+            )
+            for index, value in enumerate(hidden_validation_command or [], start=1)
+        ]
+        if not visible and not hidden:
+            raise ValueError("at least one authoritative validation command is required")
+        setup = [
+            SetupCommand(
+                setup_id=f"setup_{index:03d}",
+                argv=list(parse_manual_command(value)),
+            )
+            for index, value in enumerate(setup_command or [], start=1)
+        ]
+        created = evaluation_add_task(
+            suite,
+            baseline_digest=baseline,
+            verbatim_task=task_text,
+            success_criteria=criteria,
+            validation=(*visible, *hidden),
+            task_id=task_id,
+            allowed_setup=setup,
+            file_change_requirement=FileChangeRequirement(
+                behavior=cast(Any, file_change),
+                allowed_path_prefixes=list(allowed_path or []),
+                forbidden_path_prefixes=list(forbidden_path or []),
+            ),
+            captured_by=captured_by,
+            source_reference=source_reference,
+            risk_labels=tuple(risk or ()),
+            category_labels=tuple(category or ()),
+            hidden_check_files=tuple(hidden_check_file or ()),
+            future_context_files=tuple(future_context_file or ()),
+            confidentiality=confidentiality,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError, TaskInputError, ValidationError) as error:
+        _usage_error(f"task capture failed: {error}")
+    console.print(f"Task captured: {created.task_id}")
+    console.print(f"Task digest: {created.content_digest}")
+
+
+@eval_app.command("validate")
+def evaluation_validate(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Validate snapshot restoration, redaction, and runner non-leakage."""
+
+    try:
+        report = validate_suite(suite)
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"suite validation failed: {error}")
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        console.print(
+            f"Suite validation: {'PASS' if report['valid'] else 'FAIL'}; tasks={report['task_count']}"
+        )
+        for issue in report["issues"]:
+            console.print(f"- {issue['code']}: {issue['message']}")
+    if not report["valid"]:
+        raise typer.Exit(1)
+
+
+@eval_app.command("freeze")
+def evaluation_freeze(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    disclosure_complete: bool = typer.Option(
+        False,
+        "--disclosure-complete",
+        help="Attest that unknown and exclusion reporting will be complete.",
+    ),
+) -> None:
+    """Freeze content-addressed task and suite versions."""
+
+    try:
+        frozen = freeze_suite(suite, disclosure_complete=disclosure_complete)
+    except (OSError, TypeError, ValueError, RuntimeError, ValidationError) as error:
+        _usage_error(f"suite freeze failed: {error}")
+    console.print(f"Frozen suite digest: {frozen.content_digest}")
+
+
+@eval_app.command("export")
+def evaluation_export(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    output: Path = typer.Option(..., "--output", dir_okay=False),
+) -> None:
+    """Export runner-safe task payloads and the actual allowed code."""
+
+    try:
+        path = export_portable_suite(suite, output)
+    except (OSError, TypeError, ValueError, RuntimeError) as error:
+        _usage_error(f"evaluation export failed: {error}")
+    console.print(f"Portable evaluation bundle: {path}")
+    console.print("Evaluator-only material included: no")
+
+
+@eval_app.command("run")
+def evaluation_run(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    arms: str = typer.Option("direct,villani", "--arms"),
+    repetitions: int = typer.Option(1, "--repetitions", min=1),
+) -> None:
+    """Run randomized paired trials sequentially and resume without duplicates."""
+
+    try:
+        selected_arms = tuple(value.strip() for value in arms.split(",") if value.strip())
+        executor = ProductArmExecutor(
+            configuration=_load_config(),
+            villani_home=_home(),
+            suite_directory=suite,
+        )
+        result = run_paired_suite(
+            suite,
+            arms=selected_arms,
+            repetitions=repetitions,
+            executor=executor,
+        )
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
+    except (OSError, TypeError, ValueError, RuntimeError, ValidationError) as error:
+        _usage_error(f"paired evaluation failed: {error}")
+    console.print(
+        f"Paired evaluation: completed={result['completed']}; skipped={result['skipped']}; excluded={result['excluded']}"
+    )
+
+
+@eval_app.command("review-queue")
+def evaluation_review_queue(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """List unreviewed trial bundles without revealing their arm."""
+
+    try:
+        reviewed = latest_reviews(load_reviews(suite))
+        rows = [
+            {
+                "trial_id": trial.trial_id,
+                "patch": f"trials/{trial.trial_id}/execution/candidate.patch",
+                "verification": f"trials/{trial.trial_id}/verification/verification-result.json",
+                "arm_hidden": True,
+            }
+            for trial in load_trials(suite)
+            if trial.status == "completed" and trial.trial_id not in reviewed
+        ]
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"review queue failed: {error}")
+    if json_output:
+        typer.echo(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    for row in rows:
+        console.print(f"{row['trial_id']}: {row['patch']} (arm hidden)")
+
+
+@eval_app.command("review")
+def evaluation_review(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    trial_id: str = typer.Argument(...),
+    outcome: str = typer.Option(..., "--outcome"),
+    review_minutes: float = typer.Option(..., "--review-minutes", min=0),
+    reviewer_id: str = typer.Option(..., "--reviewer"),
+    correction_summary: str | None = typer.Option(None, "--correction-summary"),
+    severity: str = typer.Option("none", "--severity"),
+    unblinded: bool = typer.Option(False, "--unblinded"),
+    amend: str | None = typer.Option(None, "--amend"),
+    later_rollback: bool | None = typer.Option(None, "--later-rollback/--no-later-rollback"),
+    reopened_defect: bool | None = typer.Option(None, "--reopened-defect/--not-reopened"),
+) -> None:
+    """Append a human review or amendment; prior labels are never overwritten."""
+
+    try:
+        review = append_review(
+            suite,
+            trial_id=trial_id,
+            reviewer_id=reviewer_id,
+            outcome=outcome,
+            review_minutes=review_minutes,
+            blinded=not unblinded,
+            arm_revealed_during_review=unblinded,
+            correction_summary=correction_summary,
+            severity=severity,
+            later_rollback=later_rollback,
+            reopened_defect=reopened_defect,
+            amends_review_id=amend,
+        )
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"human review failed: {error}")
+    console.print(f"Human review appended: {review.review_id}")
+
+
+@eval_app.command("report")
+def evaluation_report(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    json_output: Path | None = typer.Option(None, "--json-output", dir_okay=False),
+    markdown_output: Path | None = typer.Option(
+        None, "--markdown-output", dir_okay=False
+    ),
+    html_output: Path | None = typer.Option(None, "--html-output", dir_okay=False),
+) -> None:
+    """Generate JSON, Markdown, and HTML evaluation reports."""
+
+    try:
+        report, json_path, markdown_path, html_path = write_reports(
+            suite,
+            json_output=json_output,
+            markdown_output=markdown_output,
+            html_output=html_output,
+        )
+    except (OSError, TypeError, ValueError, RuntimeError, ValidationError) as error:
+        _usage_error(f"evaluation report failed: {error}")
+    console.print(f"Gate B: {report.founder_gate_status}")
+    console.print(f"JSON: {json_path}")
+    console.print(f"Markdown: {markdown_path}")
+    console.print(f"HTML: {html_path}")
+
+
+@eval_app.command("gate")
+def evaluation_gate(
+    suite: Path = typer.Argument(..., exists=True, file_okay=False),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Return PASS, FAIL, or INSUFFICIENT_EVIDENCE for Founder Gate B."""
+
+    try:
+        report = build_report(suite)
+    except (OSError, TypeError, ValueError, RuntimeError, ValidationError) as error:
+        _usage_error(f"Founder Gate failed: {error}")
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "schema_version": "villani.founder_gate.v1",
+                    "status": report.founder_gate_status,
+                    "checks": [item.model_dump(mode="json") for item in report.founder_gate_checks],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        console.print(report.founder_gate_status)
+    if report.founder_gate_status == "FAIL":
+        raise typer.Exit(1)
+    if report.founder_gate_status == "INSUFFICIENT_EVIDENCE":
+        raise typer.Exit(2)
+
+
 CONFIG_HEADER = """# Villani local-first configuration.
 # Add backends with `villani backend add`; store secret values in environment
 # variables and put only the variable name in api_key_env.
@@ -525,6 +925,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "required": True,
     },
     "backends": {},
+    "agent_systems": {
+        "schema_version": "villani.agent_system_configuration.v1",
+        "systems": {},
+    },
 }
 
 _controller_builder: (
@@ -564,7 +968,8 @@ def _validation_message(error: ValidationError) -> str:
 
 
 def _write_config(path: Path, configuration: Mapping[str, Any]) -> None:
-    write_configuration_atomic(path, configuration, header=CONFIG_HEADER)
+    migrated, _report = migrate_agent_system_configuration(configuration)
+    write_configuration_atomic(path, migrated, header=CONFIG_HEADER)
 
 
 def _load_config() -> dict[str, Any]:
@@ -577,7 +982,104 @@ def _load_config() -> dict[str, Any]:
         _usage_error(f"cannot read configuration at {path}: {error}")
     if not isinstance(loaded, dict):
         _usage_error(f"configuration at {path} must be a YAML object")
-    return loaded
+    try:
+        migrated, _report = migrate_agent_system_configuration(loaded)
+    except (TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"agent-system configuration migration failed: {error}")
+    return migrated
+
+
+def _agent_system_registry():
+    configuration = _load_config()
+    try:
+        return build_agent_system_registry(
+            configuration, _load_backends(configuration)
+        )
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"agent-system configuration is invalid: {error}")
+
+
+@agents_app.command("list")
+def agents_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit canonical JSON."),
+) -> None:
+    """List complete systems; disabled systems remain visible but unselectable."""
+
+    registry = _agent_system_registry()
+    document = {
+        "schema_version": "villani.agent_system_inventory.v1",
+        "systems": [item.model_dump(mode="json") for item in registry.list()],
+        "migration": registry.migration_report,
+    }
+    if json_output:
+        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+        return
+    if not registry.list():
+        console.print("No coding agent systems are configured.")
+        return
+    for identity in registry.list():
+        console.print(
+            f"{identity.route_name}: {identity.harness.display_name} "
+            f"{identity.harness.version}; model={identity.model_provider.model_id}; "
+            f"provider={identity.model_provider.provider}; "
+            f"qualification={identity.qualification_status}; "
+            f"enabled={'yes' if identity.production_enabled else 'no'}; "
+            f"id={identity.system_id}",
+            soft_wrap=True,
+        )
+
+
+@agents_app.command("inspect")
+def agents_inspect(
+    reference: str = typer.Argument(..., help="Route name or content-addressed ID."),
+    json_output: bool = typer.Option(True, "--json/--no-json"),
+) -> None:
+    """Print one redacted canonical agent-system identity."""
+
+    try:
+        identity = _agent_system_registry().inspect(reference)
+    except ValueError as error:
+        _usage_error(str(error))
+    document = redact_data(identity.model_dump(mode="json"))
+    if json_output:
+        typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(
+            f"{identity.route_name}: {identity.system_id}\n"
+            f"  harness={identity.harness.harness_id}@{identity.harness.version}\n"
+            f"  model={identity.model_provider.provider}/{identity.model_provider.model_id}\n"
+            f"  qualification={identity.qualification_status}; "
+            f"unknown={','.join(identity.unknown_fields) or 'none'}",
+            soft_wrap=True,
+        )
+
+
+@agents_app.command("doctor")
+def agents_doctor(
+    reference: str | None = typer.Argument(None, help="Optional route name or ID."),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Probe harness availability and protocol compatibility without model use."""
+
+    try:
+        reports = _agent_system_registry().doctor(reference)
+    except ValueError as error:
+        _usage_error(str(error))
+    document = {
+        "schema_version": "villani.agent_system_doctor_collection.v1",
+        "reports": [item.model_dump(mode="json") for item in reports],
+    }
+    if json_output:
+        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+    else:
+        for report in reports:
+            console.print(
+                f"{report.system_id}: {'selectable' if report.selectable else 'not selectable'}"
+            )
+            for check in report.checks:
+                console.print(f"- {check.name}: {check.status} - {check.message}")
+    if reports and any(not item.selectable for item in reports):
+        raise typer.Exit(1)
 
 
 def _load_backends(configuration: Mapping[str, Any]) -> dict[str, Backend]:
@@ -1627,6 +2129,19 @@ class _ClassifierAdapter:
                             "relevant_file_paths": list(classified.relevant_file_paths),
                             "original_difficulty": classified.original_difficulty,
                             "original_risk": classified.original_risk,
+                            "raw_signals": dict(classified.task_shape_signals),
+                            "model_classification": {
+                                "difficulty": (
+                                    classified.original_difficulty
+                                    or classified.difficulty
+                                ),
+                                "risk": classified.original_risk or classified.risk,
+                                "category": classified.category,
+                                "required_capabilities": list(
+                                    classified.required_capabilities
+                                ),
+                                "confidence": classified.confidence,
+                            },
                         },
                     )
                 except Exception as error:
@@ -1667,10 +2182,32 @@ def build_controller(
     discover_plugins_from_configuration(configuration)
     """Construct only the canonical controller and its M4/M5 dependencies."""
 
-    backends = _load_backends(configuration)
+    configured_backends = _load_backends(configuration)
+    try:
+        agent_registry = build_agent_system_registry(configuration, configured_backends)
+    except (TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"agent-system configuration is invalid: {error}")
+    selectable_coding_backends = {
+        name
+        for name, identity in agent_registry.by_backend.items()
+        if identity.production_enabled
+        and identity.qualification_status in {"qualified", "bootstrap"}
+        and identity.harness.harness_id == "villani-code"
+    }
+    backends = {
+        name: (
+            backend
+            if "coding" not in backend.roles or name in selectable_coding_backends
+            else backend.model_copy(
+                update={"roles": [role for role in backend.roles if role != "coding"]}
+            )
+        )
+        for name, backend in configured_backends.items()
+    }
     _validate_run_backends(backends)
-    for backend in backends.values():
-        if backend.enabled and "coding" in backend.roles:
+    for backend_name, identity in agent_registry.by_backend.items():
+        backend = configured_backends[backend_name]
+        if identity.production_enabled and identity.harness.harness_id == "villani-code":
             execution = ExecutionEnvironmentConfig.from_configuration(
                 configuration, backend.execution_environment
             )
@@ -1886,9 +2423,7 @@ def build_controller(
     return ClosedLoopController(
         classifier=_ClassifierAdapter(backends, configuration),
         policy_engine=policy,
-        attempt_runner=BuiltinAgentRunnerPlugin(
-            VillaniCodeAttemptAdapter(backends=backends)
-        ),
+        attempt_runner=BuiltinAgentRunnerPlugin(agent_registry.attempt_runner()),
         verifier=BuiltinVerifierPlugin(verifier_impl),
         selector=BuiltinSelectorPlugin(EvidenceSelectorAdapter()),
         materializer=BuiltinMaterializerPlugin(materializer_impl),
@@ -2052,6 +2587,7 @@ def prepare_repository_validation(
     confirm_low_confidence: bool = False,
     allow_prompt: bool = True,
     confirmed_by: str = "cli",
+    quiet: bool = False,
 ) -> dict[str, Any]:
     """Attach confirmed validation argv while retaining advisory discovery."""
 
@@ -2072,8 +2608,9 @@ def prepare_repository_validation(
             "commands": [item["display_command"] for item in commands],
             "confirmed": True,
         }
-        for item in commands:
-            console.print(f"Validation: {item['display_command']} (manual override)")
+        if not quiet:
+            for item in commands:
+                console.print(f"Validation: {item['display_command']} (manual override)")
     else:
         configured = _configured_validation_commands(configuration)
         discovery = discover_repository_validation(repository)
@@ -2084,11 +2621,12 @@ def prepare_repository_validation(
                 "commands": [item["display_command"] for item in commands],
                 "confirmed": True,
             }
-            for item in commands:
-                console.print(
-                    f"Validation: {item['display_command']} (configured override)",
-                    markup=False,
-                )
+            if not quiet:
+                for item in commands:
+                    console.print(
+                        f"Validation: {item['display_command']} (configured override)",
+                        markup=False,
+                    )
         else:
             suggestions = discovery.get("suggestions")
             selected = (
@@ -2097,10 +2635,21 @@ def prepare_repository_validation(
                 else None
             )
             if not isinstance(selected, Mapping):
-                _run_usage_error(
-                    "no_validation_command",
-                    "no repository validation command was discovered",
-                )
+                commands = []
+                discovery["selection"] = {
+                    "source": "unavailable",
+                    "commands": [],
+                    "confirmed": False,
+                    "alternative_evidence_required": True,
+                }
+                if not quiet:
+                    console.print(
+                        "No repository check was detected. The run can continue, but Villani will require sufficient alternative evidence before it can be ready to apply.",
+                        markup=False,
+                    )
+                configuration["repository_validation_commands"] = commands
+                configuration["repository_validation_discovery"] = discovery
+                return discovery
             argv = selected.get("argv")
             if not isinstance(argv, list) or not all(
                 isinstance(value, str) and value for value in argv
@@ -2111,13 +2660,14 @@ def prepare_repository_validation(
                 )
             confidence = float(selected.get("confidence") or 0)
             command_text = display_argv(argv)
-            console.print(
-                f"Validation: {command_text} ({selected.get('confidence_label')} confidence)",
-                markup=False,
-            )
+            if not quiet:
+                console.print(
+                    f"Validation: {command_text} ({selected.get('confidence_label')} confidence)",
+                    markup=False,
+                )
             if confidence < CONFIRMATION_THRESHOLD and not confirm_low_confidence:
                 if not allow_prompt or not typer.confirm(
-                    "Discovery confidence is low. Run exactly this command for every candidate?",
+                    f"Villani is not sure this is the right check. Use '{command_text}'?",
                     default=False,
                 ):
                     _run_usage_error(
@@ -2171,30 +2721,49 @@ def _run_progress_listener(
     debug: bool = False,
 ) -> Callable[[Any], None]:
     ordinals: dict[str, int] = {}
+    current_stage: Literal["Understanding", "Working", "Checking", "Ready"] | None = None
+    current_sentence: str | None = None
 
     def listener(event: Any) -> None:
+        nonlocal current_stage, current_sentence
         if event.event_type == "run_created":
             setattr(listener, "run_created", True)
             setattr(listener, "run_id", event.run_id)
-            console.print(f"Run ID: {event.run_id}")
-            console.print(f"Run directory: {runs_root / event.run_id}")
+            if verbose or debug:
+                console.print(f"Run ID: {event.run_id}")
+                console.print(f"Run directory: {runs_root / event.run_id}")
         if event.event_type == "attempt_started" and event.attempt_id:
             ordinal = event.payload.get("ordinal")
             if isinstance(ordinal, int):
                 ordinals[event.attempt_id] = ordinal
-        for line in progress_lines_for_event(
-            event,
-            ordinals=ordinals,
-            include_raw=verbose or debug,
+        event_value = event.model_dump(mode="json")
+        stage, sentence = project_product_stage(event_value, current_stage)
+        if stage != current_stage or (
+            sentence != current_sentence
+            and event.event_type
+            in {
+                "retry_selected",
+                "escalation_selected",
+                "verification_retry_started",
+                "repository_validation_retry_started",
+                "focused_probe_execution_started",
+            }
         ):
-            suffix = f" [{line['raw_event_type']}]" if verbose and not debug else ""
-            console.print(
-                f"{_display_progress_symbol(str(line['symbol']))} {line['message']}{suffix}",
-                markup=False,
-            )
+            console.print(f"{stage}: {sentence}", markup=False)
+            current_stage, current_sentence = stage, sentence
+        if verbose or debug:
+            for line in progress_lines_for_event(
+                event,
+                ordinals=ordinals,
+                include_raw=True,
+            ):
+                suffix = f" [{line['raw_event_type']}]" if verbose and not debug else ""
+                console.print(
+                    f"{_display_progress_symbol(str(line['symbol']))} {line['message']}{suffix}",
+                    markup=False,
+                )
         if debug:
-            value = event.model_dump(mode="json")
-            console.print(json.dumps(redact_data(value), sort_keys=True), markup=False)
+            console.print(json.dumps(redact_data(event_value), sort_keys=True), markup=False)
 
     setattr(listener, "run_created", False)
     setattr(listener, "run_id", None)
@@ -2217,6 +2786,10 @@ def _money(value: Any, status: Any, currency: Any = "USD") -> str:
     return f"{code} {float(value):.2f}" if value is not None else f"Unknown ({status})"
 
 
+def _count_text(value: Any) -> str:
+    return str(value) if isinstance(value, int) and not isinstance(value, bool) else "Unknown"
+
+
 def _cost_text(value: Any, status: Any, currency: Any = "USD") -> str:
     """Compatibility formatter for non-run listing commands."""
 
@@ -2224,6 +2797,76 @@ def _cost_text(value: Any, status: Any, currency: Any = "USD") -> str:
 
 
 def _print_terminal_summary(
+    result: ClosedLoopRunResult,
+    *,
+    verbose: bool = False,
+    json_output: bool = False,
+) -> None:
+    product = build_product_run(result.run_directory)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                product.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return
+
+    console.print(str(product.final_verdict or product.current_stage), markup=False)
+    if product.verdict_reason:
+        console.print(product.verdict_reason, markup=False)
+    console.print("\nWhat changed:", markup=False)
+    console.print(f"  {product.change_summary}", markup=False)
+    console.print("\nFiles changed:", markup=False)
+    if product.changed_files:
+        for path in product.changed_files:
+            console.print(f"  {path}", markup=False)
+    else:
+        console.print("  No file changes were recorded.", markup=False)
+    checks = product.checks_summary
+    console.print("\nChecks and tests:", markup=False)
+    console.print(
+        f"  {_count_text(checks.passed)} passed; {_count_text(checks.failed)} failed; "
+        f"{_count_text(checks.not_run)} not run; {_count_text(checks.unavailable)} unavailable "
+        f"({checks.accounting_status})",
+        markup=False,
+    )
+    requirements = product.requirement_summary
+    console.print("\nRequirement coverage:", markup=False)
+    console.print(
+        f"  {_count_text(requirements.proved)} proved; "
+        f"{_count_text(requirements.not_proved)} not proved "
+        f"({requirements.accounting_status})",
+        markup=False,
+    )
+    console.print("\nKnown cost:", markup=False)
+    console.print(
+        f"  {_money(product.cost.value, product.cost.accounting_status, product.cost.currency)}",
+        markup=False,
+    )
+    console.print("\nElapsed time:", markup=False)
+    duration = (
+        f"{product.duration.value_ms / 1000:.1f} seconds"
+        if product.duration.value_ms is not None
+        else f"Unknown ({product.duration.accounting_status})"
+    )
+    console.print(f"  {duration}", markup=False)
+    if product.available_actions:
+        primary = product.available_actions[0]
+        console.print("\nNext action:", markup=False)
+        console.print(f"  {primary.label}: {primary.href}", markup=False)
+    console.print("\nEvidence:", markup=False)
+    for link in product.evidence_links:
+        console.print(f"  {link.label}: {link.href}", markup=False)
+    if verbose and product.technical_detail_references:
+        console.print("  Technical details:", markup=False)
+        for reference in product.technical_detail_references:
+            console.print(f"    {reference}", markup=False)
+    console.print(f"\nRun ID: {product.run_identity.run_id}", markup=False)
+
+
+def _print_legacy_terminal_summary(
     result: ClosedLoopRunResult,
     *,
     verbose: bool = False,
@@ -2305,12 +2948,22 @@ def _print_terminal_summary(
     )
     console.print("\nValidation:", markup=False)
     console.print(
-        f"  {validation.get('checks_passed', 0)} repository checks passed; "
-        f"{validation.get('checks_failed', 0)} failed",
+        f"  {_count_text(validation.get('checks_passed'))} repository checks passed; "
+        f"{_count_text(validation.get('checks_failed'))} failed; "
+        f"{_count_text(validation.get('checks_not_run'))} not run; "
+        f"{_count_text(validation.get('checks_unavailable'))} unavailable",
         markup=False,
     )
     console.print(
-        f"  {validation.get('requirements_verified', 0)} task requirements verified",
+        f"  {_count_text(validation.get('focused_probes_passed'))} focused probes passed; "
+        f"{_count_text(validation.get('focused_probes_failed'))} failed; "
+        f"{_count_text(validation.get('focused_probes_not_run'))} not run; "
+        f"{_count_text(validation.get('focused_probes_unavailable'))} unavailable",
+        markup=False,
+    )
+    console.print(
+        f"  {_count_text(validation.get('requirements_proved'))} task requirements proved; "
+        f"{_count_text(validation.get('requirements_not_proved'))} not proved",
         markup=False,
     )
     for command in validation.get("commands") or []:
@@ -2442,6 +3095,10 @@ def configure_run_experience(
             routing["active_policy"] = {**dict(active), "state": "paused"}
 
     configuration["run_experience"] = {
+        "mode": "performance",
+        "verification_required": True,
+        "default_wall_time_budget": None,
+        "attempt_policy_visible": False,
         "delivery_mode": delivery_mode,
         "effective_materialization_type": effective_kind,
         "approval_mode": ("explicit" if delivery_mode == "approve" else "automatic"),
@@ -2494,13 +3151,18 @@ def _execute_new_run(
     requires_file_changes: bool,
     verbose: bool,
     debug: bool,
+    json_output: bool = False,
     lineage: Mapping[str, Any] | None = None,
     run_id: str | None = None,
 ) -> ClosedLoopRunResult:
     runs_root = _runs_root()
     runs_root.mkdir(parents=True, exist_ok=True)
     builder = _controller_builder or build_controller
-    progress_listener = _run_progress_listener(runs_root, verbose=verbose, debug=debug)
+    progress_listener = (
+        None
+        if json_output
+        else _run_progress_listener(runs_root, verbose=verbose, debug=debug)
+    )
     try:
         controller = builder(configuration, progress_listener)
     except typer.Exit:
@@ -2514,6 +3176,7 @@ def _execute_new_run(
         _run_usage_error(
             infer_failure_code(None, message), f"Invalid run configuration: {message}"
         )
+    cancellation_event = threading.Event()
     request = ClosedLoopRunRequest(
         task=task,
         repository_path=repository,
@@ -2526,14 +3189,28 @@ def _execute_new_run(
         policy_configuration=configuration,
         lineage=dict(lineage or {}),
         run_id=run_id,
+        cancellation_event=cancellation_event,
     )
     try:
         result = controller.run(request)
     except KeyboardInterrupt:
-        cancelled_run_id = getattr(progress_listener, "run_id", None)
+        cancellation_event.set()
+        cancelled_projection_printed = False
+        cancelled_run_id = getattr(progress_listener, "run_id", None) or run_id
         cancelled_directory = (
             runs_root / str(cancelled_run_id) if cancelled_run_id else None
         )
+        if cancelled_run_id and cancelled_directory is not None and cancelled_directory.is_dir():
+            try:
+                cancelled_result = controller.cancel(str(cancelled_run_id), runs_root)
+                _print_terminal_summary(
+                    cancelled_result,
+                    verbose=verbose or debug,
+                    json_output=json_output,
+                )
+                cancelled_projection_printed = True
+            except (OSError, TypeError, ValueError):
+                pass
         try:
             cancelled_manifest = (
                 _read_json(cancelled_directory / "manifest.json")
@@ -2559,12 +3236,13 @@ def _execute_new_run(
                 )
             )
         )
-        _print_failure_experience(
-            "user_cancelled",
-            "The run was cancelled by the user.",
-            attempts=len(cancelled_attempt_ids),
-            patch_preserved=patch_preserved,
-        )
+        if not json_output and not cancelled_projection_printed:
+            _print_failure_experience(
+                "user_cancelled",
+                "The run was cancelled by the user.",
+                attempts=len(cancelled_attempt_ids),
+                patch_preserved=patch_preserved,
+            )
         raise typer.Exit(130) from None
     try:
         capabilities = _capability_configuration(configuration)
@@ -2574,13 +3252,15 @@ def _execute_new_run(
             scorer_version=scorer,
         )
     except (OSError, ValueError, json.JSONDecodeError) as error:
-        console.print(
-            "Capability profile synchronization pending: "
-            f"the run is durable, but observed model statistics could not be refreshed ({error})."
-        )
-    if not bool(getattr(progress_listener, "run_created", False)):
+        if not json_output:
+            console.print(
+                "Capability profile synchronization pending: "
+                f"the run is durable, but observed model statistics could not be refreshed ({error})."
+            )
+    if not json_output and not bool(getattr(progress_listener, "run_created", False)):
         console.print(f"Run ID: {result.run_id}")
-        console.print(f"Run directory: {result.run_directory}")
+        if verbose or debug:
+            console.print(f"Run directory: {result.run_directory}")
     return result
 
 
@@ -2589,14 +3269,17 @@ def _finish_run(
     *,
     verbose: bool,
     open_after: bool,
+    json_output: bool = False,
 ) -> None:
-    _print_terminal_summary(result, verbose=verbose)
+    _print_terminal_summary(result, verbose=verbose, json_output=json_output)
     if open_after:
         _open_flight_recorder(result.run_id)
     if result.terminal_state == "EXHAUSTED":
         raise typer.Exit(3)
     if result.terminal_state == "FAILED":
         raise typer.Exit(4)
+    if result.terminal_state == "CANCELLED":
+        raise typer.Exit(130)
 
 
 @app.command("run")
@@ -2641,7 +3324,7 @@ def run_command(
     preset: str | None = typer.Option(
         None,
         "--preset",
-        help="Reliable, Balanced, Local first, Cheapest acceptable, or Custom.",
+        help="Performance, Reliable, Balanced, Local first, Cheapest acceptable, or Custom.",
     ),
     policy_selection: str = typer.Option(
         "configured",
@@ -2653,6 +3336,7 @@ def run_command(
     verbose: bool = typer.Option(False, "--verbose"),
     debug: bool = typer.Option(False, "--debug"),
     open_after: bool = typer.Option(False, "--open"),
+    json_output: bool = typer.Option(False, "--json"),
     run_id: str | None = typer.Option(None, "--run-id", hidden=True),
 ) -> None:
     """Run one canonical deterministic closed loop."""
@@ -2665,10 +3349,10 @@ def run_command(
 
     repository = _resolve_run_repository(repo)
     try:
-        configuration = apply_policy_preset(_load_config(), preset)
+        configuration = apply_policy_preset(_load_config(), preset or "performance")
     except ValueError as error:
         _usage_error(str(error))
-    selected_delivery = delivery or _delivery_mode_from_configuration(configuration)
+    selected_delivery = delivery or "approve"
     configure_run_experience(
         configuration,
         delivery_mode=selected_delivery,
@@ -2683,6 +3367,7 @@ def run_command(
         confirm_low_confidence=confirm_validation,
         allow_prompt=True,
         confirmed_by="cli",
+        quiet=json_output,
     )
     attempts_budget, cost_budget, wall_budget = resolve_run_budgets(
         configuration,
@@ -2690,6 +3375,8 @@ def run_command(
         max_cost=max_cost,
         max_wall_time=max_wall_time,
     )
+    if max_wall_time is None:
+        wall_budget = None
     policy = configuration.setdefault("policy", {})
     if not isinstance(policy, dict):
         _usage_error("config policy must be a YAML object")
@@ -2710,9 +3397,15 @@ def run_command(
         requires_file_changes=not allow_no_file_change,
         verbose=verbose,
         debug=debug,
+        json_output=json_output,
         run_id=run_id,
     )
-    _finish_run(result, verbose=verbose or debug, open_after=open_after)
+    _finish_run(
+        result,
+        verbose=verbose or debug,
+        open_after=open_after,
+        json_output=json_output,
+    )
 
 
 def _latest_interrupted_run(root: Path) -> str | None:
@@ -2824,9 +3517,9 @@ def resume_command(
     if bool(state.get("terminal")):
         terminal_state = str(state.get("state") or "FAILED")
         recovered_terminal_state = cast(
-            Literal["COMPLETED", "EXHAUSTED", "FAILED"],
+            Literal["COMPLETED", "EXHAUSTED", "FAILED", "CANCELLED"],
             terminal_state
-            if terminal_state in {"COMPLETED", "EXHAUSTED", "FAILED"}
+            if terminal_state in {"COMPLETED", "EXHAUSTED", "FAILED", "CANCELLED"}
             else "FAILED",
         )
         raw_accounting_status = str(manifest.get("cost_accounting_status") or "unknown")
@@ -2898,6 +3591,8 @@ def resume_command(
         raise typer.Exit(3)
     if result.terminal_state == "FAILED":
         raise typer.Exit(4)
+    if result.terminal_state == "CANCELLED":
+        raise typer.Exit(130)
 
 
 def _approval_controller(
@@ -3410,6 +4105,37 @@ def inspect_run(
     console.print("Artifacts:")
     for path in bundle["artifact_paths"]:
         console.print(f"- {path}")
+
+
+@app.command("evidence")
+def evidence_command(
+    run_id: str = typer.Argument(..., help="Canonical run ID."),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect the recorded evidence and technical references for one run."""
+
+    directory = _run_dir(run_id)
+    if not directory.is_dir():
+        _usage_error(f"run not found: {run_id}")
+    try:
+        product = build_product_run(directory)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        _usage_error(f"cannot inspect evidence for {run_id}: {redact_data(str(error))}")
+    document = {
+        "schema_version": "villani.evidence_index.v1",
+        "run_id": run_id,
+        "evidence_links": [item.model_dump(mode="json") for item in product.evidence_links],
+        "technical_detail_references": product.technical_detail_references,
+    }
+    if json_output:
+        typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
+        return
+    console.print(f"Recorded evidence for {run_id}:", markup=False)
+    for item in product.evidence_links:
+        console.print(f"- {item.label}: {item.href}", markup=False)
+    console.print("Technical details:", markup=False)
+    for reference in product.technical_detail_references:
+        console.print(f"- {reference}", markup=False)
 
 
 def _split_command(value: str) -> list[str]:

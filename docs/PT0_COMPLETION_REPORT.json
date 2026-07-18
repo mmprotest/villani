@@ -1,0 +1,434 @@
+{
+  "schema_version": "villani.milestone_completion.v1",
+  "milestone": "PT0",
+  "title": "Restore Product Truth and First-Run Integrity",
+  "status": "COMPLETE",
+  "completed_at": "2026-07-17T04:34:50.311341Z",
+  "scope": {
+    "authorized_milestone": "PT0",
+    "pt1_started": false,
+    "later_milestone_work_started": false
+  },
+  "acceptance_criteria": {
+    "sample_selected_proved_result": true,
+    "canonical_evidence_and_presentations_agree": true,
+    "missing_evidence_fails_closed": true,
+    "generic_suite_does_not_prove_unrelated_requirement": true,
+    "trivial_fixture_classifies_easy": true,
+    "broken_mandatory_entry_points_cannot_report_setup_success": true
+  },
+  "files": {
+    "added": [
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-BwtYjqYI.js",
+      "components/villani-ops/villani_ops/closed_loop/run_summary.py",
+      "components/villani-ops/villani_ops/closed_loop/validation_coverage.py",
+      "components/villani-ops/villani_ops/schemas/v1/run-summary.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/validation-coverage.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_run_summary.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_validation_coverage.py",
+      "components/villani-ops/villani_ops/tests/fixtures/classification_calibration.json",
+      "components/villani-web/dist/assets/index-BwtYjqYI.js",
+      "docs/PT0_COMPLETION_REPORT.json",
+      "docs/PT0_COMPLETION_REPORT.md",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_002/repository-validation.json",
+      "integration/fixtures/protocol/v1/valid_run/run-summary.json",
+      "integration/fixtures/protocol/v1/valid_run/validation-coverage.json",
+      "integration/fixtures/protocol/v1/valid_run/verification/attempt_002-evidence.json",
+      "schemas/v1/run-summary.schema.json",
+      "schemas/v1/validation-coverage.schema.json"
+    ],
+    "changed": [
+      "PLANS.md",
+      "README.md",
+      "components/villani-agentd/villani_agentd/console.py",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-flight-recorder/dist/providers/villani.js",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/dist/render/components/villaniRunDetails.js",
+      "components/villani-flight-recorder/src/providers/villani.ts",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/src/render/components/villaniRunDetails.ts",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "components/villani-flight-recorder/test/villaniProvider.test.ts",
+      "components/villani-ops/villani_ops/agentic/git_artifacts.py",
+      "components/villani-ops/villani_ops/classification/classifier.py",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/adapters/git_isolation.py",
+      "components/villani-ops/villani_ops/closed_loop/adapters/villani_code_attempt.py",
+      "components/villani-ops/villani_ops/closed_loop/adapters/villani_verifier.py",
+      "components/villani-ops/villani_ops/closed_loop/controller.py",
+      "components/villani-ops/villani_ops/closed_loop/plugins/builtins.py",
+      "components/villani-ops/villani_ops/closed_loop/presentation.py",
+      "components/villani-ops/villani_ops/closed_loop/protocol.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/isolation/copy_git.py",
+      "components/villani-ops/villani_ops/schemas/v1/run-manifest.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_adapters.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-ops/villani_ops/tests/test_candidate_patch_quality.py",
+      "components/villani-ops/villani_ops/tests/test_classification_normalization.py",
+      "components/villani-ops/villani_ops/tests/test_closed_loop_plugins.py",
+      "components/villani-ops/villani_ops/tests/test_focused_probes.py",
+      "components/villani-ops/villani_ops/tests/test_milestone3_presentation.py",
+      "components/villani-web/.prettierrc.json",
+      "components/villani-web/dist/index.html",
+      "components/villani-web/src/ConsoleApp.tsx",
+      "components/villani-web/src/consoleApi.ts",
+      "components/villani-web/test/console.test.tsx",
+      "components/villani/README.md",
+      "components/villani/tests/test_install_local.py",
+      "components/villani/tests/test_onboarding_integration.py",
+      "docs/CLOSED_LOOP.md",
+      "docs/DISTRIBUTION.md",
+      "integration/fixtures/protocol/v1/valid_run/manifest.json",
+      "onboarding-verification/run_onboarding_gate.py",
+      "release-verification/README.md",
+      "release-verification/connected_product.py",
+      "release-verification/fixtures/model_service.py",
+      "release-verification/run_release_gate.py",
+      "schemas/v1/run-manifest.schema.json",
+      "scripts/install-local.py",
+      "tests/final_foundation/test_release_gate_contract.py"
+    ],
+    "deleted": [
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-BbBDMbii.js",
+      "components/villani-web/dist/assets/index-BbBDMbii.js"
+    ],
+    "migrated_contracts": [
+      "schemas/v1/run-manifest.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/run-manifest.schema.json",
+      "integration/fixtures/protocol/v1/valid_run/manifest.json"
+    ]
+  },
+  "architecture_decisions": [
+    "villani.validation_coverage.v1 is the conservative command-to-requirement coverage contract; generic suite success alone does not prove unrelated behavior.",
+    "Focused probes are persisted, controller-scheduled, executed in the preserved candidate environment, and linked to candidate, requirement, evidence, and execution identity before final acceptance.",
+    "Probe behavior failures and probe infrastructure failures remain distinct and both fail closed; only behavior failures are candidate failures.",
+    "Known no-model deterministic verifier advisories are projected to non-accepting canonical actions without changing their raw value; malformed semantic-verifier output remains malformed.",
+    "villani.run_summary.v1 is the single projection consumed by CLI, web, reports, static viewers, support artifacts, and Flight Recorder.",
+    "Classification persists raw signals and effective classification after generic normalization of duplicate criteria, repository breadth, subsystem count, risk, dependency uncertainty, validation burden, and scope.",
+    "Local installation stages a complete environment and configuration, verifies mandatory imports and executables, then atomically activates or rolls back; runtime and development dependency profiles are separate.",
+    "The release gate installs only built artifacts into clean environments and uses deterministic local model fixtures without an onboarding acceptance bypass."
+  ],
+  "schema_and_configuration_migrations": [
+    {
+      "contract": "villani.validation_coverage.v1",
+      "compatibility": "Legacy repository-validation evidence migrates conservatively with unknown coverage and never gains inferred requirement proof."
+    },
+    {
+      "contract": "villani.run_summary.v1",
+      "compatibility": "Older bundles remain readable through a synthesized projection; missing and unknown accounting stay explicit rather than becoming zero."
+    },
+    {
+      "contract": "villani.run_manifest.v1",
+      "compatibility": "Optional summary and validation-coverage artifact references were added in normative and packaged schemas."
+    },
+    {
+      "configuration": "local installation and setup",
+      "compatibility": "Existing working environments and configuration files are preserved until staged validation succeeds; rollback restores the prior state."
+    }
+  ],
+  "tests_added_or_extended": [
+    "Exact installed-user onboarding contradiction regression, retained as a successful selected-delivery regression after the fix.",
+    "Validation-coverage schema, deterministic linkage, conservative unrelated-requirement behavior, and legacy migration tests.",
+    "Focused-probe scheduling, plugin-boundary forwarding, candidate/requirement/evidence linkage, redundant-probe suppression, and behavior-versus-infrastructure tests.",
+    "Cross-surface CLI, web, Markdown report, static artifact, and Flight Recorder summary reconciliation tests.",
+    "Easy, medium, and hard classification fixtures with raw/effective signal persistence.",
+    "Interrupted installer publication, missing mandatory dependency, rollback, runtime/development profile separation, and exact repair-command tests.",
+    "Clean installed-user gate, built-artifact-only assertions, screenshot capture, delivery, doctor, dead-letter, and evidence secret-scan tests."
+  ],
+  "validation": {
+    "final_commands": [
+      {
+        "command": "python -m pytest -q",
+        "cwd": "components/villani",
+        "exit_code": 0,
+        "result": "66 passed in 184.10s"
+      },
+      {
+        "command": "python -m pytest -q",
+        "cwd": "components/villani-ops",
+        "exit_code": 0,
+        "result": "1139 passed, 2 skipped, 114 deselected in 244.88s"
+      },
+      {
+        "command": "python -m pytest -q",
+        "cwd": "components/villani-code",
+        "exit_code": 0,
+        "result": "686 passed, 1 skipped, 28 warnings in 77.78s"
+      },
+      {
+        "command": "python -m pytest -q",
+        "cwd": "components/villani-agentd",
+        "exit_code": 0,
+        "result": "78 passed, 1 warning in 16.02s"
+      },
+      {
+        "command": "python -m pytest tests/closed_loop -q",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "11 passed, 2 warnings in 44.48s"
+      },
+      {
+        "command": "python -m pytest tests/final_foundation -q",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "37 passed, 1 warning in 8.27s"
+      },
+      {
+        "command": "npm test",
+        "cwd": "components/villani-web",
+        "exit_code": 0,
+        "result": "15 tests passed"
+      },
+      {
+        "command": "npm run typecheck",
+        "cwd": "components/villani-web",
+        "exit_code": 0,
+        "result": "passed"
+      },
+      {
+        "command": "npm run build",
+        "cwd": "components/villani-web",
+        "exit_code": 0,
+        "result": "passed"
+      },
+      {
+        "command": "npm run format:check",
+        "cwd": "components/villani-web",
+        "exit_code": 0,
+        "result": "passed"
+      },
+      {
+        "command": "npx playwright test",
+        "cwd": "components/villani-web",
+        "exit_code": 0,
+        "result": "14 passed in 4.8s"
+      },
+      {
+        "command": "npm test",
+        "cwd": "components/villani-flight-recorder",
+        "exit_code": 0,
+        "result": "111 tests passed"
+      },
+      {
+        "command": "npm run typecheck",
+        "cwd": "components/villani-flight-recorder",
+        "exit_code": 0,
+        "result": "passed"
+      },
+      {
+        "command": "npm run build",
+        "cwd": "components/villani-flight-recorder",
+        "exit_code": 0,
+        "result": "passed"
+      },
+      {
+        "command": "npm run format:check",
+        "cwd": "components/villani-flight-recorder",
+        "exit_code": 0,
+        "result": "passed"
+      },
+      {
+        "command": "python -m ruff check <all changed Python files>",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "All checks passed"
+      },
+      {
+        "command": "python -m mypy --follow-imports=skip <5 PT0 Villani Ops modules>",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "Success: no issues found in 5 source files"
+      },
+      {
+        "command": "python -m mypy --follow-imports=skip --ignore-missing-imports --disable-error-code import-untyped <5 installer/release modules>",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "Success: no issues found in 5 source files"
+      },
+      {
+        "command": "git diff --check",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "no whitespace errors; Git emitted line-ending conversion warnings"
+      },
+      {
+        "command": "python release-verification/run_release_gate.py --mode release",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "RELEASE GATE PASSED; 161 recorded commands; 415.0s"
+      }
+    ],
+    "focused_regressions": [
+      {
+        "command": "python -m pytest -q tests/test_onboarding_integration.py::test_recorded_guided_setup_reaches_completed_sample_and_stops_service",
+        "cwd": "components/villani",
+        "exit_code": 0,
+        "result": "1 passed in 98.82s"
+      },
+      {
+        "command": "python -m pytest -q tests/test_install_local.py::test_install_local_bootstraps_a_real_clean_environment",
+        "cwd": "components/villani",
+        "exit_code": 0,
+        "result": "1 passed in 77.85s"
+      },
+      {
+        "command": "python -m pytest -q villani_ops/tests/closed_loop/test_adapters.py::test_no_llm_advisory_does_not_mask_authoritative_behavior_failure villani_ops/tests/closed_loop/test_adapters.py::test_verifier_malformed_output_is_rejected",
+        "cwd": "components/villani-ops",
+        "exit_code": 0,
+        "result": "2 passed in 5.69s"
+      },
+      {
+        "command": "python release-verification/connected_product.py --mode release <isolated paths>",
+        "cwd": ".",
+        "exit_code": 0,
+        "result": "8 of 8 scenarios passed; 7 completed, 1 intentionally exhausted; 0 dead letters; 17 screenshots; 137.6s"
+      }
+    ],
+    "diagnostic_and_repaired_attempts": [
+      {
+        "command": "exact onboarding contradiction regression before implementation",
+        "exit_code": 1,
+        "result": "intentionally reproduced: non-empty implementation-and-test patch, passing unittest validation, semantic pass, focused_probe_missing rejection, 0/0 displayed checks, hard classification"
+      },
+      {
+        "command": "python release-verification/run_release_gate.py --mode release",
+        "exit_code": 1,
+        "result": "product, onboarding, browser, and 8/8 connected scenarios passed; required pip-audit scanner was unavailable in the local development virtualenv"
+      },
+      {
+        "command": "python -m pip install pip-audit",
+        "exit_code": 0,
+        "result": "installed CI-required development scanner pip-audit 2.10.1; no production dependency changed"
+      },
+      {
+        "command": "python release-verification/run_release_gate.py --mode release",
+        "exit_code": 0,
+        "result": "RELEASE GATE PASSED in 414.5s; superseded by the final type-clean certification run"
+      },
+      {
+        "command": "python -m ruff format --check <all changed Python files>",
+        "exit_code": 1,
+        "result": "31 files would be reformatted; this optional formatter check is not the required ruff lint check and no bulk formatting rewrite was applied"
+      },
+      {
+        "command": "initial targeted mypy over installer/release scripts",
+        "exit_code": 1,
+        "result": "50 diagnostics including optional-import stubs and changed-code annotations; changed-code annotations were fixed and the scoped rerun passed"
+      }
+    ],
+    "remaining_failures": [],
+    "skips": [
+      "Villani Ops: 2 host-capability skips for unavailable Unix-style special-file/socket behavior on Windows.",
+      "Villani Code: 1 opt-in Claude Code smoke test skipped because RUN_CLAUDE_CODE_SMOKE was not enabled."
+    ]
+  },
+  "end_to_end": {
+    "report": "release-verification/artifacts/latest/release-gate-report.json",
+    "security_report": "release-verification/artifacts/latest/security-summary.json",
+    "evidence_directory": "release-verification/artifacts/latest/installed-user-onboarding/20260717T043033Z",
+    "release_verdict": "RELEASE GATE PASSED",
+    "official_release_certification": true,
+    "installed_user": {
+      "status": "passed",
+      "classification": "easy",
+      "acceptance_eligible_attempt_count": 1,
+      "selected_attempt_id": "attempt_001",
+      "repository_checks": {
+        "passed": 1,
+        "failed": 0,
+        "not_run": 0,
+        "unavailable": 0,
+        "accounting_status": "complete"
+      },
+      "focused_probes": {
+        "passed": 0,
+        "failed": 0,
+        "not_run": 0,
+        "unavailable": 0,
+        "accounting_status": "complete"
+      },
+      "requirements": {
+        "proved": 3,
+        "not_proved": 0,
+        "accounting_status": "complete"
+      },
+      "doctor": "passed",
+      "secret_scan": "passed",
+      "dead_letters": 0,
+      "service_stopped": true,
+      "non_destructive_delivery_modes": [
+        "suggest",
+        "branch"
+      ],
+      "screenshots": [
+        "01-setup-flow.png",
+        "02-doctor.png",
+        "03-villani-console.png",
+        "04-sample-run.png",
+        "05-sample-replay.png"
+      ]
+    },
+    "connected_product": {
+      "passed_scenarios": 8,
+      "failed_scenarios": 0,
+      "completed_runs": 7,
+      "exhausted_runs": 1,
+      "dead_letters": 0,
+      "screenshots": 17,
+      "api_reconciliation": "passed",
+      "web_reconciliation": "passed",
+      "flight_recorder_reconciliation": "passed",
+      "browser": "passed"
+    },
+    "security": {
+      "status": "passed",
+      "package_secret_scan": "passed",
+      "repository_secret_scan": "passed",
+      "python_vulnerability_scan": "passed",
+      "node_vulnerability_scan": "passed",
+      "container_vulnerability_scan": "passed",
+      "sbom": "passed",
+      "license_policy": "passed"
+    }
+  },
+  "user_facing_before_after": {
+    "before": "A valid implementation-and-test patch with passing authoritative validation and semantic approval was rejected for unscheduled evidence; the terminal displayed 0 passed and 0 failed checks while the artifact contained a pass; the trivial task classified hard.",
+    "after": "The same generic workflow uses conservative coverage to prove linked changed behavior and tests, suppresses only redundant probes, selects one proved candidate, reports 1 passed and 0 failed checks consistently on every surface, and classifies easy absent a real repository risk signal. Unrelated or uncertain requirements still request evidence or fail closed."
+  },
+  "risks": {
+    "security": "No secrets were logged or found in release evidence; repository, package, and onboarding evidence scans passed. Focused probe output remains bounded and redacted.",
+    "privacy": "Run bundles and support artifacts may contain repository paths and task content by design; credential values are withheld and redacted.",
+    "data_loss": "Installer publication and configuration activation are staged and rolled back; delivery in the release gate is non-destructive. No automatic materialization occurs for unproved candidates.",
+    "compatibility": "Legacy run bundles and configurations remain readable. Synthesized legacy coverage is conservative and may show unknown/not-run rather than retroactively proving behavior.",
+    "residual": "Coverage linkage intentionally prefers false negatives over false positives. Execution providers remain process-level isolation unless a stronger configured provider is selected."
+  },
+  "validation_environment_cleanup": {
+    "product_or_install_state_affected": false,
+    "pytest_scratch_removed": false,
+    "docker_restored_to_prior_stopped_state": false,
+    "reason": "The automatic approval reviewer rejected both cleanup operations after its approval-usage limit was reached.",
+    "remaining_pytest_scratch": [
+      ".test-temp",
+      ".test-temp-closed-loop-final",
+      ".test-temp-foundation-final",
+      "components/villani-ops/.test-temp",
+      "components/villani-ops/.test-temp-final"
+    ],
+    "metadata_only_git_status_paths": [
+      "components/villani-ops/villani_ops/closed_loop/delivery/materializers.py",
+      "components/villani-web/test-results/.last-run.json"
+    ],
+    "metadata_only_git_status_reason": "Each worktree hash equals its index hash and git diff is empty; the read-only .git sandbox prevented an index-stat refresh.",
+    "manual_docker_shutdown_command": "& 'C:\\Program Files\\Docker\\Docker\\DockerCli.exe' -Shutdown"
+  },
+  "assumptions": [
+    "The repository's existing versioned v1 schema directory remains the correct location for additive PT0 contracts.",
+    "A changed test executed by an authoritative command is coverage only when the deterministic evidence graph links requirement, changed behavior, changed test, and command.",
+    "Unknown accounting remains null with an explicit accounting status and is never projected as numeric zero."
+  ],
+  "confirmation": "PT1 was not started."
+}

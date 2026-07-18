@@ -75,9 +75,24 @@ from .schema_validation import (
     validate_jsonl_event_stream,
     validate_protocol_document,
 )
+from .agent_systems.models import (
+    AgentSystemIdentity,
+    HarnessConformanceReport,
+    HarnessResult,
+)
+from .agent_systems.registry import (
+    AgentSystemRegistry,
+    build_agent_system_registry,
+    build_agent_system_runner,
+)
+from .agent_systems.configuration import (
+    migrate_agent_system_configuration,
+)
 
 __all__ = [
     "AttemptSnapshot",
+    "AgentSystemIdentity",
+    "AgentSystemRegistry",
     "AgentCapabilityV2",
     "ArtifactDescriptorV2",
     "ClassificationSnapshot",
@@ -95,6 +110,8 @@ __all__ = [
     "FocusedProbeReport",
     "FocusedProbeRequest",
     "FocusedProbeResult",
+    "HarnessConformanceReport",
+    "HarnessResult",
     "MaterializationSnapshot",
     "OutcomeV2",
     "PatchMaterializerAdapter",
@@ -126,6 +143,8 @@ __all__ = [
     "VerifierRoutingContext",
     "VerifierRoutingPolicy",
     "append_jsonl_durable",
+    "build_agent_system_registry",
+    "build_agent_system_runner",
     "actual_attempt_cost",
     "classify_failure",
     "compute_final_verification_decision",
@@ -134,6 +153,7 @@ __all__ = [
     "parse_protocol_document",
     "legacy_event_id_to_span_id",
     "legacy_trace_id_to_w3c",
+    "migrate_agent_system_configuration",
     "normalized_v2_jsonl",
     "read_jsonl_tolerant",
     "required_capability",

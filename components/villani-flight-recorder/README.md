@@ -19,6 +19,7 @@ The package continues to own:
 - Claude Code, Codex, Pi, generic JSONL, and canonical Villani parsing
 - local session discovery and incremental indexing
 - redaction and replay normalization
+- strict parsing of agent-system identities, harness-neutral results, and conformance reports
 - Git replay evidence collection
 - the structured Console history and replay adapter
 

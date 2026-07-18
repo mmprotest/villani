@@ -26,6 +26,12 @@ export const VILLANI_SCHEMA_FILE_BY_VERSION = {
   "villani.verification.v1": "verification.schema.json",
   "villani.selection.v1": "selection.schema.json",
   "villani.materialization.v1": "materialization.schema.json",
+  "villani.validation_coverage.v1": "validation-coverage.schema.json",
+  "villani.run_summary.v1": "run-summary.schema.json",
+  "villani.agent_system.v1": "agent-system.schema.json",
+  "villani.harness_result.v1": "harness-result.schema.json",
+  "villani.harness_conformance_report.v1":
+    "harness-conformance-report.schema.json",
 } as const;
 
 export const VILLANI_V2_SCHEMA_FILE_BY_VERSION = {
@@ -260,6 +266,266 @@ function semanticErrors(
         );
       }
     });
+  }
+
+  if (version === "villani.agent_system.v1") {
+    const digest = document.configuration_digest;
+    if (
+      typeof digest === "string" &&
+      document.system_id !== `asys_${digest.replace(/^sha256:/, "")}`
+    ) {
+      errors.push({
+        instancePath: "/system_id",
+        keyword: "content_addressed_identity",
+        message: "system_id must be derived from configuration_digest",
+      });
+    }
+    if (
+      document.production_enabled === true &&
+      !["qualified", "bootstrap"].includes(
+        String(document.qualification_status),
+      )
+    ) {
+      errors.push({
+        instancePath: "/qualification_status",
+        keyword: "production_qualification",
+        message: "enabled systems must be qualified or bootstrap",
+      });
+    }
+    if (
+      document.qualification_status === "qualified" &&
+      !(
+        Array.isArray(document.qualification_references) &&
+        document.qualification_references.some(
+          (reference) =>
+            isRecord(reference) && reference.kind === "conformance",
+        )
+      )
+    ) {
+      errors.push({
+        instancePath: "/qualification_references",
+        keyword: "conformance_qualification",
+        message: "qualified systems require conformance evidence",
+      });
+    }
+  }
+
+  if (version === "villani.harness_result.v1") {
+    const normalizedEvents = document.normalized_events;
+    if (Array.isArray(normalizedEvents)) {
+      let previousTimestamp = Number.NEGATIVE_INFINITY;
+      normalizedEvents.forEach((event, index) => {
+        if (isRecord(event) && event.sequence !== index + 1) {
+          errors.push({
+            instancePath: `/normalized_events/${index}/sequence`,
+            keyword: "event_sequence",
+            message: "normalized events must be contiguous and ordered",
+          });
+        }
+        if (isRecord(event)) {
+          const timestamp = Date.parse(String(event.timestamp));
+          if (timestamp < previousTimestamp) {
+            errors.push({
+              instancePath: `/normalized_events/${index}/timestamp`,
+              keyword: "event_ordering",
+              message: "normalized event timestamps must be ordered",
+            });
+          }
+          previousTimestamp = timestamp;
+          const payload = isRecord(event.payload) ? event.payload : {};
+          if (
+            event.name === "permission_request" &&
+            !("request_id" in payload && "permission" in payload)
+          ) {
+            errors.push({
+              instancePath: `/normalized_events/${index}/payload`,
+              keyword: "permission_request",
+              message: "permission requests require request_id and permission",
+            });
+          }
+          if (
+            event.name === "permission_resolution" &&
+            !("request_id" in payload && "resolution" in payload)
+          ) {
+            errors.push({
+              instancePath: `/normalized_events/${index}/payload`,
+              keyword: "permission_resolution",
+              message:
+                "permission resolutions require request_id and resolution",
+            });
+          }
+        }
+      });
+      if (
+        new TextEncoder().encode(JSON.stringify(normalizedEvents)).length >
+        32 * 1024 * 1024
+      ) {
+        errors.push({
+          instancePath: "/normalized_events",
+          keyword: "backpressure_bound",
+          message: "normalized events exceed the bounded event buffer",
+        });
+      }
+    }
+    const changedFiles = document.changed_files;
+    if (Array.isArray(changedFiles)) {
+      changedFiles.forEach((changed, index) => {
+        const normalized =
+          typeof changed === "string" ? changed.replaceAll("\\", "/") : "";
+        if (
+          !normalized ||
+          normalized.startsWith("/") ||
+          /^[A-Za-z]:/.test(normalized) ||
+          normalized.split("/").includes("..")
+        ) {
+          errors.push({
+            instancePath: `/changed_files/${index}`,
+            keyword: "path_safety",
+            message: "changed files must be worktree-relative safe paths",
+          });
+        }
+      });
+    }
+    const worktree =
+      typeof document.isolated_worktree === "string"
+        ? document.isolated_worktree.replaceAll("\\", "/")
+        : "";
+    if (!worktree || worktree.split("/").includes("..")) {
+      errors.push({
+        instancePath: "/isolated_worktree",
+        keyword: "worktree_safety",
+        message: "isolated worktree cannot contain parent traversal",
+      });
+    }
+    if (
+      typeof document.stdout === "string" &&
+      new TextEncoder().encode(document.stdout).length > 8 * 1024 * 1024
+    ) {
+      errors.push({
+        instancePath: "/stdout",
+        keyword: "message_bound",
+        message: "stdout exceeds the harness message bound",
+      });
+    }
+    if (
+      typeof document.stderr === "string" &&
+      new TextEncoder().encode(document.stderr).length > 8 * 1024 * 1024
+    ) {
+      errors.push({
+        instancePath: "/stderr",
+        keyword: "message_bound",
+        message: "stderr exceeds the harness message bound",
+      });
+    }
+    if (Array.isArray(document.artifacts)) {
+      document.artifacts.forEach((artifact, index) => {
+        const artifactPath =
+          isRecord(artifact) && typeof artifact.path === "string"
+            ? artifact.path.replaceAll("\\", "/")
+            : "";
+        if (
+          !artifactPath ||
+          artifactPath.startsWith("/") ||
+          /^[A-Za-z]:/.test(artifactPath) ||
+          artifactPath.split("/").includes("..")
+        ) {
+          errors.push({
+            instancePath: `/artifacts/${index}/path`,
+            keyword: "artifact_path_safety",
+            message: "artifact paths must be run-relative and safe",
+          });
+        }
+      });
+    }
+    const cost = document.cost;
+    if (isRecord(cost)) {
+      errors.push(
+        ...accountingIssues(cost, ["amount"], "accounting_status", "/cost"),
+      );
+      if (cost.amount === null && cost.currency !== null) {
+        errors.push({
+          instancePath: "/cost/currency",
+          keyword: "accounting_status",
+          message: "currency must be null when cost is unknown",
+        });
+      }
+    }
+  }
+
+  if (version === "villani.harness_conformance_report.v1") {
+    const checks = Array.isArray(document.checks) ? document.checks : [];
+    const requiredChecks = new Set([
+      "manifest",
+      "protocol_negotiation",
+      "version_capture",
+      "worktree_enforcement",
+      "path_safety",
+      "event_ordering",
+      "cancellation",
+      "timeout",
+      "malformed_output",
+      "oversized_output",
+      "process_crash",
+      "missing_executable",
+      "permissions",
+      "artifacts",
+      "patch_correctness",
+      "cleanup",
+      "secret_redaction",
+      "unknown_cost",
+      "cross_platform_paths",
+    ]);
+    const checkIds = checks
+      .filter(isRecord)
+      .map((check) => String(check.check_id));
+    if (
+      checkIds.length !== requiredChecks.size ||
+      new Set(checkIds).size !== requiredChecks.size ||
+      checkIds.some((checkId) => !requiredChecks.has(checkId))
+    ) {
+      errors.push({
+        instancePath: "/checks",
+        keyword: "required_conformance_checks",
+        message: "conformance report must contain every required check once",
+      });
+    }
+    checks.filter(isRecord).forEach((check, index) => {
+      if (
+        check.status === "pass" &&
+        (!isRecord(check.evidence) || Object.keys(check.evidence).length === 0)
+      ) {
+        errors.push({
+          instancePath: `/checks/${index}/evidence`,
+          keyword: "conformance_evidence",
+          message: "passing conformance checks require evidence",
+        });
+      }
+    });
+    const statuses = checks
+      .filter(isRecord)
+      .map((check) => String(check.status));
+    const expected = statuses.includes("fail")
+      ? "failed"
+      : statuses.includes("not_run")
+        ? "insufficient_evidence"
+        : "passed";
+    if (document.status !== expected) {
+      errors.push({
+        instancePath: "/status",
+        keyword: "conformance_status",
+        message: `status must be ${expected}`,
+      });
+    }
+    if (
+      document.production_qualification_authorized !==
+      (expected === "passed")
+    ) {
+      errors.push({
+        instancePath: "/production_qualification_authorized",
+        keyword: "fail_closed_qualification",
+        message: "qualification is authorized only when every check passed",
+      });
+    }
   }
 
   if (version === "villani.outcome.v2") {

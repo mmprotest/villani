@@ -1,0 +1,149 @@
+{
+  "$id": "https://villani.dev/schemas/v1/human-review.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "amends_review_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Amends Review Id"
+    },
+    "arm_revealed_during_review": {
+      "title": "Arm Revealed During Review",
+      "type": "boolean"
+    },
+    "artifact_references": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact References",
+      "type": "array"
+    },
+    "blinded": {
+      "title": "Blinded",
+      "type": "boolean"
+    },
+    "correction_required": {
+      "title": "Correction Required",
+      "type": "boolean"
+    },
+    "correction_summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correction Summary"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "false_acceptance": {
+      "title": "False Acceptance",
+      "type": "boolean"
+    },
+    "false_rejection": {
+      "title": "False Rejection",
+      "type": "boolean"
+    },
+    "later_rollback": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Later Rollback"
+    },
+    "outcome": {
+      "enum": [
+        "accepted_as_is",
+        "accepted_after_correction",
+        "rejected"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "reopened_defect": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reopened Defect"
+    },
+    "review_id": {
+      "minLength": 1,
+      "title": "Review Id",
+      "type": "string"
+    },
+    "review_minutes": {
+      "minimum": 0,
+      "title": "Review Minutes",
+      "type": "number"
+    },
+    "reviewer_id": {
+      "minLength": 1,
+      "title": "Reviewer Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.human_review.v1",
+      "default": "villani.human_review.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "trial_id": {
+      "minLength": 1,
+      "title": "Trial Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "review_id",
+    "trial_id",
+    "created_at",
+    "reviewer_id",
+    "blinded",
+    "arm_revealed_during_review",
+    "outcome",
+    "correction_required",
+    "review_minutes",
+    "severity",
+    "false_acceptance",
+    "false_rejection"
+  ],
+  "title": "HumanReview",
+  "type": "object"
+}

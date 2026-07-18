@@ -1,0 +1,86 @@
+{
+  "report_kind": "pt4_founder_evidence_sufficiency",
+  "milestone": "PT4",
+  "assessment_date": "2026-07-17",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "production_change_authorized": false,
+  "reason": "Fewer than 20 paired real tasks exist, real-baseline integrity is unresolved, and human labels are materially incomplete.",
+  "prechange_gate": {
+    "command": "& .venv\\Scripts\\villani.exe eval gate .test-temp\\pt4-prechange-synthetic-20260717 --json",
+    "process_exit_code": 2,
+    "status": "INSUFFICIENT_EVIDENCE",
+    "execution_suite_digest": "6254c99f1149eaaae07e72e783147ca7b8c9ed4758419b9307547deb80105d49",
+    "execution_suite_evidence_kind": "synthetic_fixture",
+    "synthetic_tasks_counted_as_founder_evidence": 0
+  },
+  "workspace_evidence": {
+    "qualifying_real_suites_found": 0,
+    "paired_real_tasks": 0,
+    "required_for_pt4_hardening": 20,
+    "required_for_gate_b": 30,
+    "repositories": 0,
+    "required_repositories": 2,
+    "valid_real_baselines": null,
+    "eligible_real_trials": 0,
+    "completed_human_reviews": 0,
+    "known_false_acceptances": null,
+    "accepted_as_is_rate_direct": null,
+    "accepted_as_is_rate_villani": null,
+    "median_review_time_reduction": null,
+    "total_cost_per_accepted_change_reduction": null,
+    "automatic_configuration_rate": null,
+    "verifier_labelled_cases": 0,
+    "repeated_failure_clusters": 0,
+    "before_after_identity_pairs": 0
+  },
+  "missing_evidence": [
+    "At least 20 paired real tasks for PT4 hardening decisions and 30 for Gate B.",
+    "At least two repositories.",
+    "Restoration proof for every real immutable baseline.",
+    "Completed direct and Villani trials from identical baselines.",
+    "Complete append-only human labels and review minutes.",
+    "Human-labelled verifier confusion and disagreement cases.",
+    "Known cost, duration, and automatic-configuration accounting or explicit unknown status.",
+    "Repeated linked failure mechanisms and exact before/after reruns."
+  ],
+  "permitted_pt4_work": [
+    "Evidence diagnostics and reports.",
+    "Fail-closed insufficient-evidence behavior.",
+    "Identifier-free static safety tests.",
+    "An undeniable correctness fix proven by an individual artifact."
+  ],
+  "forbidden_without_more_evidence": [
+    "Speculative performance or routing changes.",
+    "Verifier acceptance changes.",
+    "Failure-cluster prioritization with fabricated inputs.",
+    "Founder-proof certificate generation."
+  ],
+  "next_experiments": [
+    "Capture and freeze at least 20 real founder tasks and ultimately 30 across two repositories.",
+    "Run both arms from identical immutable baselines with arm-blind final verification.",
+    "Complete blinded append-only human review and truthful cost/duration accounting.",
+    "Cluster repeated generic mechanisms, rank them with the PT4 formula, and rerun exact snapshots.",
+    "Recalculate Gate B and issue a certificate only on PASS."
+  ],
+  "evidence_bounded_disposition": {
+    "hardening_analysis": "docs/product/PT4_HARDENING_ANALYSIS.json",
+    "hardening_analysis_digest": "4f5f4c70fa194831f6f249bc905f73413889c96f3f4f528a01701a8c3bb5fcce",
+    "speculative_performance_changes": 0,
+    "correctness_fixes": [
+      {
+        "mechanism": "unknown_duration_was_coerced_to_numeric_zero",
+        "fixture": "integration/fixtures/evaluation/pt4/unknown-duration-accounting.json",
+        "before": {
+          "value": 0.0,
+          "accounting_status": "complete"
+        },
+        "after": {
+          "value": null,
+          "accounting_status": "unknown"
+        }
+      }
+    ]
+  },
+  "founder_proof_certificate_issued": false,
+  "pt5_started": false
+}

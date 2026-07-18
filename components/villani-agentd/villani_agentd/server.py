@@ -246,6 +246,20 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.ACCEPTED, service.start_run(body or {}))
             return True
         run_status_prefix = "/v1/console/runs/"
+        cancel_suffix = "/cancel"
+        if (
+            self.command == "POST"
+            and path.startswith(run_status_prefix)
+            and path.endswith(cancel_suffix)
+        ):
+            encoded = path[len(run_status_prefix) : -len(cancel_suffix)]
+            if not encoded or "/" in encoded:
+                raise ConsoleInputError("run identifier is invalid")
+            self._send(
+                HTTPStatus.OK,
+                service.cancel_run(urllib.parse.unquote(encoded)),
+            )
+            return True
         approval_suffix = "/approval"
         if (
             self.command == "POST"
@@ -269,6 +283,29 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
                     authenticated=True,
                     actor=actor,
                     authentication_type="agentd_authenticated_session",
+                ),
+            )
+            return True
+        run_events_suffix = "/events"
+        if (
+            self.command == "GET"
+            and path.startswith(run_status_prefix)
+            and path.endswith(run_events_suffix)
+        ):
+            encoded = path[len(run_status_prefix) : -len(run_events_suffix)]
+            if not encoded or "/" in encoded:
+                raise ConsoleInputError("run identifier is invalid")
+            try:
+                after_sequence = int(query.get("after", ["0"])[0])
+                wait_seconds = float(query.get("wait", ["20"])[0])
+            except (TypeError, ValueError) as error:
+                raise ConsoleInputError("event cursor is invalid") from error
+            self._send(
+                HTTPStatus.OK,
+                service.run_events(
+                    urllib.parse.unquote(encoded),
+                    after_sequence=after_sequence,
+                    wait_seconds=wait_seconds,
                 ),
             )
             return True

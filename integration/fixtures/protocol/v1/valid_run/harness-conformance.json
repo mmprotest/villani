@@ -1,0 +1,165 @@
+{
+  "schema_version": "villani.harness_conformance_report.v1",
+  "report_id": "hconf_ffe8ba3251bace4048725cb2789986397cd15416c2dec757f1685432cd0f9dd5",
+  "system_id": "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575",
+  "harness_id": "villani-code",
+  "harness_version": "0.1.0rc1",
+  "protocol_version": "villani.harness_adapter.v1",
+  "generated_at": "2026-07-10T00:00:00Z",
+  "status": "passed",
+  "checks": [
+    {
+      "check_id": "manifest",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "protocol_negotiation",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "version_capture",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "worktree_enforcement",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "path_safety",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "event_ordering",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "cancellation",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "timeout",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "malformed_output",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "oversized_output",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "process_crash",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "missing_executable",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "permissions",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "artifacts",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "patch_correctness",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "cleanup",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "secret_redaction",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "unknown_cost",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "cross_platform_paths",
+      "status": "pass",
+      "evidence": {
+        "test": "pt5_conformance"
+      },
+      "reason": "Fixture conformance evidence."
+    }
+  ],
+  "production_qualification_authorized": true
+}

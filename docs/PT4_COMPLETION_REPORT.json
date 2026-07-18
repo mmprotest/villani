@@ -1,0 +1,466 @@
+{
+  "report_kind": "villani_milestone_completion",
+  "milestone": "PT4",
+  "milestone_name": "Harden the Core from Founder Evidence",
+  "generated_at": "2026-07-17T12:42:26.4791994Z",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "completion_claimed": false,
+  "status_reason": "There are 0 paired real tasks, 0 qualifying repositories, unresolved real-baseline integrity, and 0 human-labelled founder outcomes. No real frozen before/after population exists.",
+  "first_action": {
+    "gate_executed_before_production_change": true,
+    "empty_real_suite": {
+      "path": ".test-temp/pt4-prechange-evidence-20260717",
+      "task_count": 0,
+      "validation_status": "invalid",
+      "issue": "no_tasks",
+      "freeze_rejected": true,
+      "report_rejected": true
+    },
+    "gate_execution_suite": {
+      "path": ".test-temp/pt4-prechange-synthetic-20260717",
+      "suite_digest": "6254c99f1149eaaae07e72e783147ca7b8c9ed4758419b9307547deb80105d49",
+      "evidence_kind": "synthetic_fixture",
+      "task_count": 1,
+      "founder_evidence_task_count": 0,
+      "valid": true
+    },
+    "prechange_gate_status": "INSUFFICIENT_EVIDENCE",
+    "prechange_gate_process_exit": 2,
+    "final_gate_status": "INSUFFICIENT_EVIDENCE",
+    "final_gate_process_exit": 2,
+    "paired_real_tasks": 0,
+    "pt4_required_paired_real_tasks": 20,
+    "gate_b_required_paired_real_tasks": 30,
+    "repositories": 0,
+    "required_repositories": 2,
+    "real_baseline_integrity": null,
+    "human_labels_complete": false
+  },
+  "files": {
+    "added": [
+      "components/villani-ops/villani_ops/evaluation_lab/hardening.py",
+      "components/villani-ops/villani_ops/tests/test_founder_hardening.py",
+      "integration/fixtures/evaluation/pt4/unknown-duration-accounting.json",
+      "docs/product/FOUNDER_EVIDENCE_INSUFFICIENT.md",
+      "docs/product/PT4_FOUNDER_EVIDENCE_SUFFICIENCY.json",
+      "docs/product/PT4_HARDENING_ANALYSIS.md",
+      "docs/product/PT4_HARDENING_ANALYSIS.json",
+      "docs/PT4_COMPLETION_REPORT.md",
+      "docs/PT4_COMPLETION_REPORT.json"
+    ],
+    "changed": [
+      "components/villani-ops/villani_ops/evaluation_lab/reporting.py",
+      "docs/FOUNDER_THESIS_LAB.md",
+      "PLANS.md"
+    ],
+    "deleted": [],
+    "migrated": []
+  },
+  "architecture_and_product_decisions": [
+    "Keep PT4 diagnostics in evaluation_lab.hardening, outside controller, policy, semantic verification, selection, and delivery.",
+    "Consume only explicit real_founder_work failure and verifier observations; synthetic fixtures never contribute founder evidence.",
+    "Use all 19 required failure classes and the exact frequency x recoverable accepted-change loss x average cost or supervision burden x diagnostic confidence formula.",
+    "Refuse ranking for non-repeated mechanisms, absent generic fixes, unknown comparable burden, or insufficient PT4 population.",
+    "Require paired arms to share task identity, repetition, task digest, and immutable baseline digest.",
+    "Exclude infrastructure failures from the verifier confusion matrix while disclosing them separately.",
+    "Keep binary verifier calibration undefined and never fabricate a probability.",
+    "Reject before/after population drift and disclose tool-version changes.",
+    "Issue a redacted content-addressed certificate only on Gate B PASS with zero known false acceptance.",
+    "Correct only the undeniable unknown-duration accounting defect; make no speculative performance or control-loop change."
+  ],
+  "schema_and_configuration_migrations": {
+    "public_schema_changes": [],
+    "python_public_protocol_changes": [],
+    "typescript_model_changes": [],
+    "configuration_changes": [],
+    "cli_changes": [],
+    "ui_changes": [],
+    "migrations": [],
+    "backwards_readability_preserved": true,
+    "note": "The PT4 analysis JSON is a milestone evidence artifact, not a replacement for a versioned PT3 public evaluation contract."
+  },
+  "production_changes": [
+    {
+      "file": "components/villani-ops/villani_ops/evaluation_lab/reporting.py",
+      "mechanism": "unknown_duration_was_coerced_to_numeric_zero",
+      "evidence_basis": "undeniable_accounting_correctness_defect",
+      "before": {
+        "value": 0.0,
+        "accounting_status": "complete"
+      },
+      "after": {
+        "value": null,
+        "accounting_status": "unknown"
+      },
+      "fixture": "integration/fixtures/evaluation/pt4/unknown-duration-accounting.json",
+      "controller_behavior_changed": false,
+      "verifier_behavior_changed": false,
+      "acceptance_behavior_changed": false,
+      "delivery_behavior_changed": false
+    }
+  ],
+  "speculative_performance_changes": [],
+  "tests_added": [
+    "test_failure_taxonomy_clustering_and_synthetic_exclusion",
+    "test_prioritization_uses_required_math_and_refuses_unknown_burden",
+    "test_verifier_diagnostics_are_human_labelled_and_exclude_infrastructure",
+    "test_exact_before_after_identity_and_tool_version_disclosure",
+    "test_paired_population_requires_same_repetition_task_and_baseline",
+    "test_unknown_duration_regression_preserves_unknown_accounting",
+    "test_insufficient_evidence_fails_closed_and_recalculates_gate",
+    "test_certificate_requires_pass_is_content_addressed_and_redacts_repositories",
+    "test_static_scan_rejects_exact_task_identifiers_in_production_rules"
+  ],
+  "validation_commands": [
+    {
+      "command": "& .venv\\Scripts\\villani.exe eval validate .test-temp\\pt4-prechange-evidence-20260717 --json",
+      "cwd": ".",
+      "process_exit": 1,
+      "result": "valid false; task_count 0; issue no_tasks"
+    },
+    {
+      "command": "& .venv\\Scripts\\villani.exe eval freeze .test-temp\\pt4-prechange-evidence-20260717 --disclosure-complete",
+      "cwd": ".",
+      "process_exit": 2,
+      "result": "rejected: suite contains no tasks"
+    },
+    {
+      "command": "& .venv\\Scripts\\villani.exe eval report .test-temp\\pt4-prechange-evidence-20260717 --json-output .test-temp\\pt4-empty-real-report\\evaluation-report.json --markdown-output .test-temp\\pt4-empty-real-report\\evaluation-report.md --html-output .test-temp\\pt4-empty-real-report\\evaluation-report.html",
+      "cwd": ".",
+      "process_exit": 2,
+      "result": "rejected: reporting requires a frozen suite"
+    },
+    {
+      "command": "& .venv\\Scripts\\villani.exe eval validate .test-temp\\pt4-prechange-synthetic-20260717 --json",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "valid true; task_count 1; issues 0; passive_monitoring false; external_harness false"
+    },
+    {
+      "command": "& .venv\\Scripts\\villani.exe eval gate .test-temp\\pt4-prechange-synthetic-20260717 --json",
+      "cwd": ".",
+      "process_exit": 2,
+      "result": "pre-change and final Gate B status INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "command": "& .venv\\Scripts\\villani.exe eval report .test-temp\\pt4-prechange-synthetic-20260717 --json-output .test-temp\\pt4-postchange-report\\evaluation-report.json --markdown-output .test-temp\\pt4-postchange-report\\evaluation-report.md --html-output .test-temp\\pt4-postchange-report\\evaluation-report.html",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "JSON, Markdown, and HTML generated; Gate B INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m py_compile components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m ruff check components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "all checks passed"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_founder_hardening.py villani_ops\\tests\\test_founder_thesis_lab.py --basetemp .test-temp\\pt4-focused",
+      "cwd": "components/villani-ops",
+      "process_exit": 1,
+      "result": "22 passed, 1 failed in 14.14s; invalid empty synthetic test fixture corrected"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --follow-imports=skip --ignore-missing-imports components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py",
+      "cwd": ".",
+      "process_exit": 1,
+      "result": "1 Counter index annotation error; corrected; final rerun passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest -q components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py --basetemp .test-temp\\pt4-focused-rerun",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "8 passed in 1.31s"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest -q components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py components\\villani-ops\\villani_ops\\tests\\test_founder_thesis_lab.py --basetemp .test-temp\\pt4-combined",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "23 passed in 14.53s"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt4-full",
+      "cwd": "components/villani-ops",
+      "process_exit": 124,
+      "result": "accidental 1-second command timeout after 2.017s; no test result; rerun immediately"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt4-full",
+      "cwd": "components/villani-ops",
+      "process_exit": 0,
+      "result": "1187 passed, 2 skipped, 114 deselected in 248.54s"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m ruff format --check components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "3 files already formatted"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m ruff check components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "all checks passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --follow-imports=skip --ignore-missing-imports components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "no issues found in 2 source files"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest -q components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py --basetemp .test-temp\\pt4-focused-final",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "9 passed in 1.36s"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest -q components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py components\\villani-ops\\villani_ops\\tests\\test_founder_thesis_lab.py --basetemp .test-temp\\pt4-combined-final",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "24 passed in 14.43s"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt4-full-final",
+      "cwd": "components/villani-ops",
+      "process_exit": 0,
+      "result": "1188 passed, 2 skipped, 114 deselected in 240.82s"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest -q components\\villani-ops\\villani_ops\\tests\\test_cli_orchestrator_default.py components\\villani-ops\\villani_ops\\tests\\test_hardened_execution_environment.py components\\villani-ops\\villani_ops\\tests\\test_verifier_tool_loop.py -rs --basetemp .test-temp\\pt4-skip-reasons",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "39 passed, 2 skipped in 12.78s; Unix-domain sockets and FIFO creation unavailable"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q --basetemp .test-temp\\pt4-closed-loop",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "11 passed, 2 warnings in 39.90s"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .test-temp\\pt4-full",
+      "cwd": "components/villani-code",
+      "process_exit": 1,
+      "result": "74 failed, 612 passed, 1 skipped, 101 warnings in 73.28s; unchanged documented baseline"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "process_exit": 0,
+      "result": "21 test files and 111 tests passed"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-flight-recorder",
+      "process_exit": 0,
+      "result": "passed"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-flight-recorder",
+      "process_exit": 0,
+      "result": "passed"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "process_exit": 0,
+      "result": "all matched files use Prettier code style"
+    },
+    {
+      "command": "scan_production_for_evidence_identifiers over evaluation_lab, closed_loop, and cli",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "2 identifiers scanned across 3 production roots; 0 violations"
+    },
+    {
+      "command": "JSON parse plus canonical_digest verification for PT4 sufficiency, hardening, and regression documents",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "3 valid JSON documents; claimed, recalculated, and linked digests match"
+    },
+    {
+      "command": "fresh final-code write_hardening_analysis and semantic comparison with durable PT4 report",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "semantically equal after excluding generation timestamp and self-digest"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts\\check-secrets.py components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py integration\\fixtures\\evaluation\\pt4 docs\\product docs\\FOUNDER_THESIS_LAB.md",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "6 roots, 0 findings"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts\\check-secrets.py components\\villani-ops\\villani_ops\\evaluation_lab\\hardening.py components\\villani-ops\\villani_ops\\evaluation_lab\\reporting.py components\\villani-ops\\villani_ops\\tests\\test_founder_hardening.py integration\\fixtures\\evaluation\\pt4 docs\\product docs\\FOUNDER_THESIS_LAB.md docs\\PT4_COMPLETION_REPORT.md docs\\PT4_COMPLETION_REPORT.json PLANS.md",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "9 roots, 0 findings"
+    },
+    {
+      "command": "completion-manifest JSON parse and listed-file existence check",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "4 JSON documents valid; 0 listed files missing; status INSUFFICIENT_EVIDENCE; certificate false; PT5 unauthorized and not started"
+    },
+    {
+      "command": "git diff --check",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "no whitespace errors; line-ending normalization warnings emitted for the existing dirty working tree"
+    },
+    {
+      "command": "UTF-8 text scan over PT4 Markdown reports and PLANS.md",
+      "cwd": ".",
+      "process_exit": 0,
+      "result": "0 mojibake findings"
+    }
+  ],
+  "end_to_end_artifacts": [
+    {
+      "path": ".test-temp/pt4-prechange-evidence-20260717",
+      "kind": "empty real-founder evidence audit",
+      "durable": false
+    },
+    {
+      "path": ".test-temp/pt4-prechange-synthetic-20260717",
+      "kind": "frozen ineligible Gate execution suite",
+      "durable": false
+    },
+    {
+      "path": ".test-temp/pt4-postchange-report/evaluation-report.json",
+      "kind": "installed CLI JSON report",
+      "durable": false
+    },
+    {
+      "path": ".test-temp/pt4-postchange-report/evaluation-report.md",
+      "kind": "installed CLI Markdown report",
+      "durable": false
+    },
+    {
+      "path": ".test-temp/pt4-postchange-report/evaluation-report.html",
+      "kind": "installed CLI HTML report",
+      "durable": false
+    },
+    {
+      "path": "docs/product/PT4_FOUNDER_EVIDENCE_SUFFICIENCY.json",
+      "kind": "machine-readable evidence boundary",
+      "durable": true
+    },
+    {
+      "path": "docs/product/PT4_HARDENING_ANALYSIS.json",
+      "kind": "machine-readable hardening analysis",
+      "digest": "4f5f4c70fa194831f6f249bc905f73413889c96f3f4f528a01701a8c3bb5fcce",
+      "durable": true
+    },
+    {
+      "path": "docs/product/PT4_HARDENING_ANALYSIS.md",
+      "kind": "readable hardening analysis",
+      "durable": true
+    }
+  ],
+  "screenshots": [],
+  "screenshots_reason": "PT4 changed no UI and insufficient evidence did not authorize a visual surface. No screenshot was fabricated.",
+  "founder_proof_certificate": {
+    "issued": false,
+    "reason": "Gate B did not pass."
+  },
+  "known_failures": [
+    {
+      "component": "villani-code",
+      "result": "74 failed, 612 passed, 1 skipped, 101 warnings",
+      "reason": "Untouched documented baseline concentrated in mocked subprocess stdout=None handling and Windows decoding.",
+      "introduced_by_pt4": false
+    }
+  ],
+  "skipped_tests": [
+    {
+      "component": "villani-ops",
+      "count": 1,
+      "reason": "host Python does not support Unix-domain sockets"
+    },
+    {
+      "component": "villani-ops",
+      "count": 1,
+      "reason": "host Python does not support FIFO creation"
+    }
+  ],
+  "deselected_tests": [
+    {
+      "component": "villani-ops",
+      "count": 114,
+      "reason": "Component default addopts excludes slow, integration, and e2e markers; root closed-loop integration was run separately and passed."
+    }
+  ],
+  "risks": {
+    "security": [
+      "No controller, route, verifier authority, acceptance, selection, or delivery behavior changed.",
+      "Certificate generation rejects known false acceptance.",
+      "Scoped secret scan returned 0 findings."
+    ],
+    "privacy": [
+      "Task and repository identities are opaque in analysis and certificate output.",
+      "Evaluation bundles may contain actual confidential source and are not encrypted; exports require operator review."
+    ],
+    "data_loss": [
+      "Analysis is read-only; no target repository, run bundle, or configuration was migrated, deleted, or rewritten."
+    ],
+    "compatibility": [
+      "Existing run and evaluation artifacts remain readable.",
+      "Consumers that previously treated unknown elapsed time as zero now receive truthful null/unknown accounting."
+    ]
+  },
+  "user_facing_before_after": {
+    "before": [
+      "Unknown duration could become numeric zero and falsely complete elapsed-time accounting.",
+      "No PT4 sufficiency/taxonomy artifact existed.",
+      "PT4 pairing and certificate redaction had no dedicated regression contract."
+    ],
+    "after": [
+      "Unknown duration remains null/unknown and cannot fabricate a speed claim.",
+      "PT4 reports exact missing evidence and next experiments.",
+      "Synthetic evidence is excluded, mismatched pairs do not count, unsupported clusters are not ranked, and no certificate is issued."
+    ],
+    "task_execution_behavior_changed": false,
+    "acceptance_behavior_changed": false,
+    "routing_behavior_changed": false,
+    "delivery_behavior_changed": false
+  },
+  "acceptance_criteria": [
+    {
+      "criterion": "Every production change is linked to repeated real-task evidence or an undeniable correctness defect.",
+      "status": "PASS",
+      "evidence": "The sole behavior change is the identifier-free unknown-duration correctness regression."
+    },
+    {
+      "criterion": "Before-and-after metrics exist.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "evidence": "The correctness fixture has exact before/after accounting, but there are 0 eligible frozen founder-task pairs and no performance metrics."
+    },
+    {
+      "criterion": "No false acceptance is introduced.",
+      "status": "PASS",
+      "evidence": "Verifier behavior did not change; certificate tests reject a known false positive."
+    },
+    {
+      "criterion": "Gate B truthfully returns PASS, FAIL, or INSUFFICIENT_EVIDENCE.",
+      "status": "PASS",
+      "evidence": "Installed CLI returns INSUFFICIENT_EVIDENCE with direct process exit 2."
+    },
+    {
+      "criterion": "The next milestone cannot start unless Gate B passes.",
+      "status": "PASS",
+      "evidence": "pt5_authorized false and pt5_started false."
+    }
+  ],
+  "pt5_authorized": false,
+  "pt5_started": false,
+  "next_milestone_started": false
+}

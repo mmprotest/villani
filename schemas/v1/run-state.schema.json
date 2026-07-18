@@ -62,7 +62,7 @@
     {
       "if": {
         "properties": {
-          "state": { "enum": ["COMPLETED", "EXHAUSTED", "FAILED"] }
+          "state": { "enum": ["COMPLETED", "EXHAUSTED", "FAILED", "CANCELLED"] }
         },
         "required": ["state"]
       },
@@ -97,7 +97,8 @@
         "MATERIALIZING",
         "COMPLETED",
         "EXHAUSTED",
-        "FAILED"
+        "FAILED",
+        "CANCELLED"
       ]
     },
     "failure": {

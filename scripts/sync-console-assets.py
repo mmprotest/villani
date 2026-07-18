@@ -45,6 +45,16 @@ def expected(source: Path) -> dict[str, str]:
 
 def synchronize(source: Path, destination: Path) -> dict[str, str]:
     values = expected(source)
+    manifest_path = destination / MANIFEST
+    try:
+        packaged_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        packaged_manifest = None
+    if inventory(destination) == values and packaged_manifest == {
+        "schema_version": "villani.console_assets.v1",
+        "files": values,
+    }:
+        return values
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(
         tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent)

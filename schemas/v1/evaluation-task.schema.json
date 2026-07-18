@@ -1,0 +1,388 @@
+{
+  "$defs": {
+    "EvaluatorOnlyMaterial": {
+      "additionalProperties": false,
+      "properties": {
+        "future_context_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Future Context References",
+          "type": "array"
+        },
+        "hidden_check_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hidden Check References",
+          "type": "array"
+        },
+        "runner_expected_patch_present": {
+          "const": false,
+          "default": false,
+          "title": "Runner Expected Patch Present",
+          "type": "boolean"
+        }
+      },
+      "title": "EvaluatorOnlyMaterial",
+      "type": "object"
+    },
+    "FileChangeRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_path_prefixes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Path Prefixes",
+          "type": "array"
+        },
+        "behavior": {
+          "default": "required",
+          "enum": [
+            "required",
+            "optional",
+            "forbidden"
+          ],
+          "title": "Behavior",
+          "type": "string"
+        },
+        "forbidden_path_prefixes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Path Prefixes",
+          "type": "array"
+        }
+      },
+      "title": "FileChangeRequirement",
+      "type": "object"
+    },
+    "SetupCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "setup_id": {
+          "minLength": 1,
+          "title": "Setup Id",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 900,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "setup_id",
+        "argv"
+      ],
+      "title": "SetupCommand",
+      "type": "object"
+    },
+    "SourceSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "archive_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Archive Digest",
+          "type": "string"
+        },
+        "archive_path": {
+          "minLength": 1,
+          "title": "Archive Path",
+          "type": "string"
+        },
+        "baseline_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Baseline Digest",
+          "type": "string"
+        },
+        "excluded_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Paths",
+          "type": "array"
+        },
+        "file_count": {
+          "minimum": 1,
+          "title": "File Count",
+          "type": "integer"
+        },
+        "included_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Included Paths",
+          "type": "array"
+        },
+        "repository_identity": {
+          "minLength": 1,
+          "title": "Repository Identity",
+          "type": "string"
+        },
+        "resolved_commit": {
+          "pattern": "^[a-f0-9]{40,64}$",
+          "title": "Resolved Commit",
+          "type": "string"
+        },
+        "restore_verified": {
+          "title": "Restore Verified",
+          "type": "boolean"
+        },
+        "source_kind": {
+          "const": "git_commit",
+          "default": "git_commit",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository_identity",
+        "resolved_commit",
+        "baseline_digest",
+        "archive_digest",
+        "archive_path",
+        "included_paths",
+        "excluded_paths",
+        "file_count",
+        "restore_verified"
+      ],
+      "title": "SourceSnapshot",
+      "type": "object"
+    },
+    "TaskProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "captured_by": {
+          "minLength": 1,
+          "title": "Captured By",
+          "type": "string"
+        },
+        "later_context_present": {
+          "default": false,
+          "title": "Later Context Present",
+          "type": "boolean"
+        },
+        "source_reference": {
+          "minLength": 1,
+          "title": "Source Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "captured_at",
+        "captured_by",
+        "source_reference"
+      ],
+      "title": "TaskProvenance",
+      "type": "object"
+    },
+    "ValidationCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "authoritative": {
+          "default": true,
+          "title": "Authoritative",
+          "type": "boolean"
+        },
+        "timeout_seconds": {
+          "default": 900,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "validation_id": {
+          "minLength": 1,
+          "title": "Validation Id",
+          "type": "string"
+        },
+        "visibility": {
+          "default": "runner_visible",
+          "enum": [
+            "runner_visible",
+            "evaluator_only"
+          ],
+          "title": "Visibility",
+          "type": "string"
+        }
+      },
+      "required": [
+        "validation_id",
+        "argv"
+      ],
+      "title": "ValidationCommand",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/evaluation-task.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allowed_setup": {
+      "items": {
+        "$ref": "#/$defs/SetupCommand"
+      },
+      "title": "Allowed Setup",
+      "type": "array"
+    },
+    "authoritative_validation": {
+      "items": {
+        "$ref": "#/$defs/ValidationCommand"
+      },
+      "minItems": 1,
+      "title": "Authoritative Validation",
+      "type": "array"
+    },
+    "category_labels": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Category Labels",
+      "type": "array"
+    },
+    "confidentiality": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential"
+      ],
+      "title": "Confidentiality",
+      "type": "string"
+    },
+    "content_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Digest"
+    },
+    "evaluator_only": {
+      "$ref": "#/$defs/EvaluatorOnlyMaterial"
+    },
+    "evidence_eligible": {
+      "title": "Evidence Eligible",
+      "type": "boolean"
+    },
+    "evidence_kind": {
+      "enum": [
+        "real_founder_work",
+        "synthetic_fixture"
+      ],
+      "title": "Evidence Kind",
+      "type": "string"
+    },
+    "file_change_requirement": {
+      "$ref": "#/$defs/FileChangeRequirement"
+    },
+    "frozen": {
+      "default": false,
+      "title": "Frozen",
+      "type": "boolean"
+    },
+    "immutable_baseline_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Immutable Baseline Digest",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/TaskProvenance"
+    },
+    "risk_labels": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Risk Labels",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "villani.evaluation_task.v1",
+      "default": "villani.evaluation_task.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secret_exclusions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Secret Exclusions",
+      "type": "array"
+    },
+    "source_snapshot": {
+      "$ref": "#/$defs/SourceSnapshot"
+    },
+    "success_criteria": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Success Criteria",
+      "type": "array"
+    },
+    "suite_id": {
+      "minLength": 1,
+      "title": "Suite Id",
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_version": {
+      "minimum": 1,
+      "title": "Task Version",
+      "type": "integer"
+    },
+    "verbatim_task": {
+      "minLength": 1,
+      "title": "Verbatim Task",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "suite_id",
+    "task_version",
+    "immutable_baseline_digest",
+    "source_snapshot",
+    "verbatim_task",
+    "success_criteria",
+    "authoritative_validation",
+    "file_change_requirement",
+    "provenance",
+    "confidentiality",
+    "evidence_kind",
+    "evidence_eligible"
+  ],
+  "title": "EvaluationTask",
+  "type": "object"
+}

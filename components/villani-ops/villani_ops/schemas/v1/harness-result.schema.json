@@ -1,0 +1,459 @@
+{
+  "$defs": {
+    "CleanupResult": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "format": "date-time",
+          "title": "Completed At",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "not_required",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "completed_at"
+      ],
+      "title": "CleanupResult",
+      "type": "object"
+    },
+    "HarnessArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Bytes"
+        }
+      },
+      "required": [
+        "kind",
+        "path"
+      ],
+      "title": "HarnessArtifact",
+      "type": "object"
+    },
+    "HarnessCost": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        }
+      },
+      "required": [
+        "accounting_status"
+      ],
+      "title": "HarnessCost",
+      "type": "object"
+    },
+    "HarnessInfrastructureFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "cancellation",
+            "timeout",
+            "protocol",
+            "process",
+            "missing_executable",
+            "permission",
+            "environment",
+            "malformed_output",
+            "oversized_output",
+            "cleanup",
+            "unknown"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retryable"
+        }
+      },
+      "required": [
+        "code",
+        "category",
+        "message"
+      ],
+      "title": "HarnessInfrastructureFailure",
+      "type": "object"
+    },
+    "HarnessUsage": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        }
+      },
+      "required": [
+        "accounting_status"
+      ],
+      "title": "HarnessUsage",
+      "type": "object"
+    },
+    "NormalizedHarnessEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9_.-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "raw_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Name"
+        },
+        "raw_namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Namespace"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence",
+        "timestamp",
+        "name",
+        "payload"
+      ],
+      "title": "NormalizedHarnessEvent",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/harness-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/HarnessArtifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "attempt_id": {
+      "minLength": 1,
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "baseline_digest": {
+      "pattern": "^(sha256:)?[0-9a-f]{64}$",
+      "title": "Baseline Digest",
+      "type": "string"
+    },
+    "changed_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Changed Files",
+      "type": "array"
+    },
+    "cleanup": {
+      "$ref": "#/$defs/CleanupResult"
+    },
+    "cost": {
+      "$ref": "#/$defs/HarnessCost"
+    },
+    "duration_accounting_status": {
+      "enum": [
+        "complete",
+        "partial",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "Duration Accounting Status",
+      "type": "string"
+    },
+    "duration_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duration Ms"
+    },
+    "harness_status": {
+      "enum": [
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "title": "Harness Status",
+      "type": "string"
+    },
+    "infrastructure_failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HarnessInfrastructureFailure"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "isolated_worktree": {
+      "minLength": 1,
+      "title": "Isolated Worktree",
+      "type": "string"
+    },
+    "normalized_events": {
+      "items": {
+        "$ref": "#/$defs/NormalizedHarnessEvent"
+      },
+      "title": "Normalized Events",
+      "type": "array"
+    },
+    "patch": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Patch"
+    },
+    "raw_trace": {
+      "additionalProperties": true,
+      "title": "Raw Trace",
+      "type": "object"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.harness_result.v1",
+      "default": "villani.harness_result.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 1,
+      "title": "Session Id",
+      "type": "string"
+    },
+    "stderr": {
+      "title": "Stderr",
+      "type": "string"
+    },
+    "stdout": {
+      "title": "Stdout",
+      "type": "string"
+    },
+    "system_id": {
+      "pattern": "^asys_[0-9a-f]{64}$",
+      "title": "System Id",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/$defs/HarnessUsage"
+    }
+  },
+  "required": [
+    "system_id",
+    "session_id",
+    "run_id",
+    "attempt_id",
+    "isolated_worktree",
+    "baseline_digest",
+    "patch",
+    "changed_files",
+    "stdout",
+    "stderr",
+    "normalized_events",
+    "raw_trace",
+    "usage",
+    "cost",
+    "duration_accounting_status",
+    "harness_status",
+    "infrastructure_failure",
+    "artifacts",
+    "cleanup"
+  ],
+  "title": "HarnessResult",
+  "type": "object"
+}

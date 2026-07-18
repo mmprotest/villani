@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -95,6 +96,7 @@ PHASE_TIMEOUTS: dict[str, int] = {
     "packed_node_install": 600,
     "wheel_install": 600,
     "connected_runtime_preparation": 900,
+    "installed_user_onboarding": 1_800,
     "connected_scenarios": 2_400,
     "canonical_reconciliation": 120,
     "browser": 180,
@@ -136,6 +138,24 @@ def write_json(path: Path, value: Any) -> None:
     )
 
 
+def _remove_tree(path: Path) -> None:
+    """Remove generated gate state, retrying read-only Windows Git objects."""
+
+    def retry_writable(function: Any, value: str, error: Any) -> None:
+        try:
+            if os.path.islink(value):
+                function(value)
+                return
+            current_mode = os.stat(value).st_mode
+            os.chmod(value, current_mode | stat.S_IWUSR)
+            function(value)
+        except OSError:
+            raise error[1]
+
+    if path.exists():
+        shutil.rmtree(path, onerror=retry_writable)
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -168,6 +188,8 @@ def _digest_configuration(root: Path) -> tuple[str, list[str]]:
         "release/component-compatibility.json",
         "release-verification/run_release_gate.py",
         "release-verification/connected_product.py",
+        "onboarding-verification/run_onboarding_gate.py",
+        "onboarding-verification/capture_screenshots.mjs",
     ]
     return _digest_source_manifest(root, inputs), inputs
 
@@ -707,7 +729,7 @@ def validate_compatibility(
         (root / "release/component-compatibility.json").read_text(encoding="utf-8")
     )
     expected = template["components"]
-    mismatches = {
+    mismatches: dict[str, Any] = {
         name: {"manifest": expected.get(name), "package": version}
         for name, version in versions.items()
         if expected.get(name) != version
@@ -1358,6 +1380,7 @@ def evidence_skeleton(mode: str) -> dict[str, Any]:
         "verifier-routing-summary.json",
         "candidate-diversity-summary.json",
         "classification-adjustment-summary.json",
+        "installed-user-onboarding-summary.json",
     ):
         write_json(LATEST / name, incomplete)
     for directory in (
@@ -1407,6 +1430,115 @@ def _validate_connected_summary(
         connected.get("dead_letter_count") == 0 and dead_letters.get("count") == 0,
         "unexpected dead letters exist",
     )
+
+
+def _validate_installed_user_onboarding(
+    evidence: Path,
+    installed_python: Path,
+) -> dict[str, Any]:
+    report_path = evidence / "onboarding-report.json"
+    _require(report_path.is_file(), "installed-user onboarding report is missing")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    _require(
+        isinstance(report, dict) and report.get("verdict") == "ONBOARDING GATE PASSED",
+        "installed-user onboarding gate failed",
+    )
+    _require(
+        Path(str(report.get("selected_interpreter") or "")).resolve()
+        == installed_python.resolve(),
+        "onboarding did not use the clean installed interpreter",
+    )
+    sample = report.get("sample_evidence") or {}
+    _require(
+        report.get("sample_final_state") == "COMPLETED"
+        and bool(report.get("sample_selected_attempt"))
+        and sample.get("attempt_count") == 1
+        and sample.get("acceptance_eligible_attempt_count") == 1
+        and (sample.get("acceptance") or {}).get("decision") is True,
+        "onboarding did not produce exactly one selected acceptance-eligible attempt",
+    )
+    _require(
+        sample.get("repository_checks")
+        == {
+            "passed": 1,
+            "failed": 0,
+            "not_run": 0,
+            "unavailable": 0,
+            "accounting_status": "complete",
+        },
+        "installed-user onboarding validation counts are not exactly one pass",
+    )
+    _require(
+        (sample.get("focused_probes") or {}).get("passed") == 0
+        and (sample.get("focused_probes") or {}).get("failed") == 0
+        and (sample.get("requirements") or {}).get("not_proved") == 0,
+        "installed-user onboarding canonical evidence is unresolved",
+    )
+    deliveries = report.get("delivery_modes") or {}
+    _require(
+        (deliveries.get("suggest") or {}).get("repository_unchanged") is True
+        and (deliveries.get("branch") or {}).get("original_repository_unchanged")
+        is True,
+        "configured non-destructive delivery was not proven",
+    )
+    doctor = report.get("doctor") or {}
+    _require(
+        doctor.get("healthy") is True
+        and doctor.get("ok") is True
+        and (doctor.get("summary") or {}).get("failed") == 0,
+        "installed-user doctor did not pass",
+    )
+    _require(
+        report.get("service_running") is True
+        and report.get("service_stopped") is True
+        and report.get("dead_letters") == 0,
+        "installed-user service lifecycle or dead-letter evidence failed",
+    )
+    screenshots = [Path(str(item)) for item in report.get("screenshots") or []]
+    _require(
+        len(screenshots) == 5
+        and all(path.is_file() and path.stat().st_size > 1_000 for path in screenshots),
+        "installed-user onboarding screenshots are incomplete",
+    )
+    _require(
+        (report.get("secret_scan") or {}).get("status") == "passed"
+        and not (report.get("secret_scan") or {}).get("matches"),
+        "installed-user onboarding evidence contains secret material",
+    )
+    setup_commands = [
+        item.get("command") or []
+        for item in report.get("commands") or []
+        if "setup" in (item.get("command") or [])
+    ]
+    _require(
+        len(setup_commands) == 1
+        and "--yes" in setup_commands[0]
+        and "--sample" in setup_commands[0]
+        and "fixture-onboarding" in setup_commands[0],
+        "installed-user setup was not deterministic and non-interactive",
+    )
+    summary = {
+        "status": "passed",
+        "schema_version": "villani.installed_user_onboarding_gate.v1",
+        "evidence_directory": str(evidence.resolve()),
+        "report": str(report_path.resolve()),
+        "selected_interpreter": str(installed_python.resolve()),
+        "sample_run_id": report.get("sample_run_id"),
+        "selected_attempt_id": report.get("sample_selected_attempt"),
+        "acceptance_eligible_attempt_count": 1,
+        "repository_checks": sample["repository_checks"],
+        "focused_probes": sample.get("focused_probes"),
+        "requirements": sample.get("requirements"),
+        "classification": sample.get("classification"),
+        "non_destructive_delivery_modes": ["suggest", "branch"],
+        "doctor": "passed",
+        "dead_letters": 0,
+        "screenshots": [str(path.resolve()) for path in screenshots],
+        "secret_scan": "passed",
+        "service_stopped": True,
+    }
+    write_json(LATEST / "installed-user-onboarding-summary.json", summary)
+    return summary
 
 
 def _validate_screenshots(browser: dict[str, Any]) -> None:
@@ -1498,6 +1630,7 @@ def _test_summary(connected: dict[str, Any], browser: dict[str, Any]) -> dict[st
         },
         "browser_assertions": browser.get("assertions", {}),
         "browser_screenshot_count": browser.get("screenshot_count", 0),
+        "installed_user_onboarding": "passed",
         "note": "Component and full-suite results are enforced by their dedicated CI jobs; this file records the packaged connected gate only.",
     }
 
@@ -1515,6 +1648,7 @@ def _markdown(report: dict[str, Any]) -> str:
         f"Villani Web reconciliation: {report.get('villani_web_reconciliation_status')}  \n"
         f"Flight Recorder reconciliation: {report.get('flight_recorder_reconciliation_status')}  \n"
         f"Browser: {report.get('browser_result')}  \n"
+        f"Installed-user onboarding: {report.get('installed_user_onboarding_status')}  \n"
         f"Security: {report.get('security_scan_status')}\n\n"
         + (f"Failure: {report['failure']}\n\n" if report.get("failure") else "")
         + str(report.get("certification_note", ""))
@@ -1719,6 +1853,7 @@ def validate_final_evidence(mode: str, reporter: GateReporter) -> None:
         "verifier-routing-summary.json",
         "candidate-diversity-summary.json",
         "classification-adjustment-summary.json",
+        "installed-user-onboarding-summary.json",
     )
     for name in required:
         document = _summary(name)
@@ -1748,6 +1883,7 @@ def validate_final_evidence(mode: str, reporter: GateReporter) -> None:
         )
     identity = reporter.report.get("certification_identity")
     _require(isinstance(identity, dict), "certification identity is missing")
+    assert isinstance(identity, dict)
     _require(
         bool(identity.get("git_commit_sha"))
         and bool(identity.get("source_manifest_sha256"))
@@ -1769,8 +1905,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     global _ACTIVE_REPORTER
     COMMAND_RECORDS.clear()
-    if LATEST.exists():
-        shutil.rmtree(LATEST)
+    _remove_tree(LATEST)
     LATEST.mkdir(parents=True)
     evidence_skeleton(args.mode)
     reporter = GateReporter(args.mode)
@@ -1933,6 +2068,44 @@ def main(argv: list[str] | None = None) -> int:
                 source_root, release_env
             )
             reporter.finish("connected_runtime_preparation")
+
+            onboarding_stamp = datetime.now(timezone.utc).strftime(
+                "%Y%m%dT%H%M%SZ"
+            )
+            onboarding_evidence = (
+                LATEST / "installed-user-onboarding" / onboarding_stamp
+            )
+            onboarding_env = dict(release_env)
+            onboarding_env["VILLANI_ONBOARDING_ALLOW_EXTERNAL_ARTIFACTS"] = "1"
+            reporter.start(
+                "installed_user_onboarding",
+                logs=[LATEST / "logs/installed-user-onboarding.log"],
+            )
+            run(
+                [
+                    str(installed_python),
+                    str(
+                        source_root
+                        / "onboarding-verification"
+                        / "run_onboarding_gate.py"
+                    ),
+                    "--artifacts",
+                    str(onboarding_evidence),
+                    "--python",
+                    str(installed_python),
+                ],
+                cwd=source_root,
+                log=LATEST / "logs/installed-user-onboarding.log",
+                env=onboarding_env,
+                timeout=PHASE_TIMEOUTS["installed_user_onboarding"],
+            )
+            onboarding_summary = _validate_installed_user_onboarding(
+                onboarding_evidence,
+                installed_python,
+            )
+            report["installed_user_onboarding_status"] = "passed"
+            report["installed_user_onboarding"] = onboarding_summary
+            reporter.finish("installed_user_onboarding")
 
             hashes = {path.name: sha256(path) for path in sorted(packages)}
             generated = json.loads(json.dumps(template))

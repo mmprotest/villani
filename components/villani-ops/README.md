@@ -90,6 +90,15 @@ preserved. Interrupted runs can be resumed with `villani resume <run_id>` or
 `villani resume --latest`. Use `villani rerun <run_id>` to create a new, lineage-linked run with
 fresh cost accounting and optional policy or budget overrides.
 
+A bare public `villani run` uses the Performance preset and strongest eligible configured coding
+route, requires verification, sets no wall-time budget, and waits for a non-destructive delivery
+decision after a proved result. Success criteria are optional when the task itself is explicit;
+`--success-criteria`, `--task-file`, advanced policy/budget flags, and `--json` remain available.
+Default terminal output projects the four product stages and one final verdict from
+`villani.product_run.v1`, while `--verbose` retains the technical stream. Use
+`villani evidence <run_id>` for the recorded evidence index. Unknown cost or duration remains
+unknown rather than numeric zero.
+
 Accepted patches have an explicit delivery state. The public choices are:
 
 ```bash
@@ -130,6 +139,20 @@ the configured sample minimum and Wilson confidence bound. Reliable, Balanced, L
 Cheapest acceptable, and Custom are the public presets; internal controller modes are Advanced
 compatibility controls. `villani policy simulate --preset <preset>` evaluates recorded routing
 decisions without changing live policy or claiming causal savings.
+
+A coding route is recorded as a complete, content-addressed agent system. Inspect the migrated
+identity, qualification, capability evidence, permissions, and harness diagnostics with:
+
+```bash
+villani agents list
+villani agents inspect <route-or-system-id>
+villani agents doctor [route-or-system-id]
+```
+
+Villani Code is the only production-enabled harness in PT5. External harness identities may be
+configured for inspection, but remain disabled and cannot be selected until their contract and
+qualification evidence are proven. See `docs/AGENT_SYSTEMS.md` for the lifecycle, evidence, and
+compatibility contract.
 
 At composition time the public CLI detects an installed, running `villani-agentd` and attaches the
 closed-loop event sink. Local canonical events are committed before daemon delivery, daemon
@@ -284,6 +307,12 @@ Known limitations:
 - If no authoritative validation exists, selection may be best-effort.
 
 The current release is for testing the orchestration loop, candidate tournament, artifact trail, and local-first workflow.
+
+## Founder Thesis Lab
+
+The public `villani eval` command group captures content-addressed real-task suites, runs randomized direct-versus-Villani trials from identical restored baselines, records append-only human review, and generates JSON, Markdown, and HTML evidence reports plus Founder Gate B. It performs no passive monitoring and never applies trial patches to the source repository.
+
+See the [Founder Thesis Lab guide](../../docs/FOUNDER_THESIS_LAB.md) for PowerShell and POSIX capture, run, review, reporting, and gate examples.
 
 ## Test suites
 

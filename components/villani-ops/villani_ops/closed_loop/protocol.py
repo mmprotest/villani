@@ -35,6 +35,7 @@ ControllerState: TypeAlias = Literal[
     "COMPLETED",
     "EXHAUSTED",
     "FAILED",
+    "CANCELLED",
 ]
 
 
@@ -150,6 +151,10 @@ class RunArtifactPaths(StrictProtocolModel):
     policy_decisions: str = Field(min_length=1)
     selection: str = Field(min_length=1)
     materialization: str = Field(min_length=1)
+    validation_coverage: str | None = Field(default=None, min_length=1)
+    run_summary: str = Field(default="run-summary.json", min_length=1)
+    product_run: str = Field(default="product-run.json", min_length=1)
+    agent_systems: str | None = Field(default=None, min_length=1)
 
 
 class RunManifestSnapshot(StrictProtocolModel):
@@ -178,6 +183,7 @@ class RunManifestSnapshot(StrictProtocolModel):
     model_call_accounting_status: AccountingStatus = "unknown"
     run_wall_clock_duration_ms: int | None = Field(default=None, ge=0)
     run_wall_clock_duration_accounting_status: AccountingStatus = "unknown"
+    agent_system_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_accounting(self) -> RunManifestSnapshot:
@@ -224,7 +230,7 @@ class RunStateSnapshot(StrictProtocolModel):
 
     @model_validator(mode="after")
     def validate_terminal_flag(self) -> RunStateSnapshot:
-        expected = self.state in {"COMPLETED", "EXHAUSTED", "FAILED"}
+        expected = self.state in {"COMPLETED", "EXHAUSTED", "FAILED", "CANCELLED"}
         if self.terminal is not expected:
             raise ValueError(f"state {self.state} requires terminal={expected}")
         return self
@@ -365,6 +371,11 @@ class AttemptSnapshot(StrictProtocolModel):
     cost_accounting_status: AccountingStatus
     error: FailureDetail | None
     metadata: dict[str, Any]
+    agent_system_id: str | None = Field(
+        default=None, pattern=r"^asys_[0-9a-f]{64}$"
+    )
+    agent_system_identity_path: str | None = Field(default=None, min_length=1)
+    harness_result_path: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def validate_accounting(self) -> AttemptSnapshot:

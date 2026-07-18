@@ -58,29 +58,33 @@ MATERIALIZING
 COMPLETED
 EXHAUSTED
 FAILED
+CANCELLED
 ```
 
 Allowed transitions:
 
 ```text
-CREATED -> CLASSIFYING
-CLASSIFYING -> CLASSIFIED | FAILED
-CLASSIFIED -> POLICY_SELECTED | EXHAUSTED | FAILED
-POLICY_SELECTED -> ATTEMPT_RUNNING | SELECTING | EXHAUSTED | FAILED
-ATTEMPT_RUNNING -> ATTEMPT_COMPLETED | FAILED
-ATTEMPT_COMPLETED -> VERIFYING | REJECTED | FAILED
-VERIFYING -> VERIFIED | FAILED
-VERIFIED -> SELECTING | REJECTED | FAILED
-REJECTED -> POLICY_SELECTED | ESCALATING | EXHAUSTED | FAILED
-ESCALATING -> POLICY_SELECTED | EXHAUSTED | FAILED
-SELECTING -> AWAITING_APPROVAL | MATERIALIZING | EXHAUSTED | FAILED
-AWAITING_APPROVAL -> MATERIALIZING | COMPLETED | FAILED
+CREATED -> CLASSIFYING | CANCELLED
+CLASSIFYING -> CLASSIFIED | FAILED | CANCELLED
+CLASSIFIED -> POLICY_SELECTED | EXHAUSTED | FAILED | CANCELLED
+POLICY_SELECTED -> ATTEMPT_RUNNING | VERIFYING | SELECTING | EXHAUSTED | FAILED | CANCELLED
+ATTEMPT_RUNNING -> ATTEMPT_COMPLETED | FAILED | CANCELLED
+ATTEMPT_COMPLETED -> VERIFYING | REJECTED | FAILED | CANCELLED
+VERIFYING -> VERIFIED | FAILED | CANCELLED
+VERIFIED -> SELECTING | REJECTED | FAILED | CANCELLED
+REJECTED -> POLICY_SELECTED | ESCALATING | EXHAUSTED | FAILED | CANCELLED
+ESCALATING -> POLICY_SELECTED | EXHAUSTED | FAILED | CANCELLED
+SELECTING -> AWAITING_APPROVAL | MATERIALIZING | EXHAUSTED | FAILED | CANCELLED
+AWAITING_APPROVAL -> MATERIALIZING | COMPLETED | FAILED | CANCELLED
 MATERIALIZING -> COMPLETED | FAILED
 ```
 
 A retry on the same backend is represented by `REJECTED -> POLICY_SELECTED`. An escalation is represented by `REJECTED -> ESCALATING -> POLICY_SELECTED`. The corresponding policy event records why the backend stayed the same or changed.
 
-Terminal states are `COMPLETED`, `EXHAUSTED`, and `FAILED`. Terminal states cannot transition.
+Terminal states are `COMPLETED`, `EXHAUSTED`, `FAILED`, and `CANCELLED`. Terminal states cannot
+transition. Cancellation requests propagate to the active runner, which terminates its process
+tree when required; the controller then preserves recorded evidence, requests isolation cleanup,
+and records whether the target repository was modified.
 
 ## Canonical run bundle
 
@@ -94,14 +98,21 @@ Every run is stored at `~/.villani/runs/<run_id>/`, or beneath a test-provided r
   state.json
   events.jsonl
   policy_decisions.jsonl
+  agent-systems/
+    index.json
+    <system-id>.json
+    migration.json
   attempts/
     attempt_001/
       attempt.json
+      harness-result.json
       worktree.json
       patch.diff
       stdout.log
       stderr.log
       runner_telemetry.json
+      repository-validation.json
+      validation-coverage.json
       trace/
     attempt_002/
       ...
@@ -109,6 +120,8 @@ Every run is stored at `~/.villani/runs/<run_id>/`, or beneath a test-provided r
     attempt_001.json
     attempt_002.json
   candidate_evidence_matrix.json
+  run-summary.json
+  product-run.json
   selection.json
   selection_report.md
   delivery.json
@@ -125,6 +138,33 @@ Every run is stored at `~/.villani/runs/<run_id>/`, or beneath a test-provided r
 ```
 
 Files that do not yet have data may be absent while a run is active. `manifest.json`, `task.json`, `state.json`, and `events.jsonl` must exist immediately after run creation.
+
+Agent-system identities and harness results use the versioned, harness-neutral contracts described
+in [AGENT_SYSTEMS.md](AGENT_SYSTEMS.md). Identity fields are optional additions to the version-1
+manifest and attempt schemas so older bundles remain readable. New runs persist the complete
+non-secret identity for every configured route and link each attempt to the exact selected system.
+
+`validation-coverage.json` uses `villani.validation_coverage.v1`. It records each authoritative
+command's identity, safe display, role, working directory, status, timing, discoverable test targets,
+changed tests linked to the command, requirement coverage, provenance, confidence, uncertainty
+reasons, and artifact references. Coverage is deterministic and conservative: a generic passing
+suite does not prove an unrelated requirement. If coverage remains uncertain, the controller runs
+the verifier-requested focused probe in the same isolated candidate environment before making its
+final binary decision.
+
+`run-summary.json` uses `villani.run_summary.v1` and is the canonical terminal projection for CLI,
+Console, Flight Recorder, static viewers, `final_report.md`, and `selection_report.md`. It separates
+passed, failed, not-run, and unavailable repository checks and focused probes, counts proved and
+unproved requirements, and represents unknown accounting as `null` plus an explicit status.
+
+`product-run.json` uses `villani.product_run.v1`. It is the shared CLI/Console product projection:
+run identity, task summary, one of four persisted event-derived stages (`Understanding`, `Working`,
+`Checking`, `Ready`), one of four final verdicts (`Ready to apply`, `Needs review`, `Could not
+prove`, `Cancelled`), change/check/requirement summaries, cost and duration accounting, agent and
+escalation summaries, available actions, evidence links, recovery guidance, technical references,
+and target-repository state. Existing bundles remain readable because this projection is derived
+conservatively from their canonical artifacts when absent. Only controller-proved selected work
+may receive a delivery action; the browser does not reproduce acceptance logic.
 
 `delivery.json` is the durable user-facing projection of the selected patch, its review evidence,
 the authority decision, approval status, and the explicit delivery result. `delivery/selected.patch`
@@ -186,6 +226,7 @@ delivery_completed
 run_completed
 run_exhausted
 run_failed
+run_cancelled
 ```
 
 Minimum normalized runtime event types:

@@ -96,7 +96,21 @@
         "events": { "type": "string", "minLength": 1 },
         "policy_decisions": { "type": "string", "minLength": 1 },
         "selection": { "type": "string", "minLength": 1 },
-        "materialization": { "type": "string", "minLength": 1 }
+        "materialization": { "type": "string", "minLength": 1 },
+        "validation_coverage": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "run_summary": { "type": "string", "minLength": 1 }
+        ,"product_run": { "type": "string", "minLength": 1 },
+        "agent_systems": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "metadata": {
@@ -112,7 +126,12 @@
     "run_wall_clock_duration_ms": {
       "anyOf": [ { "type": "integer", "minimum": 0 }, { "type": "null" } ]
     },
-    "run_wall_clock_duration_accounting_status": { "$ref": "#/$defs/accounting_status" }
+    "run_wall_clock_duration_accounting_status": { "$ref": "#/$defs/accounting_status" },
+    "agent_system_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^asys_[0-9a-f]{64}$" },
+      "uniqueItems": true
+    }
   },
   "$defs": {
     "stage_usage": {
@@ -162,7 +181,8 @@
         "MATERIALIZING",
         "COMPLETED",
         "EXHAUSTED",
-        "FAILED"
+        "FAILED",
+        "CANCELLED"
       ]
     }
   }

@@ -20,6 +20,18 @@ the Flight Recorder engine through a bounded structured adapter; source paths an
 credentials are never returned to browser code. Legacy Web and replay URLs are
 served by the same single-page application.
 
+The model inventory response also exposes redacted `villani.agent_system.v1` identities for the
+Agents page. Model mutations atomically persist the backwards-compatible agent-system migration;
+Agentd does not select or execute a harness itself.
+
+New-task submission accepts an idempotent browser submission identifier, so reconnecting or
+retrying a lost response cannot create a duplicate run. Repository/validation discovery is cached
+by repository fingerprint and remains cancellable. Run status, long event subscription,
+cancellation, and approval endpoints all return the shared `villani.product_run.v1` projection;
+the service, CLI, and browser therefore do not maintain competing verdict logic. Browser closure
+does not cancel a run. Explicit cancellation signals the active runner, waits for safe process-tree
+termination and isolation cleanup, preserves evidence, and returns the persisted cancelled state.
+
 If the daemon is already running, a normal public `villani run` automatically registers its
 canonical run, events, permitted artifact metadata, and final outcome in this spool. The daemon
 acknowledges events only after its SQLite transaction commits. It uses the public run's existing

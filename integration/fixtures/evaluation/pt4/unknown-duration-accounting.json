@@ -1,0 +1,26 @@
+{
+  "fixture_kind": "pt4_unknown_duration_accounting",
+  "mechanism": "unknown_duration_was_coerced_to_numeric_zero",
+  "input": {
+    "accepted_as_is": true,
+    "duration": {
+      "value_ms": null,
+      "accounting_status": "unknown",
+      "source": "runner_did_not_report_duration"
+    }
+  },
+  "before": {
+    "elapsed_time_per_accepted_as_is_change_ms": {
+      "value": 0.0,
+      "accounting_status": "complete"
+    }
+  },
+  "after": {
+    "elapsed_time_per_accepted_as_is_change_ms": {
+      "value": null,
+      "accounting_status": "unknown"
+    }
+  },
+  "evidence_basis": "undeniable_accounting_correctness_defect",
+  "task_or_repository_identifiers_present": false
+}

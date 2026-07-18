@@ -111,12 +111,18 @@ class InjectedVillaniCodeRunner:
             timestamp = f"2026-07-10T00:00:{len(self.calls):02d}Z"
             secret = str(step.get("secret") or "")
             quality = step.get("quality", "strong")
-            command = (
-                "python -m pytest -q tests/test_example.py"
-                if quality == "strong"
-                else "cat example.txt"
+            command = str(
+                step.get("command")
+                or (
+                    "python -m pytest -q tests/test_example.py"
+                    if quality == "strong"
+                    else "cat example.txt"
+                )
             )
-            stdout = "1 passed" if quality == "strong" else "example inspected"
+            stdout = str(
+                step.get("command_stdout")
+                or ("1 passed" if quality == "strong" else "example inspected")
+            )
             if secret:
                 stdout += f" Authorization: Bearer {secret}"
             (trace_dir / "session_meta.json").write_text(
@@ -138,14 +144,17 @@ class InjectedVillaniCodeRunner:
                         "event_id": f"command-{len(self.calls)}",
                         "ts": timestamp,
                         "command": command,
-                        "command_role": (
-                            "repository_validation"
-                            if quality == "strong"
-                            else "inspection"
+                        "command_role": str(
+                            step.get("command_role")
+                            or (
+                                "repository_validation"
+                                if quality == "strong"
+                                else "inspection"
+                            )
                         ),
                         "candidate_state": "post_mutation",
                         "cwd": context.repo_path,
-                        "exit_code": 0,
+                        "exit_code": int(step.get("command_exit_code", 0)),
                         "stdout": stdout,
                         "stderr": "",
                     }
@@ -993,7 +1002,7 @@ def test_canonical_events_include_translated_model_tool_and_command_events(
     translated = next(
         event for event in events if event["event_type"] == "model_call_completed"
     )
-    assert translated["source"] == "villani_code"
+    assert translated["source"] == "agent_system"
     assert translated["payload"]["source_event_id"].startswith("model-")
 
 
@@ -1043,6 +1052,63 @@ def test_controller_configured_repository_validation_is_canonical_evidence(
     assert validation_events[-1]["payload"]["argv"] == ["git", "diff", "--check"]
     assert validation_events[-1]["payload"]["exit_code"] == 0
     assert validation_events[-1]["payload"]["validation_id"] == "git_diff_check"
+
+
+def test_no_llm_advisory_does_not_mask_authoritative_behavior_failure(
+    tmp_path: Path,
+) -> None:
+    repo = _tiny_repo(tmp_path)
+    runner = InjectedVillaniCodeRunner(
+        [
+            {
+                "value": "changed\n",
+                "command": "inspect example.txt",
+                "command_role": "inspection",
+                "command_stdout": "example inspected",
+            }
+        ]
+    )
+    controller = _controller(
+        [_attempt_policy(), policy("exhaust")],
+        runner,
+        None,
+    )
+    request = _request(
+        tmp_path,
+        repo,
+        policy_configuration={
+            "version": "m4_test",
+            "repository_validation_commands": [
+                {
+                    "validation_id": "known_behavior_failure",
+                    "argv": [sys.executable, "-c", "raise SystemExit(1)"],
+                    "timeout_seconds": 10,
+                }
+            ],
+        },
+    )
+
+    result = controller.run(request)
+
+    verification = json.loads(
+        (result.run_directory / "verification" / "attempt_001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    raw_path = result.run_directory / verification["raw_verifier_artifact"]
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    assert raw["recommendedAction"] == "run_more_tests"
+    assert result.terminal_state == "EXHAUSTED"
+    assert verification["outcome"] == "rejected"
+    assert verification["acceptance_eligible"] is False
+    assert verification["metadata"]["semantic_verifier_invoked"] is False
+    assert verification["metadata"]["raw_recommended_action"] == "run_more_tests"
+    assert verification["metadata"]["normalized_recommended_action"] == "escalate"
+    assert verification["metadata"]["invocation_status"] == "completed"
+    assert (
+        verification["metadata"]["computed_final_reason_code"]
+        == "repository_validation_failed"
+    )
 
 
 def test_repository_validation_reuses_runner_path_fingerprint_and_final_mutation(

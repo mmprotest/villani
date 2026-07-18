@@ -109,7 +109,8 @@ def test_resume_terminal_run_is_read_only(tmp_path, monkeypatch) -> None:
     before = (bundle / "events.jsonl").read_bytes()
     result = runner.invoke(unified.app, ["resume", "terminal"])
     assert result.exit_code == 0
-    assert "ACCEPTED" in result.output
+    assert "Ready to apply" in result.output
+    assert "ACCEPTED" not in result.output
     assert "No recovery action was taken" in result.output
     assert "villani rerun terminal" in result.output
     assert (bundle / "events.jsonl").read_bytes() == before

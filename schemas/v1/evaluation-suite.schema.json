@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "EvaluationTaskReference": {
+      "additionalProperties": false,
+      "properties": {
+        "task_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Task Digest",
+          "type": "string"
+        },
+        "task_id": {
+          "minLength": 1,
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "task_digest"
+      ],
+      "title": "EvaluationTaskReference",
+      "type": "object"
+    },
+    "LocalComputeConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "anyOf": [
+            {
+              "maxLength": 3,
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "electricity_price_per_kwh": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Electricity Price Per Kwh"
+        },
+        "measured_power_watts": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Power Watts"
+        }
+      },
+      "title": "LocalComputeConfiguration",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/evaluation-suite.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "confidentiality": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential"
+      ],
+      "title": "Confidentiality",
+      "type": "string"
+    },
+    "content_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Digest"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "disclosure_complete": {
+      "default": false,
+      "title": "Disclosure Complete",
+      "type": "boolean"
+    },
+    "evidence_kind": {
+      "enum": [
+        "real_founder_work",
+        "synthetic_fixture"
+      ],
+      "title": "Evidence Kind",
+      "type": "string"
+    },
+    "frozen_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frozen At"
+    },
+    "local_compute": {
+      "$ref": "#/$defs/LocalComputeConfiguration"
+    },
+    "randomization_seed": {
+      "minLength": 16,
+      "title": "Randomization Seed",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.evaluation_suite.v1",
+      "default": "villani.evaluation_suite.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "frozen"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "suite_id": {
+      "minLength": 1,
+      "title": "Suite Id",
+      "type": "string"
+    },
+    "suite_version": {
+      "minimum": 1,
+      "title": "Suite Version",
+      "type": "integer"
+    },
+    "task_versions": {
+      "items": {
+        "$ref": "#/$defs/EvaluationTaskReference"
+      },
+      "title": "Task Versions",
+      "type": "array"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "suite_id",
+    "title",
+    "suite_version",
+    "status",
+    "created_at",
+    "randomization_seed",
+    "evidence_kind",
+    "confidentiality"
+  ],
+  "title": "EvaluationSuite",
+  "type": "object"
+}

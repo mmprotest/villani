@@ -4,6 +4,7 @@ import importlib.util
 import hashlib
 import json
 import os
+import stat
 import shutil
 import subprocess
 import sys
@@ -123,6 +124,196 @@ def test_zero_synchronized_runs_and_missing_screenshots_cannot_pass() -> None:
                 "viewport_coverage": [],
             }
         )
+
+
+def test_installed_user_onboarding_release_evidence_is_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_installed_onboarding", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    evidence = tmp_path / "installed-user-onboarding" / "20260717T000000Z"
+    screenshots = evidence / "screenshots"
+    screenshots.mkdir(parents=True)
+    screenshot_paths = []
+    for index in range(5):
+        path = screenshots / f"{index + 1:02d}-proof.png"
+        path.write_bytes(b"PNG" + b"x" * 1_024)
+        screenshot_paths.append(str(path))
+    report = {
+        "verdict": "ONBOARDING GATE PASSED",
+        "selected_interpreter": str(Path(sys.executable).resolve()),
+        "sample_final_state": "COMPLETED",
+        "sample_selected_attempt": "attempt_001",
+        "sample_run_id": "run_001",
+        "sample_evidence": {
+            "attempt_count": 1,
+            "acceptance_eligible_attempt_count": 1,
+            "acceptance": {"decision": True},
+            "repository_checks": {
+                "passed": 1,
+                "failed": 0,
+                "not_run": 0,
+                "unavailable": 0,
+                "accounting_status": "complete",
+            },
+            "focused_probes": {"passed": 0, "failed": 0},
+            "requirements": {"proved": 3, "not_proved": 0},
+            "classification": {"effective": {"difficulty": "easy"}},
+        },
+        "delivery_modes": {
+            "suggest": {"repository_unchanged": True},
+            "branch": {"original_repository_unchanged": True},
+        },
+        "doctor": {"healthy": True, "ok": True, "summary": {"failed": 0}},
+        "service_running": True,
+        "service_stopped": True,
+        "dead_letters": 0,
+        "screenshots": screenshot_paths,
+        "secret_scan": {"status": "passed", "matches": []},
+        "commands": [
+            {
+                "command": [
+                    "villani",
+                    "setup",
+                    "--yes",
+                    "--sample",
+                    "--model",
+                    "fixture-onboarding",
+                ]
+            }
+        ],
+    }
+    (evidence / "onboarding-report.json").write_text(
+        json.dumps(report), encoding="utf-8"
+    )
+    monkeypatch.setattr(gate, "LATEST", tmp_path / "release-evidence")
+
+    summary = gate._validate_installed_user_onboarding(
+        evidence, Path(sys.executable)
+    )
+
+    assert summary["status"] == "passed"
+    assert summary["acceptance_eligible_attempt_count"] == 1
+    assert (gate.LATEST / "installed-user-onboarding-summary.json").is_file()
+
+    report["sample_evidence"]["repository_checks"]["passed"] = 0
+    (evidence / "onboarding-report.json").write_text(
+        json.dumps(report), encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="validation counts"):
+        gate._validate_installed_user_onboarding(evidence, Path(sys.executable))
+
+
+def test_security_release_fixture_requests_candidate_local_probe() -> None:
+    fixture = _load(
+        "release_security_probe_fixture", "fixtures/model_service.py"
+    )
+    context = {
+        "requirements": [
+            {
+                "requirement_id": "req_security",
+                "description": "Preserve authentication fixtures.",
+                "observable": True,
+                "source": "task",
+            },
+            {
+                "requirement_id": "req_nondisclosure",
+                "description": "Do not disclose registered secrets.",
+                "observable": False,
+                "source": "task",
+            }
+        ]
+    }
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "Release scenario: scenario_d.\n"
+                "Closed-loop verification context:\n"
+                + json.dumps(context)
+                + "\nEvidence packet:\n{}"
+            ),
+        }
+    ]
+
+    verdict = json.loads(
+        fixture._verifier_response("fixture-verifier-high", messages)
+    )
+
+    requests = verdict["focusedProbeRequests"]
+    assert len(requests) == 1
+    assert requests[0]["requirement_ids"] == [
+        "req_security",
+        "req_nondisclosure",
+    ]
+    assert requests[0]["expected_exit_code"] == 0
+    assert "git" in requests[0]["argv"][2]
+
+
+def test_security_release_scenario_enables_probe_capable_verifier() -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        connected = _load(
+            "release_security_probe_configuration", "connected_product.py"
+        )
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    base = {"budgets": {}, "backends": {}}
+
+    security = connected._configuration(
+        base,
+        base_url="http://127.0.0.1:1/v1",
+        villani_code="villani-code",
+        python=sys.executable,
+        scenario="scenario_d",
+    )
+    ordinary = connected._configuration(
+        base,
+        base_url="http://127.0.0.1:1/v1",
+        villani_code="villani-code",
+        python=sys.executable,
+        scenario="scenario_a",
+    )
+    verifier_delivery = connected._configuration(
+        base,
+        base_url="http://127.0.0.1:1/v1",
+        villani_code="villani-code",
+        python=sys.executable,
+        scenario="scenario_f",
+    )
+
+    assert security["verifier"].get("no_llm") is not True
+    assert security["verifier"]["routes"] == [
+        {
+            "backend": "verifier-high",
+            "capability_score": 90,
+            "price_per_call_usd": 0.00008,
+            "authority": "acceptance",
+        }
+    ]
+    assert ordinary["verifier"] == {"no_llm": True, "timeout_seconds": 30}
+    assert security["backends"]["economy"]["estimated_input_tokens"] == 60
+    assert security["backends"]["economy"]["estimated_output_tokens"] == 30
+    assert security["backends"]["economy"]["capability_score_source"] == (
+        "release_fixture_contract"
+    )
+    assert security["backends"]["economy"]["metadata"]["capability_fixture"] == (
+        "deterministic_release_contract"
+    )
+    assert security["capabilities"]["manual_uncertainty_penalty"] == 0
+    assert (
+        security["backends"]["economy"]["input_cost_per_million"]
+        < security["backends"]["standard"]["input_cost_per_million"]
+        < security["backends"]["expert"]["input_cost_per_million"]
+    )
+    assert "deterministic_evidence_matrix_v2" in (
+        verifier_delivery["delivery"]["authority_policy"][
+            "allowed_authority_sources"
+        ]
+    )
 
 
 def test_responsive_screenshot_dimensions_are_enforced(
@@ -382,6 +573,23 @@ def test_release_phase_report_is_persisted_at_start_and_finish(
     assert finished["last_completed_phase"] == "source_isolation"
     assert (gate.LATEST / "release-gate-report.md").is_file()
     assert (gate.LATEST / "command-manifest.json").is_file()
+
+
+def test_release_gate_replaces_read_only_git_evidence(tmp_path: Path) -> None:
+    sys.path.insert(0, str(RELEASE_VERIFICATION))
+    try:
+        gate = _load("release_gate_read_only_cleanup", "run_release_gate.py")
+    finally:
+        sys.path.remove(str(RELEASE_VERIFICATION))
+    latest = tmp_path / "latest"
+    git_object = latest / "work" / "delivery" / ".git" / "objects" / "aa" / "object"
+    git_object.parent.mkdir(parents=True)
+    git_object.write_bytes(b"immutable evidence")
+    git_object.chmod(stat.S_IREAD)
+
+    gate._remove_tree(latest)
+
+    assert not latest.exists()
 
 
 def test_timed_out_command_preserves_partial_output_and_command_metadata(

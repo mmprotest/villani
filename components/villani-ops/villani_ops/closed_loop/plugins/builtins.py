@@ -75,10 +75,13 @@ def _fields(
     capabilities: list[str],
     source: Path,
 ) -> dict[str, Any]:
+    protocol_versions = [PROTOCOL_VERSIONS[kind]]
+    if kind == PluginKind.AGENT_RUNNER:
+        protocol_versions.append("villani.harness_adapter.v1")
     return {
         "name": name,
         "version": version,
-        "protocol_versions": [PROTOCOL_VERSIONS[kind]],
+        "protocol_versions": protocol_versions,
         "capabilities": capabilities,
         "configuration_schema": {"type": "object", "additionalProperties": True},
         "required_secrets": [],
@@ -99,8 +102,17 @@ AGENT_RUNNER_MANIFEST = AgentRunnerPlugin(
     **_fields(
         PluginKind.AGENT_RUNNER,
         "villani-code-runner",
-        "1.0.0",
-        ["coding", "isolated_worktree", "telemetry"],
+        "2.0.0",
+        [
+            "coding",
+            "focused_probes",
+            "isolated_worktree",
+            "telemetry",
+            "agent_system_identity",
+            "harness_lifecycle",
+            "normalized_events",
+            "harness_neutral_evidence",
+        ],
         _CLOSED_LOOP / "adapters" / "villani_code_attempt.py",
     )
 )
@@ -109,7 +121,11 @@ VERIFIER_MANIFEST = VerifierPlugin(
         PluginKind.VERIFIER,
         "villani-verifier",
         "1.0.0",
-        ["evidence_verification", "fail_closed_acceptance"],
+        [
+            "evidence_verification",
+            "fail_closed_acceptance",
+            "focused_probe_finalization",
+        ],
         _CLOSED_LOOP / "adapters" / "villani_verifier.py",
     )
 )
@@ -180,9 +196,41 @@ class BuiltinAgentRunnerPlugin(_InProcessBoundary):
     def __init__(self, implementation: AttemptRunner) -> None:
         self.implementation = implementation
 
+    @property
+    def agent_system_identities(self) -> tuple[Any, ...]:
+        return tuple(getattr(self.implementation, "agent_system_identities", ()))
+
+    @property
+    def agent_system_migration_report(self) -> Mapping[str, Any]:
+        value = getattr(self.implementation, "agent_system_migration_report", {})
+        return value if isinstance(value, Mapping) else {}
+
     def run(self, attempt_context: AttemptContext) -> AttemptResult:
         result = self.implementation.run(attempt_context)
         self._round_trip("run", {"attempt_context": attempt_context}, result)
+        return result
+
+    def execute_focused_probes(
+        self,
+        attempt_context: AttemptContext,
+        attempt_result: AttemptResult,
+        requests: list[Mapping[str, Any]],
+    ) -> AttemptResult:
+        """Forward controller-requested probes through the plugin boundary."""
+
+        execute = getattr(self.implementation, "execute_focused_probes", None)
+        if not callable(execute):
+            raise TypeError("agent runner does not support focused probe execution")
+        result = execute(attempt_context, attempt_result, requests)
+        self._round_trip(
+            "execute_focused_probes",
+            {
+                "attempt_context": attempt_context,
+                "attempt_result": attempt_result,
+                "requests": requests,
+            },
+            result,
+        )
         return result
 
 
@@ -199,6 +247,29 @@ class BuiltinVerifierPlugin(_InProcessBoundary):
         self._round_trip(
             "verify",
             {"attempt_context": attempt_context, "attempt_result": attempt_result},
+            result,
+        )
+        return result
+
+    def finalize_with_focused_probes(
+        self,
+        attempt_context: AttemptContext,
+        attempt_result: AttemptResult,
+        initial_verification: Verification,
+    ) -> Verification:
+        """Finalize persisted probe evidence without another semantic model call."""
+
+        finalize = getattr(self.implementation, "finalize_with_focused_probes", None)
+        if not callable(finalize):
+            raise TypeError("verifier does not support focused probe finalization")
+        result = finalize(attempt_context, attempt_result, initial_verification)
+        self._round_trip(
+            "finalize_with_focused_probes",
+            {
+                "attempt_context": attempt_context,
+                "attempt_result": attempt_result,
+                "initial_verification": initial_verification,
+            },
             result,
         )
         return result

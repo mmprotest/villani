@@ -1,0 +1,63 @@
+{
+  "allowed_setup": [],
+  "authoritative_validation": [
+    {
+      "argv": [
+        "python",
+        "-m",
+        "pytest"
+      ],
+      "authoritative": true,
+      "timeout_seconds": 900,
+      "validation_id": "check_001",
+      "visibility": "runner_visible"
+    }
+  ],
+  "category_labels": [],
+  "confidentiality": "internal",
+  "content_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "evaluator_only": {
+    "future_context_references": [],
+    "hidden_check_references": [],
+    "runner_expected_patch_present": false
+  },
+  "evidence_eligible": false,
+  "evidence_kind": "synthetic_fixture",
+  "file_change_requirement": {
+    "allowed_path_prefixes": [],
+    "behavior": "required",
+    "forbidden_path_prefixes": []
+  },
+  "frozen": true,
+  "immutable_baseline_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "provenance": {
+    "captured_at": "2026-07-17T00:00:00Z",
+    "captured_by": "fixture",
+    "later_context_present": false,
+    "source_reference": "synthetic_contract_fixture"
+  },
+  "risk_labels": [],
+  "schema_version": "villani.evaluation_task.v1",
+  "secret_exclusions": [],
+  "source_snapshot": {
+    "archive_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "archive_path": "baselines/fixture/code.zip",
+    "baseline_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "excluded_paths": [],
+    "file_count": 1,
+    "included_paths": [
+      "src/value.txt"
+    ],
+    "repository_identity": "repo_fixture",
+    "resolved_commit": "1111111111111111111111111111111111111111",
+    "restore_verified": true,
+    "source_kind": "git_commit"
+  },
+  "success_criteria": [
+    "The authoritative validation passes."
+  ],
+  "suite_id": "suite_fixture",
+  "task_id": "task_fixture",
+  "task_version": 1,
+  "verbatim_task": "Update the value while preserving behavior."
+}

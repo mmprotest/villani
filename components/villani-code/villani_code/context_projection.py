@@ -31,13 +31,15 @@ def _git_output(runner: "Runner", *args: str, limit: int) -> str:
             cwd=repo,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except OSError:
         return ""
     if completed.returncode != 0:
         return ""
-    return completed.stdout[:limit]
+    return (completed.stdout or "")[:limit]
 
 
 def build_model_context_packet(runner: "Runner") -> dict[str, Any]:

@@ -221,7 +221,7 @@ def test_bulk_rewrite_policy_supports_warning_and_ineligible(
     assert "bulk_rewrite_small_semantic_change" in warning.reason_codes
 
 
-def test_git_isolation_sets_autocrlf_false(tmp_path: Path) -> None:
+def test_git_isolation_preserves_source_autocrlf_policy(tmp_path: Path) -> None:
     repo = _repository(tmp_path, {"README.md": b"baseline\n"})
     run_dir = tmp_path / "run"
     attempt_dir = run_dir / "attempts" / "attempt-0001"
@@ -254,6 +254,64 @@ def test_git_isolation_sets_autocrlf_false(tmp_path: Path) -> None:
         )
         assert configured.stdout.strip() == "false"
         assert isolated.metadata["git_core_autocrlf"] == "false"
+    finally:
+        adapter.cleanup(isolated.copied.worktree_path)
+
+
+def test_git_isolation_keeps_clean_crlf_source_blob_identity(tmp_path: Path) -> None:
+    repo = _repository(tmp_path, {"src/module.txt": b"before\n"})
+    _git(repo, "config", "core.autocrlf", "true")
+    (repo / "src" / "module.txt").write_bytes(b"before\r\n")
+    _git(repo, "add", "src/module.txt")
+    assert _git(repo, "status", "--porcelain").stdout == ""
+
+    run_dir = tmp_path / "run"
+    attempt_dir = run_dir / "attempts" / "attempt-0001"
+    attempt_dir.mkdir(parents=True)
+    context = AttemptContext(
+        run_id="run-0001",
+        trace_id="trace-0001",
+        task_id="task-0001",
+        attempt_id="attempt-0001",
+        ordinal=1,
+        task="Change src/module.txt",
+        repository_path=str(repo),
+        success_criteria="src/module.txt contains after",
+        requires_file_changes=True,
+        backend_name="test",
+        model=None,
+        policy_configuration={},
+        run_directory=run_dir,
+        attempt_directory=attempt_dir,
+    )
+
+    adapter = GitIsolationAdapter()
+    isolated = adapter.create(context)
+    try:
+        source_blob = _git(repo, "rev-parse", "HEAD:src/module.txt").stdout.strip()
+        isolated_blob = _git(
+            isolated.copied.worktree_path,
+            "rev-parse",
+            "HEAD:src/module.txt",
+        ).stdout.strip()
+        assert isolated_blob == source_blob
+        assert isolated.metadata["git_core_autocrlf"] == "true"
+
+        (isolated.copied.worktree_path / "src" / "module.txt").write_bytes(
+            b"after\r\n"
+        )
+        capture = adapter.capture(isolated)
+        assert capture.has_changes is True
+        patch = isolated.patch_path.read_text(encoding="utf-8")
+        assert f"index {source_blob[:7]}" in patch
+        checked = subprocess.run(
+            ["git", "apply", "--index", "--check", str(isolated.patch_path)],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert checked.returncode == 0, checked.stderr
     finally:
         adapter.cleanup(isolated.copied.worktree_path)
 

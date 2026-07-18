@@ -36,6 +36,15 @@ def test_shared_protocol_bundle_validates_from_repository_root() -> None:
         VALID_RUN / "verification" / "attempt_002.json",
         VALID_RUN / "selection.json",
         VALID_RUN / "materialization.json",
+        VALID_RUN
+        / "agent-systems"
+        / "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575.json",
+        VALID_RUN
+        / "agent-systems"
+        / "asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa.json",
+        VALID_RUN / "attempts" / "attempt_001" / "harness-result.json",
+        VALID_RUN / "attempts" / "attempt_002" / "harness-result.json",
+        VALID_RUN / "harness-conformance.json",
     )
     for snapshot in snapshots:
         validate_protocol_document(_load_json(snapshot))

@@ -1,0 +1,462 @@
+{
+  "$defs": {
+    "ConfidenceInterval": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "default": 0.95,
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0.5,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "estimate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimate"
+        },
+        "lower": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lower"
+        },
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "sample_count": {
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "available",
+            "insufficient_evidence",
+            "not_defined"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upper"
+        }
+      },
+      "required": [
+        "method",
+        "sample_count",
+        "status"
+      ],
+      "title": "ConfidenceInterval",
+      "type": "object"
+    },
+    "GateCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "actual": {
+          "title": "Actual"
+        },
+        "check_id": {
+          "minLength": 1,
+          "title": "Check Id",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "required": {
+          "title": "Required"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "insufficient_evidence"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "status",
+        "actual",
+        "required",
+        "reason"
+      ],
+      "title": "GateCheck",
+      "type": "object"
+    },
+    "MetricValue": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_defined"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Denominator"
+        },
+        "interval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfidenceInterval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "numerator": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numerator"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "accounting_status"
+      ],
+      "title": "MetricValue",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/evaluation-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "calibration": {
+      "additionalProperties": true,
+      "title": "Calibration",
+      "type": "object"
+    },
+    "classification_metrics": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": "Classification Metrics",
+      "type": "object"
+    },
+    "confidentiality": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential"
+      ],
+      "title": "Confidentiality",
+      "type": "string"
+    },
+    "confusion_matrix": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": "Confusion Matrix",
+      "type": "object"
+    },
+    "cost": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MetricValue"
+      },
+      "title": "Cost",
+      "type": "object"
+    },
+    "cost_decomposition": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Cost Decomposition",
+      "type": "array"
+    },
+    "disclosures_complete": {
+      "title": "Disclosures Complete",
+      "type": "boolean"
+    },
+    "evidence_kind": {
+      "enum": [
+        "real_founder_work",
+        "synthetic_fixture"
+      ],
+      "title": "Evidence Kind",
+      "type": "string"
+    },
+    "exclusions": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Exclusions",
+      "type": "array"
+    },
+    "failure_modes": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Failure Modes",
+      "type": "array"
+    },
+    "false_acceptance": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MetricValue"
+      },
+      "title": "False Acceptance",
+      "type": "object"
+    },
+    "founder_gate_checks": {
+      "items": {
+        "$ref": "#/$defs/GateCheck"
+      },
+      "title": "Founder Gate Checks",
+      "type": "array"
+    },
+    "founder_gate_status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INSUFFICIENT_EVIDENCE"
+      ],
+      "title": "Founder Gate Status",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "missing_evidence": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Missing Evidence",
+      "type": "array"
+    },
+    "paired_task_deltas": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Paired Task Deltas",
+      "type": "array"
+    },
+    "raw_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Raw Counts",
+      "type": "object"
+    },
+    "reliability": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MetricValue"
+      },
+      "title": "Reliability",
+      "type": "object"
+    },
+    "report_id": {
+      "minLength": 1,
+      "title": "Report Id",
+      "type": "string"
+    },
+    "review_time": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MetricValue"
+      },
+      "title": "Review Time",
+      "type": "object"
+    },
+    "route_decomposition": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Route Decomposition",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "villani.evaluation_report.v1",
+      "default": "villani.evaluation_report.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "small_sample_significance_claimed": {
+      "const": false,
+      "default": false,
+      "title": "Small Sample Significance Claimed",
+      "type": "boolean"
+    },
+    "suite_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Suite Digest",
+      "type": "string"
+    },
+    "suite_id": {
+      "minLength": 1,
+      "title": "Suite Id",
+      "type": "string"
+    },
+    "supervision": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MetricValue"
+      },
+      "title": "Supervision",
+      "type": "object"
+    },
+    "task_classes": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Task Classes",
+      "type": "array"
+    },
+    "trial_bundle_links": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Trial Bundle Links",
+      "type": "array"
+    },
+    "unknowns": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Unknowns",
+      "type": "array"
+    },
+    "verifier_wrong_cases": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Verifier Wrong Cases",
+      "type": "array"
+    }
+  },
+  "required": [
+    "report_id",
+    "suite_id",
+    "suite_digest",
+    "generated_at",
+    "evidence_kind",
+    "confidentiality",
+    "raw_counts",
+    "reliability",
+    "review_time",
+    "cost",
+    "supervision",
+    "false_acceptance",
+    "paired_task_deltas",
+    "task_classes",
+    "failure_modes",
+    "missing_evidence",
+    "confusion_matrix",
+    "classification_metrics",
+    "calibration",
+    "verifier_wrong_cases",
+    "cost_decomposition",
+    "route_decomposition",
+    "trial_bundle_links",
+    "unknowns",
+    "exclusions",
+    "disclosures_complete",
+    "founder_gate_status",
+    "founder_gate_checks"
+  ],
+  "title": "EvaluationReport",
+  "type": "object"
+}

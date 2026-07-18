@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import http.cookiejar
 import json
 import shutil
@@ -156,6 +157,34 @@ class FakeRunController:
         )
 
 
+class BlockingAttemptRunner(FakeAttemptRunner):
+    def __init__(self) -> None:
+        super().__init__([])
+        self.started = threading.Event()
+        self.cancellation_observed = threading.Event()
+
+    def run(self, context: Any):
+        self.calls.append(context)
+        self.started.set()
+        assert context.cancellation_event is not None
+        assert context.cancellation_event.wait(5)
+        self.cancellation_observed.set()
+        return attempt()
+
+
+def _cancellable_controller(runner: BlockingAttemptRunner) -> ClosedLoopController:
+    option = backend("fixture")
+    return ClosedLoopController(
+        classifier=FakeClassifier(),
+        policy_engine=FakePolicyEngine([policy("attempt", backend_option=option)]),
+        attempt_runner=runner,
+        verifier=FakeVerifier([]),
+        selector=FakeSelector(),
+        materializer=FakeMaterializer(),
+        now=FixedNow(),
+        monotonic=FakeMonotonic(),
+        id_factory=StableIds(),
+    )
 def _approval_controller(_configuration: Any = None, _events: Any = None) -> ClosedLoopController:
     option = backend("fixture")
     return ClosedLoopController(
@@ -332,16 +361,41 @@ policy:
         "pull-request",
     }
     assert [item["label"] for item in options["policy_presets"]] == [
+        "Performance",
         "Reliable",
         "Balanced",
         "Local first",
         "Cheapest acceptable",
         "Custom",
     ]
-    assert options["defaults"]["policy_preset"] == "balanced"
+    assert options["defaults"]["policy_preset"] == "performance"
     assert discovery["suggestions"][0]["argv"] == ["npm", "test"]
     assert discovery["suggestions"][0]["authoritative"] is False
     assert discovery["authority"] == "none_until_confirmed_command_execution"
+
+
+def test_validation_discovery_is_cached_by_repository_fingerprint(
+    console, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, _spool, _paths = console
+    repository = _git_repository(tmp_path / "cached-repo")
+    from villani_agentd import console as console_module
+
+    original = console_module.discover_repository_validation
+    calls = 0
+
+    def counted(path: str):
+        nonlocal calls
+        calls += 1
+        return original(path)
+
+    monkeypatch.setattr(console_module, "discover_repository_validation", counted)
+
+    first = service.validation_discovery(str(repository))
+    second = service.validation_discovery(str(repository))
+
+    assert first["repository_fingerprint"] == second["repository_fingerprint"]
+    assert calls == 1
 
 
 def test_console_model_operations_share_unrated_lifecycle(
@@ -421,6 +475,14 @@ backends:
     configured = next(item for item in added["models"] if item["backend_name"] == "new-model")
     assert configured["capability_status"] == "UNRATED"
     assert configured["pricing_status"] == "unknown"
+    assert {item["route_name"] for item in added["agent_systems"]} == {
+        "existing",
+        "new-model",
+    }
+    persisted = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert persisted["agent_systems"]["schema_version"] == "villani.agent_system_configuration.v1"
+    assert set(persisted["agent_systems"]["systems"]) == {"existing", "new-model"}
+    assert persisted["backends"]["new-model"]["model"] == "detected-model"
     default = next(item for item in selected["models"] if item["backend_name"] == "new-model")
     assert default["capability_status"] == "BOOTSTRAP"
     assert default["bootstrap_default"] is True
@@ -429,6 +491,8 @@ backends:
 
     removed = service.models_remove({"backend_name": "new-model"})
     assert all(item["backend_name"] != "new-model" for item in removed["models"])
+    persisted = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert set(persisted["agent_systems"]["systems"]) == {"existing"}
 
 
 def test_console_policy_selection_preview_and_simulation_are_public_and_read_only(
@@ -490,6 +554,7 @@ backends:
 
     assert selected["active_preset"] == "reliable"
     assert [item["label"] for item in selected["presets"]] == [
+        "Performance",
         "Reliable",
         "Balanced",
         "Local first",
@@ -571,11 +636,12 @@ budgets:
     assert request.policy_configuration["public_policy"]["preset"] == "local-first"
     assert request.policy_configuration["run_experience"]["policy_preset"] == "local-first"
     status = service.run_status(submission["run_id"])
-    while status["outcome"] == "RUNNING" and time.monotonic() < deadline:
+    while status["final_verdict"] is None and time.monotonic() < deadline:
         time.sleep(0.01)
         status = service.run_status(submission["run_id"])
-    assert status["outcome"] == "ACCEPTED"
-    assert status["run_id"] == submission["run_id"]
+    assert status["schema_version"] == "villani.product_run.v1"
+    assert status["final_verdict"] == "Ready to apply"
+    assert status["run_identity"]["run_id"] == submission["run_id"]
     with pytest.raises(ConsoleInputError, match="requires_file_changes"):
         service.start_run(
             {
@@ -587,8 +653,10 @@ budgets:
         )
 
 
-def test_console_submission_explains_missing_validation(console, tmp_path) -> None:
-    service, _spool, paths = console
+def test_console_submission_allows_missing_validation_but_requires_alternative_evidence(
+    console, tmp_path
+) -> None:
+    _original, spool, paths = console
     repository = _git_repository(tmp_path / "repo")
     (repository / "package.json").unlink()
     (repository / "README.md").write_text("fixture\n", encoding="utf-8")
@@ -609,11 +677,327 @@ backends:
         encoding="utf-8",
     )
 
-    submission = service.start_run({"repository": str(repository), "task": "Fix the parser."})
+    controller = FakeRunController()
+    service = ConsoleService(
+        paths,
+        spool,
+        bridge=FakeBridge(),
+        controller_builder=lambda _configuration, _events: controller,
+    )
+    submission = service.start_run(
+        {"repository": str(repository), "task": "Fix the parser."}
+    )
+    deadline = time.monotonic() + 5
+    while not controller.requests and time.monotonic() < deadline:
+        time.sleep(0.01)
 
-    assert submission["status"] == "FAILED"
-    assert submission["failure"]["code"] == "no_validation_command"
-    assert "authoritative" in submission["failure"]["missing_evidence"]
+    assert submission["status"] == "QUEUED"
+    assert submission["validation_commands"] == []
+    request = controller.requests[0]
+    assert request.max_wall_time is None
+    assert request.policy_configuration["repository_validation_commands"] == []
+    assert request.policy_configuration["repository_validation_discovery"]["selection"] == {
+        "source": "none",
+        "commands": [],
+        "confirmed": False,
+        "alternative_evidence_required": True,
+    }
+
+
+def test_console_preflight_failures_state_target_safety_and_one_next_action(
+    console, tmp_path
+) -> None:
+    service, _spool, _paths = console
+
+    missing = service.start_run({"task": "Fix the parser."})
+    assert missing["failure"]["code"] == "no_repository"
+    assert missing["failure"]["patch_status"] == (
+        "No run was started. The target repository was not modified."
+    )
+    assert missing["failure"]["next_action"] == (
+        "Select an accessible Git repository, then run the task again."
+    )
+
+    repository = _git_repository(tmp_path / "dirty-repo")
+    (repository / "uncommitted.txt").write_text("dirty\n", encoding="utf-8")
+    dirty = service.start_run(
+        {"repository": str(repository), "task": "Fix the parser."}
+    )
+    assert dirty["failure"]["code"] == "dirty_repository"
+    assert "target repository was not modified" in dirty["failure"][
+        "patch_status"
+    ].lower()
+    assert dirty["failure"]["next_action"]
+
+
+def test_validation_discovery_failure_still_runs_with_alternative_evidence(
+    console, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _original, spool, paths = console
+    repository = _git_repository(tmp_path / "validation-unavailable")
+    (paths.root.parent / "config.yaml").write_text(
+        """config_version: 1
+backends:
+  default:
+    provider: local
+    model: fixture
+    roles: [classification, coding]
+""",
+        encoding="utf-8",
+    )
+    from villani_agentd import console as console_module
+
+    monkeypatch.setattr(
+        console_module,
+        "discover_repository_validation",
+        lambda _repository: (_ for _ in ()).throw(OSError("fixture unavailable")),
+    )
+    controller = FakeRunController()
+    service = ConsoleService(
+        paths,
+        spool,
+        bridge=FakeBridge(),
+        controller_builder=lambda _configuration, _events: controller,
+    )
+
+    discovery = service.validation_discovery(str(repository))
+    submission = service.start_run(
+        {"repository": str(repository), "task": "Fix the parser."}
+    )
+    deadline = time.monotonic() + 5
+    while not controller.requests and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert discovery["failure"]["code"] == "validation_unavailable"
+    assert submission["status"] == "QUEUED"
+    request = controller.requests[0]
+    assert request.policy_configuration["repository_validation_commands"] == []
+    assert request.policy_configuration["run_experience"][
+        "repository_validation_optional"
+    ] is True
+
+
+def test_background_agent_failure_has_truthful_product_recovery(console, tmp_path) -> None:
+    _original, spool, paths = console
+    repository = _git_repository(tmp_path / "no-agent")
+    (paths.root.parent / "config.yaml").write_text(
+        """config_version: 1
+backends:
+  default:
+    provider: local
+    model: fixture
+    roles: [classification, coding]
+""",
+        encoding="utf-8",
+    )
+
+    def unavailable_builder(_configuration, _events):
+        raise RuntimeError("no backend with role coding is available")
+
+    service = ConsoleService(
+        paths,
+        spool,
+        bridge=FakeBridge(),
+        controller_builder=unavailable_builder,
+    )
+    submission = service.start_run(
+        {
+            "repository": str(repository),
+            "task": "Fix the parser.",
+            "validation_argv": ["npm", "test"],
+        }
+    )
+    deadline = time.monotonic() + 5
+    product = service.run_status(str(submission["run_id"]))
+    while product["final_verdict"] is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+        product = service.run_status(str(submission["run_id"]))
+
+    assert product["final_verdict"] == "Could not prove"
+    assert product["verdict_reason"] == "No usable agent system is available."
+    assert product["target_repository"] == {
+        "modified": False,
+        "accounting_status": "known",
+        "statement": "The target repository was not modified.",
+    }
+    assert product["recovery_action"]["instruction"] == (
+        "Open Settings > Agents, connect one usable agent system, then try again."
+    )
+
+
+def test_console_submission_is_idempotent_and_preserves_task_details(
+    console, tmp_path
+) -> None:
+    _original, spool, paths = console
+    repository = _git_repository(tmp_path / "repo-idempotent")
+    (paths.root.parent / "config.yaml").write_text(
+        """config_version: 1
+backends:
+  default:
+    provider: local
+    base_url: http://127.0.0.1:1234/v1
+    model: fixture
+    roles: [classification, coding]
+    capability_score: 50
+""",
+        encoding="utf-8",
+    )
+    controller = FakeRunController()
+    service = ConsoleService(
+        paths,
+        spool,
+        bridge=FakeBridge(),
+        controller_builder=lambda _configuration, _events: controller,
+    )
+    body = {
+        "submission_id": "submission-001",
+        "repository": str(repository),
+        "task": "  Preserve this line.\r\nAnd this one.  ",
+        "reference_text": "Issue REF-42",
+        "attachments": [
+            {"name": "notes.md", "content": "A generic text attachment."}
+        ],
+        "validation_argv": ["npm", "test"],
+    }
+
+    first = service.start_run(body)
+    second = service.start_run(body)
+    deadline = time.monotonic() + 5
+    while not controller.requests and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert second["deduplicated"] is True
+    assert second["run_id"] == first["run_id"]
+    assert len(controller.requests) == 1
+    request = controller.requests[0]
+    assert request.task == body["task"]
+    assert "Issue REF-42" in request.success_criteria
+    assert "Attachment 1 (notes.md)" in request.success_criteria
+    assert request.max_wall_time is None
+    assert request.policy_configuration["public_policy"]["preset"] == "performance"
+    assert request.policy_configuration["delivery"]["mode"] == "approve"
+
+
+def test_console_cancellation_preserves_evidence_and_stops_future_work(
+    console, tmp_path
+) -> None:
+    _original, spool, paths = console
+    repository = _git_repository(tmp_path / "repo-cancel")
+    (paths.root.parent / "config.yaml").write_text(
+        """config_version: 1
+backends:
+  default:
+    provider: local
+    base_url: http://127.0.0.1:1234/v1
+    model: fixture
+    roles: [classification, coding]
+    capability_score: 50
+""",
+        encoding="utf-8",
+    )
+    runner = BlockingAttemptRunner()
+    service = ConsoleService(
+        paths,
+        spool,
+        bridge=FakeBridge(),
+        controller_builder=lambda _configuration, _events: _cancellable_controller(runner),
+    )
+    submission = service.start_run(
+        {
+            "repository": str(repository),
+            "task": "Wait for cancellation.",
+            "validation_argv": ["npm", "test"],
+        }
+    )
+    assert runner.started.wait(5)
+
+    product = service.cancel_run(str(submission["run_id"]))
+
+    assert runner.cancellation_observed.is_set()
+    assert product["final_verdict"] == "Cancelled"
+    assert product["target_repository"]["modified"] is False
+    assert product["target_repository"]["statement"] == (
+        "The target repository was not modified."
+    )
+    run_directory = paths.root.parent / "runs" / str(submission["run_id"])
+    assert (run_directory / "events.jsonl").is_file()
+    assert (run_directory / "product-run.json").is_file()
+    assert service.run_events(
+        str(submission["run_id"]), after_sequence=0, wait_seconds=0
+    )["final_verdict"] == "Cancelled"
+
+
+def test_console_http_event_subscription_and_cancellation_endpoints(
+    console, tmp_path
+) -> None:
+    _original, spool, paths = console
+    repository = _git_repository(tmp_path / "repo-http-cancel")
+    (paths.root.parent / "config.yaml").write_text(
+        """config_version: 1
+backends:
+  default:
+    provider: local
+    base_url: http://127.0.0.1:1234/v1
+    model: fixture
+    roles: [classification, coding]
+    capability_score: 50
+""",
+        encoding="utf-8",
+    )
+    runner = BlockingAttemptRunner()
+    service = ConsoleService(
+        paths,
+        spool,
+        bridge=FakeBridge(),
+        controller_builder=lambda _configuration, _events: _cancellable_controller(runner),
+    )
+    submission = service.start_run(
+        {
+            "repository": str(repository),
+            "task": "Cancel through HTTP.",
+            "validation_argv": ["npm", "test"],
+        }
+    )
+    assert runner.started.wait(5)
+    server = AgentdHTTPServer(
+        ("127.0.0.1", 0),
+        "test-token",
+        spool,
+        ServerConfig(),
+        StructuredLogger(paths.log),
+        service,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    endpoint = f"http://127.0.0.1:{server.server_port}"
+    try:
+        jar = http.cookiejar.CookieJar()
+        browser = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(jar)
+        )
+        with browser.open(f"{endpoint}/console"):
+            pass
+        run_id = str(submission["run_id"])
+        with browser.open(
+            f"{endpoint}/v1/console/runs/{run_id}/events?after=0&wait=0"
+        ) as response:
+            observed = json.loads(response.read())
+        cancel = urllib.request.Request(
+            f"{endpoint}/v1/console/runs/{run_id}/cancel",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with browser.open(cancel) as response:
+            cancelled = json.loads(response.read())
+
+        assert observed["schema_version"] == "villani.product_run.v1"
+        assert observed["current_stage"] == "Working"
+        assert cancelled["final_verdict"] == "Cancelled"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_console_approval_survives_service_restart(console) -> None:
@@ -637,10 +1021,15 @@ def test_console_approval_survives_service_restart(console) -> None:
         authentication_type="local_console",
     )
 
-    assert before["outcome"] == "AWAITING APPROVAL"
-    assert before["delivery"]["review"]["files_changed"] == ["example.txt"]
-    assert after["outcome"] == "ACCEPTED"
-    assert after["delivery"]["state"] == "applied"
+    assert before["final_verdict"] == "Ready to apply"
+    assert before["changed_files"] == ["example.txt"]
+    assert before["available_actions"][0]["id"] == "apply_change"
+    assert after["final_verdict"] == "Ready to apply"
+    assert not {
+        "apply_change",
+        "create_branch",
+        "open_pull_request",
+    }.intersection(item["id"] for item in after["available_actions"])
     assert (initial.run_directory / "approval-audit.jsonl").is_file()
 
 
@@ -665,7 +1054,7 @@ def test_console_connected_approval_requires_authenticated_session(console) -> N
             authentication_type="none",
         )
 
-    assert restarted.run_status(initial.run_id)["outcome"] == "AWAITING APPROVAL"
+    assert restarted.run_status(initial.run_id)["final_verdict"] == "Ready to apply"
 
 
 def test_console_http_approval_uses_authenticated_session(console) -> None:
@@ -708,7 +1097,7 @@ def test_console_http_approval_uses_authenticated_session(console) -> None:
         with browser.open(request) as response:
             payload = json.loads(response.read())
 
-        assert payload["outcome"] == "ACCEPTED"
+        assert payload["final_verdict"] == "Ready to apply"
         delivery = json.loads((initial.run_directory / "delivery.json").read_text(encoding="utf-8"))
         assert delivery["approval"]["authentication_type"] == ("agentd_authenticated_session")
         assert delivery["approval"]["actor"] == ("connected-console:workspace_approval")
@@ -759,6 +1148,30 @@ def test_packaged_console_references_existing_assets() -> None:
     manifest = json.loads((root / "console-assets.json").read_text(encoding="utf-8"))
     assert "Villani Console" in html
     assert all((root / name).is_file() for name in manifest["files"])
+
+
+def test_packaged_console_matches_source_distribution() -> None:
+    source = REPOSITORY_ROOT / "components" / "villani-web" / "dist"
+    packaged = (
+        REPOSITORY_ROOT
+        / "components"
+        / "villani-agentd"
+        / "villani_agentd"
+        / "console_assets"
+    )
+    manifest = json.loads((packaged / "console-assets.json").read_text(encoding="utf-8"))
+
+    source_files = {
+        path.relative_to(source).as_posix()
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+    assert source_files == set(manifest["files"])
+    for relative, expected_digest in manifest["files"].items():
+        source_bytes = (source / relative).read_bytes()
+        packaged_bytes = (packaged / relative).read_bytes()
+        assert packaged_bytes == source_bytes
+        assert hashlib.sha256(source_bytes).hexdigest() == expected_digest
 
 
 def test_replay_bridge_redacts_child_process_diagnostics(tmp_path: Path) -> None:

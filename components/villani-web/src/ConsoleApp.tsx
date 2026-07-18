@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type {
   ConsoleBootstrap,
   ConsoleHistoryEntry,
@@ -6,14 +6,20 @@ import type {
 } from "@villani/run-model";
 import {
   DataTable,
+  CostDisplay,
+  DurationDisplay,
   EmptyState,
   ErrorState,
+  EvidenceDisclosure,
+  FormField,
   KeyValueGrid,
   LoadingState,
-  MetricCard,
+  PageIntro,
   Panel,
   PanelHeader,
+  ResultVerdict,
   StatusBadge,
+  TaskComposerShell,
   Timeline,
   TimelineNode,
 } from "@villani/ui/react";
@@ -22,7 +28,6 @@ import FleetApp from "./FleetApp";
 import InterrogateApp from "./InterrogateApp";
 import {
   ConsoleClient,
-  type ConsoleHomeDocument,
   type ConsoleRunOptions,
   type ConsoleValidationDiscovery,
   type PolicyPreview,
@@ -35,6 +40,9 @@ import {
   useConsoleEnvironment,
 } from "./consoleContext";
 import { ProductShell, type Surface } from "./ProductShell";
+import { OnboardingPage } from "./OnboardingPage";
+import { AgentsPage, SettingsPage } from "./ProductPages";
+import { SingleTaskPage } from "./SingleTaskPage";
 
 const decode = (value: string) => {
   try {
@@ -46,6 +54,8 @@ const decode = (value: string) => {
 
 export function migrateLegacyPath(pathname: string): string {
   if (pathname === "/") return "/console";
+  if (["/run", "/console/run", "/console/home"].includes(pathname)) return "/console";
+  if (["/history", "/console/history"].includes(pathname)) return "/console/activity";
   if (pathname === "/flight" || pathname === "/flight/") return "/console/replay";
   const flightRun = pathname.match(/^\/flight\/runs\/([^/]+)(.*)$/);
   if (flightRun) {
@@ -61,7 +71,7 @@ export function migrateLegacyPath(pathname: string): string {
   if (pathname === "/fleet" || pathname.startsWith("/fleet/"))
     return pathname.replace(/^\/fleet/, "/console/fleet");
   if (pathname === "/ask" || pathname.startsWith("/ask/")) return "/console/audit";
-  for (const route of ["history", "replay", "models", "policies", "settings"])
+  for (const route of ["replay", "models", "policies", "settings"])
     if (pathname === `/${route}`) return `/console/${route}`;
   return pathname;
 }
@@ -90,23 +100,26 @@ const money = (value: number | null, currency: string | null = "USD") =>
   value === null ? "Unknown" : `${currency ?? "USD"} ${value.toFixed(4)}`;
 const date = (value: string | null) =>
   value ? new Date(value).toLocaleString() : "Not captured";
-const syncTone = (state: string) =>
-  state === "SYNC FAILED"
-    ? "failed"
-    : state === "SYNC PENDING"
-      ? "running"
-      : state === "REDACTED"
-        ? "redacted"
-        : "selected";
+const publicLanguage = (value: string) =>
+  value
+    .replace(/acceptance eligible/gi, "proved acceptable")
+    .replace(/canonical truth/gi, "recorded evidence")
+    .replace(/verifier authority/gi, "verification")
+    .replace(/raw classification/gi, "task assessment")
+    .replace(/effective classification/gi, "adjusted task assessment")
+    .replace(/materialization/gi, "applying the change")
+    .replace(/materialized/gi, "applied")
+    .replace(/exhausted/gi, "could not prove");
 
-function PageIntro({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <header className="console-page-intro">
-      <h1 tabIndex={-1}>{title}</h1>
-      {children && <p>{children}</p>}
-    </header>
-  );
-}
+const publicResult = (status: string) => {
+  const key = status.toLowerCase();
+  if (key.includes("accept")) return "Proved acceptable";
+  if (key.includes("exhaust") || key.includes("reject")) return "Could not prove";
+  if (key.includes("fail") || key.includes("error")) return "Could not complete";
+  if (key.includes("run") || key.includes("queue")) return "In progress";
+  if (key.includes("success") || key.includes("complete")) return "Completed";
+  return publicLanguage(status);
+};
 
 function FilterSelect({
   label,
@@ -152,109 +165,18 @@ function HistoryPanel({
           <ul className="console-list">
             {entries.map((entry) => (
               <li key={`${entry.kind}:${entry.logical_id}`}>
-                <a href={entry.deep_link}>{entry.task ?? entry.id}</a>
+                <a href={entry.deep_link}>{entry.task ?? entry.id}</a>{" "}
                 <span className="v-muted">
-                  {" "}
-                  {entry.source_label} · {entry.status}
+                  {entry.source_label} · {publicResult(entry.status)}
                 </span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="v-muted">No activity recorded yet.</p>
+          <p className="v-muted">No recorded evidence is available yet.</p>
         )}
       </div>
     </Panel>
-  );
-}
-
-function HomePage({ client }: { client: ConsoleClient }) {
-  const environment = useConsoleEnvironment();
-  const { value, error, reload } = useLoader<ConsoleHomeDocument>(
-    (signal) => client.home(signal),
-    [client],
-  );
-  if (error)
-    return (
-      <ProductShell surface="home" title="HOME" status="failed">
-        <ErrorState title="Home data is unavailable" detail={error}>
-          <button className="v-button" type="button" onClick={reload}>
-            Try again
-          </button>
-        </ErrorState>
-      </ProductShell>
-    );
-  if (!value)
-    return (
-      <ProductShell surface="home" title="HOME">
-        <LoadingState title="Loading local activity" />
-      </ProductShell>
-    );
-  const rate =
-    value.accepted_task_rate === null
-      ? "Not enough data"
-      : `${Math.round(value.accepted_task_rate * 100)}%`;
-  return (
-    <ProductShell surface="home" title="HOME">
-      <div className="console-stack">
-        <PageIntro title="Home">
-          Your local activity and actionable health checks.
-        </PageIntro>
-        {value.setup_issues.map((issue) => (
-          <div className="v-notice" role="alert" key={issue}>
-            {issue}
-          </div>
-        ))}
-        <div className="v-grid v-grid--metrics">
-          <MetricCard
-            label="Service"
-            value={value.service.status}
-            detail={value.service.last_error ?? "Healthy"}
-          />
-          <MetricCard
-            label="Configured models"
-            value={String(value.models.filter((model) => model.configured).length)}
-            detail={value.models[0]?.id ?? "Run villani setup"}
-          />
-          <MetricCard
-            label="Accepted-task rate"
-            value={rate}
-            detail="Finalized local runs"
-          />
-          <MetricCard
-            label="Pending synchronization"
-            value={String(value.pending_synchronization)}
-            detail={
-              environment.workspace.connected ? "Connected workspace" : "Local only"
-            }
-          />
-        </div>
-        <div className="v-grid v-grid--2">
-          <HistoryPanel title="RECENT RUNS" entries={value.recent_runs} />
-          <HistoryPanel title="IMPORTED SESSIONS" entries={value.recent_sessions} />
-        </div>
-        <Panel>
-          <PanelHeader
-            title="RECOVERY EVENTS"
-            meta={`${value.recent_recovery_events.length} recent`}
-          />
-          <div className="v-panel__body">
-            {value.recent_recovery_events.length ? (
-              <ul className="console-list">
-                {value.recent_recovery_events.map((event, index) => (
-                  <li key={String(event.id ?? index)}>
-                    <strong>{String(event.name ?? "Recovery event")}</strong>{" "}
-                    <span className="v-muted">{String(event.timestamp ?? "")}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="v-muted">No recovery events recorded.</p>
-            )}
-          </div>
-        </Panel>
-      </div>
-    </ProductShell>
   );
 }
 
@@ -324,7 +246,7 @@ export function filterHistory(
   });
 }
 
-function HistoryPage({ client }: { client: ConsoleClient }) {
+function ActivityPage({ client }: { client: ConsoleClient }) {
   const [filters, setFilters] = useState(initialFilters);
   const [refresh, setRefresh] = useState(false);
   const { value, error, reload } = useLoader(
@@ -352,28 +274,26 @@ function HistoryPage({ client }: { client: ConsoleClient }) {
     />
   );
   return (
-    <ProductShell surface="history" title="HISTORY">
+    <ProductShell surface="activity" title="Activity">
       <div className="console-stack">
-        <PageIntro title="History">
-          Villani runs and imported coding-agent sessions in one chronology.
+        <PageIntro title="Activity">
+          Every Villani task and imported coding session, in one chronological stream.
         </PageIntro>
-        <Panel>
-          <PanelHeader
-            title="FILTERS"
-            actions={
-              <button
-                className="v-button"
-                type="button"
-                onClick={() => {
-                  setRefresh(true);
-                  reload();
-                }}
-              >
-                Refresh sources
-              </button>
-            }
-          />
-          <form className="history-filters v-panel__body" aria-label="History filters">
+        <details className="activity-filters run-advanced">
+          <summary>Advanced filters</summary>
+          <div className="activity-filters__actions">
+            <button
+              className="v-button"
+              type="button"
+              onClick={() => {
+                setRefresh(true);
+                reload();
+              }}
+            >
+              Refresh imported sessions
+            </button>
+          </div>
+          <form className="history-filters" aria-label="Activity filters">
             {select("repository", "Repository", choices(entries, "repository"))}
             {select("source", "Source", choices(entries, "source"))}
             {select("status", "Status", choices(entries, "status"))}
@@ -424,18 +344,26 @@ function HistoryPage({ client }: { client: ConsoleClient }) {
               />
             </label>
           </form>
-        </Panel>
-        {error && <ErrorState title="History is unavailable" detail={error} />}
-        {!value && !error && <LoadingState title="Loading history" />}
+        </details>
+        {error && <ErrorState title="Activity is unavailable" detail={error} />}
+        {!value && !error && <LoadingState title="Loading activity" />}
         {value?.warnings.map((warning) => (
           <div className="v-notice" key={warning}>
             {warning}
           </div>
         ))}
-        {value && (
+        {value && entries.length === 0 && (
+          <EmptyState
+            title="No activity yet"
+            detail="Start a task and its result will appear here."
+          >
+            <a href="/console">Open New task</a>
+          </EmptyState>
+        )}
+        {value && entries.length > 0 && (
           <Panel data-testid="merged-history">
             <PanelHeader
-              title="ALL ACTIVITY"
+              title="Activity"
               meta={`${filtered.length} of ${entries.length} records`}
             />
             <DataTable
@@ -446,10 +374,20 @@ function HistoryPage({ client }: { client: ConsoleClient }) {
               columns={[
                 {
                   key: "task",
-                  header: "Task / session",
+                  header: "Task",
                   render: (entry) => (
-                    <a href={entry.deep_link}>{entry.task ?? entry.id}</a>
+                    <div className="activity-task">
+                      <a href={entry.deep_link}>{entry.task ?? entry.id}</a>
+                      {entry.kind === "session" && (
+                        <StatusBadge status="unknown" label="IMPORTED" />
+                      )}
+                    </div>
                   ),
+                },
+                {
+                  key: "result",
+                  header: "Result",
+                  render: (entry) => publicResult(entry.status),
                 },
                 {
                   key: "repository",
@@ -457,34 +395,39 @@ function HistoryPage({ client }: { client: ConsoleClient }) {
                   render: (entry) => entry.repository ?? "Unknown",
                 },
                 {
-                  key: "source",
-                  header: "Source",
-                  render: (entry) => entry.source_label,
-                },
-                { key: "status", header: "Status" },
-                {
-                  key: "model",
-                  header: "Model",
-                  render: (entry) => entry.model ?? "Unknown",
-                },
-                {
-                  key: "updated",
-                  header: "Updated",
-                  render: (entry) => date(entry.updated_at),
+                  key: "duration",
+                  header: "Elapsed time",
+                  render: (entry) => (
+                    <DurationDisplay milliseconds={entry.duration_ms} />
+                  ),
                 },
                 {
                   key: "cost",
-                  header: "Cost",
-                  render: (entry) => money(entry.cost, entry.currency),
+                  header: "Known cost",
+                  render: (entry) => (
+                    <CostDisplay
+                      value={entry.cost}
+                      currency={entry.currency}
+                      accountingStatus={entry.cost_available ? "complete" : "unknown"}
+                    />
+                  ),
                 },
                 {
-                  key: "synchronization_state",
-                  header: "Synchronization",
+                  key: "agent",
+                  header: "Agent system",
+                  render: (entry) => entry.model ?? entry.source_label ?? "Unknown",
+                },
+                {
+                  key: "next",
+                  header: "Next action",
                   render: (entry) => (
-                    <StatusBadge
-                      status={syncTone(entry.synchronization_state)}
-                      label={entry.synchronization_state}
-                    />
+                    <a href={entry.deep_link}>
+                      {entry.kind === "session"
+                        ? "Review session"
+                        : /fail|reject|exhaust/i.test(entry.status)
+                          ? "Review evidence"
+                          : "Open task"}
+                    </a>
                   ),
                 },
               ]}
@@ -499,23 +442,23 @@ function HistoryPage({ client }: { client: ConsoleClient }) {
 function RunFailureDetails({ failure }: { failure: RunFailure }) {
   return (
     <div className="run-failure" role="alert">
-      <h3>{failure.what_failed}</h3>
+      <h3>{publicLanguage(failure.what_failed)}</h3>
       <dl className="run-result-list">
         <div>
           <dt>What Villani tried</dt>
-          <dd>{failure.what_villani_tried}</dd>
+          <dd>{publicLanguage(failure.what_villani_tried)}</dd>
         </div>
         <div>
           <dt>Evidence missing</dt>
-          <dd>{failure.missing_evidence}</dd>
+          <dd>{publicLanguage(failure.missing_evidence)}</dd>
         </div>
         <div>
           <dt>Patch</dt>
-          <dd>{failure.patch_status}</dd>
+          <dd>{publicLanguage(failure.patch_status)}</dd>
         </div>
         <div>
           <dt>Next</dt>
-          <dd>{failure.next_action}</dd>
+          <dd>{publicLanguage(failure.next_action)}</dd>
         </div>
       </dl>
     </div>
@@ -532,7 +475,7 @@ const serviceOfflineFailure: RunFailure = {
   next_action: "Run `villani service start`, then retry.",
 };
 
-function RunResult({
+function LegacyRunResult({
   value,
   client,
   onUpdate,
@@ -558,7 +501,7 @@ function RunResult({
     setApprovalError(null);
     try {
       onUpdate(
-        await client.approvalAction(value.run_id, {
+        await client.approvalActionLegacy(value.run_id, {
           action,
           reason: approvalReason.trim() || undefined,
           candidate_id: action === "choose_candidate" ? candidateId : undefined,
@@ -572,45 +515,39 @@ function RunResult({
   };
   return (
     <div className="console-stack run-result" data-testid="run-presentation">
-      <Panel>
-        <PanelHeader
-          title={value.outcome}
-          meta={
-            [value.execution_status, value.synchronization_state]
-              .filter((item) => item && item !== "LOCAL")
-              .join(" · ") || value.run_id
-          }
-        />
-        <div className="v-panel__body">
-          <h2 className="run-result-summary">{value.summary}</h2>
-          <p className="v-muted">
-            Current run: <a href={`/console/runs/${value.run_id}`}>{value.run_id}</a>
-          </p>
-          {value.lineage?.parent_run_id && (
-            <p className="v-muted">
-              Previous run:{" "}
-              <a href={`/console/runs/${value.lineage.parent_run_id}`}>
-                {value.lineage.parent_run_id}
-              </a>
-            </p>
-          )}
-        </div>
-      </Panel>
+      <ResultVerdict
+        status={value.outcome}
+        label={publicResult(value.outcome)}
+        detail={publicLanguage(value.summary)}
+      />
+      <div className="run-result-context v-muted">
+        <span>
+          Task record: <a href={`/console/runs/${value.run_id}`}>{value.run_id}</a>
+        </span>
+        {value.lineage?.parent_run_id && (
+          <span>
+            Previous task:{" "}
+            <a href={`/console/runs/${value.lineage.parent_run_id}`}>
+              {value.lineage.parent_run_id}
+            </a>
+          </span>
+        )}
+      </div>
 
       {delivery && (
         <Panel>
-          <PanelHeader title="DELIVERY" meta={delivery.label} />
+          <PanelHeader title="CHANGE DELIVERY" meta={publicLanguage(delivery.label)} />
           <div className="v-panel__body console-stack">
             <KeyValueGrid
               items={[
-                ["Mode", delivery.mode],
-                ["State", delivery.label],
+                ["Mode", publicLanguage(delivery.mode)],
+                ["State", publicLanguage(delivery.label)],
                 [
                   "Target working tree",
                   delivery.target_worktree_modified ? "Modified" : "Not modified",
                 ],
                 [
-                  "Authority",
+                  "Permission",
                   delivery.authority.permitted
                     ? `Permitted · ${delivery.authority.policy_version ?? "policy"}`
                     : `Not permitted · ${delivery.authority.policy_version ?? "policy"}`,
@@ -622,7 +559,7 @@ function RunResult({
             {!!delivery.authority.reasons?.length && (
               <ul className="console-list">
                 {delivery.authority.reasons.map((reason) => (
-                  <li key={reason}>{reason}</li>
+                  <li key={reason}>{publicLanguage(reason)}</li>
                 ))}
               </ul>
             )}
@@ -639,7 +576,7 @@ function RunResult({
                 ["Files changed", review.files_changed.length],
                 ["Insertions", review.insertions],
                 ["Deletions", review.deletions],
-                ["Verifier authority", review.verifier_authority],
+                ["Verification", publicLanguage(review.verifier_authority)],
                 ["Candidates compared", review.candidate_comparison.length],
                 [
                   "Cost",
@@ -659,7 +596,7 @@ function RunResult({
                 </ul>
               </div>
               <div>
-                <h3>Validation evidence</h3>
+                <h3>Recorded evidence</h3>
                 <ul className="console-list">
                   {review.validation_evidence.map((item, index) => (
                     <li key={item.evidence_id ?? `${item.kind}-${index}`}>
@@ -714,7 +651,7 @@ function RunResult({
               delivery.eligible_candidate_ids.length > 1 && (
                 <div className="run-approval-candidate">
                   <label className="v-field">
-                    <span className="v-field__label">Eligible candidate</span>
+                    <span className="v-field__label">Proved candidate</span>
                     <select
                       className="v-select"
                       value={candidateId}
@@ -745,7 +682,7 @@ function RunResult({
                 disabled={approvalPending}
                 onClick={() => void takeApprovalAction("approve")}
               >
-                {approvalPending ? "Recording decision…" : "Approve and apply"}
+                {approvalPending ? "Recording decision…" : "Approve and apply change"}
               </button>
               <button
                 className="v-button v-button--secondary"
@@ -776,7 +713,7 @@ function RunResult({
       <Panel>
         <PanelHeader title={terminal ? "WHAT CHANGED" : "LIVE PROGRESS"} />
         <div className="v-panel__body">
-          {!terminal && !value.progress.length && <p>Waiting for canonical events.</p>}
+          {!terminal && !value.progress.length && <p>Waiting for recorded progress.</p>}
           {!!value.progress.length && (
             <ol className="run-progress" aria-label="Run progress">
               {value.progress.map((line, index) => (
@@ -785,7 +722,7 @@ function RunResult({
                   key={`${index}:${line.message}`}
                 >
                   <span aria-hidden="true">{line.symbol}</span>
-                  <span>{line.message}</span>
+                  <span>{publicLanguage(line.message)}</span>
                 </li>
               ))}
             </ol>
@@ -799,7 +736,7 @@ function RunResult({
                   ))}
                 </ul>
               ) : (
-                <p>No files were materialized.</p>
+                <p>No files were changed.</p>
               )}
             </>
           )}
@@ -810,32 +747,77 @@ function RunResult({
         <>
           <div className="v-grid v-grid--2">
             <Panel>
-              <PanelHeader title="CONFIDENCE AND AUTHORITY" />
+              <PanelHeader title="RESULT" />
               <KeyValueGrid
                 items={[
-                  ["Eligibility", confidence?.label ?? "Not established"],
+                  [
+                    "Outcome",
+                    confidence?.label
+                      ? publicLanguage(confidence.label)
+                      : "Not established",
+                  ],
                   [
                     "Confidence",
                     confidence?.value === null || confidence?.value === undefined
                       ? "Unknown"
                       : `${Math.round(confidence.value * 100)}%`,
                   ],
-                  ["Authority", confidence?.authority ?? "None"],
+                  ["Verification", confidence?.authority ?? "None"],
                   ["Synchronization", value.synchronization_state ?? "LOCAL"],
                 ]}
               />
             </Panel>
             <Panel>
-              <PanelHeader title="VALIDATION" />
+              <PanelHeader title="VERIFICATION" />
               <KeyValueGrid
                 items={[
-                  ["Repository checks passed", value.validation.checks_passed],
-                  ["Repository checks failed", value.validation.checks_failed],
                   [
-                    "Task requirements verified",
-                    value.validation.requirements_verified,
+                    "Repository checks passed",
+                    value.validation.checks_passed ?? "Unknown",
                   ],
-                  ["Authority", value.validation.authority],
+                  [
+                    "Repository checks failed",
+                    value.validation.checks_failed ?? "Unknown",
+                  ],
+                  [
+                    "Repository checks not run",
+                    value.validation.checks_not_run ?? "Unknown",
+                  ],
+                  [
+                    "Repository checks unavailable",
+                    value.validation.checks_unavailable ?? "Unknown",
+                  ],
+                  [
+                    "Focused probes passed",
+                    value.validation.focused_probes_passed ?? "Unknown",
+                  ],
+                  [
+                    "Focused probes failed",
+                    value.validation.focused_probes_failed ?? "Unknown",
+                  ],
+                  [
+                    "Focused probes not run",
+                    value.validation.focused_probes_not_run ?? "Unknown",
+                  ],
+                  [
+                    "Focused probes unavailable",
+                    value.validation.focused_probes_unavailable ?? "Unknown",
+                  ],
+                  [
+                    "Task requirements proved",
+                    value.validation.requirements_proved ?? "Unknown",
+                  ],
+                  [
+                    "Task requirements not proved",
+                    value.validation.requirements_not_proved ?? "Unknown",
+                  ],
+                  [
+                    "Accounting",
+                    value.canonical_summary?.accounting.known
+                      ? `${value.canonical_summary.accounting.total_cost} ${value.canonical_summary.accounting.currency}`
+                      : `Unknown (${value.canonical_summary?.accounting.accounting_status ?? value.cost?.accounting_status ?? "unknown"})`,
+                  ],
+                  ["Verification", value.validation.authority],
                 ]}
               />
               <div className="v-panel__body">
@@ -889,12 +871,12 @@ function RunResult({
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="NEXT" />
+            <PanelHeader title="NEXT ACTION" />
             <div className="v-panel__body run-next-actions">
               {(value.next_actions ?? []).map((item) => (
                 <div key={`${item.label}:${item.action}`}>
-                  <strong>{item.label}</strong>
-                  <code>{item.action}</code>
+                  <strong>{publicLanguage(item.label)}</strong>
+                  <code>{publicLanguage(item.action)}</code>
                 </div>
               ))}
               <a className="v-button" href={`/console/runs/${value.run_id}/replay`}>
@@ -908,7 +890,7 @@ function RunResult({
   );
 }
 
-function RunPage({ client }: { client: ConsoleClient }) {
+function LegacyRunPage({ client }: { client: ConsoleClient }) {
   const environment = useConsoleEnvironment();
   const { value: options, error: optionsError } = useLoader<ConsoleRunOptions>(
     (signal) => client.runOptions(signal),
@@ -944,7 +926,10 @@ function RunPage({ client }: { client: ConsoleClient }) {
 
   useEffect(() => {
     if (!options) return;
-    setRepository((current) => current || options.default_repository || "");
+    const requestedRepository = new URLSearchParams(location.search).get("repository");
+    setRepository(
+      (current) => current || requestedRepository || options.default_repository || "",
+    );
     setDeliveryMode(options.defaults.delivery_mode);
     setPolicyPreset(options.defaults.policy_preset ?? "balanced");
     setPolicySelection(options.defaults.policy_selection);
@@ -992,7 +977,7 @@ function RunPage({ client }: { client: ConsoleClient }) {
     const controller = new AbortController();
     const load = () => {
       void client
-        .runStatus(runId, controller.signal)
+        .runStatusLegacy(runId, controller.signal)
         .then((value) => {
           setPresentation(value);
           setStatusError(null);
@@ -1083,7 +1068,7 @@ function RunPage({ client }: { client: ConsoleClient }) {
         history.replaceState(
           null,
           "",
-          `/console/run?run=${encodeURIComponent(result.run_id)}`,
+          `/console?run=${encodeURIComponent(result.run_id)}`,
         );
       }
     } catch (reason) {
@@ -1095,8 +1080,10 @@ function RunPage({ client }: { client: ConsoleClient }) {
 
   const previewVerifier = preview?.selected_verifier_route.selected;
   const previewVerifierName = previewVerifier
-    ? String(previewVerifier.route ?? previewVerifier.model ?? "Configured verifier")
-    : "No eligible verifier route";
+    ? String(
+        previewVerifier.route ?? previewVerifier.model ?? "Configured verification",
+      )
+    : "No verification route is available";
   const previewEligible =
     preview?.eligible_models
       .map((item) => String(item.backend_name ?? ""))
@@ -1104,11 +1091,16 @@ function RunPage({ client }: { client: ConsoleClient }) {
       .join(", ") || "None";
 
   return (
-    <ProductShell surface="run" title="RUN">
+    <ProductShell
+      surface="new-task"
+      title="New task"
+      status={optionsError ? "failed" : "running"}
+      statusText={optionsError ? "Villani service is unavailable" : undefined}
+    >
       <div className="console-stack">
-        <PageIntro title="Run">
-          Describe the outcome. Villani selects the backend, isolates each attempt, and
-          shows why a result is or is not safe to accept.
+        <PageIntro title="What would you like Villani to change?">
+          Choose a repository, describe the outcome, and review the recorded result
+          before any change is applied.
         </PageIntro>
         {optionsError && (
           <>
@@ -1126,14 +1118,24 @@ function RunPage({ client }: { client: ConsoleClient }) {
         )}
         {!options && !optionsError && <LoadingState title="Preparing run options" />}
         {options && (
-          <Panel>
-            <PanelHeader
-              title="NEW RUN"
-              meta={environment.setup.valid ? "Ready" : "Setup required"}
-            />
-            <form className="run-form v-panel__body" onSubmit={submit}>
-              <label className="v-field run-form--wide">
-                <span className="v-field__label">Repository</span>
+          <TaskComposerShell
+            title="New task"
+            meta={environment.setup.valid ? undefined : "Setup required"}
+          >
+            <form className="run-form" onSubmit={submit} noValidate>
+              <FormField
+                className="run-form--wide"
+                id="task-repository"
+                label="Repository"
+                required
+                error={
+                  repositoryStatus?.dirty
+                    ? "Commit or stash existing changes before starting a task."
+                    : repository && repositoryStatus && !repositoryStatus.valid
+                      ? "Choose a valid Git repository."
+                      : undefined
+                }
+              >
                 <input
                   className="v-input"
                   list="villani-repositories"
@@ -1142,190 +1144,205 @@ function RunPage({ client }: { client: ConsoleClient }) {
                   placeholder="Select a Git repository"
                   required
                 />
-                <datalist id="villani-repositories">
-                  {options.repositories.map((item) => (
-                    <option value={item.path} key={item.path}>
-                      {item.name}
-                    </option>
-                  ))}
-                </datalist>
-                {repositoryStatus?.dirty && (
-                  <span className="v-field__help v-danger">
-                    This repository is dirty. Commit or stash changes before running.
-                  </span>
-                )}
-              </label>
-              <label className="v-field run-form--wide">
-                <span className="v-field__label">Task instruction</span>
+              </FormField>
+              <datalist id="villani-repositories">
+                {options.repositories.map((item) => (
+                  <option value={item.path} key={item.path}>
+                    {item.name}
+                  </option>
+                ))}
+              </datalist>
+              <FormField
+                className="run-form--wide"
+                id="task-instruction"
+                label="Task"
+                required
+              >
                 <textarea
-                  className="v-input run-textarea"
+                  className="v-textarea run-textarea"
                   value={task}
                   onChange={(event) => setTask(event.target.value)}
                   placeholder="What should Villani change?"
                   required
                 />
-              </label>
-              <label className="v-field run-form--wide">
-                <span className="v-field__label">Success criteria (optional)</span>
+              </FormField>
+              <FormField
+                className="run-form--wide"
+                id="task-success-criteria"
+                label="Success criteria (optional)"
+              >
                 <textarea
-                  className="v-input run-textarea run-textarea--small"
+                  className="v-textarea run-textarea run-textarea--small"
                   value={successCriteria}
                   onChange={(event) => setSuccessCriteria(event.target.value)}
                   placeholder="Observable conditions that must be true"
                 />
-              </label>
-              <fieldset className="run-validation run-form--wide">
-                <legend>Repository validation</legend>
-                {discoveryError && <p className="v-danger">{discoveryError}</p>}
-                {discovery?.failure && (
-                  <RunFailureDetails failure={discovery.failure} />
-                )}
-                {discovery?.suggestions.length ? (
-                  <label className="v-field">
-                    <span className="v-field__label">Detected validation</span>
-                    <select
-                      className="v-select"
-                      value={selectedSuggestion}
-                      onChange={(event) => {
-                        setSelectedSuggestion(event.target.value);
-                        setValidationConfirmed(false);
-                      }}
-                    >
-                      {discovery.suggestions.map((item) => (
-                        <option value={item.suggestion_id} key={item.suggestion_id}>
-                          {item.display_command} · {item.confidence_label} confidence
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <p className="v-muted">No validation command was detected.</p>
-                )}
-                <label className="v-field">
-                  <span className="v-field__label">Manual override (optional)</span>
-                  <input
-                    className="v-input"
-                    value={manualValidation}
-                    onChange={(event) => setManualValidation(event.target.value)}
-                    placeholder="Example: python -m pytest -q"
-                  />
-                </label>
-                <div className="run-command-preview">
-                  <span>Exactly what will run</span>
-                  <code>
-                    {exactValidation || "Choose or enter a validation command"}
-                  </code>
-                  <small>
-                    Discovery is advisory. Authority begins only when this confirmed
-                    command executes with the repository-validation role in a candidate
-                    worktree.
-                  </small>
-                </div>
-                {lowConfidence && (
-                  <label className="run-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={validationConfirmed}
-                      onChange={(event) => setValidationConfirmed(event.target.checked)}
-                    />
-                    Confirm this low-confidence command
-                  </label>
-                )}
-              </fieldset>
-              <FilterSelect
-                label="Delivery mode"
-                value={deliveryMode}
-                onChange={setDeliveryMode}
-                options={options.delivery_modes.map((item) => ({
-                  value: item.id,
-                  label: item.label,
-                }))}
-              />
-              <div className="v-field run-approval-mode">
-                <span className="v-field__label">Approval mode</span>
-                <strong>
-                  {deliveryMode === "approve"
-                    ? "Explicit approval after selection"
-                    : deliveryMode === "suggest"
-                      ? "No repository mutation"
-                      : "Configured authority policy"}
-                </strong>
-                <span className="v-field__help">
-                  Apply automatically, Branch, and Pull request fail closed when
-                  authority is insufficient.
-                </span>
-              </div>
-              <FilterSelect
-                label="Policy preset"
-                value={policyPreset}
-                onChange={setPolicyPreset}
-                options={(options.policy_presets ?? options.policies).map((item) => ({
-                  value: item.id,
-                  label: item.label,
-                }))}
-              />
-              <label className="v-field">
-                <span className="v-field__label">Budget (optional, USD)</span>
-                <input
-                  className="v-input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={maxCost}
-                  onChange={(event) => setMaxCost(event.target.value)}
-                />
-              </label>
-              <label className="v-field">
-                <span className="v-field__label">Time limit (optional, seconds)</span>
-                <input
-                  className="v-input"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={maxWallTime}
-                  onChange={(event) => setMaxWallTime(event.target.value)}
-                />
-              </label>
-              <details className="run-advanced run-form--wide">
-                <summary>Advanced policy selection</summary>
+              </FormField>
+              <details className="run-advanced run-form--wide task-settings">
+                <summary>Task settings</summary>
                 <div className="run-form run-form--nested">
+                  <fieldset className="run-validation run-form--wide">
+                    <legend>Repository validation</legend>
+                    {discoveryError && <p className="v-danger">{discoveryError}</p>}
+                    {discovery?.failure && (
+                      <RunFailureDetails failure={discovery.failure} />
+                    )}
+                    {discovery?.suggestions.length ? (
+                      <label className="v-field">
+                        <span className="v-field__label">Detected validation</span>
+                        <select
+                          className="v-select"
+                          value={selectedSuggestion}
+                          onChange={(event) => {
+                            setSelectedSuggestion(event.target.value);
+                            setValidationConfirmed(false);
+                          }}
+                        >
+                          {discovery.suggestions.map((item) => (
+                            <option value={item.suggestion_id} key={item.suggestion_id}>
+                              {item.display_command} · {item.confidence_label}{" "}
+                              confidence
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <p className="v-muted">No validation command was detected.</p>
+                    )}
+                    <label className="v-field">
+                      <span className="v-field__label">Manual override (optional)</span>
+                      <input
+                        className="v-input"
+                        value={manualValidation}
+                        onChange={(event) => setManualValidation(event.target.value)}
+                        placeholder="Example: python -m pytest -q"
+                      />
+                    </label>
+                    <div className="run-command-preview">
+                      <span>Exactly what will run</span>
+                      <code>
+                        {exactValidation || "Choose or enter a validation command"}
+                      </code>
+                      <small>
+                        Detection is advisory. Verification begins only when this
+                        confirmed command runs against the candidate change.
+                      </small>
+                    </div>
+                    {lowConfidence && (
+                      <label className="run-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={validationConfirmed}
+                          onChange={(event) =>
+                            setValidationConfirmed(event.target.checked)
+                          }
+                        />
+                        Confirm this low-confidence command
+                      </label>
+                    )}
+                  </fieldset>
                   <FilterSelect
-                    label="Advanced policy source"
-                    value={policySelection}
-                    onChange={setPolicySelection}
-                    options={(options.advanced_policies ?? []).map((item) => ({
+                    label="Delivery mode"
+                    value={deliveryMode}
+                    onChange={setDeliveryMode}
+                    options={options.delivery_modes.map((item) => ({
                       value: item.id,
                       label: item.label,
                     }))}
                   />
+                  <div className="v-field run-approval-mode">
+                    <span className="v-field__label">Approval mode</span>
+                    <strong>
+                      {deliveryMode === "approve"
+                        ? "Explicit approval after selection"
+                        : deliveryMode === "suggest"
+                          ? "No change applied"
+                          : "Configured delivery permission"}
+                    </strong>
+                    <span className="v-field__help">
+                      Apply automatically, Branch, and Pull request fail closed when
+                      permission is insufficient.
+                    </span>
+                  </div>
                   <FilterSelect
-                    label="Routing mode"
-                    value={routingMode}
-                    onChange={setRoutingMode}
-                    options={options.routing_modes.map((item) => ({
-                      value: item,
-                      label: item,
-                    }))}
+                    label="Policy preset"
+                    value={policyPreset}
+                    onChange={setPolicyPreset}
+                    options={(options.policy_presets ?? options.policies).map(
+                      (item) => ({
+                        value: item.id,
+                        label: item.label,
+                      }),
+                    )}
                   />
                   <label className="v-field">
-                    <span className="v-field__label">Maximum attempts</span>
+                    <span className="v-field__label">Budget (optional, USD)</span>
                     <input
                       className="v-input"
                       type="number"
-                      min="1"
-                      step="1"
-                      value={maxAttempts}
-                      onChange={(event) => setMaxAttempts(event.target.value)}
+                      min="0"
+                      step="0.01"
+                      value={maxCost}
+                      onChange={(event) => setMaxCost(event.target.value)}
                     />
                   </label>
-                  <label className="run-checkbox">
+                  <label className="v-field">
+                    <span className="v-field__label">
+                      Time limit (optional, seconds)
+                    </span>
                     <input
-                      type="checkbox"
-                      checked={requiresFileChanges}
-                      onChange={(event) => setRequiresFileChanges(event.target.checked)}
+                      className="v-input"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={maxWallTime}
+                      onChange={(event) => setMaxWallTime(event.target.value)}
                     />
-                    Require a file change
                   </label>
+                  <details className="run-advanced run-form--wide">
+                    <summary>Advanced policy selection</summary>
+                    <div className="run-form run-form--nested">
+                      <FilterSelect
+                        label="Advanced policy source"
+                        value={policySelection}
+                        onChange={setPolicySelection}
+                        options={(options.advanced_policies ?? []).map((item) => ({
+                          value: item.id,
+                          label: item.label,
+                        }))}
+                      />
+                      <FilterSelect
+                        label="Routing mode"
+                        value={routingMode}
+                        onChange={setRoutingMode}
+                        options={options.routing_modes.map((item) => ({
+                          value: item,
+                          label: item,
+                        }))}
+                      />
+                      <label className="v-field">
+                        <span className="v-field__label">Maximum attempts</span>
+                        <input
+                          className="v-input"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={maxAttempts}
+                          onChange={(event) => setMaxAttempts(event.target.value)}
+                        />
+                      </label>
+                      <label className="run-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={requiresFileChanges}
+                          onChange={(event) =>
+                            setRequiresFileChanges(event.target.checked)
+                          }
+                        />
+                        Require a file change
+                      </label>
+                    </div>
+                  </details>
                 </div>
               </details>
               {!!options.setup_issues.length && (
@@ -1340,108 +1357,112 @@ function RunPage({ client }: { client: ConsoleClient }) {
                   disabled={!previewReady}
                   onClick={() => void previewPolicy()}
                 >
-                  {previewing ? "Previewing..." : "Preview routing"}
+                  {previewing ? "Assessing…" : "Preview task assessment"}
                 </button>
                 <span className="v-muted">
-                  Classification and routing only; no coding attempt is started.
+                  Assessment only; no coding attempt is started.
                 </span>
               </div>
               {previewError && (
                 <div className="v-notice v-danger run-form--wide">{previewError}</div>
               )}
               {preview && (
-                <section
-                  className="policy-preview run-form--wide"
-                  aria-label="Policy preview"
+                <EvidenceDisclosure
+                  className="run-form--wide"
+                  summary="Advanced task assessment"
                 >
-                  <div className="policy-preview__header">
-                    <strong>Routing preview</strong>
-                    <StatusBadge
-                      status="selected"
-                      label={preview.policy_version.preset}
+                  <section className="policy-preview" aria-label="Task assessment">
+                    <div className="policy-preview__header">
+                      <strong>Task assessment</strong>
+                      <StatusBadge
+                        status="selected"
+                        label={preview.policy_version.preset}
+                      />
+                    </div>
+                    <KeyValueGrid
+                      items={[
+                        [
+                          "Task assessment",
+                          `${preview.raw_classification.difficulty} difficulty, ${preview.raw_classification.risk} risk (${Math.round(preview.raw_classification.confidence * 100)}%)`,
+                        ],
+                        [
+                          "Adjusted task assessment",
+                          `${preview.effective_classification.difficulty} difficulty, ${preview.effective_classification.risk} risk (${Math.round(preview.effective_classification.confidence * 100)}%)`,
+                        ],
+                        [
+                          "Adjustments",
+                          preview.adjustments.length
+                            ? preview.adjustments
+                                .map(
+                                  (item) =>
+                                    `${item.field}: ${item.before} -> ${item.after} (${item.rule_id})`,
+                                )
+                                .join("; ")
+                            : "None",
+                        ],
+                        ["Available agent systems", previewEligible],
+                        [
+                          "Selected agent system",
+                          `${preview.selected_coding_route.backend ?? "None"} / ${preview.selected_coding_route.model ?? "None"}`,
+                        ],
+                        [
+                          "Selection basis",
+                          preview.selected_coding_route.route_provenance?.basis ??
+                            "Unknown",
+                        ],
+                        ["Verification", previewVerifierName],
+                        [
+                          "Estimated cost",
+                          preview.estimated_cost.value === null
+                            ? `Unknown (${preview.estimated_cost.status})`
+                            : money(
+                                preview.estimated_cost.value,
+                                preview.estimated_cost.currency,
+                              ),
+                        ],
+                        [
+                          "Policy version",
+                          `${preview.policy_version.public} / ${preview.policy_version.controller}`,
+                        ],
+                      ]}
                     />
-                  </div>
-                  <KeyValueGrid
-                    items={[
-                      [
-                        "Raw classification",
-                        `${preview.raw_classification.difficulty} difficulty, ${preview.raw_classification.risk} risk (${Math.round(preview.raw_classification.confidence * 100)}%)`,
-                      ],
-                      [
-                        "Effective classification",
-                        `${preview.effective_classification.difficulty} difficulty, ${preview.effective_classification.risk} risk (${Math.round(preview.effective_classification.confidence * 100)}%)`,
-                      ],
-                      [
-                        "Adjustments",
-                        preview.adjustments.length
-                          ? preview.adjustments
-                              .map(
-                                (item) =>
-                                  `${item.field}: ${item.before} -> ${item.after} (${item.rule_id})`,
-                              )
-                              .join("; ")
-                          : "None",
-                      ],
-                      ["Eligible coding models", previewEligible],
-                      [
-                        "Selected coding route",
-                        `${preview.selected_coding_route.backend ?? "None"} / ${preview.selected_coding_route.model ?? "None"}`,
-                      ],
-                      [
-                        "Route basis",
-                        preview.selected_coding_route.route_provenance?.basis ??
-                          "Unknown",
-                      ],
-                      ["Selected verifier route", previewVerifierName],
-                      [
-                        "Estimated cost",
-                        preview.estimated_cost.value === null
-                          ? `Unknown (${preview.estimated_cost.status})`
-                          : money(
-                              preview.estimated_cost.value,
-                              preview.estimated_cost.currency,
-                            ),
-                      ],
-                      [
-                        "Policy version",
-                        `${preview.policy_version.public} / ${preview.policy_version.controller}`,
-                      ],
-                    ]}
-                  />
-                  {!!preview.excluded_models.length && (
+                    {!!preview.excluded_models.length && (
+                      <div className="policy-preview__section">
+                        <strong>Excluded models</strong>
+                        <ul>
+                          {preview.excluded_models.map((item, index) => (
+                            <li
+                              key={`${String(item.backend_name ?? "model")}-${index}`}
+                            >
+                              {String(item.backend_name ?? "Unknown model")}:{" "}
+                              {Array.isArray(item.reasons)
+                                ? item.reasons.join("; ")
+                                : "Not available under this policy"}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     <div className="policy-preview__section">
-                      <strong>Excluded models</strong>
+                      <strong>Uncertainty</strong>
                       <ul>
-                        {preview.excluded_models.map((item, index) => (
-                          <li key={`${String(item.backend_name ?? "model")}-${index}`}>
-                            {String(item.backend_name ?? "Unknown model")}:{" "}
-                            {Array.isArray(item.reasons)
-                              ? item.reasons.join("; ")
-                              : "Not eligible under this policy"}
-                          </li>
+                        {preview.uncertainty.map((item) => (
+                          <li key={item}>{item}</li>
                         ))}
                       </ul>
                     </div>
-                  )}
-                  <div className="policy-preview__section">
-                    <strong>Uncertainty</strong>
-                    <ul>
-                      {preview.uncertainty.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </section>
+                  </section>
+                </EvidenceDisclosure>
               )}
               <button
                 className="v-button run-submit"
                 type="submit"
                 disabled={!formReady}
               >
-                {submitting ? "Starting…" : "Run task"}
+                {submitting ? "Starting…" : "Start task"}
               </button>
             </form>
-          </Panel>
+          </TaskComposerShell>
         )}
         {submissionError && (
           <ErrorState
@@ -1464,7 +1485,11 @@ function RunPage({ client }: { client: ConsoleClient }) {
           />
         )}
         {presentation && (
-          <RunResult value={presentation} client={client} onUpdate={setPresentation} />
+          <LegacyRunResult
+            value={presentation}
+            client={client}
+            onUpdate={setPresentation}
+          />
         )}
       </div>
     </ProductShell>
@@ -1659,7 +1684,7 @@ function ReplayPage({
               },
               {
                 key: "eligible",
-                header: "Eligible",
+                header: "Proved acceptable",
                 render: (attempt) =>
                   attempt.eligible === null
                     ? "Unknown"
@@ -1700,7 +1725,7 @@ function ReplayPage({
               },
               {
                 key: "authority",
-                header: "Authority",
+                header: "Verification",
                 render: (attempt) => attempt.verification_authority ?? "Unknown",
               },
               {
@@ -1747,7 +1772,7 @@ function ReplayPage({
               },
               {
                 key: "materialized",
-                header: "Materialized",
+                header: "Applied change",
                 render: (file) => (file.materialized ? "Yes" : "No"),
               },
             ]}
@@ -2368,46 +2393,6 @@ function PoliciesPage({ client }: { client: ConsoleClient }) {
   );
 }
 
-function SettingsPage() {
-  const environment = useConsoleEnvironment();
-  return (
-    <ProductShell surface="settings" title="SETTINGS">
-      <div className="console-stack">
-        <PageIntro title="Settings">
-          Local configuration, service, privacy, and paths.
-        </PageIntro>
-        <Panel>
-          <PanelHeader title="LOCAL CONFIGURATION" />
-          <KeyValueGrid
-            items={[
-              ["Configuration", environment.setup.valid ? "Valid" : "Needs attention"],
-              ["Schema", environment.setup.schema_version ?? "Not configured"],
-              ["Service", environment.service.status],
-              ["Service log", environment.service.log_path ?? "Unavailable"],
-              ["Storage", environment.storage.home || "Hosted workspace"],
-              ["Runs", environment.storage.runs || "Hosted workspace"],
-              ["Storage writable", environment.storage.writable ? "Yes" : "No"],
-              [
-                "Workspace",
-                environment.workspace.connected
-                  ? (environment.workspace.id ?? "Connected")
-                  : "Not connected",
-              ],
-              ["Privacy", "Local-first; secrets are not exposed to the browser"],
-              ["Pending synchronization", environment.synchronization.pending],
-            ]}
-          />
-        </Panel>
-        {environment.setup.issues.map((issue) => (
-          <div key={issue} className="v-notice">
-            {issue}
-          </div>
-        ))}
-      </div>
-    </ProductShell>
-  );
-}
-
 function WorkspacePage({
   client,
   surface,
@@ -2486,12 +2471,12 @@ function WorkspacePage({
 
 function NotFoundPage() {
   return (
-    <ProductShell surface="home" title="NOT FOUND" status="failed">
+    <ProductShell surface="new-task" title="Not found" status="failed">
       <ErrorState
         title="This Console link is not supported"
-        detail="Open History to find a run or session."
+        detail="Open Activity to find a task or imported session."
       >
-        <a href="/console/history">Open History</a>
+        <a href="/console/activity">Open Activity</a>
       </ErrorState>
     </ProductShell>
   );
@@ -2523,13 +2508,17 @@ function ConsoleRoutes({ client, path }: { client: ConsoleClient; path: string }
       />
     );
   }
-  if (path === "/console" || path === "/console/") return <HomePage client={client} />;
-  if (path === "/console/run") return <RunPage client={client} />;
-  if (path === "/console/history") return <HistoryPage client={client} />;
+  if (path === "/console" || path === "/console/" || path === "/console/run")
+    return <SingleTaskPage client={client} />;
+  if (path === "/console/activity" || path === "/console/history")
+    return <ActivityPage client={client} />;
+  if (path === "/console/agents") return <AgentsPage client={client} />;
+  if (path === "/console/onboarding") return <OnboardingPage client={client} />;
   if (path === "/console/replay") return <ReplayLanding client={client} />;
   if (path === "/console/models") return <ModelsPage client={client} />;
   if (path === "/console/policies") return <PoliciesPage client={client} />;
-  if (path === "/console/settings") return <SettingsPage />;
+  if (path === "/console/settings" || path === "/console/advanced")
+    return <SettingsPage client={client} />;
   if (path === "/console/fleet" && environment.data_source === "workspace")
     return <FleetApp />;
   if (path === "/console/audit" && environment.data_source === "workspace")
@@ -2572,7 +2561,7 @@ export default function ConsoleApp() {
   if (!loaded)
     return (
       <ConsoleProvider value={bootstrap}>
-        <ProductShell surface="home" title="VILLANI CONSOLE">
+        <ProductShell surface="new-task" title="Villani">
           <LoadingState title="Opening Villani Console" />
         </ProductShell>
       </ConsoleProvider>

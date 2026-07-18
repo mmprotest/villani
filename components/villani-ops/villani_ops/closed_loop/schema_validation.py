@@ -10,12 +10,27 @@ from pathlib import Path
 from typing import Any, cast
 
 from jsonschema import Draft202012Validator, FormatChecker
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .durable_io import read_jsonl_tolerant
 from .protocol import PROTOCOL_MODEL_BY_VERSION, EventEnvelope, ProtocolDocument
 from .protocol_v2 import PROTOCOL_V2_MODEL_BY_VERSION, ProtocolDocumentV2
 from .verification_evidence import VerificationEvidenceMatrix
+from .validation_coverage import ValidationCoverageReport
+from .run_summary import RunSummary
+from .product_run import ProductRun
+from .agent_systems.models import (
+    AgentSystemIdentity,
+    HarnessConformanceReport,
+    HarnessResult,
+)
+from villani_ops.evaluation_lab.models import (
+    EvaluationReport,
+    EvaluationSuite,
+    EvaluationTask,
+    EvaluationTrial,
+    HumanReview,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -48,6 +63,19 @@ SCHEMA_VERSION_TO_PATH: dict[str, Path] = {
     "villani.verification.v1": SCHEMA_ROOT / "verification.schema.json",
     "villani.selection.v1": SCHEMA_ROOT / "selection.schema.json",
     "villani.materialization.v1": SCHEMA_ROOT / "materialization.schema.json",
+    "villani.validation_coverage.v1": SCHEMA_ROOT
+    / "validation-coverage.schema.json",
+    "villani.run_summary.v1": SCHEMA_ROOT / "run-summary.schema.json",
+    "villani.product_run.v1": SCHEMA_ROOT / "product-run.schema.json",
+    "villani.evaluation_suite.v1": SCHEMA_ROOT / "evaluation-suite.schema.json",
+    "villani.evaluation_task.v1": SCHEMA_ROOT / "evaluation-task.schema.json",
+    "villani.evaluation_trial.v1": SCHEMA_ROOT / "evaluation-trial.schema.json",
+    "villani.human_review.v1": SCHEMA_ROOT / "human-review.schema.json",
+    "villani.evaluation_report.v1": SCHEMA_ROOT / "evaluation-report.schema.json",
+    "villani.agent_system.v1": SCHEMA_ROOT / "agent-system.schema.json",
+    "villani.harness_result.v1": SCHEMA_ROOT / "harness-result.schema.json",
+    "villani.harness_conformance_report.v1": SCHEMA_ROOT
+    / "harness-conformance-report.schema.json",
 }
 SCHEMA_V2_VERSION_TO_PATH: dict[str, Path] = {
     "villani.telemetry_envelope.v2": SCHEMA_ROOT_V2 / "telemetry-envelope.schema.json",
@@ -69,6 +97,17 @@ ALL_PROTOCOL_MODELS: dict[str, type[BaseModel]] = {
     **PROTOCOL_MODEL_BY_VERSION,
     **PROTOCOL_V2_MODEL_BY_VERSION,
     "villani.verification_evidence.v2": VerificationEvidenceMatrix,
+    "villani.validation_coverage.v1": ValidationCoverageReport,
+    "villani.run_summary.v1": RunSummary,
+    "villani.product_run.v1": ProductRun,
+    "villani.evaluation_suite.v1": EvaluationSuite,
+    "villani.evaluation_task.v1": EvaluationTask,
+    "villani.evaluation_trial.v1": EvaluationTrial,
+    "villani.human_review.v1": HumanReview,
+    "villani.evaluation_report.v1": EvaluationReport,
+    "villani.agent_system.v1": AgentSystemIdentity,
+    "villani.harness_result.v1": HarnessResult,
+    "villani.harness_conformance_report.v1": HarnessConformanceReport,
 }
 
 
@@ -225,6 +264,25 @@ def _semantic_issues(document: Mapping[str, Any]) -> list[ProtocolValidationIssu
     issues: list[ProtocolValidationIssue] = []
     version = document.get("schema_version")
 
+    if version in {
+        "villani.evaluation_suite.v1",
+        "villani.evaluation_task.v1",
+        "villani.evaluation_trial.v1",
+        "villani.human_review.v1",
+        "villani.evaluation_report.v1",
+    }:
+        try:
+            ALL_PROTOCOL_MODELS[str(version)].model_validate(document)
+        except ValidationError as error:
+            issues.extend(
+                ProtocolValidationIssue(
+                    _pointer(item["loc"]),
+                    "semantic_contract",
+                    str(item["msg"]),
+                )
+                for item in error.errors(include_url=False)
+            )
+
     if (
         version == "villani.verification.v1"
         and document.get("acceptance_eligible") is True
@@ -339,11 +397,33 @@ def validate_protocol_document(value: Any) -> None:
 
 def parse_protocol_document(
     value: Any,
-) -> ProtocolDocument | ProtocolDocumentV2 | VerificationEvidenceMatrix:
+) -> (
+    ProtocolDocument
+    | ProtocolDocumentV2
+    | VerificationEvidenceMatrix
+    | ValidationCoverageReport
+    | RunSummary
+    | ProductRun
+    | EvaluationSuite
+    | EvaluationTask
+    | EvaluationTrial
+    | HumanReview
+    | EvaluationReport
+):
     validate_protocol_document(value)
     schema_version = value["schema_version"]
     return cast(
-        ProtocolDocument | ProtocolDocumentV2 | VerificationEvidenceMatrix,
+        ProtocolDocument
+        | ProtocolDocumentV2
+        | VerificationEvidenceMatrix
+        | ValidationCoverageReport
+        | RunSummary
+        | ProductRun
+        | EvaluationSuite
+        | EvaluationTask
+        | EvaluationTrial
+        | HumanReview
+        | EvaluationReport,
         ALL_PROTOCOL_MODELS[schema_version].model_validate(value),
     )
 

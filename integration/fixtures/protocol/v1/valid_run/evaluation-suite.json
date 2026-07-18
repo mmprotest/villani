@@ -1,0 +1,25 @@
+{
+  "confidentiality": "internal",
+  "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "created_at": "2026-07-17T00:00:00Z",
+  "disclosure_complete": true,
+  "evidence_kind": "synthetic_fixture",
+  "frozen_at": "2026-07-17T00:00:00Z",
+  "local_compute": {
+    "currency": null,
+    "electricity_price_per_kwh": null,
+    "measured_power_watts": null
+  },
+  "randomization_seed": "fixture-randomization-seed-v1",
+  "schema_version": "villani.evaluation_suite.v1",
+  "status": "frozen",
+  "suite_id": "suite_fixture",
+  "suite_version": 1,
+  "task_versions": [
+    {
+      "task_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "task_id": "task_fixture"
+    }
+  ],
+  "title": "Synthetic contract fixture"
+}

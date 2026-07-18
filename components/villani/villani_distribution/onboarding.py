@@ -22,6 +22,9 @@ import yaml
 from pydantic import ValidationError
 
 from villani_ops.cli.unified import DEFAULT_CONFIG
+from villani_ops.closed_loop.agent_systems.configuration import (
+    migrate_agent_system_configuration,
+)
 from villani_ops.core.backend import Backend
 from villani_ops.executables import resolve_installed_executable
 from villani_ops.providers import ProviderConfigurationError, validate_closed_loop_backend
@@ -524,6 +527,7 @@ def build_configuration(
         "repository": str(repository) if repository else None,
         "session_sources": [item.source_identifier for item in session_sources if item.installed],
     }
+    configuration, _migration = migrate_agent_system_configuration(configuration)
     validate_configuration(configuration)
     return configuration
 
@@ -595,12 +599,16 @@ def write_configuration_atomic(
 ) -> ConfigurationWrite:
     """Validate, back up, fsync, and atomically activate configuration."""
 
-    validate_configuration(configuration)
+    try:
+        migrated, _migration = migrate_agent_system_configuration(configuration)
+    except (TypeError, ValueError, ValidationError) as error:
+        raise SetupError(f"agent-system configuration migration failed: {error}") from error
+    validate_configuration(migrated)
     path = path.expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
     backup: Path | None = None
-    payload = _configuration_payload(configuration)
+    payload = _configuration_payload(migrated)
     try:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
@@ -817,6 +825,8 @@ def run_sample_task(
         sample.path,
         "--success-criteria",
         "All tests pass and only the disposable sample repository is changed.",
+        "--delivery",
+        "apply",
         "--max-attempts",
         "1",
     ]

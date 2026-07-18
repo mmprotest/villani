@@ -1,0 +1,395 @@
+{
+  "schema_version": "villani.milestone_completion_report.v1",
+  "milestone": "PT5",
+  "title": "Create the Complete Agent-System and Harness Contract",
+  "status": "COMPLETE",
+  "generated_at": "2026-07-17T23:55:00Z",
+  "acceptance_criteria": [
+    {
+      "criterion": "The controller is not hardwired to Villani Code.",
+      "status": "passed",
+      "evidence": "Public CLI construction resolves an AgentSystemRegistry and obtains its attempt runner; a source-level regression test forbids VillaniCodeAttemptAdapter construction."
+    },
+    {
+      "criterion": "Villani Code runs through the same contract as future harnesses.",
+      "status": "passed",
+      "evidence": "VillaniCodeHarnessAdapter implements the versioned lifecycle, normalization, bounds, failure, cancellation, artifact, cleanup, and doctor contract."
+    },
+    {
+      "criterion": "Every run stores complete system identity.",
+      "status": "passed",
+      "evidence": "New manifests store agent_system_ids and an agent-systems index; each attempt links its exact identity and harness result."
+    },
+    {
+      "criterion": "Verifier and selector are harness-neutral.",
+      "status": "passed",
+      "evidence": "Semantic-verification input cannot receive system, harness, route, cost, or competitor identity; selection receives only acceptance-eligible generic candidates."
+    },
+    {
+      "criterion": "Old bundles and configurations migrate safely.",
+      "status": "passed",
+      "evidence": "Legacy backends are preserved and projected into versioned agent systems; new manifest and attempt fields are optional; existing founder and protocol artifacts remain readable."
+    },
+    {
+      "criterion": "No external production harness is enabled.",
+      "status": "passed",
+      "evidence": "Only villani-code can be production_enabled; external IDs are forced unsupported and disabled, and incompatible protocol versions are unqualified."
+    },
+    {
+      "criterion": "No later milestone was started.",
+      "status": "passed",
+      "evidence": "PT6 work was not implemented or prepared."
+    }
+  ],
+  "files": {
+    "added": [
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/adapters.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/configuration.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/conformance.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/models.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/registry.py",
+      "components/villani-ops/villani_ops/schemas/v1/agent-system.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/harness-conformance-report.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/harness-result.schema.json",
+      "components/villani-ops/villani_ops/tests/test_pt5_agent_systems.py",
+      "components/villani-run-model/src/agentSystem.ts",
+      "components/villani-run-model/test/agentSystem.test.ts",
+      "components/villani-run-model/dist/agentSystem.d.ts",
+      "components/villani-run-model/dist/agentSystem.js",
+      "components/villani-web/dist/assets/index-D0m9i5XQ.css",
+      "components/villani-web/dist/assets/index-Db_ajSzJ.js",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-D0m9i5XQ.css",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-Db_ajSzJ.js",
+      "docs/AGENT_SYSTEMS.md",
+      "docs/PT5_HARNESS_CONFORMANCE_REPORT.json",
+      "docs/PT5_COMPLETION_REPORT.md",
+      "docs/PT5_COMPLETION_REPORT.json",
+      "integration/fixtures/protocol/v1/valid_run/agent-systems/asys_80147fac99d0bfffb4605d4a447ad9a0b6d6e947426c95efcf7168cc6ec94dfa.json",
+      "integration/fixtures/protocol/v1/valid_run/agent-systems/asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575.json",
+      "integration/fixtures/protocol/v1/valid_run/agent-systems/index.json",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_001/harness-result.json",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_002/harness-result.json",
+      "integration/fixtures/protocol/v1/valid_run/harness-conformance.json",
+      "schemas/v1/agent-system.schema.json",
+      "schemas/v1/harness-conformance-report.schema.json",
+      "schemas/v1/harness-result.schema.json",
+      "scripts/generate-harness-schemas.py"
+    ],
+    "modified": [
+      "PLANS.md",
+      "README.md",
+      "components/villani-ops/README.md",
+      "components/villani-ops/villani_ops/agentic/git_artifacts.py",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/controller.py",
+      "components/villani-ops/villani_ops/closed_loop/model_management.py",
+      "components/villani-ops/villani_ops/closed_loop/plugins/builtins.py",
+      "components/villani-ops/villani_ops/closed_loop/protocol.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/schemas/v1/attempt.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/run-manifest.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_adapters.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-ops/villani_ops/tests/test_agentic_git_artifacts.py",
+      "components/villani-code/villani_code/context_projection.py",
+      "components/villani-code/villani_code/state_tooling.py",
+      "components/villani-agentd/README.md",
+      "components/villani-agentd/tests/test_console.py",
+      "components/villani-agentd/villani_agentd/console.py",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-flight-recorder/README.md",
+      "components/villani-flight-recorder/src/providers/villani.ts",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/dist/providers/villani.js",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "components/villani-flight-recorder/test/villaniProvider.test.ts",
+      "components/villani-run-model/src/index.ts",
+      "components/villani-run-model/src/types.ts",
+      "components/villani-run-model/dist/index.d.ts",
+      "components/villani-run-model/dist/index.js",
+      "components/villani-run-model/dist/types.d.ts",
+      "components/villani-run-model/dist/types.js",
+      "components/villani-web/README.md",
+      "components/villani-web/src/ProductPages.tsx",
+      "components/villani-web/src/consoleApi.ts",
+      "components/villani-web/test/console.test.tsx",
+      "components/villani-web/dist/index.html",
+      "components/villani/README.md",
+      "components/villani/tests/test_onboarding.py",
+      "components/villani/villani_distribution/onboarding.py",
+      "docs/CLOSED_LOOP.md",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_001/attempt.json",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_002/attempt.json",
+      "integration/fixtures/protocol/v1/valid_run/manifest.json",
+      "onboarding-verification/run_onboarding_gate.py",
+      "schemas/v1/attempt.schema.json",
+      "schemas/v1/run-manifest.schema.json",
+      "tests/closed_loop/test_protocol_contract.py"
+    ],
+    "deleted": [
+      "components/villani-web/dist/assets/index-BbBDMbii.js",
+      "components/villani-web/dist/assets/index-meSgV0bo.css",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-BbBDMbii.js",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-meSgV0bo.css"
+    ],
+    "migrated": [
+      "Legacy configuration backends are preserved and receive a nested villani.agent_system_configuration.v1 projection on atomic write.",
+      "Version-1 manifest and attempt schemas gain optional identity and harness-result links, preserving old-bundle readability.",
+      "The canonical protocol fixture now records two complete system identities and two harness-neutral result bundles."
+    ]
+  },
+  "architecture_decisions": [
+    "A route is a content-addressed complete system identity built only from non-secret configuration.",
+    "The controller selects a versioned agent-runner plugin through agent-system configuration; the public CLI never constructs VillaniCodeAttemptAdapter.",
+    "Villani Code is the only production-enabled and qualified harness in PT5; external harness IDs remain inspectable but unselectable.",
+    "Capability state is supported, unsupported, or unknown with declared, detected, conformance-tested, or unsupported provenance; generic model flags do not imply custom-model support.",
+    "Lifecycle operations, transports, bounds, backpressure, cancellation, permissions, streams, costs, artifacts, cleanup, and failure categories are one versioned harness contract.",
+    "Normalized events preserve unknown namespaced raw events and withhold unsafe reasoning; timestamp regressions are explicitly recorded rather than silently reordered.",
+    "Harness evidence always projects the isolated worktree, baseline, patch, changed files, streams, trace, usage, cost state, duration state, status, infrastructure failure, artifacts, and cleanup.",
+    "Semantic verification and candidate selection remain blind to harness, route, cost, and competing-candidate identity.",
+    "Unknown cost and duration remain null with explicit accounting status.",
+    "Failure to create a local Git baseline fails closed; an empty repository receives an explicit empty baseline commit."
+  ],
+  "schema_and_configuration_migrations": [
+    {
+      "name": "agent-system identity",
+      "schema": "villani.agent_system.v1",
+      "compatibility": "new standalone artifact; no secret values; exact content digest validated"
+    },
+    {
+      "name": "harness result",
+      "schema": "villani.harness_result.v1",
+      "compatibility": "new optional attempt link; old attempts remain valid"
+    },
+    {
+      "name": "harness conformance",
+      "schema": "villani.harness_conformance_report.v1",
+      "compatibility": "new standalone artifact; missing checks yield insufficient evidence"
+    },
+    {
+      "name": "legacy backend configuration",
+      "schema": "villani.agent_system_configuration.v1",
+      "compatibility": "backends are preserved byte-for-structure and projected deterministically; atomic writes keep backups"
+    }
+  ],
+  "tests_added": [
+    "13 focused PT5 Python cases covering migration, identity stability, secret redaction, external disablement, lifecycle, normalized events, controller persistence, cancellation, bounds, path safety, failure classes, missing executable, malformed output, conformance authorization, CLI, decoupling, and verifier/selector blindness.",
+    "One Git-baseline regression test proving initialization failure cannot escape to an outer repository.",
+    "Two TypeScript run-model tests for complete identity and harness/conformance contracts.",
+    "Updated Python, TypeScript, Web, Agentd, Flight Recorder, distribution, fixture, and cross-language protocol tests."
+  ],
+  "validation": {
+    "authoritative": [
+      {
+        "command": "cd components/villani-code; python -m pytest -q",
+        "result": "686 passed, 1 skipped, 27 warnings in 146.76s",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-ops; python -m pytest -q",
+        "environment": "TEMP/TMP=C:\\tmp; PYTEST_ADDOPTS=--basetemp C:\\tmp\\pt5-ops-final-20260718b -p no:cacheprovider",
+        "result": "1202 passed, 2 skipped, 114 deselected in 289.26s",
+        "status": "passed"
+      },
+      {
+        "command": "python -m pytest tests/closed_loop -q",
+        "environment": "workspace-short basetemp; cache provider disabled",
+        "result": "11 passed, 1 warning in 44.93s",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-agentd; python -m pytest -q",
+        "result": "86 passed in 18.78s",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-flight-recorder; npm test",
+        "result": "21 files, 112 tests passed; build included",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-flight-recorder; npm run typecheck",
+        "result": "passed",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-flight-recorder; npm run build",
+        "result": "passed",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-flight-recorder; npm run format:check",
+        "result": "passed",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-web; npm test",
+        "result": "4 files, 24 tests passed",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-web; npm run typecheck",
+        "result": "passed",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-web; npm run build",
+        "result": "57 modules transformed; production assets built",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-web; npm run format:check",
+        "result": "passed",
+        "status": "passed"
+      },
+      {
+        "command": "python scripts/sync-console-assets.py --check",
+        "result": "Console assets verified: 3 files",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-run-model; ..\\villani-web\\node_modules\\.bin\\tsc.cmd --noEmit; ..\\villani-web\\node_modules\\.bin\\tsc.cmd; node ..\\villani-web\\node_modules\\vitest\\vitest.mjs run",
+        "result": "typecheck passed; build passed; 3 files and 9 tests passed in 411ms",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani; python -m pytest -q",
+        "environment": "normal sandbox; short workspace basetemp",
+        "result": "65 passed, 1 sandbox-only clean-install failure in 128.79s",
+        "status": "environment_limited"
+      },
+      {
+        "command": "cd C:\\tmp\\villani-pt5-validation-copy-20260718b\\components\\villani; python -m pytest -q tests\\test_install_local.py::test_install_local_bootstraps_a_real_clean_environment",
+        "result": "1 passed in 78.01s",
+        "status": "passed",
+        "note": "Same working tree copied outside OneDrive so npm/esbuild and asset publication had one compatible permission context; disposable copy removed."
+      },
+      {
+        "command": "cd components/villani; python -m pytest -q tests\\test_onboarding_integration.py",
+        "environment": "normal sandbox; short workspace basetemp",
+        "result": "1 passed in 106.59s",
+        "status": "passed"
+      },
+      {
+        "command": "python scripts/generate-harness-schemas.py; compare SHA-256 for normative and packaged schemas",
+        "result": "3 of 3 schema pairs byte-identical",
+        "status": "passed"
+      },
+      {
+        "command": "cd components/villani-ops; python -m pytest -q villani_ops/tests/test_pt5_agent_systems.py villani_ops/tests/closed_loop/test_protocol.py",
+        "result": "30 passed in 1.46s",
+        "status": "passed"
+      },
+      {
+        "command": "python -m ruff check <PT5 Python production, test, migration, gate, and schema-generator surface>",
+        "result": "All checks passed",
+        "status": "passed"
+      },
+      {
+        "command": "credential-pattern scan over 21 PT5 identity, evidence, fixture, UI-model, and documentation files",
+        "result": "0 matches",
+        "status": "passed"
+      },
+      {
+        "command": "git diff --check",
+        "result": "passed",
+        "status": "passed"
+      }
+    ],
+    "non_authoritative_attempts": [
+      {
+        "command": "cd components/villani-ops; python -m pytest -q",
+        "result": "1201 passed, 2 skipped, 114 deselected; one empty-repository baseline failure",
+        "resolution": "Use git commit --allow-empty for a valid isolated HEAD; final full suite passed."
+      },
+      {
+        "command": "cd components/villani; python -m pytest -q tests/test_onboarding_integration.py --basetemp C:\\tmp\\pt5-onb-final-20260718a (and ...18b)",
+        "result": "failed because an elevated process received WinError 5 reading OneDrive package data; API health remained 200",
+        "resolution": "Normal sandbox run with a short basetemp passed the complete gate."
+      },
+      {
+        "command": "cd components/villani; python -m pytest -q tests/test_install_local.py::test_install_local_bootstraps_a_real_clean_environment --basetemp C:\\tmp\\pt5-install-final-20260718a",
+        "result": "frontend builds and Python installation passed, then elevated OneDrive directory rename returned WinError 5",
+        "resolution": "The identical test passed from the disposable C:\\tmp working-tree copy."
+      },
+      {
+        "command": "cd components/villani-run-model; npm test / npm run typecheck / npm run build",
+        "result": "local script launch failed because the standalone package has no installed node_modules binaries",
+        "resolution": "Pinned Web TypeScript and Vitest binaries passed typecheck, build, and all 9 tests."
+      },
+      {
+        "command": "initial Villani Code full suite",
+        "result": "74 failures caused by mocked subprocess stdout=None and Windows decoding",
+        "resolution": "Generic UTF-8 replacement decoding and None-safe output handling; final 686/686 runnable tests passed."
+      },
+      {
+        "command": "initial root closed-loop integration",
+        "result": "3 failures from legacy timestamp-regressed runtime events",
+        "resolution": "Preserve emission order, clamp timestamps, and record event_timestamp_adjusted_from; final 11 passed."
+      }
+    ],
+    "skipped": [
+      "Villani Ops skipped two host-capability tests for POSIX-only special-file/socket behavior on Windows.",
+      "Villani Code skipped one opt-in external Claude Code smoke test.",
+      "No PT5 browser screenshot was captured because the in-app browser had no attached target; repository Playwright was not substituted after the required browser skill reported unavailable."
+    ]
+  },
+  "end_to_end_artifacts": [
+    {
+      "path": "integration/fixtures/protocol/v1/valid_run/agent-systems/index.json",
+      "kind": "complete agent-system index",
+      "status": "validated"
+    },
+    {
+      "path": "integration/fixtures/protocol/v1/valid_run/attempts/attempt_001/harness-result.json",
+      "kind": "harness-neutral result",
+      "status": "validated"
+    },
+    {
+      "path": "integration/fixtures/protocol/v1/valid_run/harness-conformance.json",
+      "kind": "cross-language conformance fixture",
+      "status": "validated"
+    },
+    {
+      "path": "docs/PT5_HARNESS_CONFORMANCE_REPORT.json",
+      "kind": "machine-readable 19-check qualification report",
+      "status": "passed"
+    }
+  ],
+  "screenshots": {
+    "paths": [],
+    "status": "not_captured",
+    "reason": "The in-app browser connector returned no attached targets. PT5 UI behavior was validated by 24 Web unit tests, typecheck, production build, format check, and packaged asset parity."
+  },
+  "known_failures": [],
+  "risks": {
+    "security": [
+      "Secret redaction is bounded and pattern-based; operators must inspect bundles before sharing.",
+      "Process execution is not a kernel sandbox; hostile repositories require an existing hardened execution provider.",
+      "Endpoint identity excludes credentials, but local hostnames and ports remain intentionally observable identity data."
+    ],
+    "privacy": [
+      "Raw traces and patches can contain repository source and task text; artifacts are local-first but are not encrypted by PT5."
+    ],
+    "data_loss": [
+      "No accepted-unverified or best-effort candidate can be applied; only the selected recorded patch is materialized.",
+      "Configuration writes are atomic and preserve legacy backends; failed migration leaves the prior file intact."
+    ],
+    "compatibility": [
+      "Old bundles omit optional identity links and remain readable with unknown values.",
+      "External harness definitions are deliberately non-operational until a later explicitly authorized milestone proves them.",
+      "Executable digests and cost remain unknown when authoritative evidence is unavailable."
+    ]
+  },
+  "user_facing_behavior": {
+    "before": "The public controller constructed the Villani Code attempt adapter directly and model/backend inventory represented only part of a route.",
+    "after": "The controller resolves a complete agent system through configuration and a registry. Users can run villani agents list, inspect, and doctor; Agents shows exact harness/model/provider/environment/qualification/capability identity. Villani Code remains the sole production route."
+  },
+  "pt6_started": false,
+  "next_milestone_confirmation": "PT6 was not started."
+}

@@ -55,6 +55,8 @@ export interface RunSummary {
 export interface AttemptSummary {
     id: string;
     status: string;
+    agent_system_id?: string | null;
+    harness_status?: string | null;
 }
 export interface ArtifactDescriptor {
     artifact_id: string;
@@ -113,6 +115,8 @@ export interface RunDetail extends RunSummary {
     redacted_field_count?: number;
     withheld_artifact_count?: number;
     withheld_artifact_categories?: string[];
+    agent_system_ids?: string[];
+    agent_systems?: import("./agentSystem.js").AgentSystemIdentity[];
 }
 export interface CanonicalAttemptSnapshot {
     attempt_id: string;
@@ -132,6 +136,8 @@ export interface CanonicalAttemptSnapshot {
     changed_files: string[];
     file_write_count: number | null;
     failure_category: string | null;
+    agent_system_id?: string | null;
+    harness_status?: string | null;
 }
 export interface CanonicalRunSnapshot {
     run_id: string;
@@ -175,6 +181,8 @@ export interface CanonicalRunSnapshot {
     redacted_field_count: number | null;
     withheld_artifact_count: number | null;
     withheld_artifact_categories: string[] | null;
+    agent_system_ids?: string[];
+    agent_systems?: import("./agentSystem.js").AgentSystemIdentity[];
 }
 export interface RunSpan {
     span_id: string;

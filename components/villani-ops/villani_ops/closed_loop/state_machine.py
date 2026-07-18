@@ -6,30 +6,31 @@ from .protocol import ControllerState
 
 
 TERMINAL_STATES: frozenset[ControllerState] = frozenset(
-    {"COMPLETED", "EXHAUSTED", "FAILED"}
+    {"COMPLETED", "EXHAUSTED", "FAILED", "CANCELLED"}
 )
 
 ALLOWED_TRANSITIONS: dict[ControllerState, frozenset[ControllerState]] = {
-    "CREATED": frozenset({"CLASSIFYING"}),
-    "CLASSIFYING": frozenset({"CLASSIFIED", "FAILED"}),
-    "CLASSIFIED": frozenset({"POLICY_SELECTED", "EXHAUSTED", "FAILED"}),
+    "CREATED": frozenset({"CLASSIFYING", "CANCELLED"}),
+    "CLASSIFYING": frozenset({"CLASSIFIED", "FAILED", "CANCELLED"}),
+    "CLASSIFIED": frozenset({"POLICY_SELECTED", "EXHAUSTED", "FAILED", "CANCELLED"}),
     "POLICY_SELECTED": frozenset(
-        {"ATTEMPT_RUNNING", "VERIFYING", "SELECTING", "EXHAUSTED", "FAILED"}
+        {"ATTEMPT_RUNNING", "VERIFYING", "SELECTING", "EXHAUSTED", "FAILED", "CANCELLED"}
     ),
-    "ATTEMPT_RUNNING": frozenset({"ATTEMPT_COMPLETED", "FAILED"}),
-    "ATTEMPT_COMPLETED": frozenset({"VERIFYING", "REJECTED", "FAILED"}),
-    "VERIFYING": frozenset({"VERIFIED", "FAILED"}),
-    "VERIFIED": frozenset({"SELECTING", "REJECTED", "FAILED"}),
-    "REJECTED": frozenset({"POLICY_SELECTED", "ESCALATING", "EXHAUSTED", "FAILED"}),
-    "ESCALATING": frozenset({"POLICY_SELECTED", "EXHAUSTED", "FAILED"}),
+    "ATTEMPT_RUNNING": frozenset({"ATTEMPT_COMPLETED", "FAILED", "CANCELLED"}),
+    "ATTEMPT_COMPLETED": frozenset({"VERIFYING", "REJECTED", "FAILED", "CANCELLED"}),
+    "VERIFYING": frozenset({"VERIFIED", "FAILED", "CANCELLED"}),
+    "VERIFIED": frozenset({"SELECTING", "REJECTED", "FAILED", "CANCELLED"}),
+    "REJECTED": frozenset({"POLICY_SELECTED", "ESCALATING", "EXHAUSTED", "FAILED", "CANCELLED"}),
+    "ESCALATING": frozenset({"POLICY_SELECTED", "EXHAUSTED", "FAILED", "CANCELLED"}),
     "SELECTING": frozenset(
-        {"AWAITING_APPROVAL", "MATERIALIZING", "EXHAUSTED", "FAILED"}
+        {"AWAITING_APPROVAL", "MATERIALIZING", "EXHAUSTED", "FAILED", "CANCELLED"}
     ),
-    "AWAITING_APPROVAL": frozenset({"MATERIALIZING", "COMPLETED", "FAILED"}),
+    "AWAITING_APPROVAL": frozenset({"MATERIALIZING", "COMPLETED", "FAILED", "CANCELLED"}),
     "MATERIALIZING": frozenset({"COMPLETED", "FAILED"}),
     "COMPLETED": frozenset(),
     "EXHAUSTED": frozenset(),
     "FAILED": frozenset(),
+    "CANCELLED": frozenset(),
 }
 
 

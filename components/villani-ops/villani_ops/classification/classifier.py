@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 import subprocess
 import json
 import re
@@ -19,7 +19,7 @@ _NORMALIZED_CLASSIFICATION_WARNING = "Classification failed validation after nor
 
 
 def _repo_tree(repo: Path) -> list[str]:
-    files = []
+    files: list[str] = []
     for p in repo.rglob("*"):
         if len(files) >= 200:
             break
@@ -206,15 +206,98 @@ def normalize_task_classification_payload(raw: dict) -> dict:
     return payload
 
 
-def _count_behaviors(text: str) -> int:
-    # General, domain-neutral approximation: count explicit list/conjunction segments.
-    return len(
-        [
-            p
-            for p in re.split(r",|;|\band\b", (text or "").lower())
-            if len(p.split()) >= 2
-        ]
+_BEHAVIOR_STOP_WORDS = {
+    "change",
+    "all",
+    "and",
+    "criteria",
+    "ensure",
+    "for",
+    "implement",
+    "make",
+    "must",
+    "repository",
+    "that",
+    "the",
+    "update",
+    "with",
+}
+
+
+def _normalized_clauses(text: str) -> list[str]:
+    clauses: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[.;\n]+|\band\b", (text or "").casefold()):
+        raw_text = " ".join(raw.split())
+        if re.fullmatch(r"[a-z][a-z ]{1,40}:\s*[a-z0-9_.-]+", raw_text):
+            # A labelled identifier supplies context, not another requested behavior.
+            continue
+        normalized = re.sub(r"[^a-z0-9_./\\-]+", " ", raw)
+        normalized = " ".join(normalized.split())
+        if len(normalized.split()) < 2 or normalized in seen:
+            continue
+        seen.add(normalized)
+        clauses.append(normalized)
+    return clauses
+
+
+def _clause_key(clause: str) -> frozenset[str]:
+    return frozenset(
+        token
+        for token in re.findall(r"[a-z][a-z0-9_-]{2,}", clause)
+        if token not in _BEHAVIOR_STOP_WORDS
     )
+
+
+def _behavior_signals(text: str) -> dict[str, Any]:
+    """Count distinct behaviors after removing restatements and validation."""
+
+    behavior_keys: list[frozenset[str]] = []
+    duplicate_count = 0
+    validation_count = 0
+    constraint_count = 0
+    clauses = _normalized_clauses(text)
+    for clause in clauses:
+        if re.search(
+            r"\b(?:do not|must not|never|only|without|avoid|preserve)\b", clause
+        ):
+            constraint_count += 1
+            continue
+        validation_subject = re.search(
+            r"\b(?:tests?|checks?|suite|validation|lint|typecheck|build)\b", clause
+        )
+        validation_action = re.search(
+            r"\b(?:add|pass|run|execute|green|succeed|fail|cover)\w*\b", clause
+        )
+        command_shaped_validation = bool(
+            re.search(r"\b(?:pass|succeed|fail)\w*\b", clause)
+            and re.search(r"(?:^|\s)-{1,2}[a-z0-9][a-z0-9-]*(?:\s|$)", clause)
+        )
+        if (validation_subject and validation_action) or command_shaped_validation:
+            validation_count += 1
+            continue
+        key = _clause_key(clause)
+        if not key:
+            continue
+        duplicate = False
+        for existing in behavior_keys:
+            overlap = len(key & existing)
+            union = len(key | existing)
+            if key <= existing or existing <= key or (union and overlap / union >= 0.7):
+                duplicate = True
+                break
+        if duplicate:
+            duplicate_count += 1
+        else:
+            behavior_keys.append(key)
+    return {
+        "behavior_count": len(behavior_keys),
+        "normalized_behavior_keys": [sorted(item) for item in behavior_keys],
+        "duplicate_or_restatement_count": duplicate_count,
+        "validation_clause_count": validation_count,
+        "constraint_clause_count": constraint_count,
+        "acceptance_clause_count": len(clauses),
+    }
 
 
 def _shape_signals(
@@ -223,9 +306,65 @@ def _shape_signals(
     likely_files: list[str] | None = None,
 ) -> dict[str, Any]:
     text = (task_text or "").lower()
+    paths = sorted(
+        dict.fromkeys(
+            [
+                *(snippet.path for snippet in snippets),
+                *(str(path) for path in (likely_files or [])),
+            ]
+        )
+    )
+    subsystem_names = sorted(
+        {
+            normalized.split("/", 1)[0]
+            for path in paths
+            for normalized in [path.replace("\\", "/").removeprefix("./")]
+            if "/" in normalized
+        }
+    )
+    behavior = _behavior_signals(text)
+    risk_markers = sorted(
+        marker
+        for marker in (
+            "authentication",
+            "authorization",
+            "concurrency",
+            "encryption",
+            "migration",
+            "permission",
+            "public api",
+            "schema",
+            "security",
+            "transaction",
+        )
+        if marker in text
+    )
+    dependency_uncertainty = bool(
+        re.search(
+            r"\b(?:dependency|dependencies|third[- ]party|package upgrade|"
+            r"new package|external service|unknown integration)\b",
+            text,
+        )
+    )
+    broad_change = bool(
+        re.search(
+            r"\b(?:entire app|across (?:the )?repository|architecture|redesign|"
+            r"migrate|rewrite|replatform|multiple subsystems)\b",
+            text,
+        )
+    )
+    breadth = len(paths)
+    scope = (
+        "broad"
+        if broad_change or breadth >= 8 or len(subsystem_names) >= 4
+        else "moderate"
+        if breadth >= 4 or len(subsystem_names) >= 2
+        else "narrow"
+    )
     return {
         "relevant_file_count": len(snippets),
         "likely_file_count": len(likely_files or []),
+        "repository_breadth": breadth,
         "explicit_tests_mentioned": bool(
             re.search(r"\b(pytest|tests?/|test_\w+|tests?)\b", text)
         ),
@@ -239,15 +378,15 @@ def _shape_signals(
             )
         ),
         "target_files_found": bool(snippets),
-        "broad_change": bool(
-            re.search(
-                r"\b(entire app|architecture|redesign|migrate|rewrite|replatform)\b",
-                text,
-            )
-        ),
-        "subsystem_noun_count": 0,
-        "subsystem_nouns": [],
-        "behavior_count": _count_behaviors(text),
+        "broad_change": broad_change,
+        "subsystem_count": len(subsystem_names),
+        "subsystem_names": subsystem_names,
+        "risk_signal_count": len(risk_markers),
+        "risk_signals": risk_markers,
+        "dependency_uncertainty": dependency_uncertainty,
+        "validation_burden": behavior["validation_clause_count"],
+        "scope": scope,
+        **behavior,
     }
 
 
@@ -268,9 +407,16 @@ def adjust_classification_from_task_shape(
     signals = _shape_signals(task, relevant_files, cls.likely_files)
     notes = list(cls.adjustment_notes)
     original_difficulty, original_risk = cls.difficulty, cls.risk
-    narrow = signals["relevant_file_count"] <= 3 and signals["target_files_found"]
+    narrow = (
+        signals["scope"] == "narrow"
+        and signals["behavior_count"] <= 1
+        and signals["risk_signal_count"] == 0
+        and not signals["dependency_uncertainty"]
+        and signals["target_files_found"]
+    )
     tests_clear = (
         signals["explicit_tests_mentioned"] or signals["failing_tests_mentioned"]
+        or signals["validation_clause_count"] > 0
     )
     if cls.confidence >= 0.5 and narrow and tests_clear and not signals["broad_change"]:
         new = _lower_level(cls.risk, ["low", "medium", "high"])
@@ -278,20 +424,20 @@ def adjust_classification_from_task_shape(
             notes.append(
                 f"Classification adjusted: risk {cls.risk} -> {new} because relevant context is narrow and explicit tests or success criteria are present."
             )
-            cls.risk = new
+            cls.risk = cast(Literal["low", "medium", "high"], new)
     if (
         cls.confidence >= 0.80
-        and signals["relevant_file_count"] <= 2
-        and signals["likely_file_count"] < 4
+        and narrow
         and tests_clear
         and not signals["broad_change"]
+        and cls.estimated_attempts_needed <= 1
     ):
         new = _lower_level(cls.difficulty, ["easy", "medium", "hard"])
         if new != cls.difficulty:
             notes.append(
                 f"Classification adjusted: difficulty {cls.difficulty} -> {new} because relevant context is narrow, validation is explicit, and confidence is high."
             )
-            cls.difficulty = new
+            cls.difficulty = cast(Literal["easy", "medium", "hard"], new)
     medium_reasons = []
     hard_reasons = []
     if signals["likely_file_count"] >= 4:
@@ -306,6 +452,16 @@ def adjust_classification_from_task_shape(
         )
     if signals["behavior_count"] >= 3:
         medium_reasons.append("success criteria mention multiple behaviours")
+    if signals["subsystem_count"] >= 2:
+        medium_reasons.append(
+            f"task spans {signals['subsystem_count']} repository subsystems"
+        )
+    if signals["risk_signal_count"] >= 2:
+        medium_reasons.append("task carries multiple material risk signals")
+    if signals["dependency_uncertainty"]:
+        medium_reasons.append("dependency behavior is uncertain")
+    if signals["validation_burden"] >= 3:
+        medium_reasons.append("validation burden spans three or more clauses")
     if str(cls.category).lower() in {"integration", "workflow"}:
         medium_reasons.append(f"category={cls.category}")
     if signals["likely_file_count"] >= 8:
@@ -320,6 +476,12 @@ def adjust_classification_from_task_shape(
         )
     if signals["behavior_count"] >= 6:
         hard_reasons.append("success criteria mention six or more behaviours")
+    if signals["subsystem_count"] >= 4:
+        hard_reasons.append(
+            f"task spans {signals['subsystem_count']} repository subsystems"
+        )
+    if signals["scope"] == "broad" and signals["risk_signal_count"] >= 2:
+        hard_reasons.append("broad scope carries multiple material risk signals")
     if hard_reasons and cls.difficulty != "hard":
         notes.append(
             "Raised difficulty to hard because " + " and ".join(hard_reasons) + "."
@@ -356,15 +518,17 @@ class TaskClassifier:
         backend = backend_override or self.select_backend(backends)
         repo = Path(task.repo_path).resolve()
         tree = _repo_tree(repo)
-        task_text = "\n".join(
-            str(x or "")
-            for x in [
+        task_parts = [
+            str(value or "").strip()
+            for value in (
                 task.objective,
                 task.instruction,
                 task.success_criteria,
                 "\n".join(task.constraints),
-            ]
-        )
+            )
+            if str(value or "").strip()
+        ]
+        task_text = "\n".join(dict.fromkeys(task_parts))
         snippets = collect_relevant_file_snippets(repo, task_text, tree)
         relevant = [
             {"path": s.path, "reason": s.reason, "content_excerpt": s.content_excerpt}

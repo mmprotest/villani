@@ -159,6 +159,9 @@ async function loadAttempt(runDirectory, attemptId, decisions, validator) {
     const consideration = considerationForAttempt(snapshot, decisions);
     const metadata = record(snapshot.metadata);
     const costComponents = record(metadata?.cost_breakdown) ?? record(runnerTelemetry?.cost_breakdown);
+    const harnessResult = snapshot.harness_result_path
+        ? await optionalSnapshot(runDirectory, snapshot.harness_result_path, validator)
+        : undefined;
     return {
         snapshot,
         provider: typeof backend?.provider === "string" ? backend.provider : undefined,
@@ -169,6 +172,7 @@ async function loadAttempt(runDirectory, attemptId, decisions, validator) {
         runnerTelemetry,
         traceEvents: await readTrace(runDirectory, snapshot.trace_path),
         costComponents,
+        harnessResult,
         artifactPaths: {
             attempt: `attempts/${attemptId}/attempt.json`,
             stdout: snapshot.stdout_path,
@@ -176,6 +180,8 @@ async function loadAttempt(runDirectory, attemptId, decisions, validator) {
             patch: snapshot.patch_path,
             telemetry: snapshot.runner_telemetry_path,
             trace: snapshot.trace_path,
+            harness_result: snapshot.harness_result_path ?? null,
+            agent_system_identity: snapshot.agent_system_identity_path ?? null,
         },
     };
 }
@@ -445,6 +451,13 @@ export async function parseVillaniRun(runPath, validator = defaultVillaniSchemaV
     const candidateEvidenceMatrix = (await exists(evidenceFile))
         ? await readJson(evidenceFile)
         : undefined;
+    const runSummary = await optionalSnapshot(runDirectory, "run-summary.json", validator);
+    const agentSystems = [];
+    for (const systemId of manifest.agent_system_ids ?? []) {
+        const identity = await optionalSnapshot(runDirectory, `agent-systems/${systemId}.json`, validator);
+        if (identity)
+            agentSystems.push(identity);
+    }
     const data = {
         runDirectory,
         manifest,
@@ -457,6 +470,8 @@ export async function parseVillaniRun(runPath, validator = defaultVillaniSchemaV
         candidateEvidenceMatrix,
         selection,
         materialization,
+        runSummary,
+        agentSystems,
         aggregate: aggregate(manifest, attempts, eventResult.value),
         artifactPaths: {
             manifest: "manifest.json",
@@ -468,6 +483,15 @@ export async function parseVillaniRun(runPath, validator = defaultVillaniSchemaV
             selection: manifest.artifact_paths.selection,
             materialization: manifest.artifact_paths.materialization,
             evidence_matrix: "candidate_evidence_matrix.json",
+            ...(manifest.artifact_paths.validation_coverage
+                ? {
+                    validation_coverage: manifest.artifact_paths.validation_coverage,
+                }
+                : {}),
+            run_summary: manifest.artifact_paths.run_summary ?? "run-summary.json",
+            ...(manifest.artifact_paths.agent_systems
+                ? { agent_systems: manifest.artifact_paths.agent_systems }
+                : {}),
         },
     };
     const events = eventResult.value

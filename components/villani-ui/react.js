@@ -1,11 +1,11 @@
-import { createElement as h, useId } from "react";
+import { cloneElement, createElement as h, isValidElement, useId } from "react";
 
 import { statusDescriptor } from "./index.js";
 
 const classes = (...values) => values.filter(Boolean).join(" ");
 
 export function AppShell({ sidebar, header, statusStrip, children, className, ...props }) {
-  return h("div", { ...props, className: classes("v-app-shell", className) }, sidebar, header, statusStrip,
+  return h("div", { ...props, className: classes("v-app-shell", className), "data-has-notice": statusStrip ? "true" : "false" }, sidebar, header, statusStrip,
     h("main", { className: "v-canvas", id: "main-content" }, children));
 }
 
@@ -28,6 +28,18 @@ export function SidebarItem({ active = false, glyph, children, className, ...pro
     h("span", null, children));
 }
 
+export function PrimaryNavigation({ primary = [], secondary = [], activeId, className, ...props }) {
+  const items = (group) => group.map((item) => h(SidebarItem, {
+    key: item.id,
+    href: item.href,
+    glyph: item.glyph,
+    active: item.id === activeId,
+  }, item.label));
+  return h("div", { ...props, className: classes("v-primary-navigation", className) },
+    h(SidebarSection, { title: "Primary" }, items(primary)),
+    secondary.length ? h(SidebarSection, { title: "Secondary" }, items(secondary)) : null);
+}
+
 export function TopHeader({ title, detail, actions, children, className, ...props }) {
   return h("header", { ...props, className: classes("v-top-header", className) },
     h("div", { className: "v-top-header__identity" },
@@ -40,6 +52,22 @@ export function StatusStrip({ children, className, ...props }) {
   return h("div", { ...props, className: classes("v-status-strip", className), role: props.role || "status" }, children);
 }
 
+export function ActionableSystemNotice({ title, detail, actionHref, actionLabel = "Open settings", kind = "warning", className, ...props }) {
+  return h("div", { ...props, className: classes("v-actionable-notice", className), "data-kind": kind },
+    h("div", { className: "v-actionable-notice__content" },
+      h("strong", { className: "v-actionable-notice__title" }, title),
+      detail ? h("span", { className: "v-actionable-notice__detail" }, detail) : null),
+    actionHref ? h("a", { className: "v-actionable-notice__action", href: actionHref }, actionLabel) : null);
+}
+
+export function PageIntro({ title, eyebrow, actions, children, className, ...props }) {
+  return h("header", { ...props, className: classes("v-page-intro", className) },
+    eyebrow ? h("span", { className: "v-page-intro__eyebrow" }, eyebrow) : null,
+    h("h1", { tabIndex: -1 }, title),
+    children ? h("p", null, children) : null,
+    actions ? h("div", { className: "v-cluster v-page-intro__actions" }, actions) : null);
+}
+
 export function Panel({ children, className, ...props }) {
   return h("section", { ...props, className: classes("v-panel", className) }, children);
 }
@@ -50,6 +78,46 @@ export function PanelHeader({ title, meta, actions, children, className, ...prop
       title ? h("h2", { className: "v-panel-header__title" }, title) : null,
       meta ? h("span", { className: "v-panel-header__meta" }, meta) : null, children),
     actions ? h("div", { className: "v-panel-header__actions" }, actions) : null);
+}
+
+export function TaskComposerShell({ title = "New task", meta, children, className, ...props }) {
+  return h(Panel, { ...props, className: classes("v-task-composer", className) },
+    h(PanelHeader, { title, meta }), h("div", { className: "v-panel__body" }, children));
+}
+
+export function ProgressStages({ stages, current = 0, className, ...props }) {
+  return h("ol", { ...props, className: classes("v-progress-stages", className),
+    style: { ...(props.style || {}), "--v-stage-count": stages.length } }, stages.map((stage, index) =>
+    h("li", { className: "v-progress-stage", key: stage.id || stage.label || index,
+      "data-state": index < current ? "complete" : index === current ? "current" : "upcoming",
+      "aria-current": index === current ? "step" : undefined }, stage.label || stage)));
+}
+
+const publicVerdicts = {
+  "ready to apply": "Ready to apply",
+  "needs review": "Needs review",
+  "could not prove": "Could not prove",
+  cancelled: "Cancelled",
+  accepted: "Proved acceptable",
+  exhausted: "Could not prove",
+  rejected: "Could not prove",
+  failed: "Could not complete",
+  running: "In progress",
+  completed: "Completed",
+  succeeded: "Completed",
+};
+
+export function ResultVerdict({ status = "unknown", label, detail, className, ...props }) {
+  const key = String(status).toLowerCase();
+  const tone = ["failed", "error", "exhausted", "rejected", "could not prove", "cancelled"].includes(key) ? "error" : "neutral";
+  return h("section", { ...props, className: classes("v-result-verdict", className), "data-tone": tone },
+    h("strong", { className: "v-result-verdict__label" }, label || publicVerdicts[key] || statusDescriptor(key).label),
+    detail ? h("p", { className: "v-result-verdict__detail" }, detail) : null);
+}
+
+export function EvidenceDisclosure({ summary = "Recorded evidence", children, className, ...props }) {
+  return h("details", { ...props, className: classes("v-evidence-disclosure", className) },
+    h("summary", null, summary), h("div", { className: "v-evidence-disclosure__body" }, children));
 }
 
 export function MetricCard({ label, value, detail, sparkline, className, ...props }) {
@@ -86,24 +154,68 @@ export function Button({ variant = "default", className, type = "button", ...pro
   return h("button", { ...props, type, className: classes("v-button", className), "data-variant": variant });
 }
 
+export function PrimaryAction(props) {
+  return h(Button, { ...props, variant: "primary" });
+}
+
+export function SecondaryAction(props) {
+  return h(Button, { ...props, variant: "secondary" });
+}
+
 export function IconButton({ label, className, type = "button", ...props }) {
   return h("button", { ...props, type, className: classes("v-icon-button", className), "aria-label": label || props["aria-label"] });
 }
 
-function Field({ label, id, children }) {
-  return h("label", { className: "v-field", htmlFor: id },
-    label ? h("span", { className: "v-field__label" }, label) : null, children);
+export function FormField({ label, id, help, error, required = false, children, className, ...props }) {
+  const generatedId = useId();
+  const controlId = id || generatedId;
+  const helpId = `${controlId}-help`;
+  const errorId = `${controlId}-error`;
+  const describedBy = [help ? helpId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined;
+  const control = isValidElement(children) ? cloneElement(children, {
+    id: controlId,
+    required: children.props.required ?? required,
+    "aria-describedby": [children.props["aria-describedby"], describedBy].filter(Boolean).join(" ") || undefined,
+    "aria-invalid": error ? true : children.props["aria-invalid"],
+  }) : children;
+  return h("div", { ...props, className: classes("v-field", className) },
+    label ? h("label", { className: "v-field__label", htmlFor: controlId }, label,
+      required ? h("span", { className: "v-field__required", "aria-hidden": "true" }, " *") : null) : null,
+    control,
+    help ? h("span", { className: "v-field__help", id: helpId }, help) : null,
+    error ? h("span", { className: "v-field__error", id: errorId, role: "alert" }, error) : null);
 }
 
-export function TextInput({ label, id, className, ...props }) {
+export function TextInput({ label, help, error, id, className, ...props }) {
   const inputId = id || useId();
-  return h(Field, { label, id: inputId }, h("input", { ...props, id: inputId, className: classes("v-input", className) }));
+  return h(FormField, { label, help, error, id: inputId, required: props.required }, h("input", { ...props, className: classes("v-input", className) }));
 }
 
-export function Select({ label, id, options = [], children, className, ...props }) {
+export function Select({ label, help, error, id, options = [], children, className, ...props }) {
   const selectId = id || useId();
-  return h(Field, { label, id: selectId }, h("select", { ...props, id: selectId, className: classes("v-select", className) },
+  return h(FormField, { label, help, error, id: selectId, required: props.required }, h("select", { ...props, className: classes("v-select", className) },
     children || options.map((option) => h("option", { key: option.value, value: option.value, disabled: option.disabled }, option.label))));
+}
+
+export function TextArea({ label, help, error, id, className, ...props }) {
+  const textareaId = id || useId();
+  return h(FormField, { label, help, error, id: textareaId, required: props.required },
+    h("textarea", { ...props, className: classes("v-textarea", className) }));
+}
+
+export function CostDisplay({ value, currency = "USD", accountingStatus = "unknown", className, ...props }) {
+  const known = typeof value === "number" && Number.isFinite(value);
+  return h("span", { ...props, className: classes("v-value", className), "data-known": String(known) },
+    known ? `${currency || "USD"} ${value.toFixed(4)}` : `Unknown (${accountingStatus || "unknown"})`);
+}
+
+export function DurationDisplay({ milliseconds, className, ...props }) {
+  const known = typeof milliseconds === "number" && Number.isFinite(milliseconds);
+  let value = "Unknown";
+  if (known && milliseconds < 1000) value = `${Math.round(milliseconds)} ms`;
+  else if (known && milliseconds < 60000) value = `${(milliseconds / 1000).toFixed(milliseconds < 10000 ? 1 : 0)} s`;
+  else if (known) value = `${(milliseconds / 60000).toFixed(1)} min`;
+  return h("span", { ...props, className: classes("v-value", className), "data-known": String(known) }, value);
 }
 
 export function Tabs({ tabs, activeId, onChange, label = "Sections", className, ...props }) {

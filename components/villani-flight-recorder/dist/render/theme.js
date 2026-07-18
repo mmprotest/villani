@@ -11,7 +11,7 @@ export const themeCss = () => `${villaniThemeCss}
   --border: var(--v-border-subtle);
   --border-active: var(--v-border-strong);
   --border-success: var(--v-border-strong);
-  --border-warning: #8b7d55;
+  --border-warning: var(--v-warning-border);
   --border-muted: var(--v-border-default);
   --text: var(--v-text-primary);
   --text-soft: var(--v-text-secondary);
@@ -63,7 +63,7 @@ h1 { margin:0; font-size:14px; letter-spacing:.06em; }
 .run-summary { display:grid; grid-template-columns:minmax(280px,.9fr) minmax(400px,1.4fr); gap:10px; padding:10px; }
 .outcome-card { padding:9px; border-left:2px solid var(--v-border-strong); background:var(--v-bg-elevated); }
 .run-summary.warning .outcome-card { border-left-color:var(--border-warning); }
-.run-summary.error .outcome-card { border-left-color:#8c5555; }
+.run-summary.error .outcome-card { border-left-color:var(--v-danger-border); }
 .outcome-kicker, .metadata-row dt { color:var(--text-muted); font-size:9px; font-weight:650; letter-spacing:.1em; text-transform:uppercase; }
 .outcome-card h2 { margin:6px 0; font-size:clamp(20px,3vw,31px); line-height:1.05; }
 .outcome-card p { color:var(--text-soft); }
@@ -88,7 +88,7 @@ h1 { margin:0; font-size:14px; letter-spacing:.06em; }
 .rail svg { width:11px; }
 .completed .rail i { border-color:var(--v-border-strong); color:var(--v-text-primary); }
 .warning .rail i, .severity-minor-warning .rail i { border-color:var(--border-warning); color:var(--amber); }
-.failed .rail i { border-color:#8c5555; color:var(--red); }
+.failed .rail i { border-color:var(--v-danger-border); color:var(--red); }
 .timeline-row article { display:grid; grid-template-columns:27px minmax(0,1fr) auto; gap:8px; align-items:center; min-height:48px; padding:7px 8px; border-left:1px solid var(--v-border-subtle); background:var(--v-bg-panel); }
 .timeline-row:hover article, .timeline-row.selected article { border-left-color:var(--v-border-strong); background:var(--v-bg-selected); }
 .row-icon { display:grid; width:27px; height:27px; place-items:center; border:1px solid var(--v-border-subtle); color:var(--v-text-secondary); background:var(--v-bg-elevated); }

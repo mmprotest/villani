@@ -124,7 +124,15 @@
     "metadata": {
       "type": "object",
       "additionalProperties": true
-    }
+    },
+    "agent_system_id": {
+      "anyOf": [
+        { "type": "string", "pattern": "^asys_[0-9a-f]{64}$" },
+        { "type": "null" }
+      ]
+    },
+    "agent_system_identity_path": { "$ref": "#/$defs/nullable_path" },
+    "harness_result_path": { "$ref": "#/$defs/nullable_path" }
   },
   "$defs": {
     "utc_timestamp": {

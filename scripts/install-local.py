@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install an editable monorepo development environment without starting services."""
+"""Install a verified local Villani environment without starting services."""
 
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ import os
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
+from typing import Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,10 +95,114 @@ def _pip_available(python: Path) -> bool:
     return completed.returncode == 0
 
 
+def _remove_environment(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def _transaction_path(target: Path, role: str) -> Path:
+    return target.parent / f".{target.name}.villani-{role}-{uuid.uuid4().hex}"
+
+
+def _publish_staged_environment(
+    staged: Path,
+    target: Path,
+    *,
+    verify: Callable[[Path], None],
+) -> None:
+    """Publish one staged environment and restore the previous target on failure."""
+
+    backup = _transaction_path(target, "backup")
+    previous_exists = target.exists()
+    try:
+        if previous_exists:
+            target.replace(backup)
+        staged.replace(target)
+        verify(target)
+    except BaseException:
+        _remove_environment(target)
+        if previous_exists and backup.exists():
+            backup.replace(target)
+        _remove_environment(staged)
+        raise
+    else:
+        _remove_environment(backup)
+
+
+def _install_python_packages(python: Path, *, development: bool) -> None:
+    packages = [
+        (ROOT / "components" / "villani-code", "dev"),
+        (ROOT / "components" / "villani-ops", "test"),
+        (ROOT / "components" / "villani-agentd", "test"),
+        (ROOT / "components" / "villani", "test"),
+    ]
+    command = [str(python), "-m", "pip", "install"]
+    for package, development_extra in packages:
+        specification = (
+            f"{package}[{development_extra}]" if development else str(package)
+        )
+        command.extend(["-e", specification])
+    _run(command)
+
+
+def _verify_environment(venv: Path) -> dict[str, dict[str, object]]:
+    python = _environment_python(venv)
+    if not python.is_file():
+        raise RuntimeError(f"Virtual environment Python is missing at {python}.")
+    _run(
+        [
+            str(python),
+            "-c",
+            "import villani_distribution, villani_ops, villani_code, villani_agentd",
+        ]
+    )
+    resolutions = {
+        name: _entry_point(python, name)
+        for name in ("villani", "villani-code", "villani-agentd", "vfr")
+    }
+    for resolution in resolutions.values():
+        prefix = resolution.get("prefix")
+        if not isinstance(prefix, list) or not all(
+            isinstance(item, str) for item in prefix
+        ):
+            raise RuntimeError("Installed executable resolver returned an invalid prefix.")
+        _run([*prefix, "--help"])
+    _run([str(python), "-m", "pip", "check"])
+    return resolutions
+
+
+def _repair_command(venv: Path, *, development: bool) -> str:
+    command = [sys.executable, str(ROOT / "scripts" / "install-local.py"), "--venv", str(venv)]
+    if development:
+        command.append("--development")
+    return subprocess.list2cmdline(command)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--venv", type=Path, default=ROOT / ".venv")
+    parser.add_argument(
+        "--development",
+        action="store_true",
+        help="also install optional test, lint, and type-check dependencies",
+    )
     args = parser.parse_args()
+
+    venv = args.venv.resolve()
+    try:
+        return _install(venv, development=args.development)
+    except KeyboardInterrupt:
+        print("Installation interrupted; the prior environment was restored.", file=sys.stderr)
+        print(f"Repair command: {_repair_command(venv, development=args.development)}", file=sys.stderr)
+        return 130
+    except (OSError, RuntimeError, subprocess.CalledProcessError, SystemExit) as error:
+        message = error.code if isinstance(error, SystemExit) else error
+        print(f"Installation failed; the prior environment was restored: {message}", file=sys.stderr)
+        print(f"Repair command: {_repair_command(venv, development=args.development)}", file=sys.stderr)
+        return 1
+
+
+def _install(venv: Path, *, development: bool) -> int:
 
     if sys.version_info < (3, 11):
         raise SystemExit(
@@ -118,72 +224,55 @@ def main() -> int:
         )
     _version([npm_command, "--version"], "npm")
 
-    venv = args.venv.resolve()
-    if not (venv / "pyvenv.cfg").is_file():
-        _run([sys.executable, "-m", "venv", str(venv)])
-    python = _environment_python(venv)
-    if not python.is_file():
-        raise SystemExit(f"Virtual environment Python was not created at {python}.")
-    if not _pip_available(python):
-        _run([str(python), "-m", "ensurepip", "--upgrade"])
-    _run(
-        [
-            str(python),
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "pip",
-            "setuptools",
-            "wheel",
-            "build",
-            "packaging",
-        ]
-    )
-    _run(
-        [
-            str(python),
-            "-m",
-            "pip",
-            "install",
-            "-e",
-            str(ROOT / "components" / "villani-code"),
-            "-e",
-            str(ROOT / "components" / "villani-ops"),
-            "-e",
-            str(ROOT / "components" / "villani-agentd"),
-            "-e",
-            str(ROOT / "components" / "villani"),
-        ]
-    )
     web = ROOT / "components" / "villani-web"
     _run([npm_command, "ci"], cwd=web)
     _run([npm_command, "run", "build"], cwd=web)
-    _run([str(python), str(ROOT / "scripts" / "sync-console-assets.py")])
     flight = ROOT / "components" / "villani-flight-recorder"
     _run([npm_command, "ci"], cwd=flight)
     _run([npm_command, "run", "build"], cwd=flight)
-    _run(
-        [
-            str(python),
-            "-c",
-            ("import villani_distribution, villani_ops, villani_code, villani_agentd"),
-        ]
-    )
-    resolutions = {
-        name: _entry_point(python, name)
-        for name in ("villani", "villani-code", "villani-agentd", "vfr")
-    }
-    for resolution in resolutions.values():
-        prefix = resolution.get("prefix")
-        if not isinstance(prefix, list) or not all(
-            isinstance(item, str) for item in prefix
-        ):
-            raise SystemExit(
-                "Installed executable resolver returned an invalid prefix."
+
+    staged = _transaction_path(venv, "staging")
+    _remove_environment(staged)
+    resolutions: dict[str, dict[str, object]] = {}
+    try:
+        _run([sys.executable, "-m", "venv", str(staged)])
+        staged_python = _environment_python(staged)
+        if not staged_python.is_file():
+            raise RuntimeError(
+                f"Virtual environment Python was not created at {staged_python}."
             )
-        _run([*prefix, "--help"])
-    _run([str(python), "-m", "pip", "check"])
+        if not _pip_available(staged_python):
+            _run([str(staged_python), "-m", "ensurepip", "--upgrade"])
+        _run(
+            [
+                str(staged_python),
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "pip",
+                "setuptools",
+                "wheel",
+                "build",
+                "packaging",
+            ]
+        )
+        _install_python_packages(staged_python, development=development)
+        _run([str(staged_python), str(ROOT / "scripts" / "sync-console-assets.py")])
+        _verify_environment(staged)
+
+        def verify_published(target: Path) -> None:
+            nonlocal resolutions
+            published_python = _environment_python(target)
+            # Console launchers embed environment paths, so regenerate them after
+            # the atomic directory switch and before declaring the install usable.
+            _install_python_packages(published_python, development=development)
+            resolutions = _verify_environment(target)
+
+        _publish_staged_environment(staged, venv, verify=verify_published)
+    finally:
+        _remove_environment(staged)
+
     scripts = next(
         (
             Path(str(resolution["scripts_directory"]))
@@ -203,6 +292,10 @@ def main() -> int:
     print(
         "Villani local installation complete. No background service was installed or "
         "started. No API key, telemetry, or model download was required."
+    )
+    print(
+        "Dependency profile: "
+        + ("runtime plus optional development tools." if development else "runtime only.")
     )
     print(f"Activate this installation with:\n  {activation}")
     print(

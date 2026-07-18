@@ -82,25 +82,22 @@ async function computedTheme(page, surface) {
     };
   });
   required(
-    result.tokenRoot.toLowerCase() === "#050505",
+    result.tokenRoot.toLowerCase() === "#f6f6f3",
     `${surface}: shared root token missing`,
   );
   required(
-    result.focus.toLowerCase() === "#ffffff",
+    result.focus.toLowerCase() === "#171717",
     `${surface}: monochrome focus token is ${result.focus}`,
   );
   required(
-    result.sidebarWidth === "232px" && result.headerHeight === "48px",
+    result.sidebarWidth === "232px" && result.headerHeight === "56px",
     `${surface}: shared shell dimensions diverged`,
   );
   required(
-    result.bodyBackground === "rgb(5, 5, 5)",
+    result.bodyBackground === "rgb(246, 246, 243)",
     `${surface}: root background is ${result.bodyBackground}`,
   );
-  required(
-    result.font.includes("ui-monospace"),
-    `${surface}: shared typography missing`,
-  );
+  required(result.font.includes("system-ui"), `${surface}: shared typography missing`);
   required(result.sidebar && result.header, `${surface}: shared shell is incomplete`);
   required(
     result.overflow <= 1,
@@ -111,7 +108,7 @@ async function computedTheme(page, surface) {
     if (!match) continue;
     const luminance =
       Number(match[1]) * 0.2126 + Number(match[2]) * 0.7152 + Number(match[3]) * 0.0722;
-    required(luminance < 45, `${surface}: light panel surface ${background}`);
+    required(luminance > 225, `${surface}: non-light panel surface ${background}`);
   }
   checks[`${surface}_theme`] = result;
 }
@@ -119,7 +116,7 @@ async function computedTheme(page, surface) {
 async function openPage(pathname, label, viewport = { width: 1440, height: 900 }) {
   const context = await browser.newContext({
     viewport,
-    colorScheme: "dark",
+    colorScheme: "light",
     reducedMotion: "reduce",
   });
   const page = await context.newPage();
@@ -325,10 +322,8 @@ try {
   await assertRunTruth(flight.page, flightSnapshot, "Console Replay escalated run");
   const flightHtml = await flight.page.content();
   required(
-    !/#f8fafc|#f7f3ea|#334155|rgba\(255,\s*255,\s*255,\s*\.(?:3|4|5|6|7|8|9)/i.test(
-      flightHtml,
-    ),
-    "Console Replay rendered legacy light CSS",
+    !/#050505|#090909|#0d0d0d|rgba\(0,\s*0,\s*0,\s*\.(?:8|9)/i.test(flightHtml),
+    "Console Replay rendered the legacy dark control-plane CSS",
   );
   const attemptIds = await flight.page
     .locator("#attempts tbody tr td:first-child")

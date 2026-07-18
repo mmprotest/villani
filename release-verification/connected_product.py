@@ -598,7 +598,9 @@ def _backend(
     roles: list[str],
     capability: int,
     command: str | None = None,
+    price_multiplier: float = 1.0,
 ) -> dict[str, Any]:
+    estimated_calls = 3 if "coding" in roles else 1
     value: dict[str, Any] = {
         "provider": "local",
         "base_url": base_url,
@@ -607,10 +609,15 @@ def _backend(
         "capability_score": capability,
         "capability_score_source": "release_fixture_contract",
         "billing_mode": "token",
-        "input_cost_per_million": 1.0,
-        "output_cost_per_million": 2.0,
+        "input_cost_per_million": 1.0 * price_multiplier,
+        "output_cost_per_million": 2.0 * price_multiplier,
+        "estimated_input_tokens": 20 * estimated_calls,
+        "estimated_output_tokens": 10 * estimated_calls,
         "api_key_env": "VILLANI_RELEASE_TEST_SECRET",
-        "metadata": {"allow_dummy_api_key": True},
+        "metadata": {
+            "allow_dummy_api_key": True,
+            "capability_fixture": "deterministic_release_contract",
+        },
     }
     if command:
         value["command_name"] = command
@@ -635,6 +642,10 @@ def _configuration(
         "hard_min_capability": 80,
         "verifier_retry_limit": 0,
         "max_same_backend_retries": 0,
+    }
+    config["capabilities"] = {
+        "manual_uncertainty_penalty": 0,
+        "bootstrap_uncertainty_penalty": 0,
     }
     config["repository_validation_commands"] = [
         {
@@ -663,6 +674,7 @@ def _configuration(
             roles=["coding"],
             capability=50,
             command=villani_code,
+            price_multiplier=2.0,
         ),
         "expert": _backend(
             base_url=base_url,
@@ -670,6 +682,7 @@ def _configuration(
             roles=["coding"],
             capability=90,
             command=villani_code,
+            price_multiplier=4.0,
         ),
         "verifier-low": _backend(
             base_url=base_url,
@@ -682,9 +695,28 @@ def _configuration(
             model="fixture-verifier-high",
             roles=["review"],
             capability=90,
+            price_multiplier=2.0,
         ),
     }
     config["verifier"] = {"no_llm": True, "timeout_seconds": 30}
+    if scenario == "scenario_d":
+        config["verifier"] = {
+            "timeout_seconds": 30,
+            "routes": [
+                {
+                    "backend": "verifier-high",
+                    "capability_score": 90,
+                    "price_per_call_usd": 0.00008,
+                    "authority": "acceptance",
+                }
+            ],
+            "policy": {
+                "version": "release-security-verifier-routing-v1",
+                "low_risk_minimum_capability": 20,
+                "medium_risk_minimum_capability": 50,
+                "high_risk_minimum_capability": 80,
+            },
+        }
     if scenario in {"scenario_f", "scenario_g", "scenario_h"}:
         config["delivery"] = {
             "default_mode": "apply",
@@ -693,7 +725,10 @@ def _configuration(
                 "allow_automatic": True,
                 "require_acceptance_eligible": True,
                 "allowed_risks": ["low", "medium", "high"],
-                "allowed_authority_sources": ["authoritative_repository_validation"],
+                "allowed_authority_sources": [
+                    "authoritative_repository_validation",
+                    "deterministic_evidence_matrix_v2",
+                ],
             },
         }
     if scenario == "scenario_e":
@@ -812,6 +847,8 @@ def _scenario_assertions(
         if (run_dir / "selection.json").is_file()
         else {}
     )
+    selected_candidate_ids = selection.get("selected_candidate_ids") or []
+    eligible_candidate_ids = selection.get("eligible_candidate_ids") or []
     materialization = (
         _read(run_dir / "materialization.json")
         if (run_dir / "materialization.json").is_file()
@@ -835,7 +872,13 @@ def _scenario_assertions(
             event
             for event in events
             if event.get("attempt_id") == attempt_id
-            and event.get("event_type") in {"command_completed", "command_failed"}
+            and event.get("event_type")
+            in {
+                "command_completed",
+                "command_failed",
+                "repository_validation_completed",
+                "repository_validation_failed",
+            }
             and (event.get("payload") or {}).get("command_role")
             == "repository_validation"
         ]
@@ -896,12 +939,13 @@ def _scenario_assertions(
             mutation_captured=bool(write_events("attempt_001")),
             validation_role_captured=bool(
                 structured
-                and structured[-1].get("event_type") == "command_completed"
+                and structured[-1].get("event_type")
+                == "repository_validation_completed"
                 and (structured[-1].get("payload") or {}).get("exit_code") == 0
             ),
-            repository_validation_authority=(
+            canonical_evidence_authority=(
                 (verification.get("metadata") or {}).get("authority_source")
-                == "authoritative_repository_validation"
+                == "deterministic_evidence_matrix_v2"
                 and verification.get("acceptance_eligible") is True
             ),
             no_llm_verifier_request=not any(
@@ -935,7 +979,8 @@ def _scenario_assertions(
             first_candidate_mutated=bool(write_events("attempt_001")),
             first_validation_failed=bool(
                 first_validations
-                and first_validations[-1].get("event_type") == "command_failed"
+                and first_validations[-1].get("event_type")
+                == "repository_validation_failed"
                 and (first_validations[-1].get("payload") or {}).get("exit_code")
                 not in {None, 0}
             ),
@@ -945,7 +990,8 @@ def _scenario_assertions(
             ),
             second_validation_passed=bool(
                 second_validations
-                and second_validations[-1].get("event_type") == "command_completed"
+                and second_validations[-1].get("event_type")
+                == "repository_validation_completed"
                 and (second_validations[-1].get("payload") or {}).get("exit_code") == 0
             ),
             second_accepted=(
@@ -1013,17 +1059,18 @@ def _scenario_assertions(
             not_materialized=not (run_dir / "materialization.json").is_file(),
             repository_validation_failed=bool(
                 structured
-                and structured[-1].get("event_type") == "command_failed"
+                and structured[-1].get("event_type")
+                == "repository_validation_failed"
                 and (structured[-1].get("payload") or {}).get("exit_code") == 1
             ),
-            heuristic_advisory_positive=(
+            semantic_advisory_overruled=(
                 (verification.get("metadata") or {}).get("raw_verdict") == "success"
                 and (verification.get("metadata") or {}).get("authority_source")
-                == "heuristic_only"
+                == "deterministic_evidence_matrix_v2"
             ),
             candidate_ineligible=verification.get("acceptance_eligible") is False,
-            authority_blocker=any(
-                "non_authoritative_heuristic" in str(item)
+            active_validation_blocker=any(
+                "repository_validation_failed" in str(item)
                 for item in verification.get("risk_flags") or []
             ),
             terminal_reason_explicit=bool(
@@ -1177,9 +1224,8 @@ def _scenario_assertions(
                 and recovery_evidence.get("candidate_configurations_unchanged")
             ),
             selected_from_eligible=bool(
-                selection.get("selected_candidate_ids")
-                and selection.get("selected_candidate_ids")[0]
-                in (selection.get("eligible_candidate_ids") or [])
+                selected_candidate_ids
+                and selected_candidate_ids[0] in eligible_candidate_ids
             ),
             final_validation_passed=final_validation_exit_code == 0,
         )
@@ -1254,9 +1300,9 @@ def _api_assertions(
                 and float(remote.get("total_cost_usd") or 0) > 0
                 and remote.get("cost_accounting_status") == "complete"
             ),
-            api_authority=(
+            api_canonical_authority=(
                 remote.get("verification_authority")
-                == "authoritative_repository_validation"
+                == "deterministic_evidence_matrix_v2"
                 and verification.get("acceptance_eligible") is True
             ),
             api_file_activity=(
@@ -1310,10 +1356,10 @@ def _api_assertions(
         verification = (candidates.get("attempt_001") or {}).get("verification") or {}
         assertions.update(
             api_exhausted=str(remote.get("status") or "").upper() == "EXHAUSTED",
-            api_heuristic_ineligible=(
+            api_validation_failure_ineligible=(
                 verification.get("acceptance_eligible") is False
                 and (verification.get("metadata") or {}).get("authority_source")
-                == "heuristic_only"
+                == "deterministic_evidence_matrix_v2"
             ),
             api_not_materialized=(
                 remote.get("materialization_status") == "not_materialized"
@@ -1558,7 +1604,7 @@ def main(argv: list[str] | None = None) -> int:
 
         security_probe: dict[str, Any] = {}
         fixture_request_log = artifacts / "fixture-model-requests.jsonl"
-        for scenario in (
+        for scenario_id in (
             "scenario_a",
             "scenario_b",
             "scenario_c",
@@ -1570,23 +1616,23 @@ def main(argv: list[str] | None = None) -> int:
         ):
             repo = _repository(
                 repositories,
-                scenario,
+                scenario_id,
                 log_directory=logs,
-                authentication=scenario == "scenario_d",
+                authentication=scenario_id == "scenario_d",
             )
             config = _configuration(
                 original,
                 base_url=str(fixture_base),
                 villani_code=str(villani_code),
                 python=str(python),
-                scenario=scenario,
+                scenario=scenario_id,
             )
             (home / "config.yaml").write_text(
                 yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
             )
             task = (
-                f"Release scenario: {scenario}. Fix calculator addition."
-                if scenario != "scenario_d"
+                f"Release scenario: {scenario_id}. Fix calculator addition."
+                if scenario_id != "scenario_d"
                 else (
                     "Release scenario: scenario_d. Fix calculator addition while preserving "
                     "the harmless token and test-token authentication fixtures. Registered "
@@ -1599,14 +1645,14 @@ def main(argv: list[str] | None = None) -> int:
                     "-c",
                     "from calculator import add; assert add(2, 3) == 5",
                 ]
-                if scenario == "scenario_e"
+                if scenario_id == "scenario_e"
                 else [str(python), "-m", "unittest", "-q"]
             )
             initial_validation = _run(
                 validation_argv,
                 cwd=repo,
                 env=env,
-                log=logs / f"{scenario}-initial-validation.log",
+                log=logs / f"{scenario_id}-initial-validation.log",
                 expected=(1,),
                 timeout=60,
             )
@@ -1614,18 +1660,18 @@ def main(argv: list[str] | None = None) -> int:
                 ["git", "status", "--porcelain"],
                 cwd=repo,
                 env=env,
-                log=logs / f"{scenario}-pre-run-status.log",
+                log=logs / f"{scenario_id}-pre-run-status.log",
                 timeout=30,
             )
             if clean_status.stdout.strip():
                 raise RuntimeError(
-                    f"{scenario} fixture validation mutated the repository: "
+                    f"{scenario_id} fixture validation mutated the repository: "
                     f"{clean_status.stdout.strip()}"
                 )
-            expected = (3,) if scenario == "scenario_e" else (0,)
+            expected = (3,) if scenario_id == "scenario_e" else (0,)
             success_criteria = (
                 "The calculator add function returns the correct sum."
-                if scenario == "scenario_e"
+                if scenario_id == "scenario_e"
                 else "python -m unittest -q passes"
             )
             result = _run(
@@ -1642,23 +1688,23 @@ def main(argv: list[str] | None = None) -> int:
                 ],
                 cwd=work,
                 env=env,
-                log=logs / f"{scenario}-cli.log",
+                log=logs / f"{scenario_id}-cli.log",
                 expected=expected,
                 timeout=300,
             )
             output = result.stdout + result.stderr
             run_id = _run_id(output)
             run_dir = home / "runs" / run_id
-            if scenario == "scenario_d":
+            if scenario_id == "scenario_d":
                 security_probe = _exercise_agentd_redaction_and_withholding(
                     home, run_id, release_secret
                 )
             recovery_evidence: dict[str, Any] | None = None
-            if scenario in {"scenario_f", "scenario_h"}:
+            if scenario_id in {"scenario_f", "scenario_h"}:
                 manifest_before_resume = _read(run_dir / "manifest.json")
                 verification_before_resume = (
                     _read(run_dir / "verification" / "attempt_001.json")
-                    if scenario == "scenario_f"
+                    if scenario_id == "scenario_f"
                     else {}
                 )
                 candidate_configurations_before_resume = [
@@ -1671,13 +1717,13 @@ def main(argv: list[str] | None = None) -> int:
                     [*villani, "resume", run_id],
                     cwd=work,
                     env=env,
-                    log=logs / f"{scenario}-terminal-resume.log",
+                    log=logs / f"{scenario_id}-terminal-resume.log",
                     timeout=60,
                 )
                 manifest_after_resume = _read(run_dir / "manifest.json")
                 verification_after_resume = (
                     _read(run_dir / "verification" / "attempt_001.json")
-                    if scenario == "scenario_f"
+                    if scenario_id == "scenario_f"
                     else {}
                 )
                 candidate_configurations_after_resume = [
@@ -1708,12 +1754,12 @@ def main(argv: list[str] | None = None) -> int:
                 validation_argv,
                 cwd=repo,
                 env=env,
-                log=logs / f"{scenario}-final-validation.log",
-                expected=(1,) if scenario == "scenario_e" else (0,),
+                log=logs / f"{scenario_id}-final-validation.log",
+                expected=(1,) if scenario_id == "scenario_e" else (0,),
                 timeout=60,
             )
             assertions = _scenario_assertions(
-                scenario,
+                scenario_id,
                 run_dir,
                 repo,
                 initial_validation_exit_code=initial_validation.returncode,
@@ -1724,7 +1770,7 @@ def main(argv: list[str] | None = None) -> int:
             passed = all(bool(value) for value in assertions.values())
             scenarios.append(
                 ScenarioResult(
-                    scenario,
+                    scenario_id,
                     run_id,
                     _read(run_dir / "state.json")["state"],
                     run_dir,
@@ -1734,7 +1780,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             _write_json(
-                artifacts / "canonical-run-snapshots" / f"{scenario}-{run_id}.json",
+                artifacts
+                / "canonical-run-snapshots"
+                / f"{scenario_id}-{run_id}.json",
                 _local_snapshot(run_dir),
             )
 
@@ -2044,7 +2092,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         repeated_attempt_proof = all(repeated_attempt_details.values())
         reconciliation_passed = all(item["passed"] for item in reconciliations.values())
-        scenario_documents = [
+        scenario_documents: list[dict[str, Any]] = [
             {
                 "scenario_id": item.scenario_id,
                 "run_id": item.run_id,

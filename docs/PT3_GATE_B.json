@@ -1,0 +1,109 @@
+{
+  "schema_version": "villani.product_transformation_gate.v1",
+  "milestone": "PT3",
+  "gate": "B",
+  "generated_at": "2026-07-17T21:25:15.3997355+10:00",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "implementation_status": "COMPLETE",
+  "reason": "No real founder evaluation suite or completed paired founder trials were supplied. Synthetic fixtures are structurally excluded, so Gate B cannot truthfully pass.",
+  "evidence_summary": {
+    "eligible_real_tasks": 0,
+    "paired_real_tasks": 0,
+    "repositories": 0,
+    "eligible_trials": 0,
+    "completed_human_reviews": 0,
+    "synthetic_trials_counted": 0,
+    "known_false_acceptances": 0,
+    "gate_significance_claimed": false
+  },
+  "criteria": [
+    {
+      "id": "B-01",
+      "criterion": "At least 30 distinct paired real founder tasks.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": 0,
+      "required": 30
+    },
+    {
+      "id": "B-02",
+      "criterion": "At least two source repositories.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": 0,
+      "required": 2
+    },
+    {
+      "id": "B-03",
+      "criterion": "Every paired task has a valid immutable, restorable baseline.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": null,
+      "required": true
+    },
+    {
+      "id": "B-04",
+      "criterion": "All paired trials are reviewed and there are zero known false acceptances.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": {
+        "reviewed_trials": 0,
+        "known_false_acceptances": 0
+      },
+      "required": {
+        "complete_review": true,
+        "known_false_acceptances": 0
+      }
+    },
+    {
+      "id": "B-05",
+      "criterion": "Villani's accepted-as-is rate is not lower than direct use.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": {
+        "direct": null,
+        "villani": null
+      },
+      "required": "villani >= direct"
+    },
+    {
+      "id": "B-06",
+      "criterion": "Median review time is at least 30% lower or total cost per accepted change is at least 25% lower.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": {
+        "median_review_time_reduction": null,
+        "total_cost_reduction": null
+      },
+      "required": {
+        "median_review_time_reduction": 0.3,
+        "total_cost_reduction": 0.25,
+        "operator": "either"
+      }
+    },
+    {
+      "id": "B-07",
+      "criterion": "At least 80% automatic configuration.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": null,
+      "required": 0.8
+    },
+    {
+      "id": "B-08",
+      "criterion": "Unknowns and exclusions are completely disclosed.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": null,
+      "required": true
+    },
+    {
+      "id": "B-09",
+      "criterion": "Only real founder work is counted.",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "actual": 0,
+      "required": ">= 1 eligible real paired task"
+    }
+  ],
+  "implementation_evidence": [
+    "Five additive v1 contracts validate through the normative and packaged schema registry.",
+    "The final focused PT3/protocol suite passed 32 tests.",
+    "The final Villani Ops suite passed 1,178 tests with 2 host-capability skips and 114 marker deselections.",
+    "The built wheel contained all 5 PT3 modules checked plus all 5 packaged PT3 schemas.",
+    "Synthetic fixtures are marked ineligible by the task and trial models and by Gate B projection."
+  ],
+  "next_action": "Capture and freeze at least 30 real founder tasks across two repositories, run both arms, complete blinded reviews, generate the suite report, and rerun `villani eval gate <suite> --json`.",
+  "pt4_started": false
+}

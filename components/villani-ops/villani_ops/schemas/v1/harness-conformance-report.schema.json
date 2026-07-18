@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "HarnessConformanceCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Check Id",
+          "type": "string"
+        },
+        "evidence": {
+          "additionalProperties": true,
+          "title": "Evidence",
+          "type": "object"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_run"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "status",
+        "reason"
+      ],
+      "title": "HarnessConformanceCheck",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/harness-conformance-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/HarnessConformanceCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "harness_id": {
+      "minLength": 1,
+      "title": "Harness Id",
+      "type": "string"
+    },
+    "harness_version": {
+      "minLength": 1,
+      "title": "Harness Version",
+      "type": "string"
+    },
+    "production_qualification_authorized": {
+      "title": "Production Qualification Authorized",
+      "type": "boolean"
+    },
+    "protocol_version": {
+      "minLength": 1,
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "report_id": {
+      "minLength": 1,
+      "title": "Report Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.harness_conformance_report.v1",
+      "default": "villani.harness_conformance_report.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "failed",
+        "insufficient_evidence"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "system_id": {
+      "pattern": "^asys_[0-9a-f]{64}$",
+      "title": "System Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "report_id",
+    "system_id",
+    "harness_id",
+    "harness_version",
+    "protocol_version",
+    "generated_at",
+    "status",
+    "checks",
+    "production_qualification_authorized"
+  ],
+  "title": "HarnessConformanceReport",
+  "type": "object"
+}

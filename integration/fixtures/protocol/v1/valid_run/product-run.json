@@ -1,0 +1,95 @@
+{
+  "schema_version": "villani.product_run.v1",
+  "run_identity": {
+    "run_id": "run_protocol_fixture",
+    "trace_id": "trace_protocol_fixture"
+  },
+  "task_summary": {
+    "task": "Correct the calculator add function and preserve the existing API.",
+    "success_criteria": "The add function returns the sum and the repository test passes.",
+    "repository": "/fixture/repository"
+  },
+  "current_stage": "Ready",
+  "stage_sentence": "Verification proved the selected change acceptable.",
+  "stage_transitions": [
+    {
+      "sequence": 1,
+      "timestamp": "2026-07-10T00:00:00Z",
+      "stage": "Understanding",
+      "sentence": "Understanding the task and choosing a safe route."
+    },
+    {
+      "sequence": 24,
+      "timestamp": "2026-07-10T00:00:24Z",
+      "stage": "Ready",
+      "sentence": "The run is ready for your next decision."
+    }
+  ],
+  "final_verdict": "Ready to apply",
+  "verdict_reason": "Verification proved the selected change acceptable.",
+  "change_summary": "1 file changed in the selected candidate.",
+  "changed_files": ["calculator.py"],
+  "checks_summary": {
+    "passed": 1,
+    "failed": 0,
+    "not_run": 0,
+    "unavailable": 0,
+    "accounting_status": "complete"
+  },
+  "requirement_summary": {
+    "proved": 1,
+    "not_proved": 0,
+    "accounting_status": "complete"
+  },
+  "cost": {
+    "value": 0.05,
+    "currency": "USD",
+    "accounting_status": "complete"
+  },
+  "duration": {
+    "value_ms": null,
+    "accounting_status": "unknown"
+  },
+  "agent_system": {
+    "name": "Villani agent system",
+    "backend": "fixture_capable",
+    "model": "fixture-large"
+  },
+  "escalation_summary": {
+    "attempts": 2,
+    "retries": 0,
+    "escalations": 1,
+    "summary": "Villani made 0 retries and 1 escalation."
+  },
+  "available_actions": [
+    {
+      "id": "review_evidence",
+      "label": "Review evidence",
+      "method": "GET",
+      "href": "/console/runs/run_protocol_fixture/replay"
+    }
+  ],
+  "evidence_links": [
+    {
+      "label": "Recorded evidence",
+      "href": "/console/runs/run_protocol_fixture/replay",
+      "artifact": "events.jsonl"
+    }
+  ],
+  "recovery_action": null,
+  "technical_detail_references": [
+    "manifest.json",
+    "state.json",
+    "events.jsonl",
+    "selection.json",
+    "verification/attempt_002.json",
+    "run-summary.json"
+  ],
+  "target_repository": {
+    "modified": false,
+    "accounting_status": "known",
+    "statement": "The target repository was not modified."
+  },
+  "last_event_sequence": 24,
+  "updated_at": "2026-07-10T00:00:24Z"
+}

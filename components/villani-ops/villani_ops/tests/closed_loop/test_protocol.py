@@ -46,6 +46,18 @@ VALID_SNAPSHOT_PATHS = (
     VALID_RUN / "verification" / "attempt_002.json",
     VALID_RUN / "selection.json",
     VALID_RUN / "materialization.json",
+    VALID_RUN / "validation-coverage.json",
+    VALID_RUN / "run-summary.json",
+    VALID_RUN / "product-run.json",
+    VALID_RUN / "evaluation-suite.json",
+    VALID_RUN / "evaluation-task.json",
+    VALID_RUN / "evaluation-trial.json",
+    VALID_RUN / "human-review.json",
+    VALID_RUN / "evaluation-report.json",
+    *sorted((VALID_RUN / "agent-systems").glob("asys_*.json")),
+    VALID_RUN / "attempts" / "attempt_001" / "harness-result.json",
+    VALID_RUN / "attempts" / "attempt_002" / "harness-result.json",
+    VALID_RUN / "harness-conformance.json",
 )
 
 
@@ -55,9 +67,9 @@ def _load_json(path: Path) -> dict[str, object]:
     return value
 
 
-def test_all_ten_versioned_root_schemas_are_valid_and_mapped() -> None:
-    assert len(SCHEMA_VERSION_TO_PATH) == 10
-    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 10
+def test_all_versioned_root_schemas_are_valid_and_mapped() -> None:
+    assert len(SCHEMA_VERSION_TO_PATH) == 21
+    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 21
     for schema_path in SCHEMA_VERSION_TO_PATH.values():
         assert schema_path.is_file()
         schema = _load_json(schema_path)

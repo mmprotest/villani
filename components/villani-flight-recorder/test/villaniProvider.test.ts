@@ -130,6 +130,15 @@ describe("native Villani provider", () => {
             () => {
               expect(session.sessionId).toBe("run_protocol_fixture");
               expect(session.events).toHaveLength(24);
+              expect(session.villani?.agentSystems).toHaveLength(2);
+              expect(
+                session.villani?.attempts.every(
+                  (attempt) => attempt.harnessResult !== undefined,
+                ),
+              ).toBe(true);
+              expect(session.villani?.agentSystems?.[0]?.schema_version).toBe(
+                "villani.agent_system.v1",
+              );
               expect(inventory).toEqual(before);
             },
           );
@@ -236,6 +245,14 @@ describe("native Villani provider", () => {
     expect(session.villani?.selection?.selected_candidate_ids).toEqual([
       "attempt_002",
     ]);
+    expect(session.villani?.runSummary).toMatchObject({
+      schema_version: "villani.run_summary.v1",
+      checks: { passed: 1, failed: 0, not_run: 0, unavailable: 0 },
+      focused_probes: { passed: 0, failed: 0, not_run: 0, unavailable: 0 },
+      requirements: { proved: 1, not_proved: 0 },
+      accounting: { known: true, total_cost: 0.05, currency: "USD" },
+      acceptance: { decision: true, reason_code: "accepted" },
+    });
     expect(await snapshotRunFiles(fixture.run)).toEqual(before);
   });
 
@@ -305,6 +322,14 @@ describe("native Villani provider", () => {
     expect(rows[1]?.getAttribute("data-attempt-id")).toBe("attempt_002");
     expect(rows[1]?.textContent).toContain("Selected");
     expect(rows[1]?.textContent).toContain("accepted");
+    const summary = document.querySelector(
+      '[data-testid="canonical-run-summary"]',
+    );
+    expect(summary?.textContent).toContain(
+      "passed 1, failed 0, not run 0, unavailable 0",
+    );
+    expect(summary?.textContent).toContain("proved 1, not proved 0");
+    expect(summary?.textContent).toContain("USD 0.05");
   });
 
   it("renders exact canonical token, duration, and cost values", async () => {

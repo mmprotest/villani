@@ -295,6 +295,7 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
         [
             "run", "Fix calculator addition", "--repo", str(repo),
             "--success-criteria", "test_add passes", "--max-attempts", "2",
+            "--preset", "Balanced", "--delivery", "apply",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -610,6 +611,8 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
                 str(repo),
                 "--success-criteria",
                 "The test suite passes",
+                "--delivery",
+                "apply",
             ],
             cwd=ROOT,
             env=environment,

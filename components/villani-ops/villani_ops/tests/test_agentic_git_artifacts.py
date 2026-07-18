@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from villani_ops.agentic.git_artifacts import (
     capture_git_patch,
     ensure_git_baseline,
@@ -126,3 +128,26 @@ def test_ensure_git_baseline_allows_capture_in_copied_worktree(tmp_path):
     res = capture_git_patch(wt, tmp_path / "p.diff")
     assert set(res.changed_files) == {"a.txt", "b.txt"}
     assert Path(res.patch_path).read_text().startswith("diff --git")
+
+
+def test_ensure_git_baseline_fails_closed_when_git_init_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    worktree = tmp_path / "candidate" / "worktree"
+    worktree.mkdir(parents=True)
+
+    def failed_init(args, cwd):
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=128,
+            stdout="",
+            stderr="fatal: cannot initialize isolated repository",
+        )
+
+    monkeypatch.setattr(
+        "villani_ops.agentic.git_artifacts._run",
+        failed_init,
+    )
+
+    with pytest.raises(RuntimeError, match="cannot initialize isolated repository"):
+        ensure_git_baseline(worktree)

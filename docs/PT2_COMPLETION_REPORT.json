@@ -1,0 +1,546 @@
+{
+  "schema_version": "villani.milestone_completion.v1",
+  "milestone": "PT2",
+  "title": "Build the Magical Single-Task Loop",
+  "date": "2026-07-17",
+  "generated_at": "2026-07-17T19:13:23.6636586+10:00",
+  "status": "COMPLETE",
+  "gate_a": {
+    "status": "PASS",
+    "report": "docs/PT2_GATE_A.json"
+  },
+  "pt3_started": false,
+  "acceptance_criteria": [
+    {
+      "criterion": "A configured user can start with repository, task, and Run safely.",
+      "status": "PASS",
+      "evidence": "SingleTaskPage exposes repository and one multiline task field, keeps all other controls under Details, and the clean-success Playwright scenario passes."
+    },
+    {
+      "criterion": "Strongest eligible is the pre-qualification default.",
+      "status": "PASS",
+      "evidence": "Performance is the shared CLI/Agentd/web default and policy ordering selects the strongest eligible backend first."
+    },
+    {
+      "criterion": "Verification is mandatory and no default time budget is invented.",
+      "status": "PASS",
+      "evidence": "Web and CLI submissions require verification and omit max_wall_seconds unless the user supplies it."
+    },
+    {
+      "criterion": "Running uses four truthful stages.",
+      "status": "PASS",
+      "evidence": "villani.product_run.v1 derives Understanding, Working, Checking, and Ready from persisted canonical events; the four stage screenshots pass."
+    },
+    {
+      "criterion": "Result uses one of four verdicts.",
+      "status": "PASS",
+      "evidence": "The shared schema limits final_verdict to Ready to apply, Needs review, Could not prove, or Cancelled."
+    },
+    {
+      "criterion": "CLI and web consume the same projection.",
+      "status": "PASS",
+      "evidence": "test_cli_json_equals_the_product_projection_consumed_by_web passes against villani.product_run.v1."
+    },
+    {
+      "criterion": "No unproved change can be delivered.",
+      "status": "PASS",
+      "evidence": "The product contract and delivery workflow expose delivery actions only for selected, proved work and reject stale, drifted, missing-evidence, and accepted-unverified results."
+    },
+    {
+      "criterion": "Gate A passes in a machine-readable report.",
+      "status": "PASS",
+      "evidence": "docs/PT2_GATE_A.json reports PASS with no blocking or acceptance failures."
+    },
+    {
+      "criterion": "No later milestone is started.",
+      "status": "PASS",
+      "evidence": "PT3 qualification, routing, team, SaaS, and later-milestone behavior were not introduced."
+    }
+  ],
+  "files": {
+    "added": [
+      "schemas/v1/product-run.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/product-run.schema.json",
+      "components/villani-ops/villani_ops/closed_loop/product_run.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_product_run.py",
+      "components/villani-run-model/src/product.ts",
+      "components/villani-run-model/dist/product.js",
+      "components/villani-run-model/dist/product.d.ts",
+      "components/villani-web/src/SingleTaskPage.tsx",
+      "components/villani-web/e2e/pt2-fixtures.ts",
+      "components/villani-web/e2e/pt2-loop.spec.ts",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/browser-refresh-reconnected.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/delivery-apply-selected-patch.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/delivery-create-branch.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/dirty-target-safe-action.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/stage-checking.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/stage-ready-verdict-ready-to-apply.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/stage-understanding.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/stage-working.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/unavailable-agent.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/unknown-cost.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/validation-failure-retrying.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/verdict-cancelled.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/verdict-could-not-prove-ordered.png",
+      "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts/verdict-needs-review-target-drift.png",
+      "components/villani-web/dist/assets/index-rDw1plUb.js",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-rDw1plUb.js",
+      "integration/fixtures/protocol/v1/valid_run/product-run.json",
+      "docs/PT2_GATE_A.json",
+      "docs/PT2_COMPLETION_REPORT.json",
+      "docs/PT2_COMPLETION_REPORT.md"
+    ],
+    "changed": [
+      "PLANS.md",
+      "docs/CLOSED_LOOP.md",
+      "schemas/v1/run-manifest.schema.json",
+      "schemas/v1/run-state.schema.json",
+      "components/villani-ops/README.md",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/controller.py",
+      "components/villani-ops/villani_ops/closed_loop/interfaces.py",
+      "components/villani-ops/villani_ops/closed_loop/policy_presets.py",
+      "components/villani-ops/villani_ops/closed_loop/presentation.py",
+      "components/villani-ops/villani_ops/closed_loop/protocol.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/closed_loop/state_machine.py",
+      "components/villani-ops/villani_ops/schemas/v1/run-manifest.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/run-state.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_controller.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-ops/villani_ops/tests/test_milestone3_presentation.py",
+      "components/villani-ops/villani_ops/tests/test_resume_cli.py",
+      "components/villani-ops/villani_ops/tests/test_unified_cli.py",
+      "components/villani-agentd/README.md",
+      "components/villani-agentd/tests/test_console.py",
+      "components/villani-agentd/villani_agentd/console.py",
+      "components/villani-agentd/villani_agentd/server.py",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-run-model/src/index.ts",
+      "components/villani-run-model/dist/index.js",
+      "components/villani-run-model/dist/index.d.ts",
+      "components/villani-ui/react.js",
+      "components/villani-web/README.md",
+      "components/villani-web/src/ConsoleApp.tsx",
+      "components/villani-web/src/consoleApi.ts",
+      "components/villani-web/test/console.test.tsx",
+      "components/villani-web/e2e/pt1-fixtures.ts",
+      "components/villani-web/e2e/pt1-visual.spec.ts",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/keyboard-focus.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/new-task-empty.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/new-task-mobile-320.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/new-task-populated.png",
+      "components/villani-web/e2e/__screenshots__/pt1-visual.spec.ts/service-failure-actionable.png",
+      "components/villani-web/dist/index.html",
+      "components/villani-web/test-results/.last-run.json",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "integration/fixtures/protocol/v1/valid_run/manifest.json",
+      "tests/closed_loop/test_cli_e2e.py"
+    ],
+    "deleted": [
+      "components/villani-web/dist/assets/index-DJq66jpi.js",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-DJq66jpi.js"
+    ],
+    "generated_asset_migrations": [
+      {
+        "scope": "components/villani-web/dist/assets",
+        "from": "index-DJq66jpi.js",
+        "to": "index-rDw1plUb.js"
+      },
+      {
+        "scope": "components/villani-agentd/villani_agentd/console_assets/assets",
+        "from": "index-DJq66jpi.js",
+        "to": "index-rDw1plUb.js"
+      }
+    ]
+  },
+  "architecture_and_product_decisions": [
+    "villani.product_run.v1 is the sole public product projection for CLI and web. Acceptance and delivery-action logic live in Python, not in the frontend.",
+    "Canonical persisted events, rather than timers, map to exactly four public stages. Retry and escalation language is derived by the same projection.",
+    "Ready to apply requires selected acceptance-grade verification evidence. Missing, malformed, accepted-unverified, unselected, stale, or drifted evidence fails closed.",
+    "Performance and strongest-eligible-first are pre-qualification defaults. Verification is mandatory, max wall time is absent by default, and delivery is deferred until after the result.",
+    "Repository/validation discovery is cached by repository fingerprint and can be cancelled. Submission uses an idempotency key and run status uses event subscription with a bounded polling fallback.",
+    "Cancellation is a durable controller state. It requests runner cancellation, blocks future controller work, preserves evidence, performs isolation cleanup, and reports whether the target was modified.",
+    "Browser refresh reconnects from the durable run identity. Browser closure has no server-side cancellation side effect.",
+    "Unknown cost and duration remain null with explicit accounting status; combined check counts become unknown when an input accounting source is unknown.",
+    "The result presentation order is contract-driven: verdict/reason, change summary, files, checks, requirements, cost, duration, one action, then Evidence."
+  ],
+  "schema_and_configuration_migrations": [
+    {
+      "contract": "villani.product_run.v1",
+      "type": "additive",
+      "compatibility": "New durable root and packaged schemas plus Python/TypeScript models. Existing bundles without product-run.json are projected conservatively from their canonical artifacts."
+    },
+    {
+      "contract": "villani.run_manifest.v1",
+      "type": "additive",
+      "compatibility": "The product_run artifact reference is optional for backwards readability."
+    },
+    {
+      "contract": "villani.run_state.v1",
+      "type": "additive enum value",
+      "compatibility": "CANCELLED was added without changing the meaning of existing states."
+    },
+    {
+      "contract": "configuration",
+      "type": "no durable migration",
+      "compatibility": "Performance, mandatory verification, no wall-time cap, and deferred delivery are request defaults; existing explicit advanced flags remain accepted."
+    }
+  ],
+  "tests_added_or_extended": [
+    "Five product projection tests cover legacy projection, fail-closed proof, retry language, forbidden delivery actions, and combined check accounting.",
+    "Controller/protocol tests cover durable cancellation and the additive product artifact/state contracts.",
+    "CLI tests cover shared defaults, optional success criteria, four-stage output, JSON parity, Evidence inspection, cancellation, and backwards-compatible advanced flags.",
+    "Agentd tests cover repository-fingerprint discovery caching, uncertain/unavailable validation, idempotent multiline submissions, background failures, event subscription, cancellation, evidence preservation, and HTTP routes.",
+    "Villani Web unit tests cover drafts, visible-control budget, safe defaults, status reconnection, result ordering/actions, unknown accounting, and cancellation.",
+    "Eleven PT2 Playwright scenarios cover clean success, apply, branch, validation retry, missing evidence, cancellation, refresh, dirty target, unknown cost, unavailable agent, and target drift/delivery conflict.",
+    "CLI/web projection equality is asserted directly by test_cli_json_equals_the_product_projection_consumed_by_web."
+  ],
+  "validations": [
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\closed_loop\\test_product_run.py villani_ops\\tests\\closed_loop\\test_protocol.py villani_ops\\tests\\test_milestone3_presentation.py villani_ops\\tests\\test_unified_cli.py --basetemp .pt2-test-product-04",
+      "cwd": "components/villani-ops",
+      "result": "FAIL: 118 passed, 1 failed; the failure exposed a lost explicit failure reason and was fixed.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\closed_loop\\test_product_run.py villani_ops\\tests\\closed_loop\\test_protocol.py villani_ops\\tests\\test_milestone3_presentation.py villani_ops\\tests\\test_unified_cli.py --basetemp .pt2-test-product-05",
+      "cwd": "components/villani-ops",
+      "result": "PASS: 119 passed.",
+      "final": false
+    },
+    {
+      "command": "npm test -- test/console.test.tsx --reporter=dot",
+      "cwd": "components/villani-web",
+      "result": "Environment FAIL in the workspace sandbox before test collection: Vite/esbuild child-process path access was denied.",
+      "final": false
+    },
+    {
+      "command": "npm test -- test/console.test.tsx --reporter=dot",
+      "cwd": "components/villani-web (approved unrestricted process execution)",
+      "result": "PASS: 19 passed.",
+      "final": false
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-web",
+      "result": "PASS.",
+      "final": true
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-web",
+      "result": "Environment FAIL in the workspace sandbox after model/typecheck: Vite could not load its config because child-process execution was denied.",
+      "final": false
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-web (approved unrestricted process execution)",
+      "result": "PASS: 55 modules; index.html 0.57 kB, CSS 35.18 kB, JavaScript 295.73 kB.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts\\sync-console-assets.py",
+      "cwd": ".",
+      "result": "PASS: synchronized 3 files.",
+      "final": false
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts\\sync-console-assets.py --check",
+      "cwd": ".",
+      "result": "PASS: Console assets verified: 3 files.",
+      "final": true
+    },
+    {
+      "command": "npm run e2e -- e2e/pt1-visual.spec.ts e2e/pt2-loop.spec.ts --update-snapshots",
+      "cwd": "components/villani-web",
+      "result": "PASS: 23 passed and baselines updated.",
+      "final": false
+    },
+    {
+      "command": "npm run e2e -- e2e/pt1-visual.spec.ts e2e/pt2-loop.spec.ts",
+      "cwd": "components/villani-web",
+      "result": "PASS: 23 passed.",
+      "final": false
+    },
+    {
+      "command": "npm run e2e -- e2e/pt2-loop.spec.ts --update-snapshots --grep \"missing evidence\"",
+      "cwd": "components/villani-web",
+      "result": "PASS: 1 passed; this exposed a stale screenshot filename, which was replaced by the ordered-result baseline.",
+      "final": false
+    },
+    {
+      "command": "npm run e2e -- e2e/pt2-loop.spec.ts --update-snapshots",
+      "cwd": "components/villani-web",
+      "result": "PASS: 11 passed; ordered PT2 baselines written.",
+      "final": false
+    },
+    {
+      "command": "npm run e2e -- e2e/pt2-loop.spec.ts",
+      "cwd": "components/villani-web",
+      "result": "PASS: 11 passed.",
+      "final": false
+    },
+    {
+      "command": "npm run e2e",
+      "cwd": "components/villani-web",
+      "result": "PASS: 37 passed in 11.1 seconds.",
+      "final": true
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-web (approved unrestricted process execution)",
+      "result": "PASS: 4 files, 24 tests passed.",
+      "final": true
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-web",
+      "result": "Initial FAIL: generated .pt2-vitest.json and README formatting; scratch file removed and README formatted. Final PASS: all matched files use Prettier style.",
+      "final": true
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-ui",
+      "result": "PASS.",
+      "final": true
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-ui",
+      "result": "PASS: 4 passed.",
+      "final": true
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS: build completed; 21 files, 111 tests passed.",
+      "final": true
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS.",
+      "final": true
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS.",
+      "final": true
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "result": "Initial FAIL: src/providers/villaniProtocol.ts needed formatting. Final PASS after formatting that file.",
+      "final": true
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-run-model",
+      "result": "Environment FAIL: local tsc executable is not installed for this dependency-free package checkout.",
+      "final": false
+    },
+    {
+      "command": "& ..\\villani-web\\node_modules\\.bin\\tsc.cmd -p tsconfig.json; & ..\\villani-web\\node_modules\\.bin\\tsc.cmd --noEmit -p tsconfig.json; & ..\\villani-web\\node_modules\\.bin\\vitest.cmd run",
+      "cwd": "components/villani-run-model",
+      "result": "PASS: emit and no-emit compilation succeeded; 1 file, 5 tests passed.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\tmp\\villani-pt2-vops-final-20260717",
+      "cwd": "components/villani-ops (workspace sandbox)",
+      "result": "Environment FAIL during setup: the sandbox denied pytest base-temporary-directory access; no product assertion failed.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\tmp\\villani-pt2-vops-final-20260717",
+      "cwd": "components/villani-ops",
+      "result": "FAIL: 1161 passed, 2 skipped, 114 deselected, 2 failed, 2 warnings in 243.42 seconds; two legacy CLI output assertions were updated to the PT2 projection.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\closed_loop\\test_product_run.py villani_ops\\tests\\closed_loop\\test_run_summary.py villani_ops\\tests\\test_unified_cli.py --basetemp .pt2-test-final-focused-03",
+      "cwd": "components/villani-ops",
+      "result": "PASS: 50 passed in 2.89 seconds.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\tmp\\villani-pt2-vops-final-20260717",
+      "cwd": "components/villani-ops",
+      "result": "PASS: 1164 passed, 2 skipped, 114 deselected, 1 pytest-cache warning in 242.07 seconds.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .pt2-test-agentd-posttype-02",
+      "cwd": "components/villani-agentd",
+      "result": "PASS: 86 passed in 17.50 seconds.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q --basetemp C:\\tmp\\villani-pt2-closed-loop-final-20260717",
+      "cwd": ".",
+      "result": "FAIL: 8 passed, 3 failed because legacy scenarios assumed default apply and weak-first routing; those scenarios now request their legacy behavior explicitly.",
+      "final": false
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest -q tests\\closed_loop\\test_cli_e2e.py --basetemp C:\\tmp\\villani-pt2-closed-loop-targeted-20260717",
+      "cwd": ".",
+      "result": "PASS: 3 passed, 1 Starlette warning in 33.81 seconds.",
+      "final": false
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q --basetemp C:\\tmp\\villani-pt2-closed-loop-final2-20260717",
+      "cwd": ".",
+      "result": "PASS: 11 passed, 1 Starlette warning in 42.34 seconds.",
+      "final": true
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\tmp\\villani-pt2-vcode-final-20260717",
+      "cwd": "components/villani-code",
+      "result": "PASS: 686 passed, 1 skipped, 28 warnings in 72.98 seconds.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest tests\\final_foundation -q --basetemp C:\\tmp\\villani-pt2-final-foundation-20260717",
+      "cwd": ".",
+      "result": "PASS: 38 passed in 6.89 seconds.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts\\sync-console-assets.py; & .venv\\Scripts\\python.exe scripts\\sync-console-assets.py --check; & .venv\\Scripts\\python.exe -m pytest -q tests\\final_foundation\\test_frontend_assets.py --basetemp components\\villani-agentd\\.pt2-parity-final",
+      "cwd": ".",
+      "result": "PASS: synchronized 3 files; verified 3 files; 2 byte-parity tests passed in 0.55 seconds.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --python-version 3.11 --ignore-missing-imports --no-implicit-optional components\\villani-ops\\villani_ops\\closed_loop\\product_run.py components\\villani-ops\\villani_ops\\closed_loop\\interfaces.py components\\villani-ops\\villani_ops\\closed_loop\\protocol.py components\\villani-ops\\villani_ops\\closed_loop\\state_machine.py components\\villani-ops\\villani_ops\\closed_loop\\policy_presets.py components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-agentd\\villani_agentd\\console.py components\\villani-agentd\\villani_agentd\\server.py",
+      "cwd": ".",
+      "result": "Diagnostic FAIL: 202 errors in 39 files, predominantly pre-existing followed-import debt; direct PT2 typing issues were fixed and imports were isolated for the focused gate.",
+      "final": false
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --python-version 3.11 --ignore-missing-imports --no-implicit-optional --follow-imports=skip components\\villani-ops\\villani_ops\\closed_loop\\product_run.py components\\villani-ops\\villani_ops\\closed_loop\\interfaces.py components\\villani-ops\\villani_ops\\closed_loop\\protocol.py components\\villani-ops\\villani_ops\\closed_loop\\state.py components\\villani-ops\\villani_ops\\closed_loop\\policy_presets.py",
+      "cwd": ".",
+      "result": "Command FAIL before checking: state.py does not exist; the live module is state_machine.py.",
+      "final": false
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\closed_loop\\test_product_run.py villani_ops\\tests\\test_run_summary.py villani_ops\\tests\\test_unified_cli.py --basetemp .pt2-test-final-focused-02",
+      "cwd": "components/villani-ops",
+      "result": "Command FAIL before collection: test_run_summary.py is under tests/closed_loop, not tests root; no tests ran.",
+      "final": false
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --python-version 3.11 --ignore-missing-imports --no-implicit-optional --follow-imports=skip components\\villani-ops\\villani_ops\\closed_loop\\product_run.py components\\villani-ops\\villani_ops\\closed_loop\\interfaces.py components\\villani-ops\\villani_ops\\closed_loop\\protocol.py components\\villani-ops\\villani_ops\\closed_loop\\state_machine.py components\\villani-ops\\villani_ops\\closed_loop\\policy_presets.py",
+      "cwd": ".",
+      "result": "PASS: no issues in 5 source files.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --python-version 3.11 --ignore-missing-imports --no-implicit-optional --follow-imports=skip components\\villani-agentd\\villani_agentd\\console.py components\\villani-agentd\\villani_agentd\\server.py",
+      "cwd": ".",
+      "result": "PASS: no issues in 2 source files.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --python-version 3.11 --ignore-missing-imports --no-implicit-optional --follow-imports=skip components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-ops\\villani_ops\\closed_loop\\controller.py components\\villani-ops\\villani_ops\\closed_loop\\presentation.py",
+      "cwd": ".",
+      "result": "PASS: no issues in 3 source files.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m ruff check components\\villani-ops\\villani_ops\\closed_loop\\product_run.py components\\villani-ops\\villani_ops\\closed_loop\\controller.py components\\villani-ops\\villani_ops\\closed_loop\\interfaces.py components\\villani-ops\\villani_ops\\closed_loop\\policy_presets.py components\\villani-ops\\villani_ops\\closed_loop\\presentation.py components\\villani-ops\\villani_ops\\closed_loop\\protocol.py components\\villani-ops\\villani_ops\\closed_loop\\schema_validation.py components\\villani-ops\\villani_ops\\closed_loop\\state_machine.py components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-agentd\\villani_agentd\\console.py components\\villani-agentd\\villani_agentd\\server.py components\\villani-ops\\villani_ops\\tests\\closed_loop\\test_product_run.py components\\villani-ops\\villani_ops\\tests\\closed_loop\\test_protocol.py components\\villani-ops\\villani_ops\\tests\\closed_loop\\test_controller.py components\\villani-ops\\villani_ops\\tests\\test_milestone3_presentation.py components\\villani-ops\\villani_ops\\tests\\test_resume_cli.py components\\villani-ops\\villani_ops\\tests\\test_unified_cli.py components\\villani-agentd\\tests\\test_console.py tests\\closed_loop\\test_cli_e2e.py",
+      "cwd": ".",
+      "result": "PASS: all checks passed.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m mypy --python-version 3.11 --ignore-missing-imports --no-implicit-optional --follow-imports=skip components\\villani-ops\\villani_ops\\closed_loop\\product_run.py components\\villani-ops\\villani_ops\\closed_loop\\controller.py components\\villani-ops\\villani_ops\\closed_loop\\interfaces.py components\\villani-ops\\villani_ops\\closed_loop\\policy_presets.py components\\villani-ops\\villani_ops\\closed_loop\\presentation.py components\\villani-ops\\villani_ops\\closed_loop\\protocol.py components\\villani-ops\\villani_ops\\closed_loop\\schema_validation.py components\\villani-ops\\villani_ops\\closed_loop\\state_machine.py components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-agentd\\villani_agentd\\console.py components\\villani-agentd\\villani_agentd\\server.py",
+      "cwd": ".",
+      "result": "PASS: no issues in 11 source files.",
+      "final": true
+    },
+    {
+      "command": "git diff --check",
+      "cwd": ".",
+      "result": "PASS: no whitespace errors; Git emitted working-tree LF-to-CRLF notices only.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -c \"import json, pathlib; paths=[pathlib.Path('schemas/v1/product-run.schema.json'),pathlib.Path('components/villani-ops/villani_ops/schemas/v1/product-run.schema.json'),pathlib.Path('integration/fixtures/protocol/v1/valid_run/product-run.json')]; [json.loads(p.read_text(encoding='utf-8')) for p in paths]; print(f'parsed {len(paths)} PT2 JSON artifacts')\"",
+      "cwd": ".",
+      "result": "PASS: parsed 3 PT2 JSON artifacts.",
+      "final": true
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m json.tool docs\\PT2_GATE_A.json; & .venv\\Scripts\\python.exe -m json.tool docs\\PT2_COMPLETION_REPORT.json",
+      "cwd": ".",
+      "result": "PASS: both machine-readable reports parsed as JSON.",
+      "final": true
+    },
+    {
+      "command": "$r = Get-Content docs\\PT2_COMPLETION_REPORT.json -Raw | ConvertFrom-Json; $g = Get-Content docs\\PT2_GATE_A.json -Raw | ConvertFrom-Json; if ($r.status -ne 'COMPLETE' -or $r.pt3_started -ne $false) { throw 'Completion status mismatch' }; if ($g.status -ne 'PASS' -or $g.pt3_started -ne $false -or $g.blocking_failures.Count -ne 0 -or $g.acceptance_failures.Count -ne 0) { throw 'Gate status mismatch' }; $missing = @(); foreach ($kind in @('added','changed')) { foreach ($path in $r.files.$kind) { if (-not (Test-Path -LiteralPath $path)) { $missing += $path } } }; $present = @(); foreach ($path in $r.files.deleted) { if (Test-Path -LiteralPath $path) { $present += $path } }; if ($missing.Count -ne 0) { throw ('Missing report paths: ' + ($missing -join ', ')) }; if ($present.Count -ne 0) { throw ('Deleted report paths still present: ' + ($present -join ', ')) }; 'completion report consistent: {0} added, {1} changed, {2} deleted; Gate A {3}' -f $r.files.added.Count,$r.files.changed.Count,$r.files.deleted.Count,$g.status",
+      "cwd": ".",
+      "result": "PASS: completion report consistent: 30 added, 46 changed, 2 deleted; Gate A PASS. Two preceding Python one-line attempts failed only because PowerShell stripped nested quoting; the JSON parsers had already passed.",
+      "final": true
+    }
+  ],
+  "end_to_end_artifacts": {
+    "playwright": {
+      "suite": "components/villani-web/e2e/pt2-loop.spec.ts",
+      "result": "11 PT2 scenarios passed; full browser suite 37 passed",
+      "screenshots_directory": "components/villani-web/e2e/__screenshots__/pt2-loop.spec.ts",
+      "screenshot_count": 14
+    },
+    "scenarios": [
+      "clean success and all four stages",
+      "apply selected patch",
+      "create branch",
+      "validation failure then retry success",
+      "missing evidence",
+      "cancellation",
+      "browser refresh/reconnect",
+      "dirty target",
+      "unknown cost",
+      "unavailable agent",
+      "delivery conflict after target drift",
+      "CLI/web projection equality"
+    ],
+    "visual_review": "All PT2 PNGs were inspected individually, including original-resolution review of the four stages, all verdicts, target-state placement, and 320px New task layout.",
+    "packaged_parity": "Source build and Agentd packaged console digests match for all 3 files; two byte-parity tests passed."
+  },
+  "known_failures": [
+    "No final test, Gate A, or acceptance failure remains.",
+    "Sandboxed Vite/Vitest process launches were denied; the same commands passed with the approved process permission.",
+    "The in-app Browser connector had no attached browser. Playwright/Chromium provided the required deterministic browser evidence.",
+    "The standalone run-model npm build lacks a local tsc binary; pinned repository TypeScript and Vitest binaries compiled and tested it successfully.",
+    "A broad mypy run that followed the existing package graph found 202 errors in 39 files. The full eleven-file PT2 production surface passes focused mypy with imports skipped, and package tests pass."
+  ],
+  "skipped_and_deselected": [
+    "Villani Ops: 2 host-capability tests skipped and 114 opt-in/configuration tests deselected.",
+    "Villani Code: 1 opt-in external Claude Code smoke test skipped.",
+    "In-app browser inspection skipped because agent.browsers.list() returned no browsers; no application behavior was skipped from Playwright."
+  ],
+  "security_privacy_data_loss_compatibility_risks": [
+    "Delivery remains fail closed and is never offered for unproved, stale, unselected, drifted, or accepted-unverified work.",
+    "Cancellation is cooperative before delivery and cleanup is durable. An already-started atomic delivery is not interrupted mid-write; its final target state is reported truthfully.",
+    "Drafts are stored only in browser-local storage and contain the user's unsent repository/task/details; clearing or blocking site storage removes resumability but does not submit the draft.",
+    "Idempotency prevents duplicate runs on repeat submission or refresh. Closing a browser does not cancel server work.",
+    "Repository discovery reads local metadata and caches only by fingerprint; cache invalidation follows repository fingerprint changes.",
+    "No credentials, secrets, fabricated cost/duration, harness identity, competing candidates, or route/cost inputs were added to semantic verification evidence.",
+    "Existing run bundles remain readable because the product projection and manifest reference are additive and legacy derivation is conservative."
+  ],
+  "user_facing_before_after": {
+    "before": "New task exposed the earlier generic run controls and the browser/CLI each interpreted raw controller state. Progress and final output did not have one durable product contract, cancellation/reconnection semantics, or one dominant fail-closed verdict.",
+    "after": "A configured user selects a repository, writes a multiline task, and presses Run safely. Details holds success criteria, references, attachments, and advanced controls. The same canonical projection drives four truthful stages and one of four verdicts in CLI and web, with unknown accounting preserved and delivery offered only after proved selection."
+  },
+  "assumptions": [
+    "Performance means the strongest currently eligible configured backend before later qualification/routing milestones exist.",
+    "No default wall-time means null/absent, not zero or an implicit controller timeout.",
+    "High-confidence repository discovery may proceed without confirmation; materially uncertain discovery asks one plain-language question.",
+    "Alternative acceptance evidence can support a run when repository validation is unavailable, but absence of sufficient alternative evidence cannot produce Ready to apply."
+  ],
+  "pt3_confirmation": "PT3 was not started."
+}

@@ -58,6 +58,34 @@ def test_recorded_guided_setup_reaches_completed_sample_and_stops_service(
     assert report["sample_final_state"] == "COMPLETED"
     assert report["sample_selected_attempt"] == "attempt_001"
     assert report["sample_validation_exit_code"] == 0
+    assert report["sample_evidence"]["patch_bytes"] > 0
+    assert any(
+        "test" in Path(path).name.casefold()
+        for path in report["sample_evidence"]["changed_files"]
+    )
+    assert any(
+        "test" not in Path(path).name.casefold()
+        for path in report["sample_evidence"]["changed_files"]
+    )
+    assert report["sample_evidence"]["repository_checks"] == {
+        "passed": 1,
+        "failed": 0,
+        "not_run": 0,
+        "unavailable": 0,
+        "accounting_status": "complete",
+    }
+    assert report["sample_evidence"]["focused_probes"]["passed"] == 0
+    assert report["sample_evidence"]["requirements"]["not_proved"] == 0
+    assert report["sample_evidence"]["acceptance"]["decision"] is True
+    assert report["sample_evidence"]["classification"]["raw"]["difficulty"] == "easy"
+    assert (
+        report["sample_evidence"]["classification"]["effective"]["difficulty"]
+        == "easy"
+    )
+    assert report["sample_evidence"]["classification"]["signals"]["behavior_count"] == 1
+    assert report["sample_evidence"]["coverage_schema_version"] == (
+        "villani.validation_coverage.v1"
+    )
     assert set(report["delivery_modes"]) == {
         "suggest",
         "approve",
@@ -71,6 +99,9 @@ def test_recorded_guided_setup_reaches_completed_sample_and_stops_service(
     assert report["doctor"]["inferred_commands_executed"] is False
     assert all(item["model_tokens_spent"] == 0 for item in report["doctor"]["backend_connectivity"])
     assert report["service_stopped"] is True
+    assert report["dead_letters"] == 0
+    assert report["secret_scan"]["status"] == "passed"
+    assert report["secret_scan"]["matches"] == []
     assert report["screenshots"] == []
     assert sorted(command["exit_code"] for command in report["commands"]).count(4) == 1
     assert all(command["exit_code"] in {0, 4} for command in report["commands"])

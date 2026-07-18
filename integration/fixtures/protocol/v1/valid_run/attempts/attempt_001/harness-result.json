@@ -1,0 +1,68 @@
+{
+  "schema_version": "villani.harness_result.v1",
+  "system_id": "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575",
+  "session_id": "session_attempt_001",
+  "run_id": "run_protocol_fixture",
+  "attempt_id": "attempt_001",
+  "isolated_worktree": ".worktrees/attempt_001",
+  "baseline_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "patch": "diff --git a/calculator.py b/calculator.py\nindex 1111111..2222222 100644\n--- a/calculator.py\n+++ b/calculator.py\n@@ -1,2 +1,2 @@\n def add(left, right):\n-    return None\n+    return left - right\n",
+  "changed_files": [
+    "calculator.py"
+  ],
+  "stdout": "",
+  "stderr": "",
+  "normalized_events": [
+    {
+      "sequence": 1,
+      "timestamp": "2026-07-10T00:00:04Z",
+      "name": "session_started",
+      "payload": {
+        "session_id": "session_attempt_001"
+      },
+      "raw_namespace": null,
+      "raw_name": null
+    },
+    {
+      "sequence": 2,
+      "timestamp": "2026-07-10T00:00:04Z",
+      "name": "session_complete",
+      "payload": {
+        "status": "completed"
+      },
+      "raw_namespace": null,
+      "raw_name": null
+    }
+  ],
+  "raw_trace": {
+    "path": "attempts/attempt_001/trace/events.jsonl"
+  },
+  "usage": {
+    "input_tokens": 80,
+    "output_tokens": 40,
+    "accounting_status": "complete"
+  },
+  "cost": {
+    "amount": 0.01,
+    "currency": "USD",
+    "accounting_status": "complete",
+    "source": "fixture"
+  },
+  "duration_ms": 4000,
+  "duration_accounting_status": "complete",
+  "harness_status": "completed",
+  "infrastructure_failure": null,
+  "artifacts": [
+    {
+      "kind": "patch",
+      "path": "attempts/attempt_001/patch.diff",
+      "digest": null,
+      "size_bytes": 194
+    }
+  ],
+  "cleanup": {
+    "status": "succeeded",
+    "completed_at": "2026-07-10T00:00:04Z",
+    "details": {}
+  }
+}

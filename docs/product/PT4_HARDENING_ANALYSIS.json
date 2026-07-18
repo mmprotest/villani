@@ -1,0 +1,248 @@
+{
+  "document_kind": "pt4_founder_hardening_analysis",
+  "generated_at": "2026-07-17T12:18:29.096224Z",
+  "suite_digest": "6254c99f1149eaaae07e72e783147ca7b8c9ed4758419b9307547deb80105d49",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "gate_b": {
+    "status": "INSUFFICIENT_EVIDENCE",
+    "checks": [
+      {
+        "check_id": "minimum_paired_tasks",
+        "status": "insufficient_evidence",
+        "actual": 0,
+        "required": 30,
+        "reason": "Gate B requires at least 30 distinct paired real tasks."
+      },
+      {
+        "check_id": "minimum_repositories",
+        "status": "insufficient_evidence",
+        "actual": 0,
+        "required": 2,
+        "reason": "Gate B requires evidence from at least two repositories."
+      },
+      {
+        "check_id": "valid_immutable_baselines",
+        "status": "pass",
+        "actual": true,
+        "required": true,
+        "reason": "Every baseline must remain content-addressed and restorable."
+      },
+      {
+        "check_id": "zero_known_false_acceptance",
+        "status": "insufficient_evidence",
+        "actual": 0,
+        "required": 0,
+        "reason": "All paired trials must be reviewed and no known false acceptance may remain."
+      },
+      {
+        "check_id": "accepted_as_is_non_inferiority",
+        "status": "insufficient_evidence",
+        "actual": {
+          "direct": null,
+          "villani": null
+        },
+        "required": "villani >= direct",
+        "reason": "Villani's human accepted-as-is rate may not be lower."
+      },
+      {
+        "check_id": "review_or_cost_improvement",
+        "status": "insufficient_evidence",
+        "actual": {
+          "median_review_time_reduction": null,
+          "total_cost_per_accepted_change_reduction": null
+        },
+        "required": {
+          "review_time": 0.3,
+          "cost": 0.25,
+          "operator": "either"
+        },
+        "reason": "Require 30% lower median review time or 25% lower total cost per accepted change."
+      },
+      {
+        "check_id": "automatic_configuration",
+        "status": "insufficient_evidence",
+        "actual": null,
+        "required": 0.8,
+        "reason": "At least 80% of eligible paired trials must use automatic configuration."
+      },
+      {
+        "check_id": "complete_unknown_and_exclusion_disclosure",
+        "status": "pass",
+        "actual": true,
+        "required": true,
+        "reason": "Unknown accounting and exclusions must be explicit and the frozen suite must attest disclosure."
+      },
+      {
+        "check_id": "real_founder_evidence_only",
+        "status": "insufficient_evidence",
+        "actual": false,
+        "required": true,
+        "reason": "Synthetic fixtures are always excluded from Founder Gate evidence."
+      }
+    ]
+  },
+  "sufficiency": {
+    "status": "INSUFFICIENT_EVIDENCE",
+    "paired_real_tasks": 0,
+    "required_paired_real_tasks": 20,
+    "paired_real_trials": 0,
+    "baseline_integrity": null,
+    "human_labels_complete": false,
+    "latest_human_reviews": 0,
+    "missing_evidence": [
+      "paired_real_tasks:0/20",
+      "real_baseline_integrity:unresolved",
+      "human_labels:materially_incomplete"
+    ]
+  },
+  "failure_taxonomy": [
+    {
+      "taxonomy": "task_misunderstanding",
+      "count": 0
+    },
+    {
+      "taxonomy": "irrelevant_navigation",
+      "count": 0
+    },
+    {
+      "taxonomy": "context_waste",
+      "count": 0
+    },
+    {
+      "taxonomy": "patch_quality",
+      "count": 0
+    },
+    {
+      "taxonomy": "validation_failure",
+      "count": 0
+    },
+    {
+      "taxonomy": "missing_validation",
+      "count": 0
+    },
+    {
+      "taxonomy": "verifier_false_reject",
+      "count": 0
+    },
+    {
+      "taxonomy": "verifier_false_accept",
+      "count": 0
+    },
+    {
+      "taxonomy": "runner_infrastructure",
+      "count": 0
+    },
+    {
+      "taxonomy": "model_capability",
+      "count": 0
+    },
+    {
+      "taxonomy": "environment_mismatch",
+      "count": 0
+    },
+    {
+      "taxonomy": "retry_without_progress",
+      "count": 0
+    },
+    {
+      "taxonomy": "premature_escalation",
+      "count": 0
+    },
+    {
+      "taxonomy": "late_escalation",
+      "count": 0
+    },
+    {
+      "taxonomy": "selection_error",
+      "count": 0
+    },
+    {
+      "taxonomy": "delivery_conflict",
+      "count": 0
+    },
+    {
+      "taxonomy": "unknown_accounting",
+      "count": 0
+    },
+    {
+      "taxonomy": "user_flow_friction",
+      "count": 0
+    },
+    {
+      "taxonomy": "evidence_backed_other",
+      "count": 0
+    }
+  ],
+  "failure_clusters": [],
+  "prioritization": {
+    "formula": "frequency x recoverable accepted-change loss x average cost or supervision burden x diagnostic confidence",
+    "burden_basis": "review_minutes",
+    "status": "insufficient_evidence",
+    "ranked": [],
+    "unranked": [],
+    "reason": "PT4 requires at least 20 paired real tasks, valid baselines, and materially complete labels."
+  },
+  "verifier_diagnostics": {
+    "human_labelled_cases": 0,
+    "confusion_matrix": {
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0
+    },
+    "precision": null,
+    "recall": null,
+    "specificity": null,
+    "f1": null,
+    "false_positive_cases": [],
+    "false_negative_cases": [],
+    "infrastructure_exclusions": {
+      "count": 0,
+      "cases": []
+    },
+    "requirement_level_errors": [],
+    "evidence_type_correlations": [],
+    "semantic_deterministic_disagreement": {
+      "count": 0,
+      "cases": []
+    },
+    "calibration": {
+      "status": "not_defined",
+      "reason": "Binary verification records no success probability.",
+      "probability_fabricated": false
+    }
+  },
+  "before_after": {
+    "status": "insufficient_evidence",
+    "comparisons": [],
+    "reason": "No exact frozen real-task before/after population exists."
+  },
+  "correctness_regressions": [
+    {
+      "id": "unknown_duration_accounting",
+      "evidence_basis": "undeniable_accounting_correctness_defect",
+      "fixture": "integration/fixtures/evaluation/pt4/unknown-duration-accounting.json",
+      "before": {
+        "value": 0.0,
+        "accounting_status": "complete"
+      },
+      "after": {
+        "value": null,
+        "accounting_status": "unknown"
+      },
+      "production_scope": "evaluation_report_accounting_only",
+      "controller_behavior_changed": false,
+      "verifier_behavior_changed": false,
+      "test": "villani_ops/tests/test_founder_hardening.py::test_unknown_duration_regression_preserves_unknown_accounting"
+    }
+  ],
+  "production_changes_authorized": false,
+  "speculative_performance_changes": [],
+  "verifier_behavior_changed": false,
+  "no_false_acceptance_introduced": "not_applicable_no_verifier_change",
+  "founder_proof_certificate": null,
+  "founder_proof_certificate_issued": false,
+  "pt5_authorized": false,
+  "pt5_started": false,
+  "analysis_digest": "4f5f4c70fa194831f6f249bc905f73413889c96f3f4f528a01701a8c3bb5fcce"
+}

@@ -1,0 +1,78 @@
+{
+  "agent_system": {
+    "agent": "fixture-agent",
+    "agent_version": "fixture",
+    "environment_fingerprint": "fixture-environment",
+    "execution_provider": "inherit",
+    "harness": "direct_single_call",
+    "harness_version": "fixture",
+    "model": null,
+    "product": "Direct coding system",
+    "product_version": "fixture",
+    "provider": null,
+    "serving_engine": null,
+    "serving_engine_version": null
+  },
+  "arm": "direct",
+  "artifact_references": [
+    "trial.json"
+  ],
+  "attempts": 1,
+  "baseline_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "baseline_restore_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "completed_at": "2026-07-17T00:00:00Z",
+  "configuration_mode": "automatic",
+  "correction_required": null,
+  "duration": {
+    "accounting_status": "complete",
+    "source": "measured_fixture",
+    "value_ms": 100
+  },
+  "escalations": 0,
+  "evidence_eligible": false,
+  "exclusion_reason": null,
+  "execution_cost": {
+    "accounting_status": "unknown",
+    "currency": null,
+    "source": "fixture_unknown",
+    "value": null
+  },
+  "false_acceptance": null,
+  "false_rejection": null,
+  "human_outcome": null,
+  "local_compute_cost": {
+    "accounting_status": "unknown",
+    "currency": null,
+    "source": "fixture_unknown",
+    "value": null
+  },
+  "order_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "proved_acceptable": false,
+  "randomized_order": 1,
+  "repetition": 1,
+  "review_minutes": null,
+  "run_id": "direct_fixture",
+  "schema_version": "villani.evaluation_trial.v1",
+  "started_at": "2026-07-17T00:00:00Z",
+  "status": "completed",
+  "suite_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "suite_id": "suite_fixture",
+  "target_repository_modified": false,
+  "task_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "task_id": "task_fixture",
+  "total_cost": {
+    "accounting_status": "unknown",
+    "currency": null,
+    "source": "fixture_unknown",
+    "value": null
+  },
+  "trial_id": "trial_fixture",
+  "verification_cost": {
+    "accounting_status": "not_applicable",
+    "currency": null,
+    "source": "fixture_local_verification",
+    "value": null
+  },
+  "verification_status": "complete",
+  "verifier_disagreement": null
+}

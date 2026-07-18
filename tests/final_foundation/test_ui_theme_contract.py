@@ -13,15 +13,15 @@ def test_web_and_flight_recorder_share_the_monochrome_theme():
     ).read_text(encoding="utf-8")
     assert 'import "@villani/ui/theme.css"' in web
     assert 'from "@villani/ui"' in recorder
-    assert "--v-bg-root: #050505" in theme
-    assert "--v-bg-panel: #090909" in theme
-    assert "--v-text-primary: #f2f2f2" in theme
+    assert "--v-bg-root: #f6f6f3" in theme
+    assert "--v-bg-panel: #ffffff" in theme
+    assert "--v-text-primary: #171717" in theme
     assert "--v-sidebar-width: 232px" in theme
-    assert "color-scheme: dark" in theme
+    assert "color-scheme: light" in theme
     assert "green" not in module.lower()
     assert "#0f0" not in theme.lower()
-    assert "#f8fafc" not in theme.lower()
-    assert "#f7f3ea" not in theme.lower()
+    assert "#090d19" not in theme.lower()
+    assert "#45dfa7" not in theme.lower()
 
 
 def test_existing_application_shells_are_present():

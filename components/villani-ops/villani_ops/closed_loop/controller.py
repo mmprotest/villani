@@ -20,6 +20,8 @@ from .event_writer import EventWriter, failure_payload, redact_data, redact_mess
 from .event_sink import RunEventSink
 from .failure_classification import classify_failure
 from .classification_adjustments import apply_classification_policy
+from .run_summary import persist_run_summary
+from .product_run import persist_product_run
 from .interfaces import (
     AttemptContext,
     AttemptResult,
@@ -231,6 +233,34 @@ class _Runtime:
     reliability_explicit: bool = False
 
 
+class _LinkedCancellationEvent:
+    """A scheduler-owned signal that also observes the run-level signal."""
+
+    def __init__(self, local: threading.Event, run_level: Any | None) -> None:
+        self._local = local
+        self._run_level = run_level
+
+    def is_set(self) -> bool:
+        external = self._run_level
+        return self._local.is_set() or bool(
+            external is not None
+            and callable(getattr(external, "is_set", None))
+            and external.is_set()
+        )
+
+    def set(self) -> None:
+        self._local.set()
+
+    def wait(self, timeout: float | None = None) -> bool:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while not self.is_set():
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
+                return False
+            self._local.wait(0.05 if remaining is None else min(0.05, remaining))
+        return True
+
+
 class ClosedLoopController:
     """Run the canonical controller state machine using injected dependencies."""
 
@@ -269,6 +299,18 @@ class ClosedLoopController:
                 manifests.append(manifest)
             manifests.extend(getattr(dependency, "additional_plugin_manifests", ()))
         self._plugin_identities = tuple(manifest.identity() for manifest in manifests)
+        raw_agent_systems = getattr(attempt_runner, "agent_system_identities", ())
+        self._agent_system_identities = tuple(
+            item.model_dump(mode="json")
+            if hasattr(item, "model_dump")
+            else dict(item)
+            for item in raw_agent_systems
+            if hasattr(item, "model_dump") or isinstance(item, Mapping)
+        )
+        migration = getattr(attempt_runner, "agent_system_migration_report", {})
+        self._agent_system_migration_report = (
+            dict(migration) if isinstance(migration, Mapping) else {}
+        )
 
     def _checkpoint(self, boundary: str) -> None:
         if self._failure_injector is not None:
@@ -299,6 +341,9 @@ class ClosedLoopController:
                 events=events,
             )
             self._initialize_bundle(runtime)
+            if self._cancel_if_requested(runtime):
+                runtime.events.finalize_delivery()
+                return self._result(runtime)
             self._validate_run_configuration(runtime.request.policy_configuration)
             self._checkpoint("after_run_creation")
             if not self._classify(runtime):
@@ -310,15 +355,18 @@ class ClosedLoopController:
         except Exception as error:
             if runtime is not None and not runtime.machine.terminal:
                 try:
-                    self._emit_failure_event(
-                        runtime, "controller_failed", error, "controller"
-                    )
-                    self._fail(
-                        runtime,
-                        "controller_failure",
-                        redact_message(str(error)),
-                        error=error,
-                    )
+                    if self._cancellation_requested(runtime):
+                        self._cancel(runtime)
+                    else:
+                        self._emit_failure_event(
+                            runtime, "controller_failed", error, "controller"
+                        )
+                        self._fail(
+                            runtime,
+                            "controller_failure",
+                            redact_message(str(error)),
+                            error=error,
+                        )
                 except Exception:
                     # An unrecoverable store failure may make terminal persistence
                     # impossible; no traceback or unredacted message escapes here.
@@ -423,6 +471,19 @@ class ClosedLoopController:
             runtime.events.finalize_delivery()
             return self._result(runtime)
 
+    def cancel(self, run_id: str, runs_root: str | Path) -> ClosedLoopRunResult:
+        """Safely cancel a persisted non-terminal run after process recovery."""
+
+        store = RunStore(runs_root, run_id)
+        with store.recovery_lock():
+            runtime = self._load_recovery_runtime(store)
+            if runtime.machine.terminal:
+                runtime.events.finalize_delivery()
+                return self._result(runtime)
+            self._cancel(runtime)
+            runtime.events.finalize_delivery()
+            return self._result(runtime)
+
     @staticmethod
     def _validate_run_configuration(configuration: Mapping[str, Any]) -> None:
         backends = configured_backends(configuration)
@@ -460,7 +521,11 @@ class ClosedLoopController:
 
         next_decision = pending
         while not runtime.machine.terminal:
+            if self._cancel_if_requested(runtime):
+                break
             decision = next_decision or self._ask_policy(runtime)
+            if self._cancel_if_requested(runtime):
+                break
             next_decision = None
             if decision is None:
                 break
@@ -503,6 +568,8 @@ class ClosedLoopController:
                 self._run_parallel_strategy(runtime, action, attempt_id)
                 break
             self._run_attempt(runtime, action, attempt_id)
+            if self._cancel_if_requested(runtime):
+                break
             if self._apply_reliability_stop(runtime):
                 break
 
@@ -900,7 +967,7 @@ class ClosedLoopController:
                 if attempt.metadata.get("repair_source_attempt_id")
                 else None
             ),
-            cancellation_event=threading.Event(),
+            cancellation_event=(runtime.request.cancellation_event or threading.Event()),
         )
 
     def _artifact_text(self, runtime: _Runtime, value: str | None) -> str:
@@ -1843,6 +1910,34 @@ class ClosedLoopController:
             metadata={"lineage": redact_data(_mapping_copy(runtime.request.lineage))},
         )
         runtime.store.write_protocol("task.json", task)
+        for identity in self._agent_system_identities:
+            system_id = str(identity.get("system_id") or "")
+            if not system_id:
+                raise RunStoreError("agent-system identity is missing system_id")
+            runtime.store.write_json(f"agent-systems/{system_id}.json", identity)
+        if self._agent_system_identities:
+            runtime.store.write_json(
+                "agent-systems/index.json",
+                {
+                    "schema_version": "villani.agent_system_index.v1",
+                    "system_ids": [
+                        item["system_id"] for item in self._agent_system_identities
+                    ],
+                    "systems": [
+                        {
+                            "system_id": item["system_id"],
+                            "route_name": item["route_name"],
+                            "path": f"agent-systems/{item['system_id']}.json",
+                            "production_enabled": item["production_enabled"],
+                        }
+                        for item in self._agent_system_identities
+                    ],
+                },
+            )
+            runtime.store.write_json(
+                "agent-systems/migration.json",
+                self._agent_system_migration_report,
+            )
         validation_discovery = runtime.request.policy_configuration.get(
             "repository_validation_discovery"
         )
@@ -1996,6 +2091,19 @@ class ClosedLoopController:
                     timestamp=classified_at,
                 )
             )
+            returned_metadata = _mapping_copy(returned.metadata)
+            model_classification = returned_metadata.get("model_classification")
+            raw_classification = (
+                _mapping_copy(model_classification)
+                if isinstance(model_classification, Mapping)
+                else {
+                    "difficulty": returned.difficulty,
+                    "risk": returned.risk,
+                    "category": returned.category,
+                    "required_capabilities": list(returned.required_capabilities),
+                    "confidence": returned.confidence,
+                }
+            )
             classification = ClassificationSnapshot(
                 schema_version="villani.classification.v1",
                 classification_id="classification_001",
@@ -2012,14 +2120,9 @@ class ClosedLoopController:
                 reasoning_summary=effective.reasoning_summary,
                 signals=_mapping_copy(effective.signals),
                 metadata={
-                    **_mapping_copy(returned.metadata),
-                    "raw_classification": {
-                        "difficulty": returned.difficulty,
-                        "risk": returned.risk,
-                        "category": returned.category,
-                        "required_capabilities": list(returned.required_capabilities),
-                        "confidence": returned.confidence,
-                    },
+                    **returned_metadata,
+                    "raw_signals": _mapping_copy(returned.signals),
+                    "raw_classification": raw_classification,
                     "effective_classification": {
                         "difficulty": effective.difficulty,
                         "risk": effective.risk,
@@ -2032,7 +2135,7 @@ class ClosedLoopController:
                     ],
                     "classification_policy_version": classification_policy_version,
                     "classification_backend": (
-                        _mapping_copy(returned.metadata).get("classification_backend")
+                        returned_metadata.get("classification_backend")
                         or {
                             "name": runtime.classification_backend.name,
                             "model": runtime.classification_backend.model,
@@ -2768,7 +2871,7 @@ class ClosedLoopController:
             attempt_ids.append(allocated)
         plans: list[CandidatePlan] = []
         contexts: dict[str, AttemptContext] = {}
-        cancellation_events: dict[str, threading.Event] = {}
+        cancellation_events: dict[str, Any] = {}
         route = decision.metadata.get("guarded_task_route")
         route_values = route if isinstance(route, Mapping) else {}
         for source, attempt_id in zip(planned, attempt_ids, strict=True):
@@ -2787,7 +2890,9 @@ class ClosedLoopController:
                 }
             )
             plans.append(plan)
-            cancellation = threading.Event()
+            cancellation = _LinkedCancellationEvent(
+                threading.Event(), runtime.request.cancellation_event
+            )
             cancellation_events[attempt_id] = cancellation
             runtime.candidate_plans[attempt_id] = plan
             contexts[attempt_id] = AttemptContext(
@@ -2999,7 +3104,7 @@ class ClosedLoopController:
             ),
             baseline_sha256=plan.baseline_sha256,
             repair_source_attempt_id=plan.repair_source_attempt_id,
-            cancellation_event=threading.Event(),
+            cancellation_event=(runtime.request.cancellation_event or threading.Event()),
         )
         if context_override is not None and attempt_id in runtime.candidate_plans:
             plan = runtime.candidate_plans[attempt_id]
@@ -3140,6 +3245,10 @@ class ClosedLoopController:
             attempt_id=attempt_id,
             parent_event_id=started.event_id,
         )
+
+        if self._cancel_if_requested(runtime):
+            self._cleanup_attempt_worktree(runtime, context)
+            return
 
         patch = runtime.attempt_patches.get(attempt_id, "")
         if runtime.request.requires_file_changes and not patch.strip():
@@ -3527,6 +3636,21 @@ class ClosedLoopController:
                 else None
             ),
             metadata=attempt_metadata,
+            agent_system_id=(
+                str(attempt_metadata["agent_system_id"])
+                if attempt_metadata.get("agent_system_id")
+                else None
+            ),
+            agent_system_identity_path=(
+                str(attempt_metadata["agent_system_identity_path"])
+                if attempt_metadata.get("agent_system_identity_path")
+                else None
+            ),
+            harness_result_path=(
+                str(attempt_metadata["harness_result_path"])
+                if attempt_metadata.get("harness_result_path")
+                else None
+            ),
         )
         runtime.store.write_protocol(f"{base}/attempt.json", snapshot)
         runtime.attempts.append(snapshot)
@@ -3553,7 +3677,7 @@ class ClosedLoopController:
                     if translated.event_type.startswith(
                         ("repository_validation_", "focused_probe_")
                     )
-                    else "villani_code"
+                    else "agent_system"
                 ),
                 event_type=translated.event_type,
                 payload=payload,
@@ -3874,6 +3998,8 @@ class ClosedLoopController:
             failure_category=failure_category,
         )
 
+        if self._cancel_if_requested(runtime):
+            return
         if runtime.machine.terminal:
             return
         if normalized.acceptance_eligible:
@@ -5995,6 +6121,18 @@ class ClosedLoopController:
                 policy_decisions="policy_decisions.jsonl",
                 selection="selection.json",
                 materialization="materialization.json",
+                validation_coverage=(
+                    f"attempts/{runtime.selected_attempt_id}/validation-coverage.json"
+                    if runtime.selected_attempt_id
+                    else None
+                ),
+                run_summary="run-summary.json",
+                product_run="product-run.json",
+                agent_systems=(
+                    "agent-systems/index.json"
+                    if self._agent_system_identities
+                    else None
+                ),
             ),
             metadata={
                 "policy_configuration": redact_data(
@@ -6061,8 +6199,12 @@ class ClosedLoopController:
                 0,
             ),
             run_wall_clock_duration_accounting_status="complete",
+            agent_system_ids=[
+                str(item["system_id"]) for item in self._agent_system_identities
+            ],
         )
         runtime.store.write_protocol("manifest.json", manifest)
+        persist_product_run(runtime.store.run_directory)
 
     def _persist_state(self, runtime: _Runtime) -> None:
         if runtime.last_event is None:
@@ -6145,6 +6287,7 @@ class ClosedLoopController:
         runtime.last_event = event
         runtime.committed_events.append(event)
         self._persist_state(runtime)
+        persist_product_run(runtime.store.run_directory)
         return event
 
     def _emit_failure_event(
@@ -6285,6 +6428,43 @@ class ClosedLoopController:
             },
         )
 
+    @staticmethod
+    def _cancellation_requested(runtime: _Runtime) -> bool:
+        event = runtime.request.cancellation_event
+        return bool(
+            event is not None
+            and callable(getattr(event, "is_set", None))
+            and event.is_set()
+        )
+
+    def _cancel_if_requested(self, runtime: _Runtime) -> bool:
+        if not self._cancellation_requested(runtime):
+            return False
+        self._cancel(runtime)
+        return True
+
+    def _cancel(self, runtime: _Runtime) -> None:
+        if runtime.machine.terminal:
+            return
+        runtime.terminal_reason = "The run was cancelled by the user."
+        for context in tuple(runtime.attempt_contexts.values()):
+            signal = context.cancellation_event
+            if signal is not None and callable(getattr(signal, "set", None)):
+                signal.set()
+            self._cleanup_attempt_worktree(runtime, context)
+        self._transition(
+            runtime,
+            "CANCELLED",
+            "run_cancelled",
+            {
+                **self._terminal_observability_payload(runtime, status="cancelled"),
+                "reason": runtime.terminal_reason,
+                "target_repository_modified": False,
+                "evidence_preserved": True,
+                "isolation_cleanup_requested": True,
+            },
+        )
+
     def _exhaust(self, runtime: _Runtime, reason: str) -> None:
         runtime.terminal_reason = reason
         self._transition(
@@ -6303,6 +6483,9 @@ class ClosedLoopController:
         state = forced_state or runtime.machine.state
         if state not in {*TERMINAL_STATES, "AWAITING_APPROVAL"}:
             state = "FAILED"
+        if runtime.machine.terminal:
+            persist_run_summary(runtime.store.run_directory)
+            persist_product_run(runtime.store.run_directory)
         cost, accounting = self._actual_cost(runtime)
         currency = self._stage_metrics(runtime)["total"].currency
         return ClosedLoopRunResult(

@@ -118,6 +118,19 @@ def source_is_git_repo(path: Path) -> bool:
     return tracked.returncode == 0 and bool(tracked.stdout)
 
 
+def _effective_core_autocrlf(source: Path) -> str:
+    """Return the source worktree's effective normalization policy."""
+
+    result = subprocess.run(
+        ["git", "config", "--get", "core.autocrlf"],
+        cwd=source,
+        text=True,
+        capture_output=True,
+    )
+    value = result.stdout.strip().casefold() if result.returncode == 0 else ""
+    return value if value in {"true", "false", "input"} else "false"
+
+
 def _git_paths(source: Path, *, include_untracked: bool) -> list[str]:
     command = ["git", "ls-files", "-z"]
     if include_untracked:
@@ -314,6 +327,7 @@ def create_git_baselined_copy(
     candidate_dir.mkdir(parents=True, exist_ok=True)
     if worktree_path.exists() or worktree_path.is_symlink():
         remove_tree(worktree_path)
+    git_source = source_is_git_repo(source_repo)
     copy_worktree(
         source_repo,
         worktree_path,
@@ -322,7 +336,17 @@ def create_git_baselined_copy(
         max_file_size_bytes=max_file_size_bytes,
         max_total_size_bytes=max_total_size_bytes,
     )
-    ensure_git_baseline(worktree_path)
+    # A clean source repository can have LF objects and CRLF worktree bytes.
+    # Re-baselining those bytes with a different core.autocrlf value changes
+    # the patch's old blob identity and makes exact delivery impossible.  Use
+    # the source worktree's effective policy so the isolated baseline retains
+    # the same Git normalization semantics on every platform.
+    ensure_git_baseline(
+        worktree_path,
+        core_autocrlf=(
+            _effective_core_autocrlf(source_repo) if git_source else "false"
+        ),
+    )
     return CopiedGitCandidate(
         source_repo=source_repo,
         candidate_dir=candidate_dir,

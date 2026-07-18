@@ -1,0 +1,78 @@
+[
+  {
+    "name": "narrow_restatement",
+    "task": "Update normalize_name to trim surrounding whitespace. normalize_name must trim surrounding whitespace. Add a regression test. All tests must pass. Preserve existing case handling.",
+    "raw": {
+      "difficulty": "medium",
+      "risk": "medium",
+      "category": "bug_fix",
+      "estimated_attempts_needed": 1,
+      "needs_tests": true,
+      "likely_files": ["src/names.py"],
+      "confidence": 0.95
+    },
+    "relevant_files": ["src/names.py"],
+    "expected": "easy",
+    "expected_behavior_count": 1
+  },
+  {
+    "name": "labelled_context_and_command_validation",
+    "task": "Context: issue_123. Fix calculator addition. python -m unittest -q passes.",
+    "raw": {
+      "difficulty": "easy",
+      "risk": "low",
+      "category": "bug_fix",
+      "estimated_attempts_needed": 1,
+      "needs_tests": true,
+      "likely_files": ["calculator.py"],
+      "confidence": 0.99
+    },
+    "relevant_files": ["calculator.py"],
+    "expected": "easy",
+    "expected_behavior_count": 1
+  },
+  {
+    "name": "two_subsystems",
+    "task": "Update request parsing and response serialization, then run their validation suites.",
+    "raw": {
+      "difficulty": "easy",
+      "risk": "low",
+      "category": "integration",
+      "estimated_attempts_needed": 2,
+      "needs_tests": true,
+      "likely_files": [
+        "parser/request.py",
+        "parser/test_request.py",
+        "transport/response.py",
+        "transport/test_response.py"
+      ],
+      "confidence": 0.9
+    },
+    "relevant_files": ["parser/request.py", "transport/response.py"],
+    "expected": "medium"
+  },
+  {
+    "name": "broad_high_risk",
+    "task": "Migrate authentication and authorization across the repository with a schema migration and transaction safety checks.",
+    "raw": {
+      "difficulty": "medium",
+      "risk": "high",
+      "category": "integration",
+      "estimated_attempts_needed": 4,
+      "needs_tests": true,
+      "likely_files": [
+        "api/auth.py",
+        "api/routes.py",
+        "storage/schema.py",
+        "storage/migrate.py",
+        "policy/access.py",
+        "policy/roles.py",
+        "ui/session.py",
+        "ui/login.py"
+      ],
+      "confidence": 0.9
+    },
+    "relevant_files": ["api/auth.py", "storage/schema.py", "policy/access.py", "ui/session.py"],
+    "expected": "hard"
+  }
+]

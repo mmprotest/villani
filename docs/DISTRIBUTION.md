@@ -3,9 +3,10 @@
 ## Release verification status
 
 `python release-verification/run_release_gate.py --mode local` rebuilds every Python and Node
-package, installs wheels into fresh environments without editable installs, checks compatibility,
-executes the connected scenarios, applies PostgreSQL migrations, reconciles packaged consumers,
-and runs browser tests. Official `--mode release` also fails when a required external scanner is
+package, installs wheels into fresh environments without editable installs, runs the recorded
+installed-user setup/sample/doctor/UI/secret-scan gate, checks compatibility, executes the connected
+scenarios, applies PostgreSQL migrations, reconciles packaged consumers, and runs browser tests.
+Official `--mode release` also fails when a required external scanner is
 absent or did not execute.
 
 ## Architecture

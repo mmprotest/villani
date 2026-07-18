@@ -8,6 +8,7 @@ merges synchronization state from the local spool.
 from __future__ import annotations
 
 import importlib.metadata
+import hashlib
 import json
 import os
 import shutil
@@ -17,12 +18,17 @@ import time
 import urllib.parse
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 import yaml
+from villani_ops.closed_loop.agent_systems.configuration import (
+    migrate_agent_system_configuration,
+)
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.interfaces import ClosedLoopRunRequest
+from villani_ops.closed_loop.product_run import build_product_run
 from villani_ops.closed_loop.model_management import (
     add_model_to_configuration,
     configured_backends,
@@ -44,11 +50,7 @@ from villani_ops.closed_loop.policy_presets import (
     policy_preset_rows,
 )
 from villani_ops.closed_loop.policy_preview import simulate_historical_runs
-from villani_ops.closed_loop.presentation import (
-    build_run_presentation,
-    failure_experience,
-    infer_failure_code,
-)
+from villani_ops.closed_loop.presentation import failure_experience, infer_failure_code
 from villani_ops.execution_environment import (
     CONFIRMATION_THRESHOLD,
     confirmed_command,
@@ -224,6 +226,42 @@ def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _product_failure(
+    code: str,
+    *,
+    reason: str | None = None,
+    run_started: bool = False,
+) -> dict[str, Any]:
+    """Return an actionable public failure without making target-state guesses."""
+
+    failure = failure_experience(code, reason=reason)
+    failure["patch_status"] = (
+        "The target repository was not modified."
+        if run_started
+        else "No run was started. The target repository was not modified."
+    )
+    return failure
+
+
+def _product_failure_code(reason: str) -> str:
+    lowered = reason.lower()
+    if any(value in lowered for value in ("command is unavailable", "runner", "not installed")):
+        return "runner_missing"
+    if any(value in lowered for value in ("credential", "unauthorized", "401", "forbidden")):
+        return "expired_credentials"
+    inferred = infer_failure_code(None, reason)
+    return {
+        "no_backend": "no_usable_agent",
+        "model_not_loaded": "unavailable_model",
+        "verifier_unavailable": "verification_infrastructure_failure",
+        "no_authoritative_evidence": "no_acceptable_candidate",
+        "repository_changed_before_materialization": "target_drift",
+        "patch_conflict": "delivery_conflict",
+        "service_offline": "service_interruption",
+        "user_cancelled": "cancellation",
+    }.get(inferred, inferred)
+
+
 def _text(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
@@ -369,6 +407,10 @@ class ConsoleService:
         self._run_lock = threading.Lock()
         self._pending_runs: dict[str, dict[str, Any]] = {}
         self._run_threads: dict[str, threading.Thread] = {}
+        self._run_cancellations: dict[str, threading.Event] = {}
+        self._submission_ids: dict[str, str] = {}
+        self._run_condition = threading.Condition(self._run_lock)
+        self._validation_cache: dict[str, dict[str, Any]] = {}
 
     def _get_bridge(self) -> ConsoleBridge:
         if self._bridge is None:
@@ -571,16 +613,6 @@ class ConsoleService:
                 }
             )
         budgets = _mapping(configuration.get("budgets"))
-        delivery = _mapping(configuration.get("delivery"))
-        default_delivery = str(delivery.get("default_mode") or delivery.get("mode") or "suggest")
-        if default_delivery not in {
-            "suggest",
-            "approve",
-            "apply",
-            "branch",
-            "pull-request",
-        }:
-            default_delivery = "suggest"
         repositories = self._repository_candidates(configuration)
         presets = policy_preset_rows(configuration)
         return {
@@ -638,14 +670,16 @@ class ConsoleService:
             "advanced_policies": advanced_policies,
             "routing_modes": ["observe", "recommend", "enforce"],
             "defaults": {
-                "delivery_mode": default_delivery,
+                "delivery_mode": "approve",
                 "approval_mode": "automatic",
-                "policy_preset": configured_policy_preset(configuration),
+                "policy_preset": "performance",
                 "policy_selection": "configured",
                 "routing_mode": str(routing.get("mode") or "observe"),
                 "max_attempts": budgets.get("max_attempts", 3),
                 "max_cost": budgets.get("max_cost"),
-                "max_wall_time": budgets.get("max_wall_time"),
+                "max_wall_time": None,
+                "verification_required": True,
+                "mode": "performance",
             },
             "setup_issues": issues,
         }
@@ -660,9 +694,10 @@ class ConsoleService:
         return configuration
 
     def _write_configuration(self, configuration: Mapping[str, Any]) -> None:
+        migrated, _migration = migrate_agent_system_configuration(configuration)
         write_configuration_atomic(
             self.home_path / "config.yaml",
-            configuration,
+            migrated,
             header=_CONFIG_HEADER,
         )
 
@@ -928,27 +963,61 @@ class ConsoleService:
                 "authority": "none",
                 "failure": status.get("failure"),
             }
+        root = Path(str(status["root"]))
+        fingerprint_parts = [str(root)]
         try:
-            discovery = discover_repository_validation(str(status["root"]))
-        except (OSError, ValueError) as error:
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            fingerprint_parts.append(head.stdout.strip() if head.returncode == 0 else "no-head")
+            for name in (
+                "package.json",
+                "pyproject.toml",
+                "tox.ini",
+                "Cargo.toml",
+                "Makefile",
+                "justfile",
+            ):
+                path = root / name
+                if path.is_file():
+                    metadata = path.stat()
+                    fingerprint_parts.append(
+                        f"{name}:{metadata.st_size}:{metadata.st_mtime_ns}"
+                    )
+            fingerprint = hashlib.sha256(
+                "\0".join(fingerprint_parts).encode("utf-8")
+            ).hexdigest()
+            cached = self._validation_cache.get(fingerprint)
+            if cached is not None:
+                return json.loads(json.dumps(cached))
+            discovery = discover_repository_validation(str(root))
+        except (OSError, ValueError):
             return {
                 "schema_version": "villani.console.validation_discovery.v1",
                 "repository": status,
                 "suggestions": [],
                 "selected_suggestion_id": None,
                 "authority": "none",
-                "failure": failure_experience("no_validation_command", reason=str(error)),
+                "failure": _product_failure("validation_unavailable"),
             }
-        return {
+        result = {
             "schema_version": "villani.console.validation_discovery.v1",
             "repository": status,
+            "repository_fingerprint": fingerprint,
             **discovery,
             "failure": (
                 None
                 if discovery.get("suggestions")
-                else failure_experience("no_validation_command")
+                else _product_failure("validation_unavailable")
             ),
         }
+        self._validation_cache[fingerprint] = json.loads(json.dumps(result))
+        return result
 
     @staticmethod
     def _optional_number(value: Any, name: str, *, minimum: float = 0) -> float | None:
@@ -1055,7 +1124,15 @@ class ConsoleService:
         requested_argv = body.get("validation_argv")
         if isinstance(manual, str) and manual.strip():
             argv = parse_manual_command(manual)
-            discovery = discover_repository_validation(repository)
+            try:
+                discovery = discover_repository_validation(repository)
+            except (OSError, ValueError) as error:
+                discovery = {
+                    "suggestions": [],
+                    "selected_suggestion_id": None,
+                    "authority": "none",
+                    "diagnostic": str(error),
+                }
             command = confirmed_command(
                 argv,
                 source="manual_override",
@@ -1069,7 +1146,15 @@ class ConsoleService:
             }
             return [command], discovery
 
-        discovery = discover_repository_validation(repository)
+        try:
+            discovery = discover_repository_validation(repository)
+        except (OSError, ValueError) as error:
+            discovery = {
+                "suggestions": [],
+                "selected_suggestion_id": None,
+                "authority": "none",
+                "diagnostic": str(error),
+            }
         suggestions = [
             item for item in discovery.get("suggestions", []) if isinstance(item, Mapping)
         ]
@@ -1090,17 +1175,23 @@ class ConsoleService:
         elif suggestions:
             selected = suggestions[0]
         if selected is None:
-            raise ConsoleInputError("no validation command was discovered; enter a manual command")
+            discovery["selection"] = {
+                "source": "none",
+                "commands": [],
+                "confirmed": False,
+                "alternative_evidence_required": True,
+            }
+            return [], discovery
         confidence = float(selected.get("confidence") or 0)
         if confidence < CONFIRMATION_THRESHOLD and not bool(body.get("validation_confirmed")):
             raise ConsoleInputError(
                 "low-confidence validation discovery must be explicitly confirmed"
             )
-        argv = selected.get("argv")
-        if not isinstance(argv, list):
+        selected_argv = selected.get("argv")
+        if not isinstance(selected_argv, list):
             raise ConsoleInputError("the selected validation command is malformed")
         command = confirmed_command(
-            argv,
+            selected_argv,
             source=str(selected.get("source") or "metadata_discovery"),
             confidence=confidence,
             confirmed_by="console",
@@ -1115,6 +1206,28 @@ class ConsoleService:
         return [command], discovery
 
     def start_run(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        submission_id = body.get("submission_id")
+        if submission_id is not None and (
+            not isinstance(submission_id, str)
+            or not submission_id
+            or len(submission_id) > 200
+        ):
+            raise ConsoleInputError("submission_id is invalid")
+        if isinstance(submission_id, str):
+            with self._run_lock:
+                existing_run_id = self._submission_ids.get(submission_id)
+                existing = dict(self._pending_runs.get(existing_run_id or "", {}))
+            if existing_run_id and existing:
+                return {
+                    "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
+                    "status": existing.get("status", "RUNNING"),
+                    "run_id": existing_run_id,
+                    "run_url": f"/console?run={urllib.parse.quote(existing_run_id, safe='')}",
+                    "replay_url": f"/console/runs/{urllib.parse.quote(existing_run_id, safe='')}",
+                    "validation_commands": existing.get("validation", []),
+                    "deduplicated": True,
+                    "failure": None,
+                }
         task = body.get("task")
         if not isinstance(task, str) or not task.strip():
             raise ConsoleInputError("task instruction is required")
@@ -1122,21 +1235,26 @@ class ConsoleService:
             raise ConsoleInputError("task instruction exceeds the safe size limit")
         repository_value = body.get("repository")
         if not isinstance(repository_value, str) or not repository_value:
-            raise ConsoleInputError("repository is required")
+            return {
+                "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
+                "status": "FAILED",
+                "run_id": None,
+                "failure": _product_failure("no_repository"),
+            }
         repository_status = self._repository_status(repository_value)
         if not repository_status["valid"]:
             return {
                 "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
                 "status": "FAILED",
                 "run_id": None,
-                "failure": repository_status.get("failure"),
+                "failure": _product_failure("no_repository"),
             }
         if repository_status["dirty"]:
             return {
                 "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
                 "status": "FAILED",
                 "run_id": None,
-                "failure": repository_status.get("failure"),
+                "failure": _product_failure("dirty_repository"),
             }
         repository = Path(str(repository_status["root"]))
         configuration, issues, _schema_version = _configuration(self.home_path)
@@ -1145,16 +1263,16 @@ class ConsoleService:
                 "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
                 "status": "FAILED",
                 "run_id": None,
-                "failure": failure_experience("no_backend", reason=" ".join(issues)),
+                "failure": _product_failure("incomplete_setup"),
             }
         try:
             commands, discovery = self._validation_selection(body, repository)
-        except (ConsoleInputError, OSError, ValueError) as error:
+        except (ConsoleInputError, OSError, ValueError):
             return {
                 "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
                 "status": "FAILED",
                 "run_id": None,
-                "failure": failure_experience("no_validation_command", reason=str(error)),
+                "failure": _product_failure("validation_unavailable"),
             }
         configuration["repository_validation_commands"] = commands
         configuration["repository_validation_discovery"] = discovery
@@ -1170,15 +1288,12 @@ class ConsoleService:
         if max_attempts < 1:
             raise ConsoleInputError("max_attempts must be at least 1")
         max_cost = self._optional_number(body.get("max_cost", defaults.get("max_cost")), "budget")
-        max_wall_time = self._optional_number(
-            body.get("max_wall_time", defaults.get("max_wall_time")),
-            "time limit",
-        )
+        max_wall_time = self._optional_number(body.get("max_wall_time"), "time limit")
         self._configure_experience(
             configuration,
-            delivery_mode=str(body.get("delivery_mode") or "suggest"),
+            delivery_mode=str(body.get("delivery_mode") or "approve"),
             approval_mode=str(body.get("approval_mode") or "automatic"),
-            policy_preset=str(body.get("policy_preset") or configured_policy_preset(configuration)),
+            policy_preset=str(body.get("policy_preset") or "performance"),
             policy_selection=str(body.get("policy_selection") or "configured"),
             routing_mode=str(
                 body.get("routing_mode")
@@ -1248,15 +1363,57 @@ class ConsoleService:
                 raise ConsoleInputError("accepted_candidates_required must be at least 1")
             policy["accepted_candidates_required"] = accepted_value
         configuration["policy"] = policy
+        run_experience = _mapping(configuration.get("run_experience"))
+        run_experience.update(
+            {
+                "mode": "performance",
+                "verification_required": True,
+                "default_wall_time_budget": None,
+                "repository_validation_optional": not bool(commands),
+            }
+        )
+        configuration["run_experience"] = run_experience
 
         success = body.get("success_criteria")
         success_criteria = success if isinstance(success, str) and success.strip() else task
+        reference_text = body.get("reference_text")
+        if reference_text is not None and not isinstance(reference_text, str):
+            raise ConsoleInputError("reference_text must be text")
+        if isinstance(reference_text, str) and len(reference_text) > 50_000:
+            raise ConsoleInputError("reference text exceeds the safe size limit")
+        attachment_values = body.get("attachments")
+        if attachment_values is not None and not isinstance(attachment_values, list):
+            raise ConsoleInputError("attachments must be a list")
+        attachment_context: list[str] = []
+        attachment_total = 0
+        for index, value in enumerate(attachment_values or [], 1):
+            attachment = _mapping(value)
+            name = attachment.get("name")
+            content = attachment.get("content")
+            if not isinstance(name, str) or not name or not isinstance(content, str):
+                raise ConsoleInputError("each attachment requires a name and text content")
+            if len(name) > 255 or len(content) > 100_000:
+                raise ConsoleInputError("an attachment exceeds the safe size limit")
+            attachment_total += len(content)
+            if attachment_total > 250_000:
+                raise ConsoleInputError("attachments exceed the combined safe size limit")
+            attachment_context.append(f"Attachment {index} ({name}):\n{content}")
+        details = []
+        if isinstance(reference_text, str) and reference_text:
+            details.append(f"Issue or reference text:\n{reference_text}")
+        details.extend(attachment_context)
+        if details:
+            success_criteria = (
+                f"{success_criteria}\n\nAdditional task context supplied by the user:\n\n"
+                + "\n\n".join(details)
+            )
         if len(success_criteria) > 200_000:
             raise ConsoleInputError("success criteria exceed the safe size limit")
         requires_file_changes = body.get("requires_file_changes", True)
         if not isinstance(requires_file_changes, bool):
             raise ConsoleInputError("requires_file_changes must be a boolean")
         run_id = f"run_{uuid.uuid4().hex}"
+        cancellation = threading.Event()
         request = ClosedLoopRunRequest(
             task=task,
             repository_path=repository,
@@ -1268,18 +1425,25 @@ class ConsoleService:
             requires_file_changes=requires_file_changes,
             policy_configuration=configuration,
             run_id=run_id,
+            cancellation_event=cancellation,
         )
         record = {
             "run_id": run_id,
             "status": "QUEUED",
             "task": task,
+            "success_criteria": success_criteria,
             "repository": str(repository),
             "validation": [item["display_command"] for item in commands],
             "error": None,
+            "failure": None,
             "terminal_state": None,
+            "queued_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         with self._run_lock:
             self._pending_runs[run_id] = record
+            self._run_cancellations[run_id] = cancellation
+            if isinstance(submission_id, str):
+                self._submission_ids[submission_id] = run_id
         thread = threading.Thread(
             target=self._execute_console_run,
             args=(run_id, configuration, request),
@@ -1293,9 +1457,10 @@ class ConsoleService:
             "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
             "status": "QUEUED",
             "run_id": run_id,
-            "run_url": f"/console/run?run={urllib.parse.quote(run_id, safe='')}",
+            "run_url": f"/console?run={urllib.parse.quote(run_id, safe='')}",
             "replay_url": f"/console/runs/{urllib.parse.quote(run_id, safe='')}",
             "validation_commands": record["validation"],
+            "deduplicated": False,
             "failure": None,
         }
 
@@ -1305,16 +1470,30 @@ class ConsoleService:
         configuration: Mapping[str, Any],
         request: ClosedLoopRunRequest,
     ) -> None:
-        with self._run_lock:
+        with self._run_condition:
             self._pending_runs[run_id]["status"] = "RUNNING"
+            self._run_condition.notify_all()
         try:
+            builder: Callable[
+                [Mapping[str, Any], Callable[[Any], None] | None], Any
+            ]
             if self._controller_builder is None:
                 from villani_ops.cli.unified import build_controller
 
                 builder = build_controller
             else:
                 builder = self._controller_builder
-            controller = builder(configuration, None)
+
+            def on_event(event: Any) -> None:
+                with self._run_condition:
+                    record = self._pending_runs.get(run_id)
+                    if record is not None:
+                        record["last_event_sequence"] = int(
+                            getattr(event, "sequence", 0) or 0
+                        )
+                    self._run_condition.notify_all()
+
+            controller = builder(configuration, on_event)
             result = controller.run(request)
             capability_sync: dict[str, Any]
             try:
@@ -1333,21 +1512,30 @@ class ConsoleService:
                     "status": "pending",
                     "error": redact_sensitive_text(str(sync_error)).value,
                 }
-            with self._run_lock:
+            with self._run_condition:
                 record = self._pending_runs[run_id]
                 record["status"] = result.terminal_state
                 record["terminal_state"] = result.terminal_state
                 record["capability_synchronization"] = capability_sync
+                self._run_condition.notify_all()
         except BaseException as error:  # noqa: BLE001 - background boundary
             safe = redact_sensitive_text(str(error)).value
-            with self._run_lock:
+            failure = _product_failure(
+                _product_failure_code(safe),
+                run_started=True,
+            )
+            with self._run_condition:
                 record = self._pending_runs[run_id]
                 record["status"] = "FAILED"
                 record["terminal_state"] = "FAILED"
                 record["error"] = safe
+                record["failure"] = failure
+                self._run_condition.notify_all()
         finally:
-            with self._run_lock:
+            with self._run_condition:
                 self._run_threads.pop(run_id, None)
+                self._run_cancellations.pop(run_id, None)
+                self._run_condition.notify_all()
 
     def run_status(self, run_id: str) -> dict[str, Any]:
         if not run_id or Path(run_id).name != run_id or run_id in {".", ".."}:
@@ -1356,83 +1544,186 @@ class ConsoleService:
             pending = dict(self._pending_runs.get(run_id, {}))
         run_directory = self.home_path / "runs" / run_id
         if run_directory.is_dir():
-            synchronization = self.spool.console_run_states(
-                SyncConfig.load(self.paths.sync_config) is not None
-            ).get(run_id)
-            presentation = build_run_presentation(
-                run_directory,
-                synchronization_state=synchronization,
-                include_raw_events=False,
-            )
-            presentation["execution_status"] = pending.get("status", presentation.get("outcome"))
-            if pending.get("capability_synchronization"):
-                presentation["capability_synchronization"] = pending["capability_synchronization"]
-            return presentation
+            return build_product_run(run_directory).model_dump(mode="json")
         if not pending:
             raise ConsoleInputError(f"run not found: {run_id}")
         if pending.get("error"):
-            reason = str(pending["error"])
-            return {
-                "schema_version": "villani.run_presentation.v1",
-                "run_id": run_id,
-                "outcome": "FAILED",
-                "execution_status": "FAILED",
-                "summary": pending.get("task"),
-                "changed": {"files": [], "file_count": 0, "zero_file_change": True},
-                "confidence": {
-                    "label": "not acceptance eligible",
-                    "acceptance_eligible": False,
-                    "authority": "none",
-                    "value": None,
-                },
-                "validation": {
-                    "commands": [],
-                    "checks_passed": 0,
-                    "checks_failed": 0,
-                    "requirements_verified": 0,
-                    "authority": "none",
-                },
-                "remaining_risks": [reason],
-                "cost": {
-                    "currency": "USD",
-                    "coding": None,
-                    "verification": None,
-                    "total": None,
-                    "accounting_status": "unknown",
-                },
-                "recovery": ["The run failed before canonical execution began"],
-                "next_actions": [],
-                "failure": failure_experience(infer_failure_code(None, reason), reason=reason),
-                "lineage": {},
-                "progress": [],
-                "attempts": [],
-            }
-        return {
-            "schema_version": "villani.run_presentation.v1",
-            "run_id": run_id,
-            "outcome": "RUNNING",
-            "execution_status": pending.get("status", "QUEUED"),
-            "summary": pending.get("task"),
-            "repository": pending.get("repository"),
-            "validation": {
-                "commands": [
-                    {"command": command, "authority": "not_yet_executed"}
-                    for command in pending.get("validation", [])
-                ],
-                "checks_passed": 0,
-                "checks_failed": 0,
-                "requirements_verified": 0,
-                "authority": "none",
-            },
-            "progress": [
+            failure = _mapping(pending.get("failure")) or _product_failure(
+                _product_failure_code(str(pending["error"])),
+                run_started=True,
+            )
+            reason = str(failure.get("what_failed") or pending["error"])
+            failed = self._pending_product_run(run_id, pending)
+            failed.update(
                 {
-                    "tone": "active",
-                    "symbol": "●",
-                    "message": "Run queued; canonical state will appear here as it is committed",
+                    "current_stage": "Ready",
+                    "stage_sentence": "Villani could not begin the run safely.",
+                    "stage_transitions": [
+                        {
+                            "sequence": 1,
+                            "timestamp": str(pending.get("queued_at") or "unknown"),
+                            "stage": "Ready",
+                            "sentence": "Villani could not begin the run safely.",
+                        }
+                    ],
+                    "final_verdict": "Could not prove",
+                    "verdict_reason": reason,
+                    "available_actions": [
+                        {
+                            "id": "retry",
+                            "label": "Start again",
+                            "method": "GET",
+                            "href": "/console",
+                        }
+                    ],
+                    "recovery_action": {
+                        "label": "Start again",
+                        "instruction": str(
+                            failure.get("next_action")
+                            or "Resolve the stated issue, then start the task again."
+                        ),
+                        "href": "/console",
+                    },
+                    "target_repository": {
+                        "modified": False,
+                        "accounting_status": "known",
+                        "statement": "The target repository was not modified.",
+                    },
+                }
+            )
+            return failed
+        return self._pending_product_run(run_id, pending)
+
+    def _pending_product_run(
+        self, run_id: str, pending: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        timestamp = str(pending.get("queued_at") or "unknown")
+        return {
+            "schema_version": "villani.product_run.v1",
+            "run_identity": {"run_id": run_id, "trace_id": None},
+            "task_summary": {
+                "task": str(pending.get("task") or "Task instruction was not recorded."),
+                "success_criteria": pending.get("success_criteria"),
+                "repository": pending.get("repository"),
+            },
+            "current_stage": "Understanding",
+            "stage_sentence": "Understanding the task and choosing a safe route.",
+            "stage_transitions": [
+                {
+                    "sequence": 1,
+                    "timestamp": timestamp,
+                    "stage": "Understanding",
+                    "sentence": "Understanding the task and choosing a safe route.",
                 }
             ],
-            "lineage": {},
+            "final_verdict": None,
+            "verdict_reason": None,
+            "change_summary": "No file changes were recorded.",
+            "changed_files": [],
+            "checks_summary": {
+                "passed": None,
+                "failed": None,
+                "not_run": None,
+                "unavailable": None,
+                "accounting_status": "unknown",
+            },
+            "requirement_summary": {
+                "proved": None,
+                "not_proved": None,
+                "accounting_status": "unknown",
+            },
+            "cost": {"value": None, "currency": None, "accounting_status": "unknown"},
+            "duration": {"value_ms": None, "accounting_status": "unknown"},
+            "agent_system": {
+                "name": "Villani agent system",
+                "backend": None,
+                "model": None,
+            },
+            "escalation_summary": {
+                "attempts": 0,
+                "retries": 0,
+                "escalations": 0,
+                "summary": "No retry or escalation was needed.",
+            },
+            "available_actions": [
+                {
+                    "id": "cancel",
+                    "label": "Cancel",
+                    "method": "POST",
+                    "href": f"/v1/console/runs/{run_id}/cancel",
+                }
+            ],
+            "evidence_links": [
+                {
+                    "label": "Recorded evidence",
+                    "href": f"/console/runs/{run_id}/replay",
+                    "artifact": "events.jsonl",
+                }
+            ],
+            "recovery_action": None,
+            "technical_detail_references": [],
+            "target_repository": {
+                "modified": False,
+                "accounting_status": "known",
+                "statement": "The target repository was not modified.",
+            },
+            "last_event_sequence": max(int(pending.get("last_event_sequence") or 1), 1),
+            "updated_at": timestamp,
         }
+
+    def run_events(
+        self, run_id: str, *, after_sequence: int = 0, wait_seconds: float = 20.0
+    ) -> dict[str, Any]:
+        """Wait for a canonical projection change without high-frequency polling."""
+
+        if after_sequence < 0:
+            raise ConsoleInputError("after_sequence must be non-negative")
+        wait_seconds = min(max(float(wait_seconds), 0.0), 25.0)
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            product = self.run_status(run_id)
+            sequence = int(product.get("last_event_sequence") or 1)
+            if sequence > after_sequence or product.get("final_verdict") is not None:
+                return product
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return product
+            with self._run_condition:
+                self._run_condition.wait(timeout=remaining)
+
+    def cancel_run(self, run_id: str) -> dict[str, Any]:
+        """Request cancellation and return the latest truthful product projection."""
+
+        if not run_id or Path(run_id).name != run_id or run_id in {".", ".."}:
+            raise ConsoleInputError("run identifier is invalid")
+        with self._run_condition:
+            cancellation = self._run_cancellations.get(run_id)
+            thread = self._run_threads.get(run_id)
+            if cancellation is not None:
+                cancellation.set()
+                self._run_condition.notify_all()
+        if cancellation is not None:
+            if thread is not None and thread is not threading.current_thread():
+                thread.join(timeout=15.0)
+            return self.run_status(run_id)
+
+        run_directory = self.home_path / "runs" / run_id
+        if not run_directory.is_dir():
+            raise ConsoleInputError(f"run not found: {run_id}")
+        current = self.run_status(run_id)
+        if current.get("final_verdict") is not None:
+            return current
+        configuration, _issues, _schema_version = _configuration(self.home_path)
+        builder: Callable[[Mapping[str, Any], Callable[[Any], None] | None], Any]
+        if self._controller_builder is None:
+            from villani_ops.cli.unified import build_controller
+
+            builder = build_controller
+        else:
+            builder = self._controller_builder
+        controller = builder(configuration, None)
+        controller.cancel(run_id, self.home_path / "runs")
+        return self.run_status(run_id)
 
     def approval_action(
         self,
@@ -1492,6 +1783,9 @@ class ConsoleService:
         if persisted_backends:
             configuration["backends"] = persisted_backends
         try:
+            builder: Callable[
+                [Mapping[str, Any], Callable[[Any], None] | None], Any
+            ]
             if self._controller_builder is None:
                 from villani_ops.cli.unified import build_controller
 

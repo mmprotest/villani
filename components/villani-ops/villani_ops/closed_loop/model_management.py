@@ -774,9 +774,16 @@ def inventory_document(
     state: Mapping[str, Any],
 ) -> dict[str, Any]:
     records = model_records(configuration, snapshot, state)
+    from .agent_systems.configuration import build_agent_system_identities
+
+    identities, _by_backend, migration = build_agent_system_identities(
+        configuration, configured_backends(configuration)
+    )
     return {
         "schema_version": MODEL_INVENTORY_SCHEMA,
         "models": records,
+        "agent_systems": [item.model_dump(mode="json") for item in identities],
+        "agent_system_migration": migration,
         "bootstrap_default": default_bootstrap_backend(configuration),
         "capability_states": [item.value for item in CapabilityStatus],
         "qualification": {
