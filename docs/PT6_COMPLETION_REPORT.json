@@ -1,0 +1,304 @@
+{
+  "schema_version": "villani.milestone_completion_report.v1",
+  "milestone": "PT6",
+  "title": "Add Production Codex and Claude Code Integrations",
+  "assessment_date": "2026-07-18",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "implementation_status": "complete",
+  "acceptance_status": "not_proven",
+  "status_reason": "Production adapters, contracts, UI, documentation, and fake-executable conformance are implemented and passing. The acceptance criterion requiring real isolated task completion is not evidenced because Codex is unauthenticated, strict Claude sandboxing is unavailable on native Windows, and no qualifying frozen founder suite exists.",
+  "files": {
+    "added": [
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/acp.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/discovery.py",
+      "components/villani-ops/villani_ops/runners/codex_app_server.py",
+      "components/villani-ops/villani_ops/runners/structured_protocol.py",
+      "components/villani-ops/villani_ops/schemas/v1/harness-discovery.schema.json",
+      "components/villani-ops/villani_ops/tests/fixtures/pt6/claude-events.jsonl",
+      "components/villani-ops/villani_ops/tests/fixtures/pt6/codex-events.jsonl",
+      "components/villani-ops/villani_ops/tests/fixtures/pt6/fake_structured_harness.py",
+      "components/villani-ops/villani_ops/tests/test_pt6_structured_harnesses.py",
+      "components/villani-web/dist/assets/index-GtA_ObUO.js",
+      "docs/PT6_COMPLETION_REPORT.json",
+      "docs/PT6_COMPLETION_REPORT.md",
+      "docs/PT6_QUALIFICATION_EVIDENCE.json",
+      "integration/fixtures/protocol/v1/valid_run/harness-discovery.json",
+      "schemas/v1/harness-discovery.schema.json"
+    ],
+    "changed": [
+      "PLANS.md",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "components/villani-ops/README.md",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/adapters/villani_code_attempt.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/adapters.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/configuration.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/conformance.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/models.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/registry.py",
+      "components/villani-ops/villani_ops/closed_loop/costs.py",
+      "components/villani-ops/villani_ops/closed_loop/model_management.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/runners/__init__.py",
+      "components/villani-ops/villani_ops/runners/base.py",
+      "components/villani-ops/villani_ops/runners/claude_code.py",
+      "components/villani-ops/villani_ops/schemas/v1/agent-system.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/harness-result.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-run-model/dist/agentSystem.d.ts",
+      "components/villani-run-model/dist/agentSystem.js",
+      "components/villani-run-model/src/agentSystem.ts",
+      "components/villani-run-model/test/agentSystem.test.ts",
+      "components/villani-web/dist/index.html",
+      "components/villani-web/src/ProductPages.tsx",
+      "components/villani-web/src/consoleApi.ts",
+      "docs/AGENT_SYSTEMS.md",
+      "integration/fixtures/protocol/v1/valid_run/harness-conformance.json",
+      "schemas/v1/agent-system.schema.json",
+      "schemas/v1/harness-result.schema.json",
+      "scripts/generate-harness-schemas.py"
+    ],
+    "deleted": [
+      "components/villani-web/dist/assets/index-Db_ajSzJ.js"
+    ],
+    "migrated": [
+      "The agent-system and harness-result v1 schemas gained backward-readable optional discovery, readiness, exact execution identity, per-model usage/cost, provisional qualification, and structured infrastructure failure fields.",
+      "A new additive villani.harness_discovery.v1 schema was added to normative and packaged schema sets.",
+      "Existing configuration remains readable; no destructive configuration or run-bundle migration is required.",
+      "The generated Villani Web hashed bundle was replaced by the PT6 build output."
+    ],
+    "unrelated_user_changes_preserved": [
+      "components/villani-agentd/villani_agentd/console_assets/"
+    ]
+  },
+  "architecture_and_product_decisions": [
+    "Codex uses stable app-server JSON-RPC over JSONL stdio, regenerates and validates the installed-version schema for every attempt, and never uses experimental WebSocket transport.",
+    "Codex initializes with Villani identity, starts an ephemeral thread rooted in the isolated candidate worktree, denies expanded permission requests, sends task and criteria verbatim, interrupts at protocol level, and then performs bounded process-tree termination.",
+    "Claude Code uses the official non-interactive stream-json surface with strict MCP settings, a bounded built-in tool list, disabled external settings and slash commands, a controlled UTF-8 prompt file, redacted raw output, and default-disabled session persistence.",
+    "Claude resume is permitted only for an identical attempt ID and only when explicitly configured; native-Windows execution fails closed unless strict outer isolation is proven.",
+    "Both adapters reuse the existing isolated worktree lifecycle and collect the candidate patch from Git rather than model prose.",
+    "Harness infrastructure failure is represented separately from coding failure, and retryable overload/rate-limit transport outcomes do not become task rejection.",
+    "The reusable ACP v1 client is present but is not selected merely because connectivity works; an adapter must prove evidence parity before ACP is enabled.",
+    "Codex and Claude Code remain provisional and cannot mark Gate C or production qualification. Custom model selection requires exact version/provider/model/protocol conformance evidence; custom providers and arbitrary model substitution are not claimed."
+  ],
+  "supported_integrations": {
+    "codex": {
+      "protocol": "codex-app-server-jsonrpc-stdio",
+      "supported_version_range": ">=0.144.0,<0.145.0",
+      "installed_version": "0.144.5",
+      "authentication_status": "not_ready",
+      "repair_action": "Run `codex login`."
+    },
+    "claude_code": {
+      "protocol": "claude-code-stream-json",
+      "supported_version_range": ">=2.1.138,<2.2.0",
+      "installed_version": "2.1.138",
+      "authentication_status": "ready",
+      "strict_native_windows_isolation": false,
+      "repair_action": "Use WSL2 or an outer container with strict isolation."
+    },
+    "acp": {
+      "protocol_version": 1,
+      "production_selection": "disabled_until_evidence_parity"
+    }
+  },
+  "tests_added": {
+    "test_file": "components/villani-ops/villani_ops/tests/test_pt6_structured_harnesses.py",
+    "collected": 31,
+    "default_non_e2e": 29,
+    "credential_gated_e2e": 2,
+    "fixtures": [
+      "official-format Codex JSONL events",
+      "official-format Claude Code stream-json events",
+      "cross-platform fake Codex, Claude Code, and ACP executable"
+    ],
+    "mandatory_cases": [
+      "successful patch",
+      "no patch",
+      "command recovery",
+      "permission request",
+      "cancellation",
+      "rate limit/retry",
+      "malformed output",
+      "unsupported version",
+      "schema change",
+      "missing final result",
+      "partial patch on crash",
+      "known and unknown cost",
+      "non-ASCII and spaced paths",
+      "large output and large controlled input",
+      "no mutation outside isolation",
+      "secret redaction",
+      "same-attempt-only Claude resume",
+      "ACP initialization, sessions, updates, cancellation, bounds, and path safety"
+    ]
+  },
+  "validation": [
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt6_structured_harnesses.py villani_ops\\tests\\test_pt5_agent_systems.py villani_ops\\tests\\closed_loop\\test_protocol.py -m 'not e2e' --basetemp ..\\..\\.pt6-test-temp\\focused-post-types",
+      "result": "PASS: 59 passed, 2 deselected in 9.03s"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp ..\\..\\.pt6-test-temp\\ops-final",
+      "result": "PASS: 1231 passed, 2 skipped, 116 deselected in 307.13s"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp ..\\..\\.pt6-test-temp\\code-full",
+      "result": "PASS: 686 passed, 1 skipped, 27 warnings in 124.88s"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q --basetemp .pt6-test-temp\\root-closed-loop",
+      "result": "PASS: 11 passed, 2 warnings in 60.25s"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS: 21 files, 112 tests in 8.24s"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "result": "PASS after formatting the 3 PT6-edited files"
+    },
+    {
+      "command": "npm test -- --run",
+      "cwd": "components/villani-run-model",
+      "result": "PASS: 3 files, 9 tests in 728ms"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-run-model",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-run-model",
+      "result": "PASS"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-web",
+      "result": "PASS outside the restrictive filesystem sandbox: 4 files, 24 tests in 2.45s"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-web",
+      "result": "PASS outside the restrictive filesystem sandbox: typecheck passed and 57 modules built"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-web",
+      "result": "PASS after formatting the 2 PT6-edited files"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m mypy --follow-imports=skip villani_ops\\runners\\structured_protocol.py villani_ops\\runners\\codex_app_server.py villani_ops\\runners\\claude_code.py villani_ops\\closed_loop\\agent_systems\\acp.py villani_ops\\closed_loop\\agent_systems\\discovery.py villani_ops\\closed_loop\\agent_systems\\adapters.py villani_ops\\closed_loop\\agent_systems\\configuration.py villani_ops\\closed_loop\\agent_systems\\registry.py",
+      "cwd": "components/villani-ops",
+      "result": "PASS: Success: no issues found in 8 source files"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m ruff check villani_ops\\runners villani_ops\\closed_loop\\agent_systems villani_ops\\closed_loop\\adapters\\villani_code_attempt.py villani_ops\\closed_loop\\costs.py villani_ops\\closed_loop\\schema_validation.py villani_ops\\cli\\unified.py villani_ops\\tests\\test_pt6_structured_harnesses.py",
+      "cwd": "components/villani-ops",
+      "result": "PASS: All checks passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m ruff check scripts\\generate-harness-schemas.py",
+      "result": "PASS: All checks passed"
+    },
+    {
+      "command": "& 'C:\\Users\\Simon\\AppData\\Local\\Programs\\Python\\Python311\\python.exe' -m compileall -q components\\villani-ops\\villani_ops\\runners\\structured_protocol.py components\\villani-ops\\villani_ops\\runners\\codex_app_server.py components\\villani-ops\\villani_ops\\runners\\claude_code.py components\\villani-ops\\villani_ops\\closed_loop\\agent_systems\\acp.py components\\villani-ops\\villani_ops\\closed_loop\\agent_systems\\discovery.py components\\villani-ops\\villani_ops\\closed_loop\\agent_systems\\adapters.py components\\villani-ops\\villani_ops\\closed_loop\\agent_systems\\configuration.py components\\villani-ops\\villani_ops\\closed_loop\\agent_systems\\registry.py",
+      "cwd": ".",
+      "result": "PASS"
+    },
+    {
+      "command": "$names=@('agent-system.schema.json','harness-result.schema.json','harness-discovery.schema.json'); foreach($name in $names){$root=(Get-FileHash (Join-Path 'schemas\\v1' $name) -Algorithm SHA256).Hash.ToLowerInvariant(); $packaged=(Get-FileHash (Join-Path 'components\\villani-ops\\villani_ops\\schemas\\v1' $name) -Algorithm SHA256).Hash.ToLowerInvariant(); Write-Output \"$name root=$root packaged=$packaged equal=$($root -eq $packaged)\"}",
+      "cwd": ".",
+      "result": "PASS: 3 of 3 SHA-256 pairs identical"
+    },
+    {
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt6_structured_harnesses.py -m e2e -rs --basetemp ..\\..\\.pt6-test-temp\\real-gate",
+      "result": "SKIP: 2 skipped, 29 deselected; VILLANI_REAL_HARNESS_TESTS is not set to 1"
+    },
+    {
+      "command": "$env:VILLANI_HOME=(Resolve-Path .pt6-test-temp\\cli-home).Path; & .venv\\Scripts\\villani.exe agents list --json",
+      "cwd": ".",
+      "result": "PASS: detected Villani Code 0.1.0rc1, Codex 0.144.5 unauthenticated, and Claude Code 2.1.138 authenticated but without strict native-Windows isolation"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS: no whitespace errors; line-ending warnings only"
+    }
+  ],
+  "remediated_validation_failures": [
+    "The first Villani Code full run reached 100% but exited during pytest cleanup because the default Windows pytest-current symlink was inaccessible; the workspace-local --basetemp rerun passed 686 tests.",
+    "Flight Recorder and Web format checks initially identified only PT6-edited files; Prettier was applied to those exact files and both final checks passed.",
+    "Web test/build initially failed because the managed filesystem sandbox blocked esbuild from reading the Vite config; the approved outside-sandbox reruns passed.",
+    "The first Web typecheck consumed stale run-model dist declarations; rebuilding the run-model package fixed the package boundary and the final typecheck/build passed.",
+    "Focused mypy initially found 24 nullable/platform typing issues and then one remaining cost narrowing issue; guards and annotations were corrected and the final run found zero issues.",
+    "A targeted host-skip command initially lacked its parent basetemp directory; after creating the bounded parent it passed 3 tests and reported the 2 exact host skips.",
+    "The py launcher did not resolve `py -3.11` despite listing Python 3.11; invoking the exact discovered Python 3.11 executable compiled all eight modules successfully."
+  ],
+  "end_to_end_artifacts": [
+    "docs/PT6_QUALIFICATION_EVIDENCE.json",
+    "components/villani-ops/villani_ops/tests/fixtures/pt6/codex-events.jsonl",
+    "components/villani-ops/villani_ops/tests/fixtures/pt6/claude-events.jsonl",
+    "integration/fixtures/protocol/v1/valid_run/harness-discovery.json",
+    "schemas/v1/harness-discovery.schema.json"
+  ],
+  "screenshots": {
+    "count": 0,
+    "reason": "The in-app browser had no attached target. No unrelated browser mechanism was substituted. Web tests, typecheck, format check, and the 57-module production build passed."
+  },
+  "known_failures_and_skips": [
+    "Real Codex smoke skipped: credentials are not ready and paid execution was not authorized.",
+    "Real Claude Code smoke skipped: VILLANI_REAL_HARNESS_TESTS was not enabled and strict sandboxing is unavailable on native Windows.",
+    "Founder qualification arms were not run: the repository contains zero qualifying frozen real founder suites/tasks.",
+    "Two full Ops tests skipped because this Windows Python lacks Unix-domain socket and FIFO creation support.",
+    "One Villani Code opt-in external smoke remains skipped by its existing environment gate.",
+    "No second operating system was available locally; the fake executable and subprocess implementation are cross-platform, but execution evidence is Windows-only."
+  ],
+  "security_privacy_data_loss_and_compatibility_risks": [
+    "Raw structured traces and Git patches can contain repository data. Redaction is bounded and output is not encrypted; operators must inspect artifacts before sharing.",
+    "Process/worktree isolation is not a kernel sandbox. Claude Code fails closed on this native-Windows host; hostile tasks require WSL2/container isolation.",
+    "Codex permission requests are declined rather than expanded. Claude unsandboxed command fallback is disabled.",
+    "Vendor authentication, configuration, plugins, MCP configuration, and session directories are preserved; Claude session persistence is off by default.",
+    "Temporary prompt/schema/test files were removed after use. Tests proved the target repository canary was unchanged and partial attempt patches remain isolated evidence.",
+    "Supported CLI version ranges are intentionally narrow and require maintenance when vendor schemas change.",
+    "Old bundles and configuration remain readable because PT6 fields are additive and optional; no destructive migration was performed.",
+    "The generated Web asset hash changed; the old generated asset was deleted and replaced by the final build artifact."
+  ],
+  "user_facing_behavior": {
+    "before": "Only Villani Code could be production-selected. Codex and Claude Code were not operational harnesses and Agents did not expose exact structured-protocol readiness or repair actions.",
+    "after": "Agents detects Villani Code, Codex, and Claude Code with exact version, auth, protocol, provider/model capability, conformance, provisional qualification, and one repair action. Compatible configured Codex/Claude systems use the shared isolated lifecycle and evidence schema, while unsupported, unauthenticated, or insufficiently isolated systems fail closed."
+  },
+  "acceptance_criteria": {
+    "real_structured_integrations_complete_isolated_tasks": "INSUFFICIENT_EVIDENCE",
+    "exact_identities_and_comparable_evidence_recorded": "PASS_IN_CONFORMANCE",
+    "cancellation_and_cleanup": "PASS_IN_CONFORMANCE",
+    "target_repository_not_mutated_directly": "PASS_IN_CONFORMANCE",
+    "unsupported_versions_fail_actionably": "PASS",
+    "no_arbitrary_model_harness_claim": "PASS",
+    "gate_c_not_claimed": "PASS",
+    "pt7_not_started": "PASS"
+  },
+  "assumptions": [
+    "Vendor-authenticated CLIs may manage their own credentials, but Villani never copies credentials into run artifacts.",
+    "The exact supported version ranges remain fail-closed until a future installed version passes explicit conformance.",
+    "A real Claude run will occur only in WSL2/container isolation or after equivalent strict-isolation conformance is recorded."
+  ],
+  "pt7_started": false
+}

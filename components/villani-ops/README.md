@@ -90,8 +90,8 @@ preserved. Interrupted runs can be resumed with `villani resume <run_id>` or
 `villani resume --latest`. Use `villani rerun <run_id>` to create a new, lineage-linked run with
 fresh cost accounting and optional policy or budget overrides.
 
-A bare public `villani run` uses the Performance preset and strongest eligible configured coding
-route, requires verification, sets no wall-time budget, and waits for a non-destructive delivery
+A bare public `villani run` uses the Performance preset and repository-qualified
+accepted-change economics route, requires verification, sets no wall-time budget, and waits for a non-destructive delivery
 decision after a proved result. Success criteria are optional when the task itself is explicit;
 `--success-criteria`, `--task-file`, advanced policy/budget flags, and `--json` remain available.
 Default terminal output projects the four product stages and one final verdict from
@@ -149,10 +149,18 @@ villani agents inspect <route-or-system-id>
 villani agents doctor [route-or-system-id]
 ```
 
-Villani Code is the only production-enabled harness in PT5. External harness identities may be
-configured for inspection, but remain disabled and cannot be selected until their contract and
-qualification evidence are proven. See `docs/AGENT_SYSTEMS.md` for the lifecycle, evidence, and
-compatibility contract.
+PT6 adds fail-closed Codex app-server and Claude Code `stream-json` production adapters beside
+Villani Code. External routes remain experimental or provisional, require compatible exact
+versions, vendor authentication, isolation, and protocol conformance, and do not claim Gate C.
+See `docs/AGENT_SYSTEMS.md` for supported ranges, configuration, evidence, and repair actions.
+
+PT8 keeps qualification as the route eligibility gate and compares eligible systems using
+conservative total cost per accepted change: execution, verification, review, retry/escalation,
+and optional latency penalty divided by the applicable Wilson lower bound. Unknown inputs remain
+unknown; sparse accounting falls back to the strongest qualified evidence. Inspect a route without
+starting an attempt with `villani policy explain <task> --repo <path>`. Evaluate, publish, inspect,
+and roll back deterministic policies with the `policy economics-*` commands documented in
+`docs/ACCEPTED_CHANGE_ROUTING.md`.
 
 At composition time the public CLI detects an installed, running `villani-agentd` and attaches the
 closed-loop event sink. Local canonical events are committed before daemon delivery, daemon
@@ -313,6 +321,56 @@ The current release is for testing the orchestration loop, candidate tournament,
 The public `villani eval` command group captures content-addressed real-task suites, runs randomized direct-versus-Villani trials from identical restored baselines, records append-only human review, and generates JSON, Markdown, and HTML evidence reports plus Founder Gate B. It performs no passive monitoring and never applies trial patches to the source repository.
 
 See the [Founder Thesis Lab guide](../../docs/FOUNDER_THESIS_LAB.md) for PowerShell and POSIX capture, run, review, reporting, and gate examples.
+
+## Repository-specific agent qualification
+
+The public `villani agents` commands derive `qualified`, `provisional`, `experimental`, or
+`unsupported` per repository, task profile, complete agent-system identity, execution environment,
+verification policy, software versions, and evidence window. Automatic routing uses only qualified
+systems, or the single strongest eligible provisional fallback when none are qualified; it never
+selects an experimental system.
+
+```bash
+villani agents qualify <route> --suite <frozen-suite> --trial <trial-id> \
+  --category maintenance --difficulty medium --risk medium
+villani agents status [route] --repo <repository>
+villani agents evidence <route> --repo <repository>
+villani agents invalidate <route> --reason capability_loss --severity unsupported \
+  --detail "Isolation unavailable" --evidence-reference doctor/report.json
+villani agents gate-c --repo <repository> --output gate-c.json
+```
+
+Gate C exits 0 for `PASS`, 1 for `FAIL`, and 2 for `INSUFFICIENT_EVIDENCE`. See the
+[repository qualification guide](../../docs/REPOSITORY_QUALIFICATION.md) for the append-only
+evidence contract, conservative backoff, versioned policy, migration, drift, manual override, and
+scorecard semantics.
+
+## Adaptive verification and supervision evidence
+
+Every PT9 attempt receives a deterministic, versioned verification plan. Villani rejects
+conclusive evidence failures before invoking a semantic verifier, always requires semantic proof
+before acceptance, and adds an independent verifier for critical risk. Repository checks come only
+from discovered commands or explicit generic repository policy; the controller contains no
+language- or framework-specific check selection.
+
+```bash
+villani verification plan <run-id> [--attempt <attempt-id>] [--json]
+villani verification feedback-import <run-id> --outcome accepted_as_is \
+  --review-minutes 2 --did-not-open-full-trace
+villani verification feedback-import <run-id> --file later-outcome.json
+villani verification feedback <run-id> [--json]
+villani verification metrics <run-id> [--json]
+villani verification gate-d --input founder-arms.json --output gate-d.json
+```
+
+Human outcomes are explicit local imports. Villani does not monitor repositories, issues, commits,
+or employees. Missing review minutes, trace usage, cost, or duration remain unknown. A false
+acceptance, revert, or reopened defect immediately quarantines the exact recorded agent-system
+identity from automatic qualification. Gate D exits 0 for `PASS`, 1 for `FAIL`, and 2 for
+`INSUFFICIENT_EVIDENCE`.
+
+See the [adaptive verification guide](../../docs/ADAPTIVE_VERIFICATION.md) for the plan, binary
+authority, compact proof package, configuration migration, feedback contracts, and Gate D rules.
 
 ## Test suites
 

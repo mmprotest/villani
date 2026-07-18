@@ -1,0 +1,74 @@
+{
+  "arms": [
+    {
+      "accepted_as_is": 0,
+      "case_ids": [],
+      "elapsed_duration": {
+        "accounting_status": "unknown",
+        "duration_ms": null,
+        "source": "founder_evidence_not_run"
+      },
+      "eligible_cases": 0,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": null,
+      "review_time_accounting_status": "unknown",
+      "safe_fallback": true,
+      "strategy": "strongest_only",
+      "total_cost": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "source": "founder_evidence_not_run"
+      }
+    },
+    {
+      "accepted_as_is": 0,
+      "case_ids": [],
+      "elapsed_duration": {
+        "accounting_status": "unknown",
+        "duration_ms": null,
+        "source": "founder_evidence_not_run"
+      },
+      "eligible_cases": 0,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": null,
+      "review_time_accounting_status": "unknown",
+      "safe_fallback": true,
+      "strategy": "accepted_change_optimizer",
+      "total_cost": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "source": "founder_evidence_not_run"
+      }
+    },
+    {
+      "accepted_as_is": 0,
+      "case_ids": [],
+      "elapsed_duration": {
+        "accounting_status": "unknown",
+        "duration_ms": null,
+        "source": "founder_evidence_not_run"
+      },
+      "eligible_cases": 0,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": null,
+      "review_time_accounting_status": "unknown",
+      "safe_fallback": true,
+      "strategy": "optimizer_plus_adaptive",
+      "total_cost": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "source": "founder_evidence_not_run"
+      }
+    }
+  ],
+  "evidence_references": [],
+  "generated_at": "2026-07-18T00:00:00Z",
+  "input_digest": "sha256:0f7daba0e8a11bbe59899d15b1f6778d4d89667e7e160ce49caf0f2a93686a54",
+  "policy_version": "adaptive_verification_v1"
+}

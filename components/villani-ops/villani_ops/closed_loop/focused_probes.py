@@ -24,6 +24,7 @@ from .verification_evidence import (
     FocusedProbeReport,
     FocusedProbeRequest,
     FocusedProbeResult,
+    FocusedProbeTemporaryFileEvidence,
 )
 
 
@@ -102,6 +103,10 @@ def execute_focused_probes(
         effective_timeout, original_config = _effective_timeout(
             provider, request.timeout_seconds
         )
+        temporary_evidence: list[FocusedProbeTemporaryFileEvidence] = []
+        temporary_paths: list[Path] = []
+        temporary_directories: list[Path] = []
+        cleanup_error: str | None = None
         try:
             configuration = cast(
                 ExecutionEnvironmentConfig, getattr(provider, "config")
@@ -111,6 +116,40 @@ def execute_focused_probes(
                 prepared_environment=prepared_environment,
                 configuration=configuration,
             )
+            worktree = Path(prepared_environment.worktree_path).resolve()
+            for temporary in request.temporary_files:
+                destination = (worktree / temporary.path).resolve()
+                check_path(destination, worktree, configuration.policy)
+                if temporary.content is None:
+                    raise ValueError(
+                        "focused probe temporary file content was not available for execution"
+                    )
+                if destination.exists():
+                    raise ExecutionPolicyDenied(
+                        policy="candidate_worktree_isolation",
+                        action="create_focused_probe_temporary_file",
+                        reason=(
+                            "focused probe temporary files cannot overwrite candidate files"
+                        ),
+                    )
+                missing_parents: list[Path] = []
+                parent = destination.parent
+                while parent != worktree and not parent.exists():
+                    missing_parents.append(parent)
+                    parent = parent.parent
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                temporary_directories.extend(reversed(missing_parents))
+                destination.write_text(temporary.content, encoding="utf-8", newline="\n")
+                temporary_paths.append(destination)
+                temporary_evidence.append(
+                    FocusedProbeTemporaryFileEvidence(
+                        path=temporary.path.replace("\\", "/"),
+                        content_sha256=temporary.content_sha256,
+                        content_bytes=temporary.content_bytes,
+                        created=True,
+                        removed=False,
+                    )
+                )
             command = execute_candidate_command(
                 provider=provider,
                 prepared_environment=prepared_environment,
@@ -171,8 +210,38 @@ def execute_focused_probes(
                 failure_code="focused_probe_provider_failure",
             )
         finally:
+            removed_paths: set[str] = set()
+            for temporary_path in reversed(temporary_paths):
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                    removed_paths.add(
+                        temporary_path.relative_to(
+                            Path(prepared_environment.worktree_path).resolve()
+                        ).as_posix()
+                    )
+                except OSError as error:
+                    cleanup_error = f"temporary probe file cleanup failed: {error}"
+            for directory in reversed(temporary_directories):
+                try:
+                    directory.rmdir()
+                except OSError:
+                    pass
+            temporary_evidence = [
+                item.model_copy(update={"removed": item.path in removed_paths})
+                for item in temporary_evidence
+            ]
             if original_config is not None:
                 setattr(provider, "config", original_config)
+
+        if cleanup_error is not None:
+            command = command.model_copy(
+                update={
+                    "status": "infrastructure_error",
+                    "failure_code": "focused_probe_provider_failure",
+                    "stderr": cleanup_error,
+                    "stderr_bytes": len(cleanup_error.encode()),
+                }
+            )
 
         if command.status in {
             "timed_out",
@@ -197,6 +266,7 @@ def execute_focused_probes(
                 evidence_id=f"focused_probe:{request.probe_id}",
                 effective_timeout_seconds=effective_timeout,
                 reason=reason,
+                temporary_files=temporary_evidence,
             )
         )
 

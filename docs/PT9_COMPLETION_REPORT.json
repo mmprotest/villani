@@ -1,0 +1,446 @@
+{
+  "schema_version": "villani.milestone_completion_report.v1",
+  "milestone": "PT9",
+  "title": "Build Adaptive Verification and Reduce Supervision",
+  "assessment_date": "2026-07-18",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "implementation_status": "complete",
+  "acceptance_status": "not_proven",
+  "status_reason": "The adaptive-verification implementation, fail-closed binary authority, focused-probe isolation, compact review package, explicit local feedback, supervision accounting, Gate D evaluator, public contracts, CLI, UI, fixtures, and deterministic tests are complete. PT9 cannot be reported COMPLETE because the frozen founder input contains zero eligible matched cases. Lower supervision, zero false acceptance on founder work, and Gate D PASS therefore remain unproved.",
+  "gate_d": {
+    "status": "INSUFFICIENT_EVIDENCE",
+    "artifact": "docs/PT9_GATE_D.json",
+    "frozen_input": "docs/PT9_FROZEN_GATE_D_INPUT.json",
+    "command_exit_code": 2,
+    "next_milestone_permitted": false,
+    "eligible_cases_per_arm": 0,
+    "passing_checks": [
+      "explainability",
+      "safe_fallback"
+    ],
+    "insufficient_checks": [
+      "matched_founder_cases",
+      "accepted_as_is_no_regression",
+      "zero_false_acceptance",
+      "lower_cost_or_time",
+      "lower_review_burden"
+    ],
+    "reason": "No eligible frozen founder case was recorded for strongest-only, accepted-change optimizer, or optimizer-plus-adaptive. Unknown cost, duration, and review time remain null and unranked."
+  },
+  "acceptance_criteria": [
+    {
+      "criterion": "Verification adapts without weakening",
+      "status": "implemented_and_deterministically_tested",
+      "evidence": "Versioned risk plans, mandatory semantic verification, deterministic rejection short-circuiting, critical independent verification, and binary normalization all pass."
+    },
+    {
+      "criterion": "Ordinary successful changes have a compact proof package",
+      "status": "implemented_and_deterministically_tested",
+      "evidence": "The valid run fixture projects Ready to apply with a compact proof link, and Web tests render why Villani trusts it."
+    },
+    {
+      "criterion": "Founder evidence shows lower supervision",
+      "status": "insufficient_evidence",
+      "evidence": "Every frozen Gate D arm has zero eligible cases and unknown review minutes."
+    },
+    {
+      "criterion": "False acceptance remains zero",
+      "status": "insufficient_evidence",
+      "evidence": "Fail-closed contracts prevent unclear/error acceptance, but an empty founder evaluation cannot establish an observed zero false-acceptance rate."
+    },
+    {
+      "criterion": "Gate D passes before the next milestone",
+      "status": "not_met",
+      "evidence": "Gate D returned INSUFFICIENT_EVIDENCE with next_milestone_permitted=false."
+    },
+    {
+      "criterion": "No passive monitoring exists",
+      "status": "met",
+      "evidence": "Feedback is explicit CLI/file import only; the source audit found zero passive-monitor implementations."
+    }
+  ],
+  "files": {
+    "added": [
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-DvFaI5_1.js",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/artifacts.py",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/decision.py",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/feedback.py",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/gate.py",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/models.py",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/planning.py",
+      "components/villani-ops/villani_ops/closed_loop/adaptive_verification/review.py",
+      "components/villani-ops/villani_ops/schemas/v1/adaptive-verification-plan.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/binary-verification-decision.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/gate-d.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/human-outcome.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/review-package.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/supervision-metrics.schema.json",
+      "components/villani-ops/villani_ops/tests/test_pt9_adaptive_verification.py",
+      "components/villani-run-model/dist/adaptiveVerification.d.ts",
+      "components/villani-run-model/dist/adaptiveVerification.js",
+      "components/villani-run-model/src/adaptiveVerification.ts",
+      "components/villani-run-model/test/adaptiveVerification.test.ts",
+      "components/villani-web/dist/assets/index-DvFaI5_1.js",
+      "docs/ADAPTIVE_VERIFICATION.md",
+      "docs/PT9_COMPLETION_REPORT.json",
+      "docs/PT9_COMPLETION_REPORT.md",
+      "docs/PT9_FROZEN_GATE_D_INPUT.json",
+      "docs/PT9_GATE_D.json",
+      "integration/fixtures/protocol/v1/invalid/binary_unclear_marked_accepted.json",
+      "integration/fixtures/protocol/v1/invalid/human_outcome_unknown_full_trace_as_boolean.json",
+      "integration/fixtures/protocol/v1/invalid/human_outcome_unknown_review_time_as_number.json",
+      "integration/fixtures/protocol/v1/invalid/supervision_unknown_trace_claims_application.json",
+      "integration/fixtures/protocol/v1/valid_run/adaptive-verification-plan.json",
+      "integration/fixtures/protocol/v1/valid_run/binary-verification-decision.json",
+      "integration/fixtures/protocol/v1/valid_run/gate-d.json",
+      "integration/fixtures/protocol/v1/valid_run/human-outcome.json",
+      "integration/fixtures/protocol/v1/valid_run/review-package.json",
+      "integration/fixtures/protocol/v1/valid_run/supervision-metrics.json",
+      "integration/fixtures/protocol/v1/valid_run/verification/attempt_002-decision.json",
+      "integration/fixtures/protocol/v1/valid_run/verification/attempt_002-plan.json",
+      "integration/fixtures/protocol/v1/valid_run/verification/attempt_002-review-package.json",
+      "schemas/v1/adaptive-verification-plan.schema.json",
+      "schemas/v1/binary-verification-decision.schema.json",
+      "schemas/v1/gate-d.schema.json",
+      "schemas/v1/human-outcome.schema.json",
+      "schemas/v1/review-package.schema.json",
+      "schemas/v1/supervision-metrics.schema.json",
+      "scripts/generate-pt9-fixtures.py",
+      "scripts/generate-pt9-schemas.py"
+    ],
+    "changed": [
+      "PLANS.md",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "components/villani-ops/README.md",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/adapters/villani_verifier.py",
+      "components/villani-ops/villani_ops/closed_loop/controller.py",
+      "components/villani-ops/villani_ops/closed_loop/focused_probes.py",
+      "components/villani-ops/villani_ops/closed_loop/product_run.py",
+      "components/villani-ops/villani_ops/closed_loop/protocol.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/closed_loop/verification_evidence.py",
+      "components/villani-ops/villani_ops/closed_loop/verification_graph/executor.py",
+      "components/villani-ops/villani_ops/closed_loop/verifier_routing.py",
+      "components/villani-ops/villani_ops/schemas/v1/product-run.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/run-manifest.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_adapters.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_controller.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_product_run.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_verification_delivery.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_verifier_routing.py",
+      "components/villani-ops/villani_ops/tests/test_state_machine.py",
+      "components/villani-ops/villani_ops/tests/test_unified_cli.py",
+      "components/villani-ops/villani_ops/verifier/llm.py",
+      "components/villani-run-model/dist/index.d.ts",
+      "components/villani-run-model/dist/index.js",
+      "components/villani-run-model/dist/product.d.ts",
+      "components/villani-run-model/src/index.ts",
+      "components/villani-run-model/src/product.ts",
+      "components/villani-web/dist/index.html",
+      "components/villani-web/src/SingleTaskPage.tsx",
+      "components/villani-web/test/console.test.tsx",
+      "integration/fixtures/protocol/v1/valid_run/manifest.json",
+      "schemas/v1/product-run.schema.json",
+      "schemas/v1/run-manifest.schema.json",
+      "tests/closed_loop/test_cli_e2e.py",
+      "tests/closed_loop/test_protocol_contract.py"
+    ],
+    "deleted_or_replaced": [
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-CfriGpez.js",
+      "components/villani-web/dist/assets/index-CfriGpez.js"
+    ],
+    "migrated": [
+      "New configuration receives an additive adaptive_verification block using adaptive_verification_v1. Existing configuration without the block remains readable and receives conservative runtime defaults.",
+      "Run manifests gained optional adaptive_verification, human_outcomes, and supervision_metrics artifact pointers. Older manifests remain valid.",
+      "Product-run projections gained optional proof_package. Older run bundles project without it.",
+      "Six additive v1 contracts were added to normative and packaged schema maps; no existing schema version was replaced.",
+      "The verified Web bundle replaced the prior PT8 bundle and was synchronized into Agentd packaging."
+    ],
+    "scope_note": "The dirty worktree also contains the immediately preceding user-authorized PT6, PT7, and PT8 changes documented in their completion reports. This inventory identifies PT9 additions and PT9-touched shared files; earlier user changes were preserved."
+  },
+  "architecture_and_product_decisions": [
+    "The controller builds one content-addressed adaptive verification plan from task/criteria, explicit risk, candidate diff scope, generic repository policy, qualification uncertainty, historical verification failures, and the versioned adaptive policy.",
+    "Risk is standard, elevated, or critical. Sensitive paths are configuration patterns, not hardcoded framework, language, repository, operating-system, benchmark, or task-name heuristics.",
+    "Repository-discovered argv commands are the only production source for repository validation, changed-test, and static-check nodes. A focused probe is added only for a precise unproved behavior.",
+    "Focused-probe temporary files are candidate-worktree scoped, cannot overwrite candidate files, are removed in a finally block, and persist path/hash/size/cleanup evidence rather than content in the probe report. Behavior failure remains distinct from infrastructure failure; only infrastructure failure is retryable.",
+    "Conclusive deterministic failure rejects before a semantic call. Acceptance always requires semantic verification. Critical risk also requires a completed independent verifier; unclear, malformed, error, missing, or disagreeing results normalize to decision 0.",
+    "Semantic context uses an explicit allowlist and excludes harness identity, route, cost, qualification/controller identity, and competing candidates. Restricted provenance is retained only as digests and artifact pointers outside semantic context.",
+    "Binary authority persists decision 1 or 0, reason code, requirements proved/not proved, blockers, infrastructure, node results, restricted provenance, and separately accounted verifier cost.",
+    "Ready to apply receives a compact proof package; Needs review receives the exact unresolved decision. Delivery remains limited to the selected recorded patch and cannot be authorized by an unclear or error state.",
+    "Human outcomes are explicit, optional, append-only, and local-first. No repository or employee monitoring exists. Later adverse outcomes can be imported by explicit commit/issue reference and false acceptance quarantines the exact qualification profile.",
+    "Review minutes, full-trace use, cost, and duration remain null with explicit unknown accounting when unavailable. Missing review time is never treated as zero.",
+    "Gate D compares matched strongest-only, optimizer, and optimizer-plus-adaptive arms and cannot pass empty or materially unmatched evidence."
+  ],
+  "public_contracts": {
+    "schemas": [
+      "villani.adaptive_verification_plan.v1",
+      "villani.binary_verification_decision.v1",
+      "villani.review_package.v1",
+      "villani.human_outcome.v1",
+      "villani.supervision_metrics.v1",
+      "villani.gate_d.v1"
+    ],
+    "policy_version": "adaptive_verification_v1",
+    "python_models": "components/villani-ops/villani_ops/closed_loop/adaptive_verification/models.py",
+    "typescript_models": "components/villani-run-model/src/adaptiveVerification.ts",
+    "backward_compatibility": "All fields and documents are additive. Older configuration and run bundles remain readable; unknown money, duration, review time, and full-trace use remain null with explicit accounting."
+  },
+  "tests_added": {
+    "python_primary": {
+      "file": "components/villani-ops/villani_ops/tests/test_pt9_adaptive_verification.py",
+      "tests": 13,
+      "coverage": [
+        "risk tiers and configured sensitive paths",
+        "deterministic planning and verifier blindness",
+        "focused-probe isolation, cleanup, and behavior/infrastructure distinction",
+        "binary unclear/error/missing normalization",
+        "critical independent verification",
+        "ready and needs-review packages",
+        "explicit feedback import, unknown review time, and false-acceptance quarantine",
+        "Gate D PASS, FAIL, and INSUFFICIENT_EVIDENCE",
+        "legacy configuration migration and PT9 CLI lifecycle"
+      ]
+    },
+    "typescript": {
+      "file": "components/villani-run-model/test/adaptiveVerification.test.ts",
+      "tests": 2,
+      "coverage": [
+        "all six wire identities",
+        "binary authority and unknown review-time parity"
+      ]
+    },
+    "updated_integration_coverage": [
+      "Verifier routing proves deterministic-call avoidance, risk escalation, and independent-verifier requirements.",
+      "Controller/delivery tests prove binary decision authority and no acceptance from unclear, error, or missing semantic output.",
+      "Protocol suites validate six valid documents and four semantic invalid documents.",
+      "Web tests render Ready to apply, WHY VILLANI TRUSTS IT, risk, exact unresolved decisions, and full evidence links.",
+      "Installed CLI E2E now supplies the official structured semantic-verifier tool response instead of relying on deterministic-only verification."
+    ]
+  },
+  "validation_commands": [
+    {
+      "cwd": "components/villani-ops",
+      "command": "python -m pytest -q",
+      "result": "1278 passed, 2 skipped, 116 deselected in 381.27s (0:06:21).",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-code",
+      "command": "python -m pytest -q",
+      "result": "686 passed, 1 skipped, 27 warnings.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-agentd",
+      "command": "python -m pytest -q",
+      "result": "86 passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python -m pytest tests/closed_loop -q",
+      "result": "11 passed, 2 warnings in 62.67s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "python -m pytest -q villani_ops/tests/test_pt9_adaptive_verification.py villani_ops/tests/closed_loop/test_verifier_routing.py",
+      "result": "23 passed in 1.00s on the final post-format run.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python -m pytest tests/closed_loop/test_cli_e2e.py::test_public_local_stub_quickstart_uses_real_villani_code_cli tests/closed_loop/test_cli_e2e.py::test_windows_powershell_installed_cli_accepts_multiline_task_file -m e2e -q",
+      "result": "3 passed, 1 pytest-cache warning in 43.75s on the final post-format run.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python -m pytest tests/closed_loop/test_protocol_contract.py -q",
+      "result": "2 passed, 1 pytest-cache warning in 0.98s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm test",
+      "result": "6 files and 17 tests passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm run typecheck",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm run build",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm test",
+      "result": "21 files and 118 tests passed; the command also built TypeScript.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run typecheck",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run build",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run format:check",
+      "result": "All matched files use Prettier code style.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm test",
+      "result": "4 files and 25 tests passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run typecheck",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run build",
+      "result": "Production build passed after approved execution outside the filesystem sandbox for esbuild.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run format:check",
+      "result": "All matched files use Prettier code style.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python scripts/generate-pt9-schemas.py; python scripts/generate-pt9-fixtures.py (executed twice with SHA-256 comparison)",
+      "result": "27 generated outputs were deterministic; 6 of 6 normative/package schema pairs were byte-identical.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "villani verification gate-d --input docs/PT9_FROZEN_GATE_D_INPUT.json --output docs/PT9_GATE_D.json --json",
+      "result": "Returned the expected exit code 2 and status INSUFFICIENT_EVIDENCE; next_milestone_permitted=false.",
+      "status": "expected_insufficient_evidence"
+    },
+    {
+      "cwd": ".",
+      "command": "python -m ruff check components/villani-ops/villani_ops/closed_loop/adaptive_verification components/villani-ops/villani_ops/tests/test_pt9_adaptive_verification.py scripts/generate-pt9-schemas.py scripts/generate-pt9-fixtures.py tests/closed_loop/test_cli_e2e.py",
+      "result": "All checks passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python -m ruff format --check components/villani-ops/villani_ops/closed_loop/adaptive_verification components/villani-ops/villani_ops/tests/test_pt9_adaptive_verification.py scripts/generate-pt9-schemas.py scripts/generate-pt9-fixtures.py tests/closed_loop/test_cli_e2e.py",
+      "result": "12 files already formatted.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python -m mypy --follow-imports=skip --ignore-missing-imports components/villani-ops/villani_ops/closed_loop/adaptive_verification/__init__.py components/villani-ops/villani_ops/closed_loop/adaptive_verification/artifacts.py components/villani-ops/villani_ops/closed_loop/adaptive_verification/decision.py components/villani-ops/villani_ops/closed_loop/adaptive_verification/feedback.py components/villani-ops/villani_ops/closed_loop/adaptive_verification/gate.py components/villani-ops/villani_ops/closed_loop/adaptive_verification/models.py components/villani-ops/villani_ops/closed_loop/adaptive_verification/planning.py components/villani-ops/villani_ops/closed_loop/adaptive_verification/review.py",
+      "result": "Success: no issues found in 8 source files.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python -m compileall -q components/villani-ops/villani_ops/closed_loop/adaptive_verification scripts/generate-pt9-schemas.py scripts/generate-pt9-fixtures.py",
+      "result": "PYTHON_3_11_COMPILE=PASS.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python scripts/check-secrets.py components/villani-ops/villani_ops/closed_loop/adaptive_verification components/villani-ops/villani_ops/tests/test_pt9_adaptive_verification.py components/villani-run-model/src/adaptiveVerification.ts components/villani-web/src/SingleTaskPage.tsx docs/ADAPTIVE_VERIFICATION.md docs/PT9_FROZEN_GATE_D_INPUT.json docs/PT9_GATE_D.json integration/fixtures/protocol/v1/valid_run/adaptive-verification-plan.json integration/fixtures/protocol/v1/valid_run/binary-verification-decision.json integration/fixtures/protocol/v1/valid_run/review-package.json integration/fixtures/protocol/v1/valid_run/human-outcome.json integration/fixtures/protocol/v1/valid_run/supervision-metrics.json integration/fixtures/protocol/v1/valid_run/gate-d.json",
+      "result": "Secret scan passed: 13 roots, 0 findings.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "python scripts/sync-console-assets.py --check",
+      "result": "Console assets verified: 3 files.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "git diff --check",
+      "result": "Passed with exit code 0; Git emitted only CRLF conversion warnings.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "PYTHONPATH=components/villani-ops python -c \"from pathlib import Path; from villani_ops.closed_loop.product_run import build_product_run; p=build_product_run(Path('integration/fixtures/protocol/v1/valid_run')); print(p.model_dump_json(include={'run_identity','final_verdict','proof_package','evidence_links'}))\"",
+      "result": "Projected Ready to apply with proof_package and a Compact proof evidence link.",
+      "status": "passed"
+    }
+  ],
+  "remediated_preliminary_results": [
+    "The first full Ops run reported 6 failed, 1272 passed, 2 skipped, and 116 deselected in 309.11s. Semantic-success fixtures, specific reason-code precedence, deterministic short-circuit expectations, shared patch-fixture isolation, and CLI wording were corrected; the complete rerun passed.",
+    "The first root closed-loop run reported 3 failed and 8 passed in 52.10s. The installed quickstart fake configured deterministic-only verification; it now exposes the official verifier_final_verdict structured tool response and all three E2E variants pass.",
+    "The first Web format check identified three files; Prettier was applied and the final check passed.",
+    "The first Ruff check identified three E402 bootstrap imports in the fixture generator; explicit noqa annotations matching the schema generator were added. Ruff format then identified 12 files and formatted them; final lint and format checks pass.",
+    "An unrestricted mypy traversal reported 231 existing errors across 49 imported legacy modules. The milestone-scoped command used follow-imports=skip and reports no issues in all 8 PT9 production modules.",
+    "The first CLI help preflight could not read the default home outside the managed workspace. The actual Gate D command used a workspace VILLANI_HOME and completed with its expected fail-closed exit code.",
+    "The in-app browser initialization returned Browser is not available: iab. The browser skill prohibited substituting another browser."
+  ],
+  "end_to_end_artifacts": [
+    "docs/PT9_FROZEN_GATE_D_INPUT.json",
+    "docs/PT9_GATE_D.json",
+    "integration/fixtures/protocol/v1/valid_run/adaptive-verification-plan.json",
+    "integration/fixtures/protocol/v1/valid_run/binary-verification-decision.json",
+    "integration/fixtures/protocol/v1/valid_run/review-package.json",
+    "integration/fixtures/protocol/v1/valid_run/human-outcome.json",
+    "integration/fixtures/protocol/v1/valid_run/supervision-metrics.json",
+    "integration/fixtures/protocol/v1/valid_run/verification/attempt_002-plan.json",
+    "integration/fixtures/protocol/v1/valid_run/verification/attempt_002-decision.json",
+    "integration/fixtures/protocol/v1/valid_run/verification/attempt_002-review-package.json",
+    "components/villani-web/dist/index.html",
+    "components/villani-agentd/villani_agentd/console_assets/console-assets.json"
+  ],
+  "screenshots": {
+    "status": "skipped",
+    "reason": "The required in-app browser was unavailable and returned Browser is not available: iab. The browser skill forbids substituting another browser. UI evidence is the passing Web suite, typecheck, production build, format check, product-run projection, and packaged asset parity."
+  },
+  "known_failures_and_skips": [
+    "Gate D is INSUFFICIENT_EVIDENCE because all three founder arms contain zero eligible cases.",
+    "Two existing Ops host-capability tests skip on native Windows because Unix-domain sockets/FIFO facilities are unavailable.",
+    "One Villani Code opt-in external smoke test is skipped; no paid external execution occurred.",
+    "The browser screenshot is skipped because the in-app browser capability was unavailable.",
+    "The naive repository-wide import-following mypy result remains a known baseline limitation; the isolated PT9 type gate passes."
+  ],
+  "security_privacy_data_loss_compatibility_risks": [
+    "Task, diff, command, review, and evidence artifacts can contain repository data and are not encrypted. Redaction is bounded; exports require operator review.",
+    "Process/worktree isolation is not a kernel sandbox. Commands remain shell-free and workspace scoped, but hostile repositories require a stronger configured execution provider.",
+    "Focused-probe input content is omitted from the durable probe report, which retains path/hash/size/cleanup evidence. Redacted raw verifier artifacts may still contain sensitive repository context.",
+    "False acceptance, reopened defects, and reversions are conservative adverse evidence and can quarantine an exact profile; incorrect explicit feedback therefore has routing consequences but never rewrites history.",
+    "No user source, durable history, vendor configuration, or session directory was deleted. Probe-only files and isolated worktrees are bounded cleanup targets.",
+    "All migrations are additive. Old bundles lack compact proof/metrics and display those fields as unavailable rather than fabricating evidence."
+  ],
+  "user_facing_before_after": {
+    "before": "Villani produced verifier evidence and a binary candidate outcome but had no versioned adaptive proof plan, compact Ready/Needs review package, explicit later-outcome import, supervision accounting, or Gate D.",
+    "after": "Villani selects the minimum deterministic proof graph warranted by risk and repository policy, always requires semantic proof, adds an independent verifier for critical changes, fails closed on unresolved evidence, shows a compact WHY VILLANI TRUSTS IT package, and exposes verification plan, feedback import/list, metrics, and Gate D commands."
+  },
+  "scope_boundary": "PT10 was not started."
+}

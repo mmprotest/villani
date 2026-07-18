@@ -71,10 +71,28 @@ const snapshotPaths = [
   join(validRun, "attempts", "attempt_001", "harness-result.json"),
   join(validRun, "attempts", "attempt_002", "harness-result.json"),
   join(validRun, "harness-conformance.json"),
+  join(validRun, "harness-discovery.json"),
+  join(validRun, "qualification-observation.json"),
+  join(validRun, "qualification-invalidation.json"),
+  join(validRun, "qualification-snapshot.json"),
+  join(validRun, "gate-c.json"),
+  join(validRun, "economics-observation.json"),
+  join(validRun, "economics-snapshot.json"),
+  join(validRun, "online-evidence-update.json"),
+  join(validRun, "route-plan.json"),
+  join(validRun, "route-policy.json"),
+  join(validRun, "route-policy-evaluation.json"),
+  join(validRun, "route-policy-publication.json"),
+  join(validRun, "adaptive-verification-plan.json"),
+  join(validRun, "binary-verification-decision.json"),
+  join(validRun, "review-package.json"),
+  join(validRun, "human-outcome.json"),
+  join(validRun, "supervision-metrics.json"),
+  join(validRun, "gate-d.json"),
 ];
 
 describe("canonical Villani protocol", () => {
-  it("accepts the complete shared bundle and all fifteen schema versions", () => {
+  it("accepts the complete shared bundle and every v1 schema version", () => {
     const versions = new Set<string>();
     for (const path of snapshotPaths) {
       const document = json(path);
@@ -108,6 +126,12 @@ describe("canonical Villani protocol", () => {
     ["manifest_cost_missing_but_status_complete.json", "accounting_status"],
     ["state_terminal_false_for_completed.json", "terminal_state"],
     ["unknown_top_level_property.json", "additionalProperties"],
+    ["qualification_unknown_cost_as_zero.json", "accounting_status"],
+    ["economics_unknown_cost_as_zero.json", "accounting_status"],
+    ["binary_unclear_marked_accepted.json", "binary_verification_authority"],
+    ["human_outcome_unknown_review_time_as_number.json", "accounting_status"],
+    ["human_outcome_unknown_full_trace_as_boolean.json", "accounting_status"],
+    ["supervision_unknown_trace_claims_application.json", "accounting_status"],
   ])("rejects %s for %s", (filename, expectedKeyword) => {
     const result = validator.validate(json(join(invalid, filename)));
     expect(result.valid).toBe(false);

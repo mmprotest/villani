@@ -1,0 +1,422 @@
+{
+  "$defs": {
+    "DurationEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "sample_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "DurationEstimate",
+      "type": "object"
+    },
+    "MoneyEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "sample_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "MoneyEstimate",
+      "type": "object"
+    },
+    "PolicyChoiceComparison": {
+      "additionalProperties": false,
+      "properties": {
+        "active_choice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Active Choice"
+        },
+        "active_false_acceptance_exposure": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Active False Acceptance Exposure"
+        },
+        "active_probability": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Probability"
+        },
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "evidence_cutoff": {
+          "format": "date-time",
+          "title": "Evidence Cutoff",
+          "type": "string"
+        },
+        "proposed_choice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proposed Choice"
+        },
+        "proposed_false_acceptance_exposure": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proposed False Acceptance Exposure"
+        },
+        "proposed_probability": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proposed Probability"
+        },
+        "reliability_non_decreasing": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reliability Non Decreasing"
+        }
+      },
+      "required": [
+        "case_id",
+        "active_choice",
+        "proposed_choice",
+        "reliability_non_decreasing",
+        "active_false_acceptance_exposure",
+        "proposed_false_acceptance_exposure",
+        "evidence_cutoff"
+      ],
+      "title": "PolicyChoiceComparison",
+      "type": "object"
+    },
+    "StrategyMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_as_is": {
+          "minimum": 0,
+          "title": "Accepted As Is",
+          "type": "integer"
+        },
+        "case_count": {
+          "minimum": 0,
+          "title": "Case Count",
+          "type": "integer"
+        },
+        "elapsed_duration": {
+          "$ref": "#/$defs/DurationEstimate"
+        },
+        "escalation_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Escalation Count"
+        },
+        "failures": {
+          "minimum": 0,
+          "title": "Failures",
+          "type": "integer"
+        },
+        "false_acceptance": {
+          "minimum": 0,
+          "title": "False Acceptance",
+          "type": "integer"
+        },
+        "proved_acceptable": {
+          "minimum": 0,
+          "title": "Proved Acceptable",
+          "type": "integer"
+        },
+        "regret": {
+          "$ref": "#/$defs/MoneyEstimate"
+        },
+        "review_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Minutes"
+        },
+        "strategy": {
+          "enum": [
+            "accepted_change_optimizer",
+            "strongest_only",
+            "cheapest_qualified",
+            "forced"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        },
+        "total_cost": {
+          "$ref": "#/$defs/MoneyEstimate"
+        },
+        "unknown_input_rate": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Unknown Input Rate",
+          "type": "number"
+        },
+        "unmatched_outcome_count": {
+          "minimum": 0,
+          "title": "Unmatched Outcome Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "strategy",
+        "case_count",
+        "accepted_as_is",
+        "proved_acceptable",
+        "false_acceptance",
+        "failures",
+        "total_cost",
+        "elapsed_duration",
+        "regret",
+        "unknown_input_rate",
+        "unmatched_outcome_count"
+      ],
+      "title": "StrategyMetrics",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/route-policy-evaluation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "active_policy_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Active Policy Digest",
+      "type": "string"
+    },
+    "active_policy_version": {
+      "title": "Active Policy Version",
+      "type": "string"
+    },
+    "comparisons": {
+      "items": {
+        "$ref": "#/$defs/PolicyChoiceComparison"
+      },
+      "title": "Comparisons",
+      "type": "array"
+    },
+    "conservative_reliability_non_decreasing": {
+      "title": "Conservative Reliability Non Decreasing",
+      "type": "boolean"
+    },
+    "evaluation_id": {
+      "pattern": "^rpeval_[0-9a-f]{64}$",
+      "title": "Evaluation Id",
+      "type": "string"
+    },
+    "false_acceptance_exposure_non_increasing": {
+      "title": "False Acceptance Exposure Non Increasing",
+      "type": "boolean"
+    },
+    "frozen_case_count": {
+      "minimum": 0,
+      "title": "Frozen Case Count",
+      "type": "integer"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "point_in_time_replay": {
+      "const": true,
+      "default": true,
+      "title": "Point In Time Replay",
+      "type": "boolean"
+    },
+    "proposed_policy_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Proposed Policy Digest",
+      "type": "string"
+    },
+    "proposed_policy_version": {
+      "title": "Proposed Policy Version",
+      "type": "string"
+    },
+    "rejection_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rejection Reasons",
+      "type": "array"
+    },
+    "safe_to_publish": {
+      "title": "Safe To Publish",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "villani.route_policy_evaluation.v1",
+      "default": "villani.route_policy_evaluation.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Source Digest",
+      "type": "string"
+    },
+    "strategy_metrics": {
+      "items": {
+        "$ref": "#/$defs/StrategyMetrics"
+      },
+      "title": "Strategy Metrics",
+      "type": "array"
+    }
+  },
+  "required": [
+    "evaluation_id",
+    "generated_at",
+    "active_policy_version",
+    "active_policy_digest",
+    "proposed_policy_version",
+    "proposed_policy_digest",
+    "frozen_case_count",
+    "comparisons",
+    "strategy_metrics",
+    "conservative_reliability_non_decreasing",
+    "false_acceptance_exposure_non_increasing",
+    "safe_to_publish",
+    "rejection_reasons",
+    "source_digest"
+  ],
+  "title": "RoutePolicyEvaluation",
+  "type": "object"
+}

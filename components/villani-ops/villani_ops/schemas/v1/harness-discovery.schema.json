@@ -1,0 +1,185 @@
+{
+  "$defs": {
+    "HarnessReadiness": {
+      "additionalProperties": false,
+      "description": "Non-secret discovery and enablement facts for one configured harness.",
+      "properties": {
+        "authentication_status": {
+          "enum": [
+            "ready",
+            "not_ready",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Authentication Status",
+          "type": "string"
+        },
+        "command_identity": {
+          "minLength": 1,
+          "title": "Command Identity",
+          "type": "string"
+        },
+        "conformance_status": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_run",
+            "insufficient_evidence"
+          ],
+          "title": "Conformance Status",
+          "type": "string"
+        },
+        "custom_model_capability": {
+          "enum": [
+            "supported",
+            "unsupported",
+            "unknown"
+          ],
+          "title": "Custom Model Capability",
+          "type": "string"
+        },
+        "custom_provider_capability": {
+          "enum": [
+            "supported",
+            "unsupported",
+            "unknown"
+          ],
+          "title": "Custom Provider Capability",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "exact_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exact Version"
+        },
+        "installed": {
+          "title": "Installed",
+          "type": "boolean"
+        },
+        "local_model_capability": {
+          "enum": [
+            "supported",
+            "unsupported",
+            "unknown"
+          ],
+          "title": "Local Model Capability",
+          "type": "string"
+        },
+        "protocol": {
+          "minLength": 1,
+          "title": "Protocol",
+          "type": "string"
+        },
+        "qualification_state": {
+          "enum": [
+            "qualified",
+            "bootstrap",
+            "experimental",
+            "provisional",
+            "unqualified",
+            "unsupported",
+            "disabled"
+          ],
+          "title": "Qualification State",
+          "type": "string"
+        },
+        "repair_action": {
+          "minLength": 1,
+          "title": "Repair Action",
+          "type": "string"
+        },
+        "supported_version_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Supported Version Range"
+        },
+        "version_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version Supported"
+        }
+      },
+      "required": [
+        "installed",
+        "command_identity",
+        "authentication_status",
+        "protocol",
+        "conformance_status",
+        "qualification_state",
+        "custom_model_capability",
+        "custom_provider_capability",
+        "local_model_capability",
+        "repair_action"
+      ],
+      "title": "HarnessReadiness",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/harness-discovery.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "detected_at": {
+      "format": "date-time",
+      "title": "Detected At",
+      "type": "string"
+    },
+    "display_name": {
+      "minLength": 1,
+      "title": "Display Name",
+      "type": "string"
+    },
+    "harness_id": {
+      "enum": [
+        "villani-code",
+        "codex",
+        "claude-code"
+      ],
+      "title": "Harness Id",
+      "type": "string"
+    },
+    "readiness": {
+      "$ref": "#/$defs/HarnessReadiness"
+    },
+    "schema_version": {
+      "const": "villani.harness_discovery.v1",
+      "default": "villani.harness_discovery.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "harness_id",
+    "display_name",
+    "readiness",
+    "detected_at"
+  ],
+  "title": "HarnessDiscovery",
+  "type": "object"
+}

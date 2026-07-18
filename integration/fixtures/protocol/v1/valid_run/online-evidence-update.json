@@ -1,0 +1,11 @@
+{
+  "automatic_policy_metrics_eligible": true,
+  "economics_observation_id": "eobs_7777777777777777777777777777777777777777777777777777777777777777",
+  "profile_updated": true,
+  "qualification_observation_id": "qobs_6666666666666666666666666666666666666666666666666666666666666666",
+  "reasons": [],
+  "recorded_at": "2026-07-18T03:00:00Z",
+  "run_id": "run_fixture_pt8",
+  "schema_version": "villani.online_evidence_update.v1",
+  "status": "recorded"
+}

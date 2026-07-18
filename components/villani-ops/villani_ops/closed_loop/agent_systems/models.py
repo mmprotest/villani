@@ -18,6 +18,7 @@ AGENT_SYSTEM_SCHEMA_VERSION = "villani.agent_system.v1"
 HARNESS_PROTOCOL_VERSION = "villani.harness_adapter.v1"
 HARNESS_RESULT_SCHEMA_VERSION = "villani.harness_result.v1"
 HARNESS_CONFORMANCE_SCHEMA_VERSION = "villani.harness_conformance_report.v1"
+HARNESS_DISCOVERY_SCHEMA_VERSION = "villani.harness_discovery.v1"
 MAXIMUM_HARNESS_MESSAGE_BYTES = 8 * 1024 * 1024
 MAXIMUM_BUFFERED_EVENT_BYTES = 32 * 1024 * 1024
 
@@ -111,6 +112,19 @@ REQUIRED_HARNESS_CONFORMANCE_CHECKS = (
     "secret_redaction",
     "unknown_cost",
     "cross_platform_paths",
+    "successful_patch",
+    "no_patch",
+    "command_recovery",
+    "permission_request",
+    "rate_limit_retry",
+    "unsupported_version",
+    "schema_change",
+    "missing_final_result",
+    "partial_patch_on_crash",
+    "known_cost",
+    "non_ascii_spaced_paths",
+    "large_output",
+    "outside_isolation_mutation",
 )
 
 
@@ -221,13 +235,56 @@ class BillingIdentity(StrictAgentSystemModel):
     unknown_fields: list[str] = Field(default_factory=list)
 
 
+class HarnessReadiness(StrictAgentSystemModel):
+    """Non-secret discovery and enablement facts for one configured harness."""
+
+    installed: bool
+    command_identity: str = Field(min_length=1)
+    exact_version: str | None = None
+    supported_version_range: str | None = None
+    version_supported: bool | None = None
+    authentication_status: Literal["ready", "not_ready", "unknown", "not_applicable"]
+    protocol: str = Field(min_length=1)
+    conformance_status: Literal["passed", "failed", "not_run", "insufficient_evidence"]
+    qualification_state: Literal[
+        "qualified",
+        "bootstrap",
+        "experimental",
+        "provisional",
+        "unqualified",
+        "unsupported",
+        "disabled",
+    ]
+    custom_model_capability: Literal["supported", "unsupported", "unknown"]
+    custom_provider_capability: Literal["supported", "unsupported", "unknown"]
+    local_model_capability: Literal["supported", "unsupported", "unknown"]
+    repair_action: str = Field(min_length=1)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class HarnessDiscovery(StrictAgentSystemModel):
+    schema_version: Literal["villani.harness_discovery.v1"] = (
+        HARNESS_DISCOVERY_SCHEMA_VERSION
+    )
+    harness_id: Literal["villani-code", "codex", "claude-code"]
+    display_name: str = Field(min_length=1)
+    readiness: HarnessReadiness
+    detected_at: datetime
+
+
 class AgentSystemIdentity(StrictAgentSystemModel):
     schema_version: Literal["villani.agent_system.v1"] = AGENT_SYSTEM_SCHEMA_VERSION
     system_id: str = Field(pattern=r"^asys_[0-9a-f]{64}$")
     route_name: str = Field(min_length=1)
     production_enabled: bool
     qualification_status: Literal[
-        "qualified", "bootstrap", "unqualified", "unsupported", "disabled"
+        "qualified",
+        "bootstrap",
+        "experimental",
+        "provisional",
+        "unqualified",
+        "unsupported",
+        "disabled",
     ]
     harness: HarnessIdentity
     model_provider: ModelProviderIdentity
@@ -236,6 +293,7 @@ class AgentSystemIdentity(StrictAgentSystemModel):
     capabilities: dict[str, CapabilityAssessment]
     qualification_references: list[QualificationReference]
     billing: BillingIdentity
+    readiness: HarnessReadiness | None = None
     detection_time: datetime
     detection_source: str = Field(min_length=1)
     configuration_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
@@ -310,16 +368,12 @@ class NormalizedHarnessEvent(StrictAgentSystemModel):
             "request_id",
             "permission",
         }.issubset(self.payload):
-            raise ValueError(
-                "permission requests require request_id and permission"
-            )
+            raise ValueError("permission requests require request_id and permission")
         if self.name == "permission_resolution" and not {
             "request_id",
             "resolution",
         }.issubset(self.payload):
-            raise ValueError(
-                "permission resolutions require request_id and resolution"
-            )
+            raise ValueError("permission resolutions require request_id and resolution")
         return self
 
 
@@ -345,6 +399,7 @@ class HarnessUsage(StrictAgentSystemModel):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     accounting_status: Literal["complete", "partial", "unknown", "not_applicable"]
+    per_model: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_accounting(self) -> "HarnessUsage":
@@ -365,6 +420,7 @@ class HarnessCost(StrictAgentSystemModel):
     currency: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
     accounting_status: Literal["complete", "partial", "unknown", "not_applicable"]
     source: str | None = None
+    per_model: dict[str, float] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_unknown_cost(self) -> "HarnessCost":
@@ -376,7 +432,28 @@ class HarnessCost(StrictAgentSystemModel):
             self.amount is None or self.currency is None
         ):
             raise ValueError("complete cost requires amount and currency")
+        if any(value < 0 for value in self.per_model.values()):
+            raise ValueError("per-model cost cannot be negative")
         return self
+
+
+class HarnessExecutionIdentity(StrictAgentSystemModel):
+    """Identity actually acknowledged by the harness during this attempt."""
+
+    harness_id: str = Field(min_length=1)
+    harness_version: str = Field(min_length=1)
+    protocol: str = Field(min_length=1)
+    protocol_version: str = Field(min_length=1)
+    protocol_schema_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    session_id: str | None = None
+    thread_id: str | None = None
+    turn_id: str | None = None
+    model_id: str | None = None
+    provider: str | None = None
+    reasoning_effort: str | None = None
+    system_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CleanupResult(StrictAgentSystemModel):
@@ -398,6 +475,8 @@ class HarnessInfrastructureFailure(StrictAgentSystemModel):
         "malformed_output",
         "oversized_output",
         "cleanup",
+        "transport_overload",
+        "rate_limit",
         "unknown",
     ]
     message: str = Field(min_length=1)
@@ -406,9 +485,7 @@ class HarnessInfrastructureFailure(StrictAgentSystemModel):
 
 
 class HarnessResult(StrictAgentSystemModel):
-    schema_version: Literal["villani.harness_result.v1"] = (
-        HARNESS_RESULT_SCHEMA_VERSION
-    )
+    schema_version: Literal["villani.harness_result.v1"] = HARNESS_RESULT_SCHEMA_VERSION
     system_id: str = Field(pattern=r"^asys_[0-9a-f]{64}$")
     session_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
@@ -421,6 +498,7 @@ class HarnessResult(StrictAgentSystemModel):
     stderr: str
     normalized_events: list[NormalizedHarnessEvent]
     raw_trace: dict[str, Any]
+    execution_identity: HarnessExecutionIdentity | None = None
     usage: HarnessUsage
     cost: HarnessCost
     duration_ms: int | None = Field(default=None, ge=0)
@@ -436,7 +514,9 @@ class HarnessResult(StrictAgentSystemModel):
     def validate_equivalent_evidence(self) -> "HarnessResult":
         expected_sequences = list(range(1, len(self.normalized_events) + 1))
         if [item.sequence for item in self.normalized_events] != expected_sequences:
-            raise ValueError("normalized event sequences must be contiguous and ordered")
+            raise ValueError(
+                "normalized event sequences must be contiguous and ordered"
+            )
         timestamps = [item.timestamp for item in self.normalized_events]
         if timestamps != sorted(timestamps):
             raise ValueError("normalized event timestamps must be ordered")
@@ -452,7 +532,9 @@ class HarnessResult(StrictAgentSystemModel):
                 or re.match(r"^[A-Za-z]:", normalized)
                 or ".." in parts
             ):
-                raise ValueError("changed file paths must be worktree-relative and safe")
+                raise ValueError(
+                    "changed file paths must be worktree-relative and safe"
+                )
         if len(self.stdout.encode("utf-8")) > MAXIMUM_HARNESS_MESSAGE_BYTES:
             raise ValueError("stdout exceeds the harness message bound")
         if len(self.stderr.encode("utf-8")) > MAXIMUM_HARNESS_MESSAGE_BYTES:
@@ -539,7 +621,7 @@ class HarnessConformanceReport(StrictAgentSystemModel):
         )
         if self.status != expected:
             raise ValueError(f"conformance status must be {expected}")
-        if self.production_qualification_authorized is not (expected == "passed"):
+        if self.production_qualification_authorized and expected != "passed":
             raise ValueError("qualification authorization must fail closed")
         return self
 
@@ -621,6 +703,7 @@ __all__ = [
     "DoctorCheck",
     "ExecutionIdentity",
     "HARNESS_CONFORMANCE_SCHEMA_VERSION",
+    "HARNESS_DISCOVERY_SCHEMA_VERSION",
     "HARNESS_LIFECYCLE_OPERATIONS",
     "HARNESS_PROTOCOL_VERSION",
     "HARNESS_RUNTIME_CONTRACT",
@@ -628,9 +711,12 @@ __all__ = [
     "HarnessConformanceCheck",
     "HarnessConformanceReport",
     "HarnessCost",
+    "HarnessDiscovery",
+    "HarnessExecutionIdentity",
     "HarnessIdentity",
     "HarnessInfrastructureFailure",
     "HarnessResult",
+    "HarnessReadiness",
     "HarnessSession",
     "HarnessUsage",
     "MAXIMUM_BUFFERED_EVENT_BYTES",

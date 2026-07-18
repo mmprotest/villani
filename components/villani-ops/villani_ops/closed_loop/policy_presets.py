@@ -25,8 +25,8 @@ POLICY_PRESETS: tuple[PolicyPreset, ...] = (
     PolicyPreset(
         "performance",
         "Performance",
-        "Use the strongest eligible route and require verification.",
-        "strongest_eligible",
+        "Minimize conservative total cost per proven accepted change.",
+        "accepted_change_optimizer",
     ),
     PolicyPreset(
         "reliable",
@@ -37,8 +37,8 @@ POLICY_PRESETS: tuple[PolicyPreset, ...] = (
     PolicyPreset(
         "balanced",
         "Balanced",
-        "Balance known cost, validation strength, and empirical reliability.",
-        "balanced",
+        "Use conservative accepted-change economics with explicit unknowns.",
+        "accepted_change_optimizer",
     ),
     PolicyPreset(
         "local-first",

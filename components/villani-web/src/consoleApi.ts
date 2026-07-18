@@ -2,6 +2,9 @@ import {
   consoleReplayFromRunDetail,
   type ArtifactDescriptor,
   type AgentSystemIdentity,
+  type QualificationAssessment,
+  type EconomicsProfile,
+  type HarnessDiscovery,
   type ConsoleBootstrap,
   type ConsoleHistoryEntry,
   type ConsoleReplaySnapshot,
@@ -83,14 +86,38 @@ export interface ConsoleModelInventory {
     minimum_sample_count: number;
     minimum_conservative_confidence_bound: number;
     policy_version: string;
+    repository_context?: {
+      repository_id: string;
+      repository_head: string | null;
+      task_profile: {
+        category: string;
+        difficulty: string;
+        risk: string;
+        required_capabilities: string[];
+      };
+    } | null;
+  };
+  economics?: {
+    policy_version: string;
+    objective_version: string;
+    default_explanation: string;
+    unknown_accounting_note: string;
   };
   setup_issues?: string[];
   detections?: Record<string, unknown>[];
   agent_systems?: ConsoleAgentSystem[];
+  agent_harnesses?: HarnessDiscovery[];
   agent_system_migration?: Record<string, unknown>;
 }
 
-export type ConsoleAgentSystem = AgentSystemIdentity;
+export type ConsoleAgentSystem = AgentSystemIdentity & {
+  repository_qualification?: QualificationAssessment;
+  repository_economics?: {
+    profile: EconomicsProfile;
+    matching_profile_count: number;
+    scope_note: string;
+  } | null;
+};
 
 export interface ConsolePolicies {
   schema_version: string;

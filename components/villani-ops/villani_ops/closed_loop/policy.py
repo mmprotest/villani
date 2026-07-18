@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from villani_ops.core.backend import Backend
 
+from .agent_systems.models import AgentSystemIdentity
 from .capabilities.models import (
     CapabilitySnapshot,
     EffectiveCapability,
@@ -21,6 +22,19 @@ from .capabilities.effective import (
 )
 from .capabilities.optimizer import optimize_sequence
 from .costs import estimate_attempt_cost
+from .economics import (
+    DurationEstimate,
+    EconomicsProfile,
+    EconomicsStore,
+    MoneyEstimate,
+    RouteCandidateInput,
+    RouteConstraints,
+    RoutePlan,
+    RoutePolicy,
+    plan_route,
+    route_policy_from_configuration,
+    with_latency_penalty,
+)
 from .interfaces import (
     AttemptSummary,
     BackendOption,
@@ -39,6 +53,13 @@ from .policy_presets import (
     selection_preference,
 )
 from .progress import AttemptProgressAssessment, empty_progress_assessment
+from .qualification import (
+    QualificationAssessment,
+    QualificationStore,
+    assess_qualification,
+    repository_qualification_context,
+    task_profile,
+)
 from .stage_budget import (
     StageBudgetProjection,
     StageReserveConfiguration,
@@ -138,6 +159,10 @@ class BootstrapPolicyEngine:
         backends: Mapping[str, Backend],
         configuration: Mapping[str, Any] | None = None,
         capability_snapshot: CapabilitySnapshot | None = None,
+        qualification_store: QualificationStore | None = None,
+        agent_system_by_backend: Mapping[str, AgentSystemIdentity] | None = None,
+        economics_store: EconomicsStore | None = None,
+        route_policy: RoutePolicy | None = None,
     ) -> None:
         self.backends = dict(backends)
         self.raw_configuration = dict(configuration or {})
@@ -149,6 +174,17 @@ class BootstrapPolicyEngine:
             capability_values if isinstance(capability_values, Mapping) else {}
         )
         self.capability_snapshot = capability_snapshot
+        self.qualification_store = qualification_store
+        self.agent_system_by_backend = dict(agent_system_by_backend or {})
+        self.economics_store = economics_store
+        configured_route_policy = route_policy_from_configuration(
+            self.raw_configuration
+        )
+        self.route_policy = route_policy or configured_route_policy
+        self._qualification_cache: dict[
+            tuple[str, str, str, tuple[str, ...]],
+            dict[str, QualificationAssessment],
+        ] = {}
         self.public_preset = configured_policy_preset(self.raw_configuration)
         self.selection_preference = selection_preference(self.raw_configuration)
         self.public_policy_enabled = isinstance(
@@ -168,6 +204,422 @@ class BootstrapPolicyEngine:
             configuration,
             capability_snapshot=capability_snapshot,
         )
+
+    def _repository_qualifications(
+        self, context: PolicyContext
+    ) -> dict[str, QualificationAssessment]:
+        if self.qualification_store is None or not self.agent_system_by_backend:
+            return {}
+        qualification = self.raw_configuration.get("qualification")
+        values = qualification if isinstance(qualification, Mapping) else {}
+        repository_path = values.get("repository_path")
+        if not isinstance(repository_path, str) or not repository_path:
+            return {}
+        required = tuple(sorted(set(context.classification.required_capabilities)))
+        cache_key = (
+            context.classification.category,
+            context.classification.difficulty,
+            context.classification.risk,
+            required,
+        )
+        cached = self._qualification_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        repository = repository_qualification_context(repository_path)
+        requested = task_profile(
+            context.classification.category,
+            context.classification.difficulty,
+            context.classification.risk,
+            required,
+        )
+        resolved: dict[str, QualificationAssessment] = {}
+        for backend_name, identity in sorted(self.agent_system_by_backend.items()):
+            backend = self.backends.get(backend_name)
+            if backend is None or "coding" not in backend.roles:
+                continue
+            resolved[backend_name] = assess_qualification(
+                identity=identity,
+                repository=repository,
+                requested_task=requested,
+                configuration=self.raw_configuration,
+                store=self.qualification_store,
+                backend_execution_selection=backend.execution_environment,
+            )
+        self._qualification_cache[cache_key] = resolved
+        return resolved
+
+    @staticmethod
+    def _profile_money(
+        profile: EconomicsProfile | None,
+        component: str,
+        *,
+        currency: str,
+        statistic: str,
+    ) -> MoneyEstimate | None:
+        if profile is None:
+            return None
+        distribution = profile.cost_distributions.get(component, {}).get(currency)
+        if distribution is None or distribution.known_count == 0:
+            return None
+        amount = getattr(distribution, statistic)
+        if amount is None:
+            return None
+        return MoneyEstimate(
+            amount=amount,
+            currency=currency,
+            accounting_status=(
+                "complete" if distribution.unknown_count == 0 else "partial"
+            ),
+            source=f"repository_economics_{statistic}",
+            sample_count=distribution.known_count,
+        )
+
+    def _economics_profile(
+        self,
+        assessment: QualificationAssessment,
+    ) -> EconomicsProfile | None:
+        if self.economics_store is None:
+            return None
+        return self.economics_store.profile_for(
+            repository_id=assessment.repository_id,
+            task_profile=assessment.task_profile,
+            system_id=assessment.system_id,
+        )
+
+    def _verification_cost_estimate(
+        self,
+        profile: EconomicsProfile | None,
+        *,
+        currency: str,
+    ) -> MoneyEstimate:
+        observed = self._profile_money(
+            profile,
+            "verification_cost",
+            currency=currency,
+            statistic=self.route_policy.conservative_cost_statistic,
+        )
+        if observed is not None:
+            return observed
+        economics = self.raw_configuration.get("economics")
+        values = economics if isinstance(economics, Mapping) else {}
+        explicit = values.get("verification_cost_usd")
+        if explicit is not None:
+            return MoneyEstimate(
+                amount=float(explicit),
+                currency="USD",
+                accounting_status="complete",
+                source="explicit_verification_cost",
+            )
+        verifier = self.raw_configuration.get("verifier")
+        verifier_values = verifier if isinstance(verifier, Mapping) else {}
+        if verifier_values.get("no_llm") is True:
+            return MoneyEstimate(
+                amount=None,
+                currency=None,
+                accounting_status="not_applicable",
+                source="deterministic_verifier_no_model_charge",
+            )
+        return MoneyEstimate(
+            amount=None,
+            currency=None,
+            accounting_status="unknown",
+            source="verification_cost_unavailable",
+        )
+
+    def _review_cost_estimate(
+        self,
+        profile: EconomicsProfile | None,
+        *,
+        currency: str,
+    ) -> MoneyEstimate:
+        delivery = self.raw_configuration.get("delivery")
+        delivery_values = delivery if isinstance(delivery, Mapping) else {}
+        mode = str(
+            delivery_values.get("mode") or delivery_values.get("default_mode") or ""
+        )
+        if mode not in {"approve", "review"}:
+            return MoneyEstimate(
+                amount=None,
+                currency=None,
+                accounting_status="not_applicable",
+                source="human_review_not_required_by_delivery_policy",
+            )
+        observed = self._profile_money(
+            profile,
+            "human_review_cost",
+            currency=currency,
+            statistic=self.route_policy.conservative_cost_statistic,
+        )
+        if observed is not None:
+            return observed
+        rate = self.route_policy.human_review_cost_per_minute
+        distribution = (
+            profile.review_minutes_distribution if profile is not None else None
+        )
+        minutes = (
+            getattr(distribution, self.route_policy.conservative_duration_statistic)
+            if distribution is not None and distribution.known_count > 0
+            else None
+        )
+        if rate is not None and minutes is not None:
+            return MoneyEstimate(
+                amount=rate * minutes,
+                currency=self.route_policy.currency,
+                accounting_status=(
+                    "complete"
+                    if distribution and distribution.unknown_count == 0
+                    else "partial"
+                ),
+                source="observed_review_minutes_times_configured_rate",
+                sample_count=distribution.known_count if distribution else 0,
+            )
+        return MoneyEstimate(
+            amount=None,
+            currency=None,
+            accounting_status="unknown",
+            source=(
+                "human_review_rate_unavailable"
+                if rate is None
+                else "human_review_minutes_unavailable"
+            ),
+        )
+
+    def _economics_candidate(
+        self,
+        option: BackendOption,
+        assessment: QualificationAssessment,
+    ) -> RouteCandidateInput:
+        backend = self.backends[option.backend_name]
+        identity = self.agent_system_by_backend[option.backend_name]
+        profile = self._economics_profile(assessment)
+        currency = backend.currency.upper()
+        execution = self._profile_money(
+            profile,
+            "execution_cost",
+            currency=currency,
+            statistic=self.route_policy.conservative_cost_statistic,
+        )
+        if execution is None:
+            execution = MoneyEstimate(
+                amount=option.estimated_cost_usd,
+                currency=(currency if option.estimated_cost_usd is not None else None),
+                accounting_status=(
+                    "complete" if option.estimated_cost_usd is not None else "unknown"
+                ),
+                source=option.cost_source,
+            )
+        retry = self._profile_money(
+            profile,
+            "retry_escalation_cost",
+            currency=currency,
+            statistic=self.route_policy.conservative_cost_statistic,
+        ) or MoneyEstimate(
+            amount=None,
+            currency=None,
+            accounting_status="unknown",
+            source="retry_escalation_cost_unavailable",
+        )
+        duration_distribution = (
+            profile.duration_distribution if profile is not None else None
+        )
+        duration_value = (
+            getattr(
+                duration_distribution,
+                self.route_policy.conservative_duration_statistic,
+            )
+            if duration_distribution is not None
+            and duration_distribution.known_count > 0
+            else option.estimated_duration_ms
+        )
+        duration = DurationEstimate(
+            duration_ms=duration_value,
+            accounting_status=(
+                "complete"
+                if duration_value is not None
+                and (
+                    duration_distribution is None
+                    or duration_distribution.unknown_count == 0
+                )
+                else "partial"
+                if duration_value is not None
+                else "unknown"
+            ),
+            source=(
+                f"repository_economics_{self.route_policy.conservative_duration_statistic}"
+                if duration_distribution is not None
+                and duration_distribution.known_count > 0
+                else option.cost_components.get(
+                    "duration_source", "configured_estimate"
+                )
+            ),
+            sample_count=(
+                duration_distribution.known_count if duration_distribution else 0
+            ),
+        )
+        readiness = identity.readiness
+        availability = "unknown"
+        if readiness is not None:
+            availability = (
+                "available"
+                if readiness.installed
+                and readiness.version_supported is not False
+                and readiness.authentication_status in {"ready", "not_applicable"}
+                else "unavailable"
+            )
+        economics = self.raw_configuration.get("economics")
+        economics_values = economics if isinstance(economics, Mapping) else {}
+        availability_values = economics_values.get("availability")
+        if isinstance(availability_values, Mapping):
+            configured = availability_values.get(
+                identity.route_name, availability_values.get(option.backend_name)
+            )
+            if configured in {"available", "unavailable", "rate_limited", "unknown"}:
+                availability = str(configured)
+        candidate = RouteCandidateInput(
+            backend_name=option.backend_name,
+            route_name=identity.route_name,
+            system_id=identity.system_id,
+            harness=f"{identity.harness.harness_id}@{identity.harness.version}",
+            model=identity.model_provider.model_id,
+            provider=identity.model_provider.provider,
+            local=is_local_backend(backend),
+            permission_profile=identity.execution.permission_profile,
+            availability=availability,  # type: ignore[arg-type]
+            qualification_state=assessment.state,
+            qualification_level=assessment.selected_level,
+            qualification_policy_version=assessment.policy_version,
+            qualification_sample_count=assessment.statistics.sample_count,
+            conservative_acceptance_probability=assessment.statistics.wilson_lower_bound,
+            task_probability_threshold=assessment.task_wilson_threshold,
+            false_acceptance_count=assessment.statistics.false_acceptance_count,
+            drift_flags=[item.code for item in assessment.statistics.drift_flags],
+            capability_score=option.effective_capability_score
+            or option.capability_score
+            or 0.0,
+            execution_cost=execution,
+            verification_cost=self._verification_cost_estimate(
+                profile, currency=currency
+            ),
+            human_review_cost=self._review_cost_estimate(profile, currency=currency),
+            retry_escalation_cost=retry,
+            duration=duration,
+            latency_penalty=MoneyEstimate(
+                amount=None,
+                currency=None,
+                accounting_status="unknown",
+                source="pending_latency_projection",
+            ),
+            reserve_satisfied=bool(
+                option.reserve_impact.get("reserve_satisfied", False)
+            ),
+            reserve_evidence=dict(option.reserve_impact),
+            input_rejection_reasons=list(option.rejection_reasons),
+        )
+        return with_latency_penalty(candidate, policy=self.route_policy)
+
+    def _route_constraints(self) -> RouteConstraints:
+        constraints = self.route_policy.constraints
+        qualification = self.raw_configuration.get("qualification")
+        qualification_values = (
+            qualification if isinstance(qualification, Mapping) else {}
+        )
+        manual = qualification_values.get("manual_override")
+        manual_values = manual if isinstance(manual, Mapping) else {}
+        forced = str(manual_values.get("route_name") or "") or constraints.forced_system
+        return constraints.model_copy(
+            update={
+                "forced_system": forced,
+                "allow_experimental_forced": bool(
+                    manual_values.get(
+                        "allow_experimental", constraints.allow_experimental_forced
+                    )
+                ),
+                "strongest_only": bool(
+                    constraints.strongest_only
+                    or self.selection_preference == "strongest_eligible"
+                )
+                if not forced
+                else False,
+                "prefer_local": bool(
+                    constraints.prefer_local
+                    or self.selection_preference == "local_first"
+                ),
+            }
+        )
+
+    def _route_plan(
+        self,
+        context: PolicyContext,
+        alternatives: tuple[BackendOption, ...],
+        *,
+        selected: BackendOption | None = None,
+        sequential_mode: str | None = None,
+    ) -> RoutePlan | None:
+        assessments = self._repository_qualifications(context)
+        if not assessments or not self.agent_system_by_backend:
+            return None
+        candidates = [
+            self._economics_candidate(option, assessments[option.backend_name])
+            for option in alternatives
+            if option.backend_name in assessments
+            and option.backend_name in self.agent_system_by_backend
+        ]
+        first = next(iter(assessments.values()))
+        selected_route = None
+        if selected is not None:
+            identity = self.agent_system_by_backend.get(selected.backend_name)
+            selected_route = (
+                identity.route_name if identity is not None else selected.backend_name
+            )
+        evidence_cutoff = min(item.evaluated_at for item in assessments.values())
+        plan_policy = self.route_policy
+        if self.selection_preference == "strongest_eligible":
+            plan_policy = plan_policy.model_copy(update={"strategy": "strongest_only"})
+        elif self.selection_preference == "cheapest_acceptable":
+            plan_policy = plan_policy.model_copy(
+                update={"strategy": "cheapest_qualified"}
+            )
+        return plan_route(
+            run_id=context.run_id,
+            repository_id=first.repository_id,
+            repository_head=first.repository_head,
+            task_profile=first.task_profile,
+            candidates=candidates,
+            policy=plan_policy,
+            constraints=self._route_constraints(),
+            evidence_cutoff=evidence_cutoff,
+            reserves={
+                "budget_before": {
+                    "remaining_attempts": context.budget.remaining_attempts,
+                    "remaining_cost_usd": context.budget.remaining_cost_usd,
+                    "cost_accounting_status": context.budget.cost_accounting_status,
+                    "remaining_wall_time_ms": context.budget.remaining_wall_time_ms,
+                    "duration_accounting_status": context.budget.duration_accounting_status,
+                },
+                "by_system": {
+                    item.backend_name: dict(item.reserve_impact)
+                    for item in alternatives
+                },
+            },
+            sequential_selection=selected_route,
+            sequential_mode=sequential_mode,  # type: ignore[arg-type]
+        )
+
+    def _route_plan_choice(
+        self,
+        alternatives: tuple[BackendOption, ...],
+        plan: RoutePlan | None,
+    ) -> BackendOption | None:
+        if plan is None or plan.selected_first_system is None:
+            return None
+        for option in alternatives:
+            identity = self.agent_system_by_backend.get(option.backend_name)
+            if (
+                identity is not None
+                and identity.route_name == plan.selected_first_system
+            ):
+                return option if option.eligible else None
+        return None
 
     def _empirical_routing(
         self,
@@ -219,9 +671,7 @@ class BootstrapPolicyEngine:
                     ),
                     profile_digest=resolution.selected_profile_digest,
                     sample_count=resolution.empirical_sample_count,
-                    effective_capability_score=(
-                        resolution.effective_capability_score
-                    ),
+                    effective_capability_score=(resolution.effective_capability_score),
                     mean_duration_ms=resolution.mean_duration_ms,
                     median_duration_ms=resolution.median_duration_ms,
                     profile_level=resolution.selected_level,
@@ -243,8 +693,7 @@ class BootstrapPolicyEngine:
                     execution_environment_profile=backend.execution_environment,
                     probability_source=(
                         "wilson_lower_bound"
-                        if resolution.capability_provenance
-                        == "qualified_empirical"
+                        if resolution.capability_provenance == "qualified_empirical"
                         else "missing"
                     ),
                     cost_source=(
@@ -365,9 +814,7 @@ class BootstrapPolicyEngine:
             self.configuration.stage_reserves.verification_duration_seconds
         )
         duration = (
-            configured_duration * 1000.0
-            if configured_duration is not None
-            else None
+            configured_duration * 1000.0 if configured_duration is not None else None
         )
         if bool(values.get("no_llm", True)):
             return 0.0, duration
@@ -379,9 +826,7 @@ class BootstrapPolicyEngine:
         if duration is None and backend.estimated_duration_seconds is not None:
             duration = backend.estimated_duration_seconds * 1000.0
         return (
-            estimate.total
-            if estimate.accounting_status == "complete"
-            else None,
+            estimate.total if estimate.accounting_status == "complete" else None,
             duration,
         )
 
@@ -432,16 +877,18 @@ class BootstrapPolicyEngine:
             for option in alternatives
             if chosen is not None
             and bool(
-                option.cost_components.get(
-                    "capability_gate_eligible", option.eligible
-                )
+                option.cost_components.get("capability_gate_eligible", option.eligible)
             )
             and option.backend_name != chosen.backend_name
             and self._effective_rank(option) > self._effective_rank(chosen)
         ]
         strongest = max(higher, key=self._effective_rank, default=None)
-        final_duration = self.configuration.stage_reserves.final_validation_duration_seconds
-        selection_duration = self.configuration.stage_reserves.selection_duration_seconds
+        final_duration = (
+            self.configuration.stage_reserves.final_validation_duration_seconds
+        )
+        selection_duration = (
+            self.configuration.stage_reserves.selection_duration_seconds
+        )
         return project_stage_budget(
             budget=context.budget,
             action=action,
@@ -471,6 +918,20 @@ class BootstrapPolicyEngine:
         self, context: PolicyContext, minimum: float
     ) -> tuple[BackendOption, ...]:
         cost_cap_active = context.budget.cost_accounting_status != "not_applicable"
+        repository_qualifications = self._repository_qualifications(context)
+        qualified_names = {
+            name
+            for name, assessment in repository_qualifications.items()
+            if assessment.state == "qualified"
+        }
+        qualification_config = self.raw_configuration.get("qualification")
+        qualification_values = (
+            qualification_config if isinstance(qualification_config, Mapping) else {}
+        )
+        manual = qualification_values.get("manual_override")
+        manual_values = manual if isinstance(manual, Mapping) else {}
+        manual_route = str(manual_values.get("route_name") or "") or None
+        allow_experimental = manual_values.get("allow_experimental") is True
         alternatives: list[BackendOption] = []
         for backend in sorted(self.backends.values(), key=lambda item: item.name):
             if "coding" not in backend.roles:
@@ -489,6 +950,11 @@ class BootstrapPolicyEngine:
                 default_bootstrap_backend(self.raw_configuration) == backend.name
             )
             explicit_override = capability.override_applied
+            identity = self.agent_system_by_backend.get(backend.name)
+            route_name = identity.route_name if identity is not None else backend.name
+            qualification_manual_selected = bool(
+                manual_route is not None and manual_route in {backend.name, route_name}
+            )
             threshold_met = capability.effective_capability_score >= minimum
             bootstrap_bypass = bool(
                 bootstrap_default
@@ -498,15 +964,50 @@ class BootstrapPolicyEngine:
                 minimum >= self.configuration.hard_min_capability
                 and capability.capability_provenance == "manual"
                 and not self.empirical_configuration.allow_manual_hard_task_qualification
+                and not qualification_manual_selected
             )
             if not backend.enabled:
                 reasons.append("backend is disabled")
+            repository_qualification = repository_qualifications.get(backend.name)
+            if repository_qualifications:
+                state = (
+                    repository_qualification.state
+                    if repository_qualification is not None
+                    else "unsupported"
+                )
+                if manual_route is not None:
+                    if manual_route not in {backend.name, route_name}:
+                        reasons.append(
+                            f"manual qualification override is scoped to {manual_route!r}"
+                        )
+                    elif state == "unsupported":
+                        reasons.append(
+                            "unsupported repository qualification cannot be overridden"
+                        )
+                    elif state == "experimental" and not allow_experimental:
+                        reasons.append(
+                            "experimental system requires --allow-experimental"
+                        )
+                elif qualified_names:
+                    if backend.name not in qualified_names:
+                        reasons.append(
+                            "automatic routing may choose only repository-qualified systems"
+                        )
+                elif state != "provisional":
+                    reasons.append(
+                        "no qualified system exists and this system is not an eligible provisional fallback"
+                    )
             if manual_hard_blocked and not explicit_override:
                 reasons.append(
                     "manual low-confidence estimate is not hard-task qualification "
                     "without an explicit override"
                 )
-            if not threshold_met and not bootstrap_bypass and not explicit_override:
+            if (
+                not threshold_met
+                and not bootstrap_bypass
+                and not explicit_override
+                and not qualification_manual_selected
+            ):
                 reasons.append(
                     f"effective capability {capability.effective_capability_score:g} "
                     f"does not meet required {minimum:g} after uncertainty penalty "
@@ -526,7 +1027,9 @@ class BootstrapPolicyEngine:
                     eligible=not reasons,
                     capability_score=capability.effective_capability_score,
                     estimated_cost_usd=cost,
-                    cost_accounting_status=("complete" if cost is not None else "unknown"),
+                    cost_accounting_status=(
+                        "complete" if cost is not None else "unknown"
+                    ),
                     rejection_reasons=tuple(reasons),
                     cost_components={
                         "configured_capability_score": (
@@ -547,12 +1050,12 @@ class BootstrapPolicyEngine:
                                 threshold_met
                                 or bootstrap_bypass
                                 or explicit_override
+                                or qualification_manual_selected
                             )
                         ),
                         "static_eligible": backend.capability_score >= minimum,
                         "empirical_eligible": (
-                            capability.capability_provenance
-                            == "qualified_empirical"
+                            capability.capability_provenance == "qualified_empirical"
                             and threshold_met
                         ),
                         "bootstrap_eligible": bootstrap_bypass,
@@ -577,14 +1080,25 @@ class BootstrapPolicyEngine:
                         ),
                         "backoff_evidence": capability.backoff_evidence,
                         "duration_source": duration_source,
+                        "repository_qualification": (
+                            repository_qualification.model_dump(mode="json")
+                            if repository_qualification is not None
+                            else None
+                        ),
+                        "repository_qualification_state": (
+                            repository_qualification.state
+                            if repository_qualification is not None
+                            else None
+                        ),
+                        "qualification_manual_override": bool(
+                            qualification_manual_selected
+                        ),
                     },
                     cost_source=cost_source,
                     configured_capability_score=(
                         capability.configured_capability_score
                     ),
-                    effective_capability_score=(
-                        capability.effective_capability_score
-                    ),
+                    effective_capability_score=(capability.effective_capability_score),
                     capability_provenance=capability.capability_provenance,
                     capability_confidence=capability.capability_confidence,
                     uncertainty_penalty=capability.uncertainty_penalty,
@@ -603,9 +1117,7 @@ class BootstrapPolicyEngine:
         preliminary = tuple(alternatives)
         projected: list[BackendOption] = []
         for option in preliminary:
-            projection = self._stage_projection(
-                context, option, "attempt", preliminary
-            )
+            projection = self._stage_projection(context, option, "attempt", preliminary)
             reasons = list(option.rejection_reasons)
             if not projection.reserve_satisfied:
                 reasons.append(
@@ -619,6 +1131,32 @@ class BootstrapPolicyEngine:
                     reserve_impact=projection.model_dump(mode="json"),
                 )
             )
+        if repository_qualifications and not qualified_names and manual_route is None:
+            provisional = [
+                option
+                for option in projected
+                if option.eligible
+                and option.cost_components.get("repository_qualification_state")
+                == "provisional"
+            ]
+            strongest = max(provisional, key=self._effective_rank, default=None)
+            if strongest is not None:
+                projected = [
+                    option
+                    if not option.eligible
+                    or option.cost_components.get("repository_qualification_state")
+                    != "provisional"
+                    or option.backend_name == strongest.backend_name
+                    else replace(
+                        option,
+                        eligible=False,
+                        rejection_reasons=(
+                            *option.rejection_reasons,
+                            "a stronger eligible provisional fallback is configured",
+                        ),
+                    )
+                    for option in projected
+                ]
         return tuple(projected)
 
     @classmethod
@@ -762,9 +1300,7 @@ class BootstrapPolicyEngine:
         """Apply every same-backend coding retry gate in one deterministic place."""
 
         assessment = self._attempt_progress(previous_attempt)
-        projection = self._stage_projection(
-            context, previous, "retry", alternatives
-        )
+        projection = self._stage_projection(context, previous, "retry", alternatives)
         blockers: list[str] = []
         same_backend_attempts = sum(
             item.backend_name == previous_attempt.backend_name
@@ -782,13 +1318,10 @@ class BootstrapPolicyEngine:
             blockers.append("empty_patch")
         if assessment.candidate_quality_status == "ineligible":
             blockers.append("candidate_ineligible")
-        if (
-            assessment.irrelevant_patch_dominated
-            or (
-                assessment.relevant_patch_present
-                and assessment.relevant_diff_ratio
-                < self.configuration.minimum_relevant_diff_ratio
-            )
+        if assessment.irrelevant_patch_dominated or (
+            assessment.relevant_patch_present
+            and assessment.relevant_diff_ratio
+            < self.configuration.minimum_relevant_diff_ratio
         ):
             blockers.append("irrelevant_patch_dominated")
         if (
@@ -810,7 +1343,10 @@ class BootstrapPolicyEngine:
             )
         if "empty_patch" in blockers:
             reason_code = "escalate_empty_patch"
-        elif "candidate_ineligible" in blockers or "irrelevant_patch_dominated" in blockers:
+        elif (
+            "candidate_ineligible" in blockers
+            or "irrelevant_patch_dominated" in blockers
+        ):
             reason_code = "escalate_candidate_ineligible"
         elif "high_failure_repetition" in blockers:
             reason_code = "escalate_high_failure_repetition"
@@ -835,14 +1371,13 @@ class BootstrapPolicyEngine:
         metadata: Mapping[str, Any] | None = None,
         empirical_resolutions: tuple[EffectiveCapability, ...] | None = None,
         optimization: SequenceOptimizationResult | None = None,
+        route_plan: RoutePlan | None = None,
     ) -> PolicyDecision:
         if empirical_resolutions is None or optimization is None:
             empirical_resolutions, optimization = self._empirical_routing(
                 context, alternatives
             )
-        stage_projection = self._stage_projection(
-            context, chosen, action, alternatives
-        )
+        stage_projection = self._stage_projection(context, chosen, action, alternatives)
         projection = self._budget_projection(
             context.budget, chosen, action, stage_projection
         )
@@ -858,10 +1393,21 @@ class BootstrapPolicyEngine:
             for item in alternatives
         }
         next_higher = (
-            self._next_higher(alternatives, chosen)
-            if chosen is not None
-            else None
+            self._next_higher(alternatives, chosen) if chosen is not None else None
         )
+        if route_plan is None:
+            route_plan = self._route_plan(
+                context,
+                alternatives,
+                selected=chosen,
+                sequential_mode=(
+                    "sequential_retry"
+                    if repeats
+                    else "sequential_escalation"
+                    if escalates
+                    else None
+                ),
+            )
         details = {
             "required_capability_score": minimum,
             "required_capability_rule": rule,
@@ -916,9 +1462,14 @@ class BootstrapPolicyEngine:
             ),
             "empirical_optimizer": optimization.model_dump(mode="json"),
             "policy_path_used": (
-                optimization.optimizer_version
+                route_plan.policy_version
+                if route_plan is not None
+                else optimization.optimizer_version
                 if optimization.optimizer_status == "empirical"
                 else "bootstrap_fallback"
+            ),
+            "route_plan": (
+                route_plan.model_dump(mode="json") if route_plan is not None else None
             ),
             "stage_budget_projection": stage_projection.model_dump(mode="json"),
             "credible_progress_assessment": (
@@ -958,13 +1509,19 @@ class BootstrapPolicyEngine:
                 ),
                 None,
             )
-            qualified_route = (
-                chosen.capability_provenance == "qualified_empirical"
+            repository_qualification = chosen.cost_components.get(
+                "repository_qualification"
+            )
+            qualified_route = bool(
+                isinstance(repository_qualification, Mapping)
+                and repository_qualification.get("state") == "qualified"
             )
             constraint_override = bool(details.get("constraint_violation", False))
             basis = (
                 "explicit_override"
                 if constraint_override
+                else "repository_accepted_change_economics"
+                if route_plan is not None
                 else chosen.capability_provenance
             )
             details["override_status"] = bool(
@@ -986,8 +1543,33 @@ class BootstrapPolicyEngine:
                     if selected_resolution is not None
                     else 0
                 ),
-                "empirical_evidence_used": qualified_route,
-                "policy_version": PUBLIC_POLICY_VERSION,
+                "empirical_evidence_used": bool(
+                    qualified_route
+                    or (
+                        selected_resolution is not None
+                        and selected_resolution.capability_provenance
+                        == "qualified_empirical"
+                    )
+                ),
+                "policy_version": (
+                    route_plan.policy_version
+                    if route_plan is not None
+                    else PUBLIC_POLICY_VERSION
+                ),
+                "route_plan_id": route_plan.plan_id if route_plan is not None else None,
+                "repository_qualification_state": (
+                    repository_qualification.get("state")
+                    if isinstance(repository_qualification, Mapping)
+                    else None
+                ),
+                "conservative_acceptance_probability": (
+                    repository_qualification.get("statistics", {}).get(
+                        "wilson_lower_bound"
+                    )
+                    if isinstance(repository_qualification, Mapping)
+                    and isinstance(repository_qualification.get("statistics"), Mapping)
+                    else None
+                ),
                 "configured_capability_score": chosen.configured_capability_score,
                 "effective_capability_score": chosen.effective_capability_score,
                 "uncertainty_penalty": chosen.uncertainty_penalty,
@@ -1002,7 +1584,9 @@ class BootstrapPolicyEngine:
             chosen_backend=chosen.backend_name if chosen else None,
             chosen_model=chosen.model if chosen else None,
             policy_version=(
-                optimization.optimizer_version
+                route_plan.policy_version
+                if route_plan is not None
+                else optimization.optimizer_version
                 if optimization.optimizer_status == "empirical"
                 else "bootstrap_v1"
             ),
@@ -1116,9 +1700,7 @@ class BootstrapPolicyEngine:
                     "infrastructure retry and no stronger backend remains."
                 ),
                 metadata={
-                    "policy_reason_code": (
-                        "escalate_validation_environment_confusion"
-                    ),
+                    "policy_reason_code": ("escalate_validation_environment_confusion"),
                     "retry_allowed": False,
                 },
             )
@@ -1158,20 +1740,27 @@ class BootstrapPolicyEngine:
                 reason="Cost budget exhausted.",
             )
 
+        economics_plan = self._route_plan(context, alternatives)
         chosen = (
-            self._optimization_choice(alternatives, optimization)
-            if self.selection_preference in {"balanced", "custom"}
+            self._route_plan_choice(alternatives, economics_plan)
+            if economics_plan is not None
+            else self._optimization_choice(alternatives, optimization)
+            if self.selection_preference
+            in {"balanced", "custom", "accepted_change_optimizer"}
             else None
         )
         empirical_budget_blocked = bool(
             optimization.optimizer_status == "empirical"
             and not optimization.chosen_sequence
         )
-        if optimization.optimizer_status != "empirical" or chosen is None:
+        if economics_plan is None and (
+            optimization.optimizer_status != "empirical" or chosen is None
+        ):
             chosen = self._choose(alternatives)
         violation = False
         if (
             chosen is None
+            and economics_plan is None
             and not empirical_budget_blocked
             and self.configuration.allow_constraint_violations
         ):
@@ -1226,18 +1815,23 @@ class BootstrapPolicyEngine:
                 ),
                 empirical_resolutions=empirical_resolutions,
                 optimization=optimization,
+                route_plan=economics_plan,
             )
 
         if not context.attempts:
             reason = "Selected the least expensive known-cost sufficient backend."
-            if chosen.estimated_cost_usd is None:
+            if economics_plan is not None:
+                reason = economics_plan.explanation
+            if chosen.estimated_cost_usd is None and economics_plan is None:
                 reason = (
                     "All eligible cost estimates are unknown; conservatively selected "
                     "the strongest effective capability."
                 )
             if violation:
                 reason = "No backend met the threshold; selected the strongest backend under an explicit constraint violation."
-            elif optimization.optimizer_status == "empirical":
+            elif (
+                economics_plan is None and optimization.optimizer_status == "empirical"
+            ):
                 reason = (
                     "Selected the first backend in the lowest-expected-cost empirical "
                     "sequence under the configured target probability."
@@ -1263,6 +1857,7 @@ class BootstrapPolicyEngine:
                 metadata={"constraint_violation": violation},
                 empirical_resolutions=empirical_resolutions,
                 optimization=optimization,
+                route_plan=economics_plan,
             )
 
         previous_attempt = context.attempts[-1]

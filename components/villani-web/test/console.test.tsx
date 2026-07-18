@@ -13,7 +13,9 @@ import type {
   ConsoleBootstrap,
   ConsoleHistoryEntry,
   ConsoleReplaySnapshot,
+  EconomicsProfile,
   ProductRun,
+  QualificationAssessment,
 } from "@villani/run-model";
 
 import ConsoleApp, {
@@ -182,6 +184,158 @@ const agentSystem: AgentSystemIdentity = {
   configuration: {},
   redaction_status: "redacted",
   unknown_fields: ["model_revision", "environment_fingerprint"],
+};
+
+const repositoryQualification: QualificationAssessment = {
+  schema_version: "villani.qualification_assessment.v1",
+  policy_version: "repository_qualification_v1",
+  system_id: agentSystem.system_id,
+  route_name: agentSystem.route_name,
+  repository_id: "repo_fixture",
+  repository_head: "a".repeat(40),
+  task_profile: {
+    category: "*",
+    difficulty: "easy",
+    risk: "low",
+    required_capabilities: [],
+  },
+  state: "qualified",
+  selected_level: "repository_wide",
+  selected_cohort: null,
+  task_wilson_threshold: 0.6,
+  statistics: {
+    sample_count: 20,
+    successes: 20,
+    failures: 0,
+    exclusions: { provider_outage: 1 },
+    acceptance_rate: 1,
+    wilson_lower_bound: 0.8389,
+    proved_acceptable_count: 20,
+    accepted_as_is_count: 20,
+    false_acceptance_count: 0,
+    false_rejection_count: 0,
+    false_case_ids: [],
+    cost_distribution_by_currency: {},
+    cost_unknown_count: 20,
+    accepted_change_cost_by_currency: {},
+    accepted_change_cost_unknown_count: 20,
+    duration_distribution: {
+      known_count: 20,
+      unknown_count: 0,
+      minimum: 900,
+      median: 1000,
+      p90: 1100,
+      maximum: 1200,
+      unit: "ms",
+    },
+    review_minutes_distribution: {
+      known_count: 20,
+      unknown_count: 0,
+      minimum: 1,
+      median: 2,
+      p90: 3,
+      maximum: 4,
+      unit: "minutes",
+    },
+    last_evidence_at: "2026-07-18T00:00:00Z",
+    software_version_diversity: { harness: ["0.1.0rc1"] },
+    drift_flags: [],
+  },
+  backoff_evidence: [
+    {
+      level: "repository_wide",
+      repository_ids: ["repo_fixture"],
+      cohort: null,
+      eligible_observation_count: 20,
+      selected: true,
+      approved_for_qualification: true,
+      rejection_reasons: [],
+    },
+  ],
+  automatic_eligible: true,
+  provisional_fallback_eligible: false,
+  manual_override_required: false,
+  unsupported_reasons: [],
+  caveat: "Qualified from 20 eligible repository observations.",
+  doctor_action: "villani agents doctor default",
+  evidence_action: "villani agents evidence default --repo C:/repo",
+  evaluated_at: "2026-07-18T00:00:00Z",
+};
+
+const repositoryEconomics: EconomicsProfile = {
+  key: {
+    repository_id: "repo_fixture",
+    task_profile: repositoryQualification.task_profile,
+    system_id: agentSystem.system_id,
+    system_identity_digest: "sha256:" + "5".repeat(64),
+    route_name: agentSystem.route_name,
+  },
+  observation_ids: ["eobs_" + "7".repeat(64)],
+  sample_count: 1,
+  successes: 1,
+  failures: 0,
+  exclusions: {},
+  cost_distributions: {
+    execution_cost: {
+      USD: {
+        known_count: 1,
+        unknown_count: 0,
+        minimum: 1.25,
+        median: 1.25,
+        p90: 1.25,
+        maximum: 1.25,
+        unit: "USD",
+      },
+    },
+    verification_cost: {},
+    human_review_cost: {},
+    retry_escalation_cost: {},
+  },
+  cost_unknown_counts: {
+    execution_cost: 0,
+    verification_cost: 1,
+    human_review_cost: 1,
+    retry_escalation_cost: 1,
+  },
+  duration_distribution: {
+    known_count: 1,
+    unknown_count: 0,
+    minimum: 1000,
+    median: 1000,
+    p90: 1000,
+    maximum: 1000,
+    unit: "ms",
+  },
+  review_minutes_distribution: {
+    known_count: 0,
+    unknown_count: 1,
+    minimum: null,
+    median: null,
+    p90: null,
+    maximum: null,
+    unit: "minutes",
+  },
+  attempt_count_distribution: {
+    known_count: 1,
+    unknown_count: 0,
+    minimum: 1,
+    median: 1,
+    p90: 1,
+    maximum: 1,
+    unit: "count",
+  },
+  escalation_count_distribution: {
+    known_count: 1,
+    unknown_count: 0,
+    minimum: 0,
+    median: 0,
+    p90: 0,
+    maximum: 0,
+    unit: "count",
+  },
+  false_acceptance_count: 0,
+  last_evidence_at: "2026-07-18T00:00:00Z",
+  source_digest: "sha256:" + "8".repeat(64),
 };
 
 const entries: ConsoleHistoryEntry[] = [
@@ -407,6 +561,14 @@ function productRun(
         ? "The target repository was modified."
         : "The target repository was not modified.",
     },
+    proof_package: {
+      status: "ready_to_apply",
+      risk_tier: "standard",
+      why_villani_trusts_it:
+        "Repository checks and semantic verification proved every requirement.",
+      unresolved_decision: null,
+      artifact: "verification/attempt_001-review-package.json",
+    },
     last_event_sequence: 12,
     updated_at: "2026-07-14T00:01:00Z",
   };
@@ -423,6 +585,7 @@ function mockConsole(
     statusProduct?: ProductRun;
     eventProduct?: ProductRun;
     cancelProduct?: ProductRun;
+    agentQualification?: QualificationAssessment | null;
   } = {},
 ) {
   const environment = options.environment ?? bootstrap(connected);
@@ -988,7 +1151,31 @@ function mockConsole(
         return response({
           schema_version: "villani.console.models.v1",
           models: environment.models,
-          agent_systems: [agentSystem],
+          agent_systems: [
+            {
+              ...agentSystem,
+              ...(options.agentQualification === null
+                ? {}
+                : {
+                    repository_qualification:
+                      options.agentQualification ?? repositoryQualification,
+                    repository_economics: {
+                      profile: repositoryEconomics,
+                      matching_profile_count: 1,
+                      scope_note:
+                        "Exact repository economics only; no language or framework pooling.",
+                    },
+                  }),
+            },
+          ],
+          economics: {
+            policy_version: "accepted_change_economics_v1",
+            objective_version: "total_accepted_change_v1",
+            default_explanation:
+              "Villani chose the route most likely to produce a proven change at the lowest total cost.",
+            unknown_accounting_note:
+              "Unknown route inputs remain Unknown and are not treated as zero.",
+          },
           bootstrap_default: "default",
           capability_states: [
             "UNRATED",
@@ -1277,10 +1464,36 @@ describe("PT1 shell, setup, and accessibility", () => {
     expect(
       await screen.findByRole("heading", { name: "Villani Code · local-model" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Ready for tasks")).toBeInTheDocument();
+    expect(screen.getByText("Eligible for automatic selection")).toBeInTheDocument();
     expect(screen.getByText("Complete system identity")).toBeInTheDocument();
-    expect(screen.getByText("SELECTABLE")).toBeInTheDocument();
+    expect(screen.getByText("View evidence")).toBeInTheDocument();
+    expect(screen.getByText("QUALIFIED")).toBeInTheDocument();
     expect(screen.getByText("qualified")).toBeInTheDocument();
+    expect(screen.getByText("100.0%")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Villani chose the route most likely to produce a proven change at the lowest total cost.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("USD 1.2500")).toBeInTheDocument();
+    expect(screen.getByText("1 eligible / 1 task profile(s)")).toBeInTheDocument();
+    expect(screen.getAllByText("0.839")).toHaveLength(2);
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
+  });
+
+  it("does not invent an Agents qualification when repository context is absent", async () => {
+    mockConsole(false, false, { agentQualification: null });
+    history.replaceState(null, "", "/console/agents");
+    render(<ConsoleApp />);
+    await screen.findByRole("heading", { name: "Agents" });
+    expect(screen.getByText("UNKNOWN")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Repository context is unavailable; no qualification is implied.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("SELECTABLE")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
   });
 });
 
@@ -1612,6 +1825,7 @@ describe("Console run workflow", () => {
       "FILES CHANGED",
       "CHECKS AND TESTS",
       "REQUIREMENT COVERAGE",
+      "WHY VILLANI TRUSTS IT",
       "KNOWN COST",
       "ELAPSED TIME",
     ])
@@ -1621,6 +1835,14 @@ describe("Console run workflow", () => {
     expect(within(result).getByText("USD 0.1700")).toBeInTheDocument();
     expect(within(result).getByText("1.0 min")).toBeInTheDocument();
     expect(within(result).getByText("Proved")).toBeInTheDocument();
+    expect(
+      within(result).getByText(
+        "Repository checks and semantic verification proved every requirement.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(result).getByRole("link", { name: "View full evidence" }),
+    ).toHaveAttribute("href", "/console/runs/run_new/replay");
     const submissionCall = (fetch as ReturnType<typeof vi.fn>).mock.calls.find(
       ([input, init]) =>
         String(input).endsWith("/v1/console/runs") && init?.method === "POST",

@@ -1,0 +1,25 @@
+{
+  "allow_provisional_fallback": true,
+  "conservative_cost_statistic": "p90",
+  "conservative_duration_statistic": "p90",
+  "constraints": {
+    "allow_experimental_forced": false,
+    "allowed_permission_profiles": [],
+    "allowed_providers": [],
+    "excluded_systems": [],
+    "forced_system": null,
+    "local_only": false,
+    "maximum_known_cost_usd": null,
+    "prefer_local": false,
+    "preferred_provider": null,
+    "strongest_only": false
+  },
+  "currency": "USD",
+  "human_review_cost_per_minute": null,
+  "latency_penalty_per_second": null,
+  "objective_version": "total_accepted_change_v1",
+  "policy_version": "accepted-change-fixture-v1",
+  "require_complete_objective_for_comparison": true,
+  "schema_version": "villani.route_policy.v1",
+  "strategy": "accepted_change_optimizer"
+}

@@ -76,6 +76,11 @@ export interface VillaniRunArtifactPaths {
   run_summary?: string;
   product_run?: string;
   agent_systems?: string | null;
+  route_plans?: string | null;
+  economics_update?: string | null;
+  adaptive_verification?: string | null;
+  human_outcomes?: string | null;
+  supervision_metrics?: string | null;
 }
 
 export interface VillaniRunManifestSnapshot {
@@ -252,7 +257,13 @@ export interface VillaniAgentSystemIdentity {
   route_name: string;
   production_enabled: boolean;
   qualification_status:
-    "qualified" | "bootstrap" | "unqualified" | "unsupported" | "disabled";
+    | "qualified"
+    | "bootstrap"
+    | "experimental"
+    | "provisional"
+    | "unqualified"
+    | "unsupported"
+    | "disabled";
   harness: {
     harness_id: string;
     display_name: string;
@@ -300,6 +311,7 @@ export interface VillaniAgentSystemIdentity {
     currency: string | null;
     unknown_fields: string[];
   };
+  readiness?: VillaniHarnessReadiness | null;
   detection_time: string;
   detection_source: string;
   configuration_digest: string;
@@ -307,6 +319,49 @@ export interface VillaniAgentSystemIdentity {
   redaction_status: "redacted" | "no_sensitive_values_detected";
   unknown_fields: string[];
 }
+
+export interface VillaniHarnessReadiness {
+  installed: boolean;
+  command_identity: string;
+  exact_version: string | null;
+  supported_version_range: string | null;
+  version_supported: boolean | null;
+  authentication_status: "ready" | "not_ready" | "unknown" | "not_applicable";
+  protocol: string;
+  conformance_status: "passed" | "failed" | "not_run" | "insufficient_evidence";
+  qualification_state: VillaniAgentSystemIdentity["qualification_status"];
+  custom_model_capability: VillaniCapabilityState;
+  custom_provider_capability: VillaniCapabilityState;
+  local_model_capability: VillaniCapabilityState;
+  repair_action: string;
+  details: Record<string, unknown>;
+}
+
+export interface VillaniHarnessDiscovery {
+  schema_version: "villani.harness_discovery.v1";
+  harness_id: "villani-code" | "codex" | "claude-code";
+  display_name: string;
+  readiness: VillaniHarnessReadiness;
+  detected_at: string;
+}
+
+export type VillaniQualificationObservation = QualificationObservation;
+export type VillaniQualificationInvalidation = QualificationInvalidation;
+export type VillaniQualificationSnapshot = QualificationSnapshot;
+export type VillaniGateCReport = GateCReport;
+export type VillaniEconomicsObservation = EconomicsObservation;
+export type VillaniEconomicsSnapshot = EconomicsSnapshot;
+export type VillaniOnlineEvidenceUpdateReport = OnlineEvidenceUpdateReport;
+export type VillaniRoutePlan = RoutePlan;
+export type VillaniRoutePolicy = RoutePolicy;
+export type VillaniRoutePolicyEvaluation = RoutePolicyEvaluation;
+export type VillaniRoutePolicyPublication = RoutePolicyPublication;
+export type VillaniAdaptiveVerificationPlan = AdaptiveVerificationPlan;
+export type VillaniBinaryVerificationDecision = BinaryVerificationDecision;
+export type VillaniCompactReviewPackage = CompactReviewPackage;
+export type VillaniHumanOutcome = HumanOutcome;
+export type VillaniSupervisionMetrics = SupervisionMetrics;
+export type VillaniGateDReport = GateDReport;
 
 export interface VillaniHarnessResult {
   schema_version: "villani.harness_result.v1";
@@ -329,6 +384,7 @@ export interface VillaniHarnessResult {
     raw_name: string | null;
   }>;
   raw_trace: Record<string, unknown>;
+  execution_identity?: Record<string, unknown> | null;
   usage: Record<string, unknown>;
   cost: Record<string, unknown>;
   duration_ms: number | null;
@@ -347,6 +403,8 @@ export interface VillaniHarnessResult {
       | "malformed_output"
       | "oversized_output"
       | "cleanup"
+      | "transport_overload"
+      | "rate_limit"
       | "unknown";
     message: string;
     retryable: boolean | null;
@@ -538,4 +596,41 @@ export type VillaniProtocolDocument =
   | VillaniRunSummary
   | VillaniAgentSystemIdentity
   | VillaniHarnessResult
-  | VillaniHarnessConformanceReport;
+  | VillaniHarnessConformanceReport
+  | VillaniHarnessDiscovery
+  | VillaniQualificationObservation
+  | VillaniQualificationInvalidation
+  | VillaniQualificationSnapshot
+  | VillaniGateCReport
+  | VillaniEconomicsObservation
+  | VillaniEconomicsSnapshot
+  | VillaniOnlineEvidenceUpdateReport
+  | VillaniRoutePlan
+  | VillaniRoutePolicy
+  | VillaniRoutePolicyEvaluation
+  | VillaniRoutePolicyPublication
+  | VillaniAdaptiveVerificationPlan
+  | VillaniBinaryVerificationDecision
+  | VillaniCompactReviewPackage
+  | VillaniHumanOutcome
+  | VillaniSupervisionMetrics
+  | VillaniGateDReport;
+import type {
+  AdaptiveVerificationPlan,
+  BinaryVerificationDecision,
+  CompactReviewPackage,
+  EconomicsObservation,
+  EconomicsSnapshot,
+  GateCReport,
+  GateDReport,
+  HumanOutcome,
+  QualificationInvalidation,
+  QualificationObservation,
+  QualificationSnapshot,
+  OnlineEvidenceUpdateReport,
+  RoutePlan,
+  RoutePolicy,
+  RoutePolicyEvaluation,
+  RoutePolicyPublication,
+  SupervisionMetrics,
+} from "@villani/run-model";

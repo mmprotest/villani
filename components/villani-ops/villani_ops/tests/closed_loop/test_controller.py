@@ -12,6 +12,7 @@ import pytest
 
 from villani_ops.closed_loop.controller import ClosedLoopController
 from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
+from villani_ops.closed_loop.economics import EconomicsStore
 from villani_ops.closed_loop.interfaces import (
     ClosedLoopRunRequest,
     DependencyFailure,
@@ -24,6 +25,7 @@ from villani_ops.closed_loop.schema_validation import (
     validate_jsonl_event_stream,
     validate_protocol_document,
 )
+from villani_ops.closed_loop.qualification import QualificationStore
 from villani_ops.closed_loop.state_machine import (
     ALLOWED_TRANSITIONS,
     ClosedLoopStateMachine,
@@ -94,6 +96,8 @@ def _controller(
     policy_engine: FakePolicyEngine | None = None,
     attempt_runner: Any | None = None,
     verifier_dependency: Any | None = None,
+    qualification_store: QualificationStore | None = None,
+    economics_store: EconomicsStore | None = None,
 ) -> tuple[ClosedLoopController, dict[str, Any]]:
     classifier = FakeClassifier()
     policy_dependency = policy_engine or FakePolicyEngine(decisions)
@@ -120,6 +124,8 @@ def _controller(
             now=FixedNow(),
             monotonic=monotonic or FakeMonotonic(),
             id_factory=StableIds(),
+            qualification_store=qualification_store,
+            economics_store=economics_store,
         ),
         dependencies,
     )
@@ -784,3 +790,105 @@ def test_run_bundle_matches_protocol_schemas(tmp_path: Path) -> None:
     assert "villani_ops.adaptive" not in controller_source
     assert "verifier_parallel" not in controller_source
     assert "graph" not in controller_source
+
+
+def test_controller_persists_versioned_route_plan_and_manifest_pointer(
+    tmp_path: Path,
+) -> None:
+    repository_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "integration" / "fixtures" / "protocol" / "v1").is_dir()
+    )
+    route_plan = json.loads(
+        (
+            repository_root
+            / "integration"
+            / "fixtures"
+            / "protocol"
+            / "v1"
+            / "valid_run"
+            / "route-plan.json"
+        ).read_text(encoding="utf-8")
+    )
+    route_plan["run_id"] = "run_test_001"
+    selected = backend("fixture_economy")
+    initial = replace(
+        policy("attempt", backend_option=selected),
+        policy_version=route_plan["policy_version"],
+        metadata={"route_plan": route_plan},
+    )
+    controller, _ = _controller(
+        [initial, policy("select")],
+        [attempt()],
+        [accepted_verification()],
+    )
+
+    result = controller.run(_request(tmp_path))
+
+    route_paths = list((result.run_directory / "route-plans").glob("*.json"))
+    assert len(route_paths) == 1
+    persisted = json.loads(route_paths[0].read_text(encoding="utf-8"))
+    assert persisted == route_plan
+    validate_protocol_document(persisted)
+    manifest = json.loads(
+        (result.run_directory / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["artifact_paths"]["route_plans"] == "route-plans"
+    assert manifest["artifact_paths"]["economics_update"] is None
+
+
+def test_controller_records_validated_future_only_update_receipt(
+    tmp_path: Path,
+) -> None:
+    repository_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "integration" / "fixtures" / "protocol" / "v1").is_dir()
+    )
+    route_plan = json.loads(
+        (
+            repository_root
+            / "integration"
+            / "fixtures"
+            / "protocol"
+            / "v1"
+            / "valid_run"
+            / "route-plan.json"
+        ).read_text(encoding="utf-8")
+    )
+    route_plan["run_id"] = "run_test_001"
+    selected = backend("fixture_economy")
+    initial = replace(
+        policy("attempt", backend_option=selected),
+        policy_version=route_plan["policy_version"],
+        metadata={"route_plan": route_plan},
+    )
+    controller, _ = _controller(
+        [initial, policy("select")],
+        [attempt()],
+        [accepted_verification()],
+        qualification_store=QualificationStore(tmp_path / "qualification"),
+        economics_store=EconomicsStore(tmp_path / "economics"),
+    )
+    request = replace(
+        _request(tmp_path),
+        policy_configuration={
+            "version": "fake_v1",
+            "collect_candidates": 1,
+            "economics": {"online_update": {"enabled": True}},
+        },
+    )
+
+    result = controller.run(request)
+
+    receipt_path = result.run_directory / "economics-update.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    validate_protocol_document(receipt)
+    assert receipt["status"] == "skipped"
+    assert receipt["profile_updated"] is False
+    assert receipt["reasons"] == ["exact agent-system identity is unavailable"]
+    manifest = json.loads(
+        (result.run_directory / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["artifact_paths"]["economics_update"] == "economics-update.json"

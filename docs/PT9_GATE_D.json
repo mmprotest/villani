@@ -1,0 +1,117 @@
+{
+  "arms": [
+    {
+      "accepted_as_is": 0,
+      "case_ids": [],
+      "elapsed_duration": {
+        "accounting_status": "unknown",
+        "duration_ms": null,
+        "source": "founder_evidence_not_run"
+      },
+      "eligible_cases": 0,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": null,
+      "review_time_accounting_status": "unknown",
+      "safe_fallback": true,
+      "strategy": "strongest_only",
+      "total_cost": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "source": "founder_evidence_not_run"
+      }
+    },
+    {
+      "accepted_as_is": 0,
+      "case_ids": [],
+      "elapsed_duration": {
+        "accounting_status": "unknown",
+        "duration_ms": null,
+        "source": "founder_evidence_not_run"
+      },
+      "eligible_cases": 0,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": null,
+      "review_time_accounting_status": "unknown",
+      "safe_fallback": true,
+      "strategy": "accepted_change_optimizer",
+      "total_cost": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "source": "founder_evidence_not_run"
+      }
+    },
+    {
+      "accepted_as_is": 0,
+      "case_ids": [],
+      "elapsed_duration": {
+        "accounting_status": "unknown",
+        "duration_ms": null,
+        "source": "founder_evidence_not_run"
+      },
+      "eligible_cases": 0,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": null,
+      "review_time_accounting_status": "unknown",
+      "safe_fallback": true,
+      "strategy": "optimizer_plus_adaptive",
+      "total_cost": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "source": "founder_evidence_not_run"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "check": "matched_founder_cases",
+      "reason": "No eligible frozen founder case was recorded for all three arms.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "check": "accepted_as_is_no_regression",
+      "reason": "Accepted-as-is reliability cannot be compared without eligible cases.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "check": "zero_false_acceptance",
+      "reason": "Zero false acceptance cannot be evidenced by an empty evaluation.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "check": "lower_cost_or_time",
+      "reason": "Cost and elapsed-time accounting are not complete enough for comparison.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "check": "lower_review_burden",
+      "reason": "Explicit review minutes are unknown for at least one arm.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "check": "explainability",
+      "reason": "Every adaptive route and verification expansion is explainable.",
+      "status": "pass"
+    },
+    {
+      "check": "safe_fallback",
+      "reason": "Unresolved proof falls back safely to review or rejection.",
+      "status": "pass"
+    }
+  ],
+  "evidence_references": [],
+  "gate_id": "gated_fd255b142eb739dd2e8c7f26dab23ecbe412c7045677832b35b268705dcb4341",
+  "generated_at": "2026-07-18T00:00:00Z",
+  "next_milestone_permitted": false,
+  "policy_version": "adaptive_verification_v1",
+  "schema_version": "villani.gate_d.v1",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "warnings": [
+    "Unknown cost or duration remains unranked."
+  ]
+}

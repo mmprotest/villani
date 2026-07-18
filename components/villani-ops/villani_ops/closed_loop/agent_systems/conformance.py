@@ -74,7 +74,11 @@ def build_harness_conformance_report(
         generated_at=utc_now(),
         status=status,  # type: ignore[arg-type]
         checks=checks,
-        production_qualification_authorized=status == "passed",
+        # PT6 records Codex/Claude execution evidence without claiming Gate C.
+        # Villani Code retains its existing bootstrap qualification behavior.
+        production_qualification_authorized=(
+            status == "passed" and identity.harness.harness_id == "villani-code"
+        ),
     )
 
 

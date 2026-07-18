@@ -1,0 +1,315 @@
+{
+  "$defs": {
+    "MoneyAccounting": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "MoneyAccounting",
+      "type": "object"
+    },
+    "RestrictedVerifierProvenance": {
+      "additionalProperties": false,
+      "description": "Identity retained for audit without entering semantic-verifier context.",
+      "properties": {
+        "verifier_role": {
+          "enum": [
+            "semantic",
+            "independent_semantic"
+          ],
+          "title": "Verifier Role",
+          "type": "string"
+        },
+        "verifier_identity_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Verifier Identity Digest",
+          "type": "string"
+        },
+        "invocation_status": {
+          "enum": [
+            "completed",
+            "not_invoked",
+            "malformed_output",
+            "timeout",
+            "error"
+          ],
+          "title": "Invocation Status",
+          "type": "string"
+        },
+        "independent": {
+          "title": "Independent",
+          "type": "boolean"
+        },
+        "artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Path"
+        }
+      },
+      "required": [
+        "verifier_role",
+        "verifier_identity_digest",
+        "invocation_status",
+        "independent"
+      ],
+      "title": "RestrictedVerifierProvenance",
+      "type": "object"
+    },
+    "VerificationNodeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "pattern": "^node_[a-z0-9_]+$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "unavailable",
+            "infrastructure_error",
+            "not_run",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "commands": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Commands",
+          "type": "array"
+        },
+        "evidence_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Paths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "node_id",
+        "status",
+        "reason"
+      ],
+      "title": "VerificationNodeResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "villani.binary_verification_decision.v1",
+      "default": "villani.binary_verification_decision.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "decision_id": {
+      "pattern": "^avd_[0-9a-f]{64}$",
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "attempt_id": {
+      "minLength": 1,
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^avp_[0-9a-f]{64}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "decided_at": {
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        0,
+        1
+      ],
+      "title": "Decision",
+      "type": "integer"
+    },
+    "reason_code": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Reason Code",
+      "type": "string"
+    },
+    "reason": {
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "requirements_proved": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Requirements Proved",
+      "type": "array"
+    },
+    "requirements_not_proved": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Requirements Not Proved",
+      "type": "array"
+    },
+    "blockers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blockers",
+      "type": "array"
+    },
+    "infrastructure_status": {
+      "enum": [
+        "resolved",
+        "infrastructure_failure",
+        "unavailable"
+      ],
+      "title": "Infrastructure Status",
+      "type": "string"
+    },
+    "semantic_status": {
+      "enum": [
+        "passed",
+        "failed",
+        "unclear",
+        "error",
+        "not_invoked"
+      ],
+      "title": "Semantic Status",
+      "type": "string"
+    },
+    "independent_verifier_required": {
+      "title": "Independent Verifier Required",
+      "type": "boolean"
+    },
+    "independent_verifier_completed": {
+      "title": "Independent Verifier Completed",
+      "type": "boolean"
+    },
+    "node_results": {
+      "items": {
+        "$ref": "#/$defs/VerificationNodeResult"
+      },
+      "title": "Node Results",
+      "type": "array"
+    },
+    "verifier_provenance": {
+      "items": {
+        "$ref": "#/$defs/RestrictedVerifierProvenance"
+      },
+      "title": "Verifier Provenance",
+      "type": "array"
+    },
+    "verification_cost": {
+      "$ref": "#/$defs/MoneyAccounting"
+    },
+    "normalized_from": {
+      "enum": [
+        "accepted",
+        "rejected",
+        "unclear",
+        "error",
+        "deterministic_failure"
+      ],
+      "title": "Normalized From",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision_id",
+    "run_id",
+    "attempt_id",
+    "plan_id",
+    "decided_at",
+    "decision",
+    "reason_code",
+    "reason",
+    "requirements_proved",
+    "requirements_not_proved",
+    "blockers",
+    "infrastructure_status",
+    "semantic_status",
+    "independent_verifier_required",
+    "independent_verifier_completed",
+    "node_results",
+    "verifier_provenance",
+    "verification_cost",
+    "normalized_from"
+  ],
+  "title": "BinaryVerificationDecision",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/binary-verification-decision.schema.json"
+}

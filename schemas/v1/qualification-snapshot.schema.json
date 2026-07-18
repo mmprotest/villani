@@ -1,0 +1,606 @@
+{
+  "$defs": {
+    "QualificationDistribution": {
+      "additionalProperties": false,
+      "properties": {
+        "known_count": {
+          "minimum": 0,
+          "title": "Known Count",
+          "type": "integer"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "p90": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90"
+        },
+        "unit": {
+          "minLength": 1,
+          "title": "Unit",
+          "type": "string"
+        },
+        "unknown_count": {
+          "minimum": 0,
+          "title": "Unknown Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "known_count",
+        "unknown_count",
+        "unit"
+      ],
+      "title": "QualificationDistribution",
+      "type": "object"
+    },
+    "QualificationDriftFlag": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "detail": {
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "severe",
+            "unsupported"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "detail"
+      ],
+      "title": "QualificationDriftFlag",
+      "type": "object"
+    },
+    "QualificationMigration": {
+      "additionalProperties": false,
+      "properties": {
+        "exclusion_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclusion Reason"
+        },
+        "migration_id": {
+          "minLength": 1,
+          "title": "Migration Id",
+          "type": "string"
+        },
+        "qualification_created": {
+          "const": false,
+          "default": false,
+          "title": "Qualification Created",
+          "type": "boolean"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "source_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Digest"
+        },
+        "status": {
+          "enum": [
+            "not_present",
+            "excluded",
+            "complete"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "migration_id",
+        "source",
+        "status"
+      ],
+      "title": "QualificationMigration",
+      "type": "object"
+    },
+    "QualificationPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "approved_backoff_levels": {
+          "items": {
+            "enum": [
+              "exact_repository_task",
+              "repository_category",
+              "repository_wide",
+              "compatible_repository_cohort"
+            ],
+            "type": "string"
+          },
+          "title": "Approved Backoff Levels",
+          "type": "array"
+        },
+        "approved_repository_cohorts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Approved Repository Cohorts",
+          "type": "array"
+        },
+        "compatible_repository_cohorts": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Compatible Repository Cohorts",
+          "type": "object"
+        },
+        "maximum_evidence_age_days": {
+          "default": 180,
+          "minimum": 1,
+          "title": "Maximum Evidence Age Days",
+          "type": "integer"
+        },
+        "minimum_qualified_observations": {
+          "default": 20,
+          "minimum": 20,
+          "title": "Minimum Qualified Observations",
+          "type": "integer"
+        },
+        "policy_version": {
+          "const": "repository_qualification_v1",
+          "default": "repository_qualification_v1",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "provisional_maximum_observations": {
+          "default": 19,
+          "minimum": 1,
+          "title": "Provisional Maximum Observations",
+          "type": "integer"
+        },
+        "recent_reliability_window": {
+          "default": 5,
+          "minimum": 1,
+          "title": "Recent Reliability Window",
+          "type": "integer"
+        },
+        "task_wilson_thresholds": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Task Wilson Thresholds",
+          "type": "object"
+        },
+        "wilson_z": {
+          "default": 1.959963984540054,
+          "exclusiveMinimum": 0,
+          "title": "Wilson Z",
+          "type": "number"
+        }
+      },
+      "title": "QualificationPolicy",
+      "type": "object"
+    },
+    "QualificationProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/QualificationProfileKey"
+        },
+        "observation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Observation Ids",
+          "type": "array"
+        },
+        "source_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Digest",
+          "type": "string"
+        },
+        "statistics": {
+          "$ref": "#/$defs/QualificationStatistics"
+        }
+      },
+      "required": [
+        "key",
+        "observation_ids",
+        "statistics",
+        "source_digest"
+      ],
+      "title": "QualificationProfile",
+      "type": "object"
+    },
+    "QualificationProfileKey": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_environment_fingerprint": {
+          "minLength": 1,
+          "title": "Execution Environment Fingerprint",
+          "type": "string"
+        },
+        "repository_id": {
+          "minLength": 1,
+          "title": "Repository Id",
+          "type": "string"
+        },
+        "system_identity_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "System Identity Digest",
+          "type": "string"
+        },
+        "task_profile": {
+          "$ref": "#/$defs/QualificationTaskProfile"
+        },
+        "verification_policy_version": {
+          "minLength": 1,
+          "title": "Verification Policy Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository_id",
+        "task_profile",
+        "system_identity_digest",
+        "execution_environment_fingerprint",
+        "verification_policy_version"
+      ],
+      "title": "QualificationProfileKey",
+      "type": "object"
+    },
+    "QualificationStatistics": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_rate": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Acceptance Rate"
+        },
+        "accepted_as_is_count": {
+          "minimum": 0,
+          "title": "Accepted As Is Count",
+          "type": "integer"
+        },
+        "accepted_change_cost_by_currency": {
+          "additionalProperties": {
+            "$ref": "#/$defs/QualificationDistribution"
+          },
+          "title": "Accepted Change Cost By Currency",
+          "type": "object"
+        },
+        "accepted_change_cost_unknown_count": {
+          "minimum": 0,
+          "title": "Accepted Change Cost Unknown Count",
+          "type": "integer"
+        },
+        "cost_distribution_by_currency": {
+          "additionalProperties": {
+            "$ref": "#/$defs/QualificationDistribution"
+          },
+          "title": "Cost Distribution By Currency",
+          "type": "object"
+        },
+        "cost_unknown_count": {
+          "minimum": 0,
+          "title": "Cost Unknown Count",
+          "type": "integer"
+        },
+        "drift_flags": {
+          "items": {
+            "$ref": "#/$defs/QualificationDriftFlag"
+          },
+          "title": "Drift Flags",
+          "type": "array"
+        },
+        "duration_distribution": {
+          "$ref": "#/$defs/QualificationDistribution"
+        },
+        "exclusions": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Exclusions",
+          "type": "object"
+        },
+        "failures": {
+          "minimum": 0,
+          "title": "Failures",
+          "type": "integer"
+        },
+        "false_acceptance_count": {
+          "minimum": 0,
+          "title": "False Acceptance Count",
+          "type": "integer"
+        },
+        "false_case_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "False Case Ids",
+          "type": "array"
+        },
+        "false_rejection_count": {
+          "minimum": 0,
+          "title": "False Rejection Count",
+          "type": "integer"
+        },
+        "last_evidence_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Evidence At"
+        },
+        "proved_acceptable_count": {
+          "minimum": 0,
+          "title": "Proved Acceptable Count",
+          "type": "integer"
+        },
+        "review_minutes_distribution": {
+          "$ref": "#/$defs/QualificationDistribution"
+        },
+        "sample_count": {
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "software_version_diversity": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Software Version Diversity",
+          "type": "object"
+        },
+        "successes": {
+          "minimum": 0,
+          "title": "Successes",
+          "type": "integer"
+        },
+        "wilson_lower_bound": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Lower Bound"
+        }
+      },
+      "required": [
+        "sample_count",
+        "successes",
+        "failures",
+        "exclusions",
+        "proved_acceptable_count",
+        "accepted_as_is_count",
+        "false_acceptance_count",
+        "false_rejection_count",
+        "false_case_ids",
+        "cost_distribution_by_currency",
+        "cost_unknown_count",
+        "accepted_change_cost_by_currency",
+        "accepted_change_cost_unknown_count",
+        "duration_distribution",
+        "review_minutes_distribution",
+        "last_evidence_at",
+        "software_version_diversity",
+        "drift_flags"
+      ],
+      "title": "QualificationStatistics",
+      "type": "object"
+    },
+    "QualificationTaskProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "difficulty": {
+          "minLength": 1,
+          "title": "Difficulty",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "risk": {
+          "minLength": 1,
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "difficulty",
+        "risk"
+      ],
+      "title": "QualificationTaskProfile",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/qualification-snapshot.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "exclusions": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Exclusions",
+      "type": "object"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "invalidation_count": {
+      "minimum": 0,
+      "title": "Invalidation Count",
+      "type": "integer"
+    },
+    "migrations": {
+      "items": {
+        "$ref": "#/$defs/QualificationMigration"
+      },
+      "title": "Migrations",
+      "type": "array"
+    },
+    "observation_count": {
+      "minimum": 0,
+      "title": "Observation Count",
+      "type": "integer"
+    },
+    "policy": {
+      "$ref": "#/$defs/QualificationPolicy"
+    },
+    "profiles": {
+      "items": {
+        "$ref": "#/$defs/QualificationProfile"
+      },
+      "title": "Profiles",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "villani.qualification_snapshot.v1",
+      "default": "villani.qualification_snapshot.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "snapshot_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Snapshot Digest",
+      "type": "string"
+    },
+    "source_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Source Digest",
+      "type": "string"
+    },
+    "superseded_observation_count": {
+      "minimum": 0,
+      "title": "Superseded Observation Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_at",
+    "policy",
+    "source_digest",
+    "snapshot_digest",
+    "observation_count",
+    "invalidation_count",
+    "superseded_observation_count",
+    "profiles",
+    "exclusions",
+    "migrations"
+  ],
+  "title": "QualificationSnapshot",
+  "type": "object"
+}

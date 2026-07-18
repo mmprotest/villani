@@ -286,6 +286,32 @@ function ProductResult({
           ]}
         />
       </Panel>
+      {value.proof_package && (
+        <Panel>
+          <PanelHeader
+            title="WHY VILLANI TRUSTS IT"
+            meta={value.proof_package.risk_tier}
+          />
+          <div className="v-panel__body console-stack">
+            <p>{value.proof_package.why_villani_trusts_it}</p>
+            {value.proof_package.unresolved_decision && (
+              <p>
+                <strong>Exact decision still needed:</strong>{" "}
+                {value.proof_package.unresolved_decision}
+              </p>
+            )}
+            <a
+              href={
+                value.evidence_links.find(
+                  (link) => link.artifact === value.proof_package?.artifact,
+                )?.href ?? `/console/runs/${value.run_identity.run_id}/replay`
+              }
+            >
+              View full evidence
+            </a>
+          </div>
+        </Panel>
+      )}
       <Panel>
         <PanelHeader title="KNOWN COST" meta={value.cost.accounting_status} />
         <div className="v-panel__body">

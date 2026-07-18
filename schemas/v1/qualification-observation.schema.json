@@ -1,0 +1,547 @@
+{
+  "$defs": {
+    "QualificationArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "digest"
+      ],
+      "title": "QualificationArtifactReference",
+      "type": "object"
+    },
+    "QualificationSystemIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": {
+          "minLength": 1,
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "execution_environment_fingerprint": {
+          "minLength": 1,
+          "title": "Execution Environment Fingerprint",
+          "type": "string"
+        },
+        "execution_provider": {
+          "minLength": 1,
+          "title": "Execution Provider",
+          "type": "string"
+        },
+        "harness_id": {
+          "minLength": 1,
+          "title": "Harness Id",
+          "type": "string"
+        },
+        "harness_version": {
+          "minLength": 1,
+          "title": "Harness Version",
+          "type": "string"
+        },
+        "identity_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Identity Digest",
+          "type": "string"
+        },
+        "model_id": {
+          "minLength": 1,
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Revision"
+        },
+        "protocol": {
+          "minLength": 1,
+          "title": "Protocol",
+          "type": "string"
+        },
+        "protocol_version": {
+          "minLength": 1,
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "provider": {
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "route_name": {
+          "minLength": 1,
+          "title": "Route Name",
+          "type": "string"
+        },
+        "serving_engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Serving Engine"
+        },
+        "serving_engine_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Serving Engine Version"
+        },
+        "software_versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Software Versions",
+          "type": "object"
+        },
+        "system_id": {
+          "pattern": "^asys_[0-9a-f]{64}$",
+          "title": "System Id",
+          "type": "string"
+        },
+        "verification_policy_version": {
+          "minLength": 1,
+          "title": "Verification Policy Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system_id",
+        "route_name",
+        "harness_id",
+        "harness_version",
+        "adapter_id",
+        "adapter_version",
+        "protocol",
+        "protocol_version",
+        "provider",
+        "model_id",
+        "execution_provider",
+        "execution_environment_fingerprint",
+        "verification_policy_version",
+        "software_versions",
+        "identity_digest"
+      ],
+      "title": "QualificationSystemIdentity",
+      "type": "object"
+    },
+    "QualificationTaskProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "difficulty": {
+          "minLength": 1,
+          "title": "Difficulty",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "risk": {
+          "minLength": 1,
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "difficulty",
+        "risk"
+      ],
+      "title": "QualificationTaskProfile",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/qualification-observation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted_as_is": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Accepted As Is"
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/QualificationArtifactReference"
+      },
+      "minItems": 1,
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "authoritative_verification_complete": {
+      "title": "Authoritative Verification Complete",
+      "type": "boolean"
+    },
+    "baseline_valid": {
+      "title": "Baseline Valid",
+      "type": "boolean"
+    },
+    "candidate_evidence_complete": {
+      "title": "Candidate Evidence Complete",
+      "type": "boolean"
+    },
+    "corruption_detected": {
+      "title": "Corruption Detected",
+      "type": "boolean"
+    },
+    "cost_accounting_status": {
+      "enum": [
+        "complete",
+        "partial",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "Cost Accounting Status",
+      "type": "string"
+    },
+    "cost_amount": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cost Amount"
+    },
+    "cost_currency": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z]{3}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cost Currency"
+    },
+    "duration_accounting_status": {
+      "enum": [
+        "complete",
+        "partial",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "Duration Accounting Status",
+      "type": "string"
+    },
+    "duration_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duration Ms"
+    },
+    "eligible": {
+      "title": "Eligible",
+      "type": "boolean"
+    },
+    "exclusion_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exclusion Reason"
+    },
+    "false_acceptance": {
+      "default": false,
+      "title": "False Acceptance",
+      "type": "boolean"
+    },
+    "false_rejection": {
+      "default": false,
+      "title": "False Rejection",
+      "type": "boolean"
+    },
+    "human_review_required": {
+      "title": "Human Review Required",
+      "type": "boolean"
+    },
+    "human_review_status": {
+      "enum": [
+        "complete",
+        "missing",
+        "not_applicable"
+      ],
+      "title": "Human Review Status",
+      "type": "string"
+    },
+    "infrastructure_status": {
+      "enum": [
+        "resolved",
+        "excluded",
+        "unresolved"
+      ],
+      "title": "Infrastructure Status",
+      "type": "string"
+    },
+    "later_rollback": {
+      "default": false,
+      "title": "Later Rollback",
+      "type": "boolean"
+    },
+    "observation_id": {
+      "pattern": "^qobs_[0-9a-f]{64}$",
+      "title": "Observation Id",
+      "type": "string"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "profile_source": {
+      "enum": [
+        "authoritative_run_classification",
+        "explicit_evaluation_profile"
+      ],
+      "title": "Profile Source",
+      "type": "string"
+    },
+    "proved_acceptable": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proved Acceptable"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "reopened_defect": {
+      "default": false,
+      "title": "Reopened Defect",
+      "type": "boolean"
+    },
+    "repository_baseline_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Repository Baseline Digest",
+      "type": "string"
+    },
+    "repository_commit": {
+      "pattern": "^[0-9a-f]{40,64}$",
+      "title": "Repository Commit",
+      "type": "string"
+    },
+    "repository_id": {
+      "minLength": 1,
+      "title": "Repository Id",
+      "type": "string"
+    },
+    "review_minutes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Review Minutes"
+    },
+    "schema_version": {
+      "const": "villani.qualification_observation.v1",
+      "default": "villani.qualification_observation.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secret_issue_detected": {
+      "title": "Secret Issue Detected",
+      "type": "boolean"
+    },
+    "source_kind": {
+      "enum": [
+        "evaluation_trial",
+        "imported_qualification_evidence",
+        "canonical_run"
+      ],
+      "title": "Source Kind",
+      "type": "string"
+    },
+    "source_review_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Review Id"
+    },
+    "source_suite_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Suite Digest"
+    },
+    "source_suite_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Suite Id"
+    },
+    "source_task_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Task Digest",
+      "type": "string"
+    },
+    "source_task_id": {
+      "minLength": 1,
+      "title": "Source Task Id",
+      "type": "string"
+    },
+    "source_trial_id": {
+      "minLength": 1,
+      "title": "Source Trial Id",
+      "type": "string"
+    },
+    "successful": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Successful"
+    },
+    "system": {
+      "$ref": "#/$defs/QualificationSystemIdentity"
+    },
+    "target_repository_modified": {
+      "const": false,
+      "default": false,
+      "title": "Target Repository Modified",
+      "type": "boolean"
+    },
+    "task_profile": {
+      "$ref": "#/$defs/QualificationTaskProfile"
+    }
+  },
+  "required": [
+    "observation_id",
+    "recorded_at",
+    "observed_at",
+    "source_kind",
+    "source_task_id",
+    "source_task_digest",
+    "source_trial_id",
+    "repository_id",
+    "repository_commit",
+    "repository_baseline_digest",
+    "task_profile",
+    "profile_source",
+    "system",
+    "baseline_valid",
+    "candidate_evidence_complete",
+    "authoritative_verification_complete",
+    "infrastructure_status",
+    "human_review_required",
+    "human_review_status",
+    "corruption_detected",
+    "secret_issue_detected",
+    "cost_accounting_status",
+    "duration_accounting_status",
+    "eligible",
+    "artifacts"
+  ],
+  "title": "QualificationObservation",
+  "type": "object"
+}

@@ -1,0 +1,185 @@
+{
+  "$defs": {
+    "MoneyAccounting": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "MoneyAccounting",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "villani.supervision_metrics.v1",
+      "default": "villani.supervision_metrics.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "metrics_id": {
+      "pattern": "^smet_[0-9a-f]{64}$",
+      "title": "Metrics Id",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "policy_version": {
+      "const": "adaptive_verification_v1",
+      "default": "adaptive_verification_v1",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "calculated_at": {
+      "format": "date-time",
+      "title": "Calculated At",
+      "type": "string"
+    },
+    "eligible_outcome_count": {
+      "minimum": 0,
+      "title": "Eligible Outcome Count",
+      "type": "integer"
+    },
+    "evidence_expansion_count": {
+      "minimum": 0,
+      "title": "Evidence Expansion Count",
+      "type": "integer"
+    },
+    "explicit_review_minutes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Explicit Review Minutes"
+    },
+    "review_time_accounting_status": {
+      "enum": [
+        "complete",
+        "partial",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "Review Time Accounting Status",
+      "type": "string"
+    },
+    "application_without_full_trace_count": {
+      "minimum": 0,
+      "title": "Application Without Full Trace Count",
+      "type": "integer"
+    },
+    "full_trace_accounting_status": {
+      "enum": [
+        "complete",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "Full Trace Accounting Status",
+      "type": "string"
+    },
+    "correction_count": {
+      "minimum": 0,
+      "title": "Correction Count",
+      "type": "integer"
+    },
+    "false_acceptance_count": {
+      "minimum": 0,
+      "title": "False Acceptance Count",
+      "type": "integer"
+    },
+    "false_rejection_count": {
+      "minimum": 0,
+      "title": "False Rejection Count",
+      "type": "integer"
+    },
+    "verification_cost": {
+      "$ref": "#/$defs/MoneyAccounting"
+    },
+    "review_cost": {
+      "$ref": "#/$defs/MoneyAccounting"
+    },
+    "total_accepted_change_cost": {
+      "$ref": "#/$defs/MoneyAccounting"
+    },
+    "source_outcome_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Outcome Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "metrics_id",
+    "run_id",
+    "calculated_at",
+    "eligible_outcome_count",
+    "evidence_expansion_count",
+    "review_time_accounting_status",
+    "application_without_full_trace_count",
+    "full_trace_accounting_status",
+    "correction_count",
+    "false_acceptance_count",
+    "false_rejection_count",
+    "verification_cost",
+    "review_cost",
+    "total_accepted_change_cost",
+    "source_outcome_ids"
+  ],
+  "title": "SupervisionMetrics",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/supervision-metrics.schema.json"
+}

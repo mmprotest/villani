@@ -32,6 +32,28 @@ export const VILLANI_SCHEMA_FILE_BY_VERSION = {
   "villani.harness_result.v1": "harness-result.schema.json",
   "villani.harness_conformance_report.v1":
     "harness-conformance-report.schema.json",
+  "villani.harness_discovery.v1": "harness-discovery.schema.json",
+  "villani.qualification_observation.v1":
+    "qualification-observation.schema.json",
+  "villani.qualification_invalidation.v1":
+    "qualification-invalidation.schema.json",
+  "villani.qualification_snapshot.v1": "qualification-snapshot.schema.json",
+  "villani.gate_c.v1": "gate-c.schema.json",
+  "villani.economics_observation.v1": "economics-observation.schema.json",
+  "villani.economics_snapshot.v1": "economics-snapshot.schema.json",
+  "villani.online_evidence_update.v1": "online-evidence-update.schema.json",
+  "villani.route_plan.v1": "route-plan.schema.json",
+  "villani.route_policy.v1": "route-policy.schema.json",
+  "villani.route_policy_evaluation.v1": "route-policy-evaluation.schema.json",
+  "villani.route_policy_publication.v1": "route-policy-publication.schema.json",
+  "villani.adaptive_verification_plan.v1":
+    "adaptive-verification-plan.schema.json",
+  "villani.binary_verification_decision.v1":
+    "binary-verification-decision.schema.json",
+  "villani.review_package.v1": "review-package.schema.json",
+  "villani.human_outcome.v1": "human-outcome.schema.json",
+  "villani.supervision_metrics.v1": "supervision-metrics.schema.json",
+  "villani.gate_d.v1": "gate-d.schema.json",
 } as const;
 
 export const VILLANI_V2_SCHEMA_FILE_BY_VERSION = {
@@ -132,6 +154,51 @@ function accountingIssues(
         },
       ];
     }
+  }
+  return [];
+}
+
+function adaptiveMoneyIssues(
+  value: unknown,
+  instancePath: string,
+): VillaniValidationError[] {
+  if (!isRecord(value)) return [];
+  const known =
+    value.accounting_status === "complete" ||
+    value.accounting_status === "partial";
+  const hasMoney = value.amount !== null && value.currency !== null;
+  if (known !== hasMoney) {
+    return [
+      {
+        instancePath,
+        keyword: "accounting_status",
+        message: known
+          ? "known money requires amount and currency"
+          : "unknown money must remain null",
+      },
+    ];
+  }
+  return [];
+}
+
+function adaptiveDurationIssues(
+  value: unknown,
+  instancePath: string,
+): VillaniValidationError[] {
+  if (!isRecord(value)) return [];
+  const known =
+    value.accounting_status === "complete" ||
+    value.accounting_status === "partial";
+  if (known !== (value.duration_ms !== null)) {
+    return [
+      {
+        instancePath,
+        keyword: "accounting_status",
+        message: known
+          ? "known duration requires duration_ms"
+          : "unknown duration must remain null",
+      },
+    ];
   }
   return [];
 }
@@ -282,14 +349,15 @@ function semanticErrors(
     }
     if (
       document.production_enabled === true &&
-      !["qualified", "bootstrap"].includes(
+      ["disabled", "unsupported", "unqualified"].includes(
         String(document.qualification_status),
       )
     ) {
       errors.push({
         instancePath: "/qualification_status",
         keyword: "production_qualification",
-        message: "enabled systems must be qualified or bootstrap",
+        message:
+          "enabled systems cannot be disabled, unsupported, or unqualified",
       });
     }
     if (
@@ -306,6 +374,242 @@ function semanticErrors(
         instancePath: "/qualification_references",
         keyword: "conformance_qualification",
         message: "qualified systems require conformance evidence",
+      });
+    }
+  }
+
+  if (version === "villani.qualification_observation.v1") {
+    const requiredTruth = Boolean(
+      document.baseline_valid === true &&
+      document.candidate_evidence_complete === true &&
+      document.authoritative_verification_complete === true &&
+      document.infrastructure_status === "resolved" &&
+      (document.human_review_required !== true ||
+        document.human_review_status === "complete") &&
+      document.corruption_detected === false &&
+      document.secret_issue_detected === false,
+    );
+    if (document.eligible !== requiredTruth) {
+      errors.push({
+        instancePath: "/eligible",
+        keyword: "qualification_eligibility",
+        message: "eligible must exactly reflect the PT7 evidence rules",
+      });
+    }
+    const expectedSuccess =
+      document.eligible === true
+        ? document.proved_acceptable === true &&
+          (document.human_review_required !== true ||
+            document.accepted_as_is === true) &&
+          document.false_acceptance === false &&
+          document.later_rollback === false &&
+          document.reopened_defect === false
+        : null;
+    if (document.successful !== expectedSuccess) {
+      errors.push({
+        instancePath: "/successful",
+        keyword: "qualification_success",
+        message:
+          "success requires proved acceptable and accepted as-is evidence",
+      });
+    }
+    if (
+      (document.eligible === true && document.exclusion_reason !== null) ||
+      (document.eligible === false &&
+        (typeof document.exclusion_reason !== "string" ||
+          document.exclusion_reason.length === 0))
+    ) {
+      errors.push({
+        instancePath: "/exclusion_reason",
+        keyword: "qualification_exclusion",
+        message: "exclusions are persisted only for ineligible observations",
+      });
+    }
+    errors.push(
+      ...accountingIssues(
+        document,
+        ["cost_amount", "cost_currency"],
+        "cost_accounting_status",
+      ),
+      ...accountingIssues(
+        document,
+        ["duration_ms"],
+        "duration_accounting_status",
+      ),
+    );
+  }
+
+  if (version === "villani.gate_c.v1" && Array.isArray(document.checks)) {
+    const statuses = new Set(
+      document.checks.filter(isRecord).map((check) => String(check.status)),
+    );
+    const expected = statuses.has("fail")
+      ? "FAIL"
+      : statuses.has("insufficient_evidence")
+        ? "INSUFFICIENT_EVIDENCE"
+        : "PASS";
+    if (document.status !== expected) {
+      errors.push({
+        instancePath: "/status",
+        keyword: "gate_status",
+        message: `Gate C status must be ${expected}`,
+      });
+    }
+  }
+
+  if (version === "villani.route_plan.v1") {
+    const considered = Array.isArray(document.systems_considered)
+      ? document.systems_considered.filter(isRecord)
+      : [];
+    const eligible = new Set(
+      considered
+        .filter((item) => item.eligible === true)
+        .map((item) => String(item.route_name)),
+    );
+    if (
+      typeof document.selected_first_system === "string" &&
+      !eligible.has(document.selected_first_system)
+    ) {
+      errors.push({
+        instancePath: "/selected_first_system",
+        keyword: "route_eligibility",
+        message: "selected system must be an eligible consideration",
+      });
+    }
+    if (Array.isArray(document.ordered_fallbacks)) {
+      document.ordered_fallbacks.forEach((route, index) => {
+        if (typeof route === "string" && !eligible.has(route)) {
+          errors.push({
+            instancePath: `/ordered_fallbacks/${index}`,
+            keyword: "route_eligibility",
+            message: "fallback system must be an eligible consideration",
+          });
+        }
+      });
+    }
+    if (document.forced_choice === document.automatic_policy_metrics_eligible) {
+      errors.push({
+        instancePath: "/automatic_policy_metrics_eligible",
+        keyword: "forced_policy_metric_exclusion",
+        message: "forced choices are excluded from automatic policy metrics",
+      });
+    }
+    considered.forEach((item, index) => {
+      const objective = isRecord(item.objective) ? item.objective : null;
+      if (!objective) return;
+      if (
+        objective.accounting_status === "complete" &&
+        (objective.expected_accepted_change_cost === null ||
+          (Array.isArray(objective.unknown_components) &&
+            objective.unknown_components.length > 0))
+      ) {
+        errors.push({
+          instancePath: `/systems_considered/${index}/objective`,
+          keyword: "accepted_change_accounting",
+          message:
+            "complete objectives require a numeric full total and no unknowns",
+        });
+      }
+      if (
+        objective.accounting_status === "partial" &&
+        objective.expected_accepted_change_cost !== null
+      ) {
+        errors.push({
+          instancePath: `/systems_considered/${index}/objective/expected_accepted_change_cost`,
+          keyword: "accepted_change_accounting",
+          message: "partial objectives cannot claim a full expected total",
+        });
+      }
+    });
+  }
+
+  if (version === "villani.economics_observation.v1") {
+    const expectedProfileEligibility = Boolean(
+      document.qualification_eligible === true &&
+      document.authoritative_verification_complete === true &&
+      document.infrastructure_status === "resolved" &&
+      document.false_acceptance === false,
+    );
+    if (document.eligible_for_profile !== expectedProfileEligibility) {
+      errors.push({
+        instancePath: "/eligible_for_profile",
+        keyword: "economics_eligibility",
+        message: "economics profile eligibility must match verified evidence",
+      });
+    }
+    if (
+      document.eligible_for_automatic_policy_metrics !==
+      (expectedProfileEligibility && document.forced_choice !== true)
+    ) {
+      errors.push({
+        instancePath: "/eligible_for_automatic_policy_metrics",
+        keyword: "automatic_policy_metrics",
+        message: "forced or excluded outcomes cannot train automatic policy",
+      });
+    }
+    for (const componentName of [
+      "execution_cost",
+      "verification_cost",
+      "human_review_cost",
+      "retry_escalation_cost",
+    ]) {
+      const component = document[componentName];
+      if (isRecord(component)) {
+        errors.push(
+          ...accountingIssues(
+            component,
+            ["amount", "currency"],
+            "accounting_status",
+            `/${componentName}`,
+          ),
+        );
+      }
+    }
+  }
+
+  if (version === "villani.route_policy_evaluation.v1") {
+    const expectedSafe = Boolean(
+      Number(document.frozen_case_count) > 0 &&
+      document.conservative_reliability_non_decreasing === true &&
+      document.false_acceptance_exposure_non_increasing === true &&
+      Array.isArray(document.rejection_reasons) &&
+      document.rejection_reasons.length === 0,
+    );
+    if (document.safe_to_publish !== expectedSafe) {
+      errors.push({
+        instancePath: "/safe_to_publish",
+        keyword: "policy_publication_safety",
+        message:
+          "safe_to_publish must be derived from fail-closed replay checks",
+      });
+    }
+  }
+
+  if (version === "villani.online_evidence_update.v1") {
+    const recorded = document.status === "recorded";
+    if (
+      recorded !==
+      Boolean(
+        document.qualification_observation_id &&
+        document.economics_observation_id &&
+        document.profile_updated === true,
+      )
+    ) {
+      errors.push({
+        instancePath: "/status",
+        keyword: "online_evidence_update",
+        message:
+          "only recorded updates may report an updated economics profile",
+      });
+    }
+    if (
+      !recorded &&
+      (!Array.isArray(document.reasons) || document.reasons.length === 0)
+    ) {
+      errors.push({
+        instancePath: "/reasons",
+        keyword: "online_evidence_update",
+        message: "non-recorded updates require an explicit reason",
       });
     }
   }
@@ -474,6 +778,19 @@ function semanticErrors(
       "secret_redaction",
       "unknown_cost",
       "cross_platform_paths",
+      "successful_patch",
+      "no_patch",
+      "command_recovery",
+      "permission_request",
+      "rate_limit_retry",
+      "unsupported_version",
+      "schema_change",
+      "missing_final_result",
+      "partial_patch_on_crash",
+      "known_cost",
+      "non_ascii_spaced_paths",
+      "large_output",
+      "outside_isolation_mutation",
     ]);
     const checkIds = checks
       .filter(isRecord)
@@ -517,13 +834,13 @@ function semanticErrors(
       });
     }
     if (
-      document.production_qualification_authorized !==
-      (expected === "passed")
+      document.production_qualification_authorized === true &&
+      expected !== "passed"
     ) {
       errors.push({
         instancePath: "/production_qualification_authorized",
         keyword: "fail_closed_qualification",
-        message: "qualification is authorized only when every check passed",
+        message: "qualification cannot be authorized unless every check passed",
       });
     }
   }
@@ -549,6 +866,205 @@ function semanticErrors(
         instancePath: "/currency",
         keyword: "accounting_status",
         message: "currency is required when cost is known",
+      });
+    }
+  }
+
+  if (version === "villani.binary_verification_decision.v1") {
+    const accepting = document.decision === 1;
+    const blockers = Array.isArray(document.blockers) ? document.blockers : [];
+    const notProved = Array.isArray(document.requirements_not_proved)
+      ? document.requirements_not_proved
+      : [];
+    const nodes = Array.isArray(document.node_results)
+      ? document.node_results.filter(isRecord)
+      : [];
+    const blockingStatuses = new Set([
+      "failed",
+      "unavailable",
+      "infrastructure_error",
+      "not_run",
+    ]);
+    if (
+      accepting &&
+      (document.semantic_status !== "passed" ||
+        document.infrastructure_status !== "resolved" ||
+        blockers.length > 0 ||
+        notProved.length > 0 ||
+        (document.independent_verifier_required === true &&
+          document.independent_verifier_completed !== true) ||
+        nodes.some((node) => blockingStatuses.has(String(node.status))))
+    ) {
+      errors.push({
+        instancePath: "/decision",
+        keyword: "binary_verification_authority",
+        message:
+          "decision 1 requires complete acceptance-grade semantic evidence",
+      });
+    }
+    if (
+      ["unclear", "error", "not_invoked"].includes(
+        String(document.semantic_status),
+      ) &&
+      document.decision !== 0
+    ) {
+      errors.push({
+        instancePath: "/decision",
+        keyword: "binary_normalization",
+        message:
+          "unclear, error, and missing semantic results normalize to zero",
+      });
+    }
+    errors.push(
+      ...adaptiveMoneyIssues(document.verification_cost, "/verification_cost"),
+    );
+  }
+
+  if (version === "villani.review_package.v1") {
+    if (
+      document.status === "ready_to_apply" &&
+      ((Array.isArray(document.requirements_not_proved) &&
+        document.requirements_not_proved.length > 0) ||
+        document.unresolved_decision !== null ||
+        (Array.isArray(document.checks) &&
+          document.checks
+            .filter(isRecord)
+            .some((check) => check.status !== "passed")))
+    ) {
+      errors.push({
+        instancePath: "/status",
+        keyword: "review_package_authority",
+        message: "ready packages require complete passing proof",
+      });
+    }
+    if (document.status === "needs_review" && !document.unresolved_decision) {
+      errors.push({
+        instancePath: "/unresolved_decision",
+        keyword: "review_package_authority",
+        message: "needs-review packages require the exact unresolved decision",
+      });
+    }
+    errors.push(
+      ...adaptiveMoneyIssues(document.known_cost, "/known_cost"),
+      ...adaptiveDurationIssues(document.known_duration, "/known_duration"),
+    );
+  }
+
+  if (version === "villani.human_outcome.v1") {
+    const known = document.review_time_accounting_status === "complete";
+    if (known !== (document.review_minutes !== null)) {
+      errors.push({
+        instancePath: "/review_minutes",
+        keyword: "accounting_status",
+        message: known
+          ? "complete review time requires minutes"
+          : "unknown review time must remain null",
+      });
+    }
+    const fullTraceKnown = document.full_trace_accounting_status === "complete";
+    if (fullTraceKnown !== (typeof document.full_trace_opened === "boolean")) {
+      errors.push({
+        instancePath: "/full_trace_opened",
+        keyword: "accounting_status",
+        message: fullTraceKnown
+          ? "complete full-trace accounting requires a boolean"
+          : "unknown full-trace use must remain null",
+      });
+    }
+    if (
+      document.outcome === "corrected_before_use" &&
+      !document.correction_summary
+    ) {
+      errors.push({
+        instancePath: "/correction_summary",
+        keyword: "human_outcome",
+        message: "corrected outcomes require a correction summary",
+      });
+    }
+    if (
+      ["reverted", "reopened_defect"].includes(String(document.outcome)) &&
+      !document.linked_reference
+    ) {
+      errors.push({
+        instancePath: "/linked_reference",
+        keyword: "human_outcome",
+        message: "later adverse outcomes require an explicit reference",
+      });
+    }
+  }
+
+  if (version === "villani.supervision_metrics.v1") {
+    const known = ["complete", "partial"].includes(
+      String(document.review_time_accounting_status),
+    );
+    if (known !== (document.explicit_review_minutes !== null)) {
+      errors.push({
+        instancePath: "/explicit_review_minutes",
+        keyword: "accounting_status",
+        message: known
+          ? "known review time requires minutes"
+          : "unknown review time must remain null",
+      });
+    }
+    if (
+      document.full_trace_accounting_status !== "complete" &&
+      document.application_without_full_trace_count !== 0
+    ) {
+      errors.push({
+        instancePath: "/application_without_full_trace_count",
+        keyword: "accounting_status",
+        message: "unknown full-trace use cannot claim an observed count",
+      });
+    }
+    errors.push(
+      ...adaptiveMoneyIssues(document.verification_cost, "/verification_cost"),
+      ...adaptiveMoneyIssues(document.review_cost, "/review_cost"),
+      ...adaptiveMoneyIssues(
+        document.total_accepted_change_cost,
+        "/total_accepted_change_cost",
+      ),
+    );
+  }
+
+  if (version === "villani.gate_d.v1") {
+    const arms = Array.isArray(document.arms)
+      ? document.arms.filter(isRecord)
+      : [];
+    arms.forEach((arm, index) => {
+      errors.push(
+        ...adaptiveMoneyIssues(arm.total_cost, `/arms/${index}/total_cost`),
+        ...adaptiveDurationIssues(
+          arm.elapsed_duration,
+          `/arms/${index}/elapsed_duration`,
+        ),
+      );
+      const known = ["complete", "partial"].includes(
+        String(arm.review_time_accounting_status),
+      );
+      if (known !== (arm.review_minutes !== null)) {
+        errors.push({
+          instancePath: `/arms/${index}/review_minutes`,
+          keyword: "accounting_status",
+          message: "review-time value must match its accounting status",
+        });
+      }
+    });
+    const statuses = Array.isArray(document.checks)
+      ? document.checks.filter(isRecord).map((check) => String(check.status))
+      : [];
+    if (
+      (document.status === "PASS" &&
+        statuses.some((status) => status !== "pass")) ||
+      (document.status === "FAIL" && !statuses.includes("fail")) ||
+      (document.status === "INSUFFICIENT_EVIDENCE" &&
+        !statuses.includes("insufficient_evidence")) ||
+      document.next_milestone_permitted !== (document.status === "PASS")
+    ) {
+      errors.push({
+        instancePath: "/status",
+        keyword: "gate_d_authority",
+        message:
+          "Gate D status and milestone permission must follow its checks",
       });
     }
   }

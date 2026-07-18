@@ -159,6 +159,84 @@
         "test": "pt5_conformance"
       },
       "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "successful_patch",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "no_patch",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "command_recovery",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "permission_request",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "rate_limit_retry",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "unsupported_version",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "schema_change",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "missing_final_result",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "partial_patch_on_crash",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "known_cost",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "non_ascii_spaced_paths",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "large_output",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
+    },
+    {
+      "check_id": "outside_isolation_mutation",
+      "status": "pass",
+      "evidence": {"test": "pt6_conformance"},
+      "reason": "Fixture conformance evidence."
     }
   ],
   "production_qualification_authorized": true

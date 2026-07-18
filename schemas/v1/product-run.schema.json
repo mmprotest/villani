@@ -42,6 +42,7 @@
     "recovery_action": { "anyOf": [{ "$ref": "#/$defs/recovery_action" }, { "type": "null" }] },
     "technical_detail_references": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
     "target_repository": { "$ref": "#/$defs/target_repository" },
+    "proof_package": { "anyOf": [{ "$ref": "#/$defs/proof_package" }, { "type": "null" }] },
     "last_event_sequence": { "type": "integer", "minimum": 1 },
     "updated_at": { "type": "string", "minLength": 1 }
   },
@@ -166,6 +167,17 @@
         "modified": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] },
         "accounting_status": { "enum": ["known", "unknown"] },
         "statement": { "type": "string", "minLength": 1 }
+      }
+    },
+    "proof_package": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "risk_tier", "why_villani_trusts_it", "unresolved_decision", "artifact"],
+      "properties": {
+        "status": { "enum": ["ready_to_apply", "needs_review"] },
+        "risk_tier": { "enum": ["standard", "elevated", "critical"] },
+        "why_villani_trusts_it": { "type": "string", "minLength": 1 },
+        "unresolved_decision": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "artifact": { "type": "string", "minLength": 1 }
       }
     }
   }

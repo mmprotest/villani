@@ -1,0 +1,108 @@
+{
+  "$id": "https://villani.dev/schemas/v1/qualification-invalidation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "detail": {
+      "minLength": 1,
+      "title": "Detail",
+      "type": "string"
+    },
+    "evidence_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Digest"
+    },
+    "evidence_reference": {
+      "minLength": 1,
+      "title": "Evidence Reference",
+      "type": "string"
+    },
+    "invalidation_id": {
+      "pattern": "^qinv_[0-9a-f]{64}$",
+      "title": "Invalidation Id",
+      "type": "string"
+    },
+    "reason": {
+      "enum": [
+        "explicit_disable",
+        "capability_loss",
+        "conformance_failure",
+        "environment_prohibited",
+        "version_incompatible",
+        "model_identity_change",
+        "provider_identity_change",
+        "execution_environment_change",
+        "verification_policy_change",
+        "repository_lineage_divergence",
+        "recent_reliability_breach",
+        "false_acceptance",
+        "operator_invalidation"
+      ],
+      "title": "Reason",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "repository_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repository Id"
+    },
+    "route_name": {
+      "minLength": 1,
+      "title": "Route Name",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.qualification_invalidation.v1",
+      "default": "villani.qualification_invalidation.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "warning",
+        "severe",
+        "unsupported"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "system_id": {
+      "pattern": "^asys_[0-9a-f]{64}$",
+      "title": "System Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "invalidation_id",
+    "recorded_at",
+    "system_id",
+    "route_name",
+    "reason",
+    "severity",
+    "evidence_reference",
+    "detail"
+  ],
+  "title": "QualificationInvalidation",
+  "type": "object"
+}

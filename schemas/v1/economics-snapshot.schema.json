@@ -1,0 +1,314 @@
+{
+  "$defs": {
+    "EconomicsProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_count_distribution": {
+          "$ref": "#/$defs/QualificationDistribution"
+        },
+        "cost_distributions": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "$ref": "#/$defs/QualificationDistribution"
+            },
+            "type": "object"
+          },
+          "title": "Cost Distributions",
+          "type": "object"
+        },
+        "cost_unknown_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Cost Unknown Counts",
+          "type": "object"
+        },
+        "duration_distribution": {
+          "$ref": "#/$defs/QualificationDistribution"
+        },
+        "escalation_count_distribution": {
+          "$ref": "#/$defs/QualificationDistribution"
+        },
+        "exclusions": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Exclusions",
+          "type": "object"
+        },
+        "failures": {
+          "minimum": 0,
+          "title": "Failures",
+          "type": "integer"
+        },
+        "false_acceptance_count": {
+          "minimum": 0,
+          "title": "False Acceptance Count",
+          "type": "integer"
+        },
+        "key": {
+          "$ref": "#/$defs/EconomicsProfileKey"
+        },
+        "last_evidence_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Evidence At"
+        },
+        "observation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Observation Ids",
+          "type": "array"
+        },
+        "review_minutes_distribution": {
+          "$ref": "#/$defs/QualificationDistribution"
+        },
+        "sample_count": {
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "source_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Digest",
+          "type": "string"
+        },
+        "successes": {
+          "minimum": 0,
+          "title": "Successes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "observation_ids",
+        "sample_count",
+        "successes",
+        "failures",
+        "exclusions",
+        "cost_distributions",
+        "cost_unknown_counts",
+        "duration_distribution",
+        "review_minutes_distribution",
+        "attempt_count_distribution",
+        "escalation_count_distribution",
+        "false_acceptance_count",
+        "last_evidence_at",
+        "source_digest"
+      ],
+      "title": "EconomicsProfile",
+      "type": "object"
+    },
+    "EconomicsProfileKey": {
+      "additionalProperties": false,
+      "properties": {
+        "repository_id": {
+          "title": "Repository Id",
+          "type": "string"
+        },
+        "route_name": {
+          "title": "Route Name",
+          "type": "string"
+        },
+        "system_id": {
+          "pattern": "^asys_[0-9a-f]{64}$",
+          "title": "System Id",
+          "type": "string"
+        },
+        "system_identity_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "System Identity Digest",
+          "type": "string"
+        },
+        "task_profile": {
+          "$ref": "#/$defs/QualificationTaskProfile"
+        }
+      },
+      "required": [
+        "repository_id",
+        "task_profile",
+        "system_id",
+        "system_identity_digest",
+        "route_name"
+      ],
+      "title": "EconomicsProfileKey",
+      "type": "object"
+    },
+    "QualificationDistribution": {
+      "additionalProperties": false,
+      "properties": {
+        "known_count": {
+          "minimum": 0,
+          "title": "Known Count",
+          "type": "integer"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "p90": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90"
+        },
+        "unit": {
+          "minLength": 1,
+          "title": "Unit",
+          "type": "string"
+        },
+        "unknown_count": {
+          "minimum": 0,
+          "title": "Unknown Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "known_count",
+        "unknown_count",
+        "unit"
+      ],
+      "title": "QualificationDistribution",
+      "type": "object"
+    },
+    "QualificationTaskProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "difficulty": {
+          "minLength": 1,
+          "title": "Difficulty",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "risk": {
+          "minLength": 1,
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "difficulty",
+        "risk"
+      ],
+      "title": "QualificationTaskProfile",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/economics-snapshot.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "exclusions": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Exclusions",
+      "type": "object"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "observation_count": {
+      "minimum": 0,
+      "title": "Observation Count",
+      "type": "integer"
+    },
+    "profiles": {
+      "items": {
+        "$ref": "#/$defs/EconomicsProfile"
+      },
+      "title": "Profiles",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "villani.economics_snapshot.v1",
+      "default": "villani.economics_snapshot.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "snapshot_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Snapshot Digest",
+      "type": "string"
+    },
+    "source_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Source Digest",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generated_at",
+    "source_digest",
+    "snapshot_digest",
+    "observation_count",
+    "profiles",
+    "exclusions"
+  ],
+  "title": "EconomicsSnapshot",
+  "type": "object"
+}

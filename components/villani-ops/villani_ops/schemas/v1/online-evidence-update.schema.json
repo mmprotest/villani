@@ -1,0 +1,85 @@
+{
+  "$id": "https://villani.dev/schemas/v1/online-evidence-update.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Auditable outcome of the future-only economics update projection.",
+  "properties": {
+    "automatic_policy_metrics_eligible": {
+      "title": "Automatic Policy Metrics Eligible",
+      "type": "boolean"
+    },
+    "economics_observation_id": {
+      "anyOf": [
+        {
+          "pattern": "^eobs_[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Economics Observation Id"
+    },
+    "profile_updated": {
+      "title": "Profile Updated",
+      "type": "boolean"
+    },
+    "qualification_observation_id": {
+      "anyOf": [
+        {
+          "pattern": "^qobs_[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Qualification Observation Id"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.online_evidence_update.v1",
+      "default": "villani.online_evidence_update.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "skipped",
+        "recorded",
+        "excluded",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "recorded_at",
+    "status",
+    "profile_updated",
+    "automatic_policy_metrics_eligible",
+    "reasons"
+  ],
+  "title": "OnlineEvidenceUpdateReport",
+  "type": "object"
+}

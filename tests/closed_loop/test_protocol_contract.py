@@ -45,6 +45,23 @@ def test_shared_protocol_bundle_validates_from_repository_root() -> None:
         VALID_RUN / "attempts" / "attempt_001" / "harness-result.json",
         VALID_RUN / "attempts" / "attempt_002" / "harness-result.json",
         VALID_RUN / "harness-conformance.json",
+        VALID_RUN / "qualification-observation.json",
+        VALID_RUN / "qualification-invalidation.json",
+        VALID_RUN / "qualification-snapshot.json",
+        VALID_RUN / "gate-c.json",
+        VALID_RUN / "economics-observation.json",
+        VALID_RUN / "economics-snapshot.json",
+        VALID_RUN / "online-evidence-update.json",
+        VALID_RUN / "route-plan.json",
+        VALID_RUN / "route-policy.json",
+        VALID_RUN / "route-policy-evaluation.json",
+        VALID_RUN / "route-policy-publication.json",
+        VALID_RUN / "adaptive-verification-plan.json",
+        VALID_RUN / "binary-verification-decision.json",
+        VALID_RUN / "review-package.json",
+        VALID_RUN / "human-outcome.json",
+        VALID_RUN / "supervision-metrics.json",
+        VALID_RUN / "gate-d.json",
     )
     for snapshot in snapshots:
         validate_protocol_document(_load_json(snapshot))
@@ -57,7 +74,7 @@ def test_shared_protocol_bundle_validates_from_repository_root() -> None:
 def test_shared_invalid_json_documents_fail_from_repository_root() -> None:
     invalid_root = FIXTURE_ROOT / "invalid"
     invalid_documents = sorted(invalid_root.glob("*.json"))
-    assert len(invalid_documents) == 8
+    assert len(invalid_documents) == 14
     for invalid_document in invalid_documents:
         with pytest.raises(ProtocolValidationError):
             validate_protocol_document(_load_json(invalid_document))

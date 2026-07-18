@@ -38,6 +38,14 @@ def test_valid_legacy_bundle_projects_one_shared_ready_verdict() -> None:
     assert product.cost.accounting_status == "complete"
     assert product.duration.value_ms is None
     assert product.duration.accounting_status == "unknown"
+    assert product.proof_package is not None
+    assert product.proof_package.status == "ready_to_apply"
+    assert product.proof_package.risk_tier == "standard"
+    assert product.proof_package.why_villani_trusts_it
+    assert any(
+        item.artifact == "verification/attempt_002-review-package.json"
+        for item in product.evidence_links
+    )
     assert not {
         "apply_change",
         "create_branch",
@@ -93,6 +101,13 @@ def test_contract_rejects_delivery_action_for_unproved_verdict() -> None:
         }
     ]
     with pytest.raises(ValidationError):
+        ProductRun.model_validate(value)
+
+
+def test_contract_rejects_ready_proof_for_unproved_verdict() -> None:
+    value = build_product_run(VALID_RUN).model_dump(mode="json")
+    value["final_verdict"] = "Could not prove"
+    with pytest.raises(ValidationError, match="ready proof"):
         ProductRun.model_validate(value)
 
 

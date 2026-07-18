@@ -58,6 +58,24 @@ VALID_SNAPSHOT_PATHS = (
     VALID_RUN / "attempts" / "attempt_001" / "harness-result.json",
     VALID_RUN / "attempts" / "attempt_002" / "harness-result.json",
     VALID_RUN / "harness-conformance.json",
+    VALID_RUN / "harness-discovery.json",
+    VALID_RUN / "qualification-observation.json",
+    VALID_RUN / "qualification-invalidation.json",
+    VALID_RUN / "qualification-snapshot.json",
+    VALID_RUN / "gate-c.json",
+    VALID_RUN / "economics-observation.json",
+    VALID_RUN / "economics-snapshot.json",
+    VALID_RUN / "online-evidence-update.json",
+    VALID_RUN / "route-plan.json",
+    VALID_RUN / "route-policy.json",
+    VALID_RUN / "route-policy-evaluation.json",
+    VALID_RUN / "route-policy-publication.json",
+    VALID_RUN / "adaptive-verification-plan.json",
+    VALID_RUN / "binary-verification-decision.json",
+    VALID_RUN / "review-package.json",
+    VALID_RUN / "human-outcome.json",
+    VALID_RUN / "supervision-metrics.json",
+    VALID_RUN / "gate-d.json",
 )
 
 
@@ -68,8 +86,8 @@ def _load_json(path: Path) -> dict[str, object]:
 
 
 def test_all_versioned_root_schemas_are_valid_and_mapped() -> None:
-    assert len(SCHEMA_VERSION_TO_PATH) == 21
-    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 21
+    assert len(SCHEMA_VERSION_TO_PATH) == 39
+    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 39
     for schema_path in SCHEMA_VERSION_TO_PATH.values():
         assert schema_path.is_file()
         schema = _load_json(schema_path)
@@ -142,6 +160,12 @@ def test_complete_valid_bundle_uses_every_protocol_version() -> None:
         ("manifest_cost_missing_but_status_complete.json", "accounting_status"),
         ("state_terminal_false_for_completed.json", "terminal_state"),
         ("unknown_top_level_property.json", "additionalProperties"),
+        ("qualification_unknown_cost_as_zero.json", "accounting_status"),
+        ("economics_unknown_cost_as_zero.json", "accounting_status"),
+        ("binary_unclear_marked_accepted.json", "semantic_contract"),
+        ("human_outcome_unknown_review_time_as_number.json", "semantic_contract"),
+        ("human_outcome_unknown_full_trace_as_boolean.json", "semantic_contract"),
+        ("supervision_unknown_trace_claims_application.json", "semantic_contract"),
     ],
 )
 def test_invalid_shared_fixture_is_rejected_for_intended_rule(

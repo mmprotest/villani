@@ -1,6 +1,7 @@
 export const AGENT_SYSTEM_SCHEMA_VERSION = "villani.agent_system.v1";
 export const HARNESS_RESULT_SCHEMA_VERSION = "villani.harness_result.v1";
 export const HARNESS_CONFORMANCE_SCHEMA_VERSION = "villani.harness_conformance_report.v1";
+export const HARNESS_DISCOVERY_SCHEMA_VERSION = "villani.harness_discovery.v1";
 export const REQUIRED_HARNESS_CONFORMANCE_CHECKS = [
     "manifest",
     "protocol_negotiation",
@@ -21,4 +22,17 @@ export const REQUIRED_HARNESS_CONFORMANCE_CHECKS = [
     "secret_redaction",
     "unknown_cost",
     "cross_platform_paths",
+    "successful_patch",
+    "no_patch",
+    "command_recovery",
+    "permission_request",
+    "rate_limit_retry",
+    "unsupported_version",
+    "schema_change",
+    "missing_final_result",
+    "partial_patch_on_crash",
+    "known_cost",
+    "non_ascii_spaced_paths",
+    "large_output",
+    "outside_isolation_mutation",
 ];

@@ -1,0 +1,126 @@
+{
+  "automatic_policy_metrics_eligible": true,
+  "constraints": {
+    "allow_experimental_forced": false,
+    "allowed_permission_profiles": [],
+    "allowed_providers": [],
+    "excluded_systems": [],
+    "forced_system": null,
+    "local_only": false,
+    "maximum_known_cost_usd": null,
+    "prefer_local": false,
+    "preferred_provider": null,
+    "strongest_only": false
+  },
+  "evidence_cutoff": "2026-07-18T03:00:00Z",
+  "explanation": "Villani chose the route most likely to produce a proven change at the lowest total cost.",
+  "forced_choice": false,
+  "input_digest": "sha256:ede360488f7de5f7695216cfc842322f7085518b94f3ede9bcbc04edaa32b85b",
+  "ordered_fallbacks": [],
+  "plan_id": "rplan_cf664487fc275ba350c7d0f4e89453e80733704331462ed080c6361a93106d14",
+  "policy_digest": "sha256:cde6d6caa56b7a815601026d0fb33655a7355358d65ca50d75e345fbb4cbfad3",
+  "policy_version": "accepted-change-fixture-v1",
+  "repository_head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "repository_id": "repo_fixture_pt8",
+  "reserves": {
+    "final_validation": "preserved",
+    "verification": "preserved"
+  },
+  "run_id": "run_fixture_pt8",
+  "schema_version": "villani.route_plan.v1",
+  "selected_first_system": "fixture_economy",
+  "selection_mode": "accepted_change_optimizer",
+  "sequence_economics": {
+    "accounting_status": "complete",
+    "conservative_success_probability": 0.84,
+    "currency": "USD",
+    "expected_accepted_change_cost": 1.7857142857142858,
+    "expected_cost_before_acceptance": 1.5,
+    "expected_duration_ms": 1200.0,
+    "systems": [
+      "fixture_economy"
+    ],
+    "unknowns": []
+  },
+  "systems_considered": [
+    {
+      "availability": "available",
+      "backend_name": "fixture_economy",
+      "capability_score": 0.9,
+      "conservative_acceptance_probability": 0.84,
+      "eligible": true,
+      "harness": "villani-code",
+      "local": true,
+      "model": "fixture-small",
+      "objective": {
+        "accounting_status": "complete",
+        "conservative_acceptance_probability": 0.84,
+        "currency": "USD",
+        "execution_cost": {
+          "accounting_status": "complete",
+          "amount": 1.25,
+          "currency": "USD",
+          "sample_count": 1,
+          "source": "pt8_protocol_fixture"
+        },
+        "expected_accepted_change_cost": 1.7857142857142858,
+        "expected_duration": {
+          "accounting_status": "complete",
+          "duration_ms": 1200.0,
+          "sample_count": 1,
+          "source": "pt8_protocol_fixture"
+        },
+        "human_review_cost": {
+          "accounting_status": "not_applicable",
+          "amount": null,
+          "currency": null,
+          "sample_count": 0,
+          "source": "pt8_protocol_fixture"
+        },
+        "known_numerator_cost": 1.5,
+        "latency_penalty": {
+          "accounting_status": "not_applicable",
+          "amount": null,
+          "currency": null,
+          "sample_count": 0,
+          "source": "pt8_protocol_fixture"
+        },
+        "objective_version": "total_accepted_change_v1",
+        "partial_expected_known_cost": null,
+        "probability_source": "repository_qualification_wilson_lower_bound",
+        "retry_escalation_cost": {
+          "accounting_status": "not_applicable",
+          "amount": null,
+          "currency": null,
+          "sample_count": 0,
+          "source": "pt8_protocol_fixture"
+        },
+        "unknown_components": [],
+        "verification_cost": {
+          "accounting_status": "complete",
+          "amount": 0.25,
+          "currency": "USD",
+          "sample_count": 1,
+          "source": "pt8_protocol_fixture"
+        }
+      },
+      "permission_profile": "workspace-write",
+      "provider": "local",
+      "qualification_level": "exact_repository_task",
+      "qualification_sample_count": 20,
+      "qualification_state": "qualified",
+      "rejection_reasons": [],
+      "route_name": "fixture_economy",
+      "system_id": "asys_4444444444444444444444444444444444444444444444444444444444444444",
+      "task_probability_threshold": 0.6,
+      "unknowns": []
+    }
+  ],
+  "task_profile": {
+    "category": "maintenance",
+    "difficulty": "easy",
+    "required_capabilities": [],
+    "risk": "low"
+  },
+  "unknowns": []
+}

@@ -1,0 +1,117 @@
+{
+  "exclusions": {},
+  "generated_at": "2026-07-18T02:00:00Z",
+  "invalidation_count": 1,
+  "migrations": [
+    {
+      "exclusion_reason": null,
+      "migration_id": "legacy_capability_snapshot_v1",
+      "qualification_created": false,
+      "source": "capabilities/profiles-v1.json",
+      "source_digest": null,
+      "status": "not_present"
+    }
+  ],
+  "observation_count": 1,
+  "policy": {
+    "approved_backoff_levels": [
+      "exact_repository_task",
+      "repository_category",
+      "repository_wide"
+    ],
+    "approved_repository_cohorts": [],
+    "compatible_repository_cohorts": {},
+    "maximum_evidence_age_days": 180,
+    "minimum_qualified_observations": 20,
+    "policy_version": "repository_qualification_v1",
+    "provisional_maximum_observations": 19,
+    "recent_reliability_window": 5,
+    "task_wilson_thresholds": {
+      "high": 0.8,
+      "low": 0.6,
+      "medium": 0.7
+    },
+    "wilson_z": 1.959963984540054
+  },
+  "profiles": [
+    {
+      "key": {
+        "execution_environment_fingerprint": "pt7-environment-v1",
+        "repository_id": "repo_fixture_pt7",
+        "system_identity_digest": "sha256:3e139a08eb2e73ca86178f93a4300467039257e4297af6891598c9ebe0a30461",
+        "task_profile": {
+          "category": "maintenance",
+          "difficulty": "easy",
+          "required_capabilities": [],
+          "risk": "low"
+        },
+        "verification_policy_version": "controller_acceptance_evidence_v1"
+      },
+      "observation_ids": [
+        "qobs_73f772954c0c15af3229980152d0e158d0e07e07180637adea272c285daca791"
+      ],
+      "source_digest": "sha256:e1d01a1c30ed440f36fb20c04be82b84b3380f585142ce8abc2ee28bfda955b4",
+      "statistics": {
+        "acceptance_rate": 1,
+        "accepted_as_is_count": 1,
+        "accepted_change_cost_by_currency": {},
+        "accepted_change_cost_unknown_count": 1,
+        "cost_distribution_by_currency": {},
+        "cost_unknown_count": 1,
+        "drift_flags": [],
+        "duration_distribution": {
+          "known_count": 1,
+          "maximum": 1001,
+          "median": 1001,
+          "minimum": 1001,
+          "p90": 1001,
+          "unit": "ms",
+          "unknown_count": 0
+        },
+        "exclusions": {},
+        "failures": 0,
+        "false_acceptance_count": 0,
+        "false_case_ids": [],
+        "false_rejection_count": 0,
+        "last_evidence_at": "2026-07-18T02:00:01Z",
+        "proved_acceptable_count": 1,
+        "review_minutes_distribution": {
+          "known_count": 1,
+          "maximum": 2.5,
+          "median": 2.5,
+          "minimum": 2.5,
+          "p90": 2.5,
+          "unit": "minutes",
+          "unknown_count": 0
+        },
+        "sample_count": 1,
+        "software_version_diversity": {
+          "adapter": [
+            "1.0.0"
+          ],
+          "execution_provider": [
+            "inherit"
+          ],
+          "harness": [
+            "1.0.0"
+          ],
+          "model": [
+            "fixture-revision-1"
+          ],
+          "protocol": [
+            "villani.harness_adapter.v1"
+          ],
+          "verification_policy": [
+            "controller_acceptance_evidence_v1"
+          ]
+        },
+        "successes": 1,
+        "wilson_lower_bound": 0.20654931437723742
+      }
+    }
+  ],
+  "schema_version": "villani.qualification_snapshot.v1",
+  "snapshot_digest": "sha256:1ac8963c1ec8d3723868b5805acfcf0b820cc8170f9bf70f13c70fab7c79b251",
+  "source_digest": "sha256:ec63d8fc9a9c194a2abe287a717ec0b29c58e1ec9446c3d74a43f0eda7fe576c",
+  "superseded_observation_count": 0
+}

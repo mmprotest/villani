@@ -1,0 +1,469 @@
+{
+  "schema_version": "villani.milestone_completion_report.v1",
+  "milestone": "PT8",
+  "title": "Optimize Total Cost per Accepted Change",
+  "assessment_date": "2026-07-18",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "implementation_status": "complete",
+  "acceptance_status": "not_proven",
+  "status_reason": "The accepted-change economics implementation, deterministic route planning, sequential controller integration, online evidence update, policy replay/publication/rollback, contracts, CLI, Agents presentation, and deterministic validation are complete. PT8 cannot be reported COMPLETE because the frozen founder input contains zero eligible historical cases and Gate C remains INSUFFICIENT_EVIDENCE; conservative reliability and false-acceptance exposure therefore cannot be proven for a production policy publication.",
+  "gate_c": {
+    "status": "INSUFFICIENT_EVIDENCE",
+    "artifact": "docs/PT8_GATE_C.json",
+    "qualification_artifact": "docs/PT7_GATE_C.json",
+    "command_exit_code": 1,
+    "repository_id": "repo_e363cfcb2ce38f2e059c",
+    "repository_head": "7ba4cd9bda42df126336829db4f168606a8e6ccd",
+    "reason": "The isolated PT8 Gate C run had no configured scorecards, while the durable PT7 Gate C scorecards show zero eligible Villani Code, Codex, and Claude Code observations. Neither artifact can support qualification or policy activation.",
+    "ranking": "not_performed"
+  },
+  "policy_evaluation": {
+    "artifact": "docs/PT8_POLICY_EVALUATION.json",
+    "frozen_input": "docs/PT8_FROZEN_POLICY_REPLAY_INPUT.json",
+    "frozen_case_count": 0,
+    "strategies": [
+      "strongest_only",
+      "cheapest_qualified",
+      "accepted_change_optimizer",
+      "forced"
+    ],
+    "unknown_input_rate": 1.0,
+    "safe_to_publish": false,
+    "publication_attempt": "refused_fail_closed",
+    "reason": "There are no point-in-time founder cases, so conservative reliability, false-acceptance exposure, cost, time, review, escalation, and regret cannot be compared without fabrication."
+  },
+  "files": {
+    "added": [
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-CfriGpez.js",
+      "components/villani-ops/villani_ops/closed_loop/economics/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/economics/evaluation.py",
+      "components/villani-ops/villani_ops/closed_loop/economics/models.py",
+      "components/villani-ops/villani_ops/closed_loop/economics/online.py",
+      "components/villani-ops/villani_ops/closed_loop/economics/planner.py",
+      "components/villani-ops/villani_ops/closed_loop/economics/publication.py",
+      "components/villani-ops/villani_ops/closed_loop/economics/runtime_update.py",
+      "components/villani-ops/villani_ops/closed_loop/economics/store.py",
+      "components/villani-ops/villani_ops/schemas/v1/economics-observation.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/economics-snapshot.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/online-evidence-update.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/route-plan.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/route-policy-evaluation.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/route-policy-publication.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/route-policy.schema.json",
+      "components/villani-ops/villani_ops/tests/test_pt8_accepted_change_economics.py",
+      "components/villani-run-model/dist/economics.d.ts",
+      "components/villani-run-model/dist/economics.js",
+      "components/villani-run-model/src/economics.ts",
+      "components/villani-run-model/test/economics.test.ts",
+      "components/villani-web/dist/assets/index-CfriGpez.js",
+      "docs/ACCEPTED_CHANGE_ROUTING.md",
+      "docs/PT8_COMPLETION_REPORT.json",
+      "docs/PT8_COMPLETION_REPORT.md",
+      "docs/PT8_FROZEN_POLICY_REPLAY_INPUT.json",
+      "docs/PT8_GATE_C.json",
+      "docs/PT8_POLICY_EVALUATION.json",
+      "integration/fixtures/protocol/v1/invalid/economics_unknown_cost_as_zero.json",
+      "integration/fixtures/protocol/v1/valid_run/economics-observation.json",
+      "integration/fixtures/protocol/v1/valid_run/economics-snapshot.json",
+      "integration/fixtures/protocol/v1/valid_run/online-evidence-update.json",
+      "integration/fixtures/protocol/v1/valid_run/route-plan.json",
+      "integration/fixtures/protocol/v1/valid_run/route-policy-evaluation.json",
+      "integration/fixtures/protocol/v1/valid_run/route-policy-publication.json",
+      "integration/fixtures/protocol/v1/valid_run/route-policy.json",
+      "schemas/v1/economics-observation.schema.json",
+      "schemas/v1/economics-snapshot.schema.json",
+      "schemas/v1/online-evidence-update.schema.json",
+      "schemas/v1/route-plan.schema.json",
+      "schemas/v1/route-policy-evaluation.schema.json",
+      "schemas/v1/route-policy-publication.schema.json",
+      "schemas/v1/route-policy.schema.json",
+      "scripts/generate-pt8-fixtures.py"
+    ],
+    "changed": [
+      "PLANS.md",
+      "components/villani-agentd/villani_agentd/console.py",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "components/villani-ops/README.md",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/controller.py",
+      "components/villani-ops/villani_ops/closed_loop/model_management.py",
+      "components/villani-ops/villani_ops/closed_loop/policy.py",
+      "components/villani-ops/villani_ops/closed_loop/policy_presets.py",
+      "components/villani-ops/villani_ops/closed_loop/policy_preview.py",
+      "components/villani-ops/villani_ops/closed_loop/protocol.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/models.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/schemas/v1/run-manifest.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_controller.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-ops/villani_ops/tests/test_unified_cli.py",
+      "components/villani-run-model/dist/index.d.ts",
+      "components/villani-run-model/dist/index.js",
+      "components/villani-run-model/dist/qualification.d.ts",
+      "components/villani-run-model/dist/qualification.js",
+      "components/villani-run-model/src/index.ts",
+      "components/villani-run-model/src/qualification.ts",
+      "components/villani-web/dist/index.html",
+      "components/villani-web/src/ProductPages.tsx",
+      "components/villani-web/src/consoleApi.ts",
+      "components/villani-web/test/console.test.tsx",
+      "docs/AGENT_SYSTEMS.md",
+      "schemas/v1/run-manifest.schema.json",
+      "scripts/generate-harness-schemas.py",
+      "tests/closed_loop/test_protocol_contract.py"
+    ],
+    "deleted": [
+      "components/villani-web/dist/assets/index-Db_ajSzJ.js",
+      "components/villani-web/dist/assets/index-BDVFjkQh.js"
+    ],
+    "migrated": [
+      "Newly initialized configuration receives the additive villani.accepted_change_economics_configuration.v1 block and accepted_change_economics_v1 policy. Existing configuration without that block remains readable and does not gain online-update side effects.",
+      "Run manifests gained optional route_plans and economics_update artifact pointers; older bundles remain valid and readable.",
+      "Qualification source_kind gained canonical_run so only validated finalized run projections can enter future evidence.",
+      "Seven additive normative/packaged v1 contracts and eight generated protocol fixtures were added; no existing contract version was replaced.",
+      "The Web production bundle and synchronized Agentd console assets were refreshed from one verified build."
+    ],
+    "scope_note": "The worktree also contains the immediately preceding user-authorized PT6 and PT7 changes documented in their completion reports. This list identifies PT8 additions and PT8-touched shared files; those earlier changes were preserved."
+  },
+  "architecture_and_product_decisions": [
+    "Classification remains before route planning. The controller builds a content-addressed route plan only from task assessment, repository identity, pre-run qualification/economics evidence, availability, budgets, privacy, provider, permission, and environment constraints.",
+    "The objective is (execution + verification + expected human review + retry/escalation + latency penalty) divided by conservative acceptance probability. Complete totals are compared only when all required inputs are authoritative and currency-compatible; otherwise the plan records a partial objective and its unknowns.",
+    "Acceptance probability uses conservative repository/task qualification evidence. Qualified systems are the automatic candidate set; the strongest eligible provisional route is an explicit sparse fallback; experimental systems are never automatic.",
+    "When comparable complete objectives exist, the optimizer chooses the lowest conservative accepted-change economics. Sparse evidence falls back to strongest qualified evidence rather than treating missing inputs as zero.",
+    "Local-only, Local first, provider allow/preference, exclusion, permission, maximum known cost, forced system, and strongest-only controls are explicit route constraints. The route picker stays hidden by default, and forced choices are labeled and excluded from automatic-policy quality metrics.",
+    "Sequential behavior reuses the deterministic controller: same-system retry requires credible progress plus an actionable correction; capability failure or lack of credible progress escalates to a qualified stronger fallback; verification and final-validation reserves remain protected. PT8 adds no arbitrary retry loop.",
+    "Every decision persists a versioned route-plan artifact with systems considered, state, probability, component costs/duration, unknowns, rejections, first route, fallbacks, sequence economics, reserves, policy/input digests, and explanation.",
+    "After finalization, an explicitly enabled projector appends only eligible authoritative canonical-run outcomes to qualification and economics stores. Updates are future-only; infrastructure-excluded or unverified outcomes are recorded as exclusions/skips, forced metrics are excluded, and false acceptance appends an immediate qualification invalidation.",
+    "Policy evaluation replays frozen cases point-in-time, emits four strategy scorecards, and refuses publication unless conservative reliability is non-decreasing and false-acceptance exposure is non-increasing. Publications are immutable and the active pointer supports deterministic rollback. No LLM can publish controller policy.",
+    "Semantic verification remains blind to harness identity, route, cost, qualification, and competitors. Economics affects pre-execution routing and post-finalization evidence only."
+  ],
+  "public_contracts": {
+    "schemas": [
+      "villani.economics_observation.v1",
+      "villani.economics_snapshot.v1",
+      "villani.online_evidence_update.v1",
+      "villani.route_plan.v1",
+      "villani.route_policy.v1",
+      "villani.route_policy_evaluation.v1",
+      "villani.route_policy_publication.v1"
+    ],
+    "python_models": "components/villani-ops/villani_ops/closed_loop/economics/models.py",
+    "typescript_models": "components/villani-run-model/src/economics.ts",
+    "backward_compatibility": "All PT8 configuration, bundle fields, and documents are additive. Unknown money/time/review remains null with explicit accounting; no numeric-zero migration is performed."
+  },
+  "tests_added": {
+    "python": {
+      "primary_file": "components/villani-ops/villani_ops/tests/test_pt8_accepted_change_economics.py",
+      "tests": 16,
+      "controller_integration_tests": 2,
+      "coverage": [
+        "full and partial objective accounting plus conservative probability",
+        "determinism, sparse fallback, qualified/provisional/experimental eligibility, and no task-name leakage",
+        "privacy, provider, cost, permission, local-first, forced, strongest-only, reserves, and fallback ordering",
+        "credible retry and capability/no-progress escalation through existing controller regression coverage",
+        "future-only online update, infrastructure exclusion, forced metric exclusion, and false-acceptance quarantine",
+        "point-in-time replay, four scorecards, safe publication, refusal, active status, and rollback",
+        "legacy configuration/bundle migration without new side effects",
+        "read-only explain and economics CLI lifecycle",
+        "route-plan and economics-update manifest artifacts"
+      ]
+    },
+    "typescript": {
+      "file": "components/villani-run-model/test/economics.test.ts",
+      "tests": 3,
+      "coverage": [
+        "stable policy/wire versions",
+        "partial objective versus complete total",
+        "forced-policy metric exclusion and online-update contract"
+      ]
+    },
+    "updated_integration_coverage": [
+      "Web Agents tests show repository-specific conservative probability, exact-profile economics, partial component costs, and Unknown instead of zero.",
+      "Flight Recorder and Ops protocol suites validate all seven PT8 documents and reject fabricated zero unknown cost.",
+      "Controller tests prove immutable route-plan and validated online-update artifacts are referenced by the canonical manifest."
+    ]
+  },
+  "validation_commands": [
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path ..\\..\\.test-temp).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt8_accepted_change_economics.py",
+      "result": "Development passes progressed from 13 to 14 tests as CLI coverage was added; the final post-format result is 16 passed in 1.30s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path ..\\..\\.test-temp).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\closed_loop\\test_controller.py::test_controller_persists_versioned_route_plan_and_manifest_pointer villani_ops\\tests\\closed_loop\\test_controller.py::test_controller_records_validated_future_only_update_receipt",
+      "result": "2 passed in 1.66s. Earlier focused runs exposed and remediated a dataclass model_copy misuse and non-JSON Pydantic serialization.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path ..\\..\\.test-temp).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\closed_loop\\test_protocol.py",
+      "result": "19 passed in 1.37s. A preliminary invalid-fixture assertion was made explicit as accounting_status validation.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path .test-temp).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q",
+      "result": "1260 passed, 2 skipped, 116 deselected in 354.57s (0:05:54). An earlier full run had 1257 passed and 3 failures; all three were remediated (legacy empirical provenance, hidden advanced controls, and zero-evidence fail-closed preview). An intermediate rerun passed 1260/2/116 but overlapped formatting and was not counted as final.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-code",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q",
+      "result": "686 passed, 1 skipped, 27 warnings in 135.38s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-agentd",
+      "command": "$env:TEMP=(Resolve-Path ..\\..\\.test-temp).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q",
+      "result": "86 passed in 18.52s. A prior invocation referenced a nonexistent component-local .test-temp, fell back to restricted system temp, and errored before tests; the corrected writable root passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "$env:TEMP=(Resolve-Path .test-temp).Path; $env:TMP=$env:TEMP; & .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q",
+      "result": "11 passed, 2 warnings in 61.73s. Warnings were Starlette httpx deprecation and an inaccessible pytest cache path; tests passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm test",
+      "result": "5 files and 15 tests passed; Vitest duration 868ms.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm run typecheck",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm run build",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm test",
+      "result": "21 files and 114 tests passed in 6.87s; the command also built TypeScript.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run typecheck; npm run build; npm run format:check",
+      "result": "All three final commands passed. The first format check identified 3 files; Prettier was applied and the final check reports all files matched.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm test",
+      "result": "The sandboxed invocation failed because esbuild could not read an ancestor directory; the approved rerun passed 4 files and 25 tests in 2.26s.",
+      "status": "environment_retry_passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run build",
+      "result": "Approved rerun passed: typecheck, model build, 59 modules transformed, index-CfriGpez.js and index-D0m9i5XQ.css emitted in 492ms.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run typecheck; npm run format:check",
+      "result": "Both final commands passed. The first format check identified 3 files; Prettier was applied before the passing final check.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\sync-console-assets.py --check",
+      "result": "Console assets verified: 3 files.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m ruff check villani_ops\\closed_loop\\economics villani_ops\\closed_loop\\policy.py villani_ops\\closed_loop\\policy_preview.py villani_ops\\closed_loop\\policy_presets.py villani_ops\\closed_loop\\controller.py villani_ops\\closed_loop\\model_management.py villani_ops\\closed_loop\\schema_validation.py villani_ops\\cli\\unified.py villani_ops\\tests\\test_pt8_accepted_change_economics.py",
+      "result": "Initial run found 5 unused imports plus one incorrect test path; after remediation the final result is All checks passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m ruff format --check villani_ops\\closed_loop\\economics villani_ops\\closed_loop\\policy.py villani_ops\\closed_loop\\policy_preview.py villani_ops\\closed_loop\\policy_presets.py villani_ops\\closed_loop\\controller.py villani_ops\\closed_loop\\model_management.py villani_ops\\closed_loop\\schema_validation.py villani_ops\\cli\\unified.py villani_ops\\tests\\test_pt8_accepted_change_economics.py",
+      "result": "Initial result listed 16 files; Ruff formatting was applied. Final result: 16 files already formatted.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m mypy --follow-imports=skip villani_ops\\closed_loop\\economics",
+      "result": "An unrestricted preliminary command reported 267 transitive repository findings and the first isolated run found 4 PT8 typing findings. After remediation: Success: no issues found in 8 source files.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& C:\\Users\\Simon\\AppData\\Local\\Programs\\Python\\Python311\\python.exe -m compileall -q components\\villani-ops\\villani_ops\\closed_loop\\economics components\\villani-ops\\villani_ops\\closed_loop\\policy.py components\\villani-ops\\villani_ops\\closed_loop\\policy_preview.py components\\villani-ops\\villani_ops\\closed_loop\\policy_presets.py components\\villani-ops\\villani_ops\\closed_loop\\controller.py components\\villani-ops\\villani_ops\\closed_loop\\model_management.py components\\villani-ops\\villani_ops\\closed_loop\\schema_validation.py components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-agentd\\villani_agentd\\console.py",
+      "result": "Passed with exit code 0 under Python 3.11.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\generate-harness-schemas.py plus SHA256 before/after and normative/packaged comparison for the seven PT8 names",
+      "result": "PT8 schema generation passed: 7/7 idempotent and byte-identical pairs.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\generate-pt8-fixtures.py plus SHA256 before/after for the eight PT8 fixtures",
+      "result": "PT8 fixture generation passed: 8/8 idempotent fixtures.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\check-secrets.py <16 PT8 source, schema, fixture, UI, and documentation roots>",
+      "result": "Secret scan passed: 16 roots, 0 findings.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -c \"validate PT8_GATE_C.json and PT8_POLICY_EVALUATION.json with validate_protocol_document plus GateCReport/RoutePolicyEvaluation\"",
+      "result": "PT8 Gate C and policy evaluation schema/model validation passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:VILLANI_HOME=<isolated>; & ..\\..\\.venv\\Scripts\\python.exe -m villani_ops.cli.unified policy economics-evaluate --cases ..\\..\\docs\\PT8_FROZEN_POLICY_REPLAY_INPUT.json --proposed-policy ..\\..\\integration\\fixtures\\protocol\\v1\\valid_run\\route-policy.json --output ..\\..\\.test-temp\\pt8-policy-evaluation-final.json --json",
+      "result": "Exited 0; emitted all four scorecards with frozen_case_count=0, unknown_input_rate=1.0, safe_to_publish=false, and three explicit rejection reasons.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:VILLANI_HOME=<isolated>; & ..\\..\\.venv\\Scripts\\python.exe -m villani_ops.cli.unified policy economics-publish --policy <fixture> --evaluation <empty-replay-evaluation> --json",
+      "result": "Exited 1 as designed: route-policy publication refused by point-in-time safety evaluation.",
+      "status": "expected_fail_closed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:VILLANI_HOME=<isolated>; & ..\\..\\.venv\\Scripts\\python.exe -m villani_ops.cli.unified agents gate-c --repo ..\\.. --category maintenance --difficulty easy --risk low --output ..\\..\\.test-temp\\pt8-gate-final.json",
+      "result": "Exited 1 with Gate C: INSUFFICIENT_EVIDENCE.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:VILLANI_REAL_HARNESS_TESTS=$null; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt6_structured_harnesses.py -m e2e -rs",
+      "result": "2 skipped, 29 deselected in 0.78s; exact reason: VILLANI_REAL_HARNESS_TESTS is not set to 1. No paid execution occurred.",
+      "status": "skipped"
+    },
+    {
+      "cwd": ".",
+      "command": "in-app browser setup and browser inventory",
+      "result": "The in-app browser inventory was empty ([]). The required browser workflow prohibited substituting an unrelated browser, so no screenshot was captured.",
+      "status": "skipped"
+    },
+    {
+      "cwd": ".",
+      "command": "Get-NetTCPConnection/Get-CimInstance verification; Stop-Process -Id 49692 -Force; listener verification",
+      "result": "Verified PID 49692 was the PT8 Vite server, terminated it, and confirmed no listener remained on 127.0.0.1:4173.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "git diff --check",
+      "result": "Final post-report check passed with exit code 0; Git emitted only line-ending conversion warnings.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "ConvertFrom-Json plus milestone/status/PT9 invariants for docs\\PT8_COMPLETION_REPORT.json",
+      "result": "PT8 completion report parse/invariants passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "Validate every added/changed path exists and every deleted path is absent from docs\\PT8_COMPLETION_REPORT.json",
+      "result": "PT8 report inventory validation passed: 44 added, 36 changed, 2 deleted paths.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\check-secrets.py docs\\PT8_COMPLETION_REPORT.json docs\\PT8_COMPLETION_REPORT.md docs\\PT8_GATE_C.json docs\\PT8_POLICY_EVALUATION.json docs\\PT8_FROZEN_POLICY_REPLAY_INPUT.json",
+      "result": "Secret scan passed: 5 roots, 0 findings.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "Test-Path for the 6 exact disposable PT8 validation paths after verified removal",
+      "result": "PT8 cleanup passed: 6/6 disposable paths absent.",
+      "status": "passed"
+    }
+  ],
+  "end_to_end_artifacts_and_screenshots": {
+    "artifacts": [
+      "docs/PT8_FROZEN_POLICY_REPLAY_INPUT.json",
+      "docs/PT8_POLICY_EVALUATION.json",
+      "docs/PT8_GATE_C.json",
+      "integration/fixtures/protocol/v1/valid_run/route-plan.json",
+      "integration/fixtures/protocol/v1/valid_run/online-evidence-update.json",
+      "components/villani-web/dist/assets/index-CfriGpez.js",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json"
+    ],
+    "screenshots": [],
+    "screenshot_reason": "The in-app browser reported no available browser instance (inventory=[]). UI evidence is therefore 25 passing Web tests, typecheck, the 59-module production build, format check, and synchronized console-asset parity; no unrelated browser mechanism was substituted."
+  },
+  "known_failures_and_skips": [
+    "Gate C is INSUFFICIENT_EVIDENCE. The durable three-system qualification scorecards contain zero eligible founder observations, and the isolated PT8 Gate run has no configured scorecards.",
+    "The frozen PT8 replay input contains zero cases. All four strategy scorecards therefore have unknown cost/time/review/regret and cannot establish safe policy publication.",
+    "The two opt-in real-harness tests were skipped because VILLANI_REAL_HARNESS_TESTS was not set to 1; no paid credentials or execution were used.",
+    "Villani Ops skipped two existing native-Windows host-capability cases; Villani Code skipped one opt-in external smoke case.",
+    "No screenshot was captured because the in-app browser inventory was empty.",
+    "Preliminary full-suite, path, TEMP, formatting, lint, type, Web sandbox, controller serialization, and semantic-fixture failures were remediated or correctly rerun; final applicable suites pass."
+  ],
+  "risks": {
+    "security": [
+      "Routing never authorizes acceptance and semantic verification stays blinded. A false-acceptance amendment quarantines qualification immediately, but raw local run artifacts and patches can still contain repository data and need operator review.",
+      "Worktree/process isolation is not a kernel sandbox. Privacy, permission, and unsupported environment constraints fail closed and must not be bypassed."
+    ],
+    "privacy": [
+      "Local economics records include repository lineage, exact system/provider/model identity, timing, cost, and review metadata. Exports can reveal repository and provider information even when raw protocol logs are redacted.",
+      "Known provider cost is preserved authoritatively; unknown cost remains null. No credential values are stored in policy, route-plan, fixture, or report documents."
+    ],
+    "data_loss": [
+      "Economics and qualification ledgers are append-only, policy publications are immutable, and rollback changes only the active pointer. Delivery still materializes only the selected recorded patch.",
+      "No user source, durable run evidence, vendor configuration, or session directory was deleted. Only the verified preview subprocess and disposable validation artifacts are cleaned up."
+    ],
+    "compatibility": [
+      "Existing bundles and configuration remain readable. Legacy configurations do not silently enable online evidence writes; new initialized configuration does.",
+      "Exact system/provider/model/environment/policy/repository drift can intentionally make old economics ineligible or sparse, producing a safer fallback or no route rather than an optimistic estimate.",
+      "Cost comparison is currency-specific. Mixed or unknown currencies remain partial and cannot be ranked as complete accepted-change cost."
+    ]
+  },
+  "user_facing_behavior": {
+    "before": "Qualification could gate systems, but automatic routing did not persist a total accepted-change objective, component unknowns, economic fallback sequence, point-in-time policy comparison, or safe publication lifecycle.",
+    "after": "Villani chooses among qualified systems using conservative total cost per proven accepted change when inputs are complete, falls back to strongest evidence when sparse, never automatically selects experimental systems, and persists an explainable route plan. Agents shows repository-specific economics and Unknown values honestly. Advanced constraints remain hidden by default; policy explain is read-only; policy evaluation, publication, status, and rollback are deterministic and versioned."
+  },
+  "cleanup": {
+    "processes": "The verified Vite preview process was terminated and port 4173 had no remaining listener.",
+    "temporary_paths": [
+      ".test-temp/pt8-explain-home",
+      ".test-temp/pt8-explain-repo",
+      ".test-temp/pt8-policy-evaluation-final.json",
+      ".test-temp/pt8-gate-final.json",
+      ".test-temp/pt8-vite.out.log",
+      ".test-temp/pt8-vite.err.log"
+    ],
+    "recovery": "All 6 verified paths were removed permanently and a final check reported 6/6 absent. They were disposable configuration, Git fixture, replay, Gate, and preview-log artifacts; no durable PT8 evidence was in this list."
+  },
+  "terminal_summary": {
+    "milestone_status": "INSUFFICIENT_EVIDENCE",
+    "implementation": "complete",
+    "gate_c": "INSUFFICIENT_EVIDENCE",
+    "frozen_cases": 0,
+    "automatic_experimental_routes": 0,
+    "policy_publication": "refused_fail_closed",
+    "pt9_started": false
+  },
+  "pt9_started": false
+}

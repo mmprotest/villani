@@ -1,0 +1,25 @@
+{
+  "schema_version": "villani.harness_discovery.v1",
+  "harness_id": "codex",
+  "display_name": "Codex",
+  "readiness": {
+    "installed": true,
+    "command_identity": "codex",
+    "exact_version": "0.144.5",
+    "supported_version_range": ">=0.144.0,<0.145.0",
+    "version_supported": true,
+    "authentication_status": "ready",
+    "protocol": "codex-app-server-jsonrpc-stdio",
+    "conformance_status": "not_run",
+    "qualification_state": "provisional",
+    "custom_model_capability": "supported",
+    "custom_provider_capability": "unsupported",
+    "local_model_capability": "unsupported",
+    "repair_action": "Run the PT6 Codex conformance suite before qualification.",
+    "details": {
+      "transport": "stdio",
+      "experimental_websocket_used": false
+    }
+  },
+  "detected_at": "2026-07-10T00:00:00Z"
+}

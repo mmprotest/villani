@@ -78,6 +78,7 @@ from .schema_validation import (
 from .agent_systems.models import (
     AgentSystemIdentity,
     HarnessConformanceReport,
+    HarnessDiscovery,
     HarnessResult,
 )
 from .agent_systems.registry import (
@@ -87,6 +88,19 @@ from .agent_systems.registry import (
 )
 from .agent_systems.configuration import (
     migrate_agent_system_configuration,
+)
+from .qualification import (
+    GateCReport,
+    QualificationAssessment,
+    QualificationInvalidation,
+    QualificationObservation,
+    QualificationPolicy,
+    QualificationSnapshot,
+    QualificationStore,
+    QualificationTaskProfile,
+    assess_qualification,
+    build_gate_c_report,
+    repository_qualification_context,
 )
 
 __all__ = [
@@ -110,7 +124,9 @@ __all__ = [
     "FocusedProbeReport",
     "FocusedProbeRequest",
     "FocusedProbeResult",
+    "GateCReport",
     "HarnessConformanceReport",
+    "HarnessDiscovery",
     "HarnessResult",
     "MaterializationSnapshot",
     "OutcomeV2",
@@ -119,6 +135,13 @@ __all__ = [
     "PolicyPublicationV2",
     "ProtocolValidationError",
     "ProtocolValidationIssue",
+    "QualificationAssessment",
+    "QualificationInvalidation",
+    "QualificationObservation",
+    "QualificationPolicy",
+    "QualificationSnapshot",
+    "QualificationStore",
+    "QualificationTaskProfile",
     "RunManifestSnapshot",
     "RunStateSnapshot",
     "ResourceV2",
@@ -143,8 +166,10 @@ __all__ = [
     "VerifierRoutingContext",
     "VerifierRoutingPolicy",
     "append_jsonl_durable",
+    "assess_qualification",
     "build_agent_system_registry",
     "build_agent_system_runner",
+    "build_gate_c_report",
     "actual_attempt_cost",
     "classify_failure",
     "compute_final_verification_decision",
@@ -157,6 +182,7 @@ __all__ = [
     "normalized_v2_jsonl",
     "read_jsonl_tolerant",
     "required_capability",
+    "repository_qualification_context",
     "select_routes",
     "translate_v1_event",
     "translate_v1_events",

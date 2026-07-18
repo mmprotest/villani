@@ -1,0 +1,50 @@
+{
+  "schema_version": "villani.gate_c.v1",
+  "gate": "C",
+  "generated_at": "2026-07-18T07:05:03.783797Z",
+  "repository_id": "repo_e363cfcb2ce38f2e059c",
+  "repository_head": "7ba4cd9bda42df126336829db4f168606a8e6ccd",
+  "task_profile": {
+    "category": "maintenance",
+    "difficulty": "easy",
+    "risk": "low",
+    "required_capabilities": []
+  },
+  "policy_version": "repository_qualification_v1",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "checks": [
+    {
+      "check_id": "required_scorecards",
+      "system_id": null,
+      "status": "insufficient_evidence",
+      "actual": {
+        "present": [],
+        "missing": [
+          "claude-code",
+          "codex",
+          "villani-code"
+        ]
+      },
+      "required": {
+        "claude-code": "Claude Code",
+        "codex": "Codex",
+        "villani-code": "Villani Code"
+      },
+      "reason": "Gate C requires scorecards for every PT7 system; missing: claude-code, codex, villani-code"
+    },
+    {
+      "check_id": "automatic_routing_eligibility",
+      "system_id": null,
+      "status": "pass",
+      "actual": {
+        "qualified_routes": [],
+        "nonqualified_automatic_routes": []
+      },
+      "required": "automatic routes are qualified; experimental routes require manual override",
+      "reason": "Automatic routing eligibility is fail closed."
+    }
+  ],
+  "scorecards": [],
+  "unmatched_sample_warning": null,
+  "evidence_snapshot_digest": "sha256:968e81378e1e66b988114a911dedca8b5d473040e4a52efaaf059f8163468918"
+}

@@ -4289,3 +4289,284 @@ Remaining limitations, assumptions, and risks:
 
 Next permitted milestone:
 - PT5 is complete. PT6 was not started and is not authorized by this pass.
+
+#### 2026-07-18: Product Transformation Milestone PT6, production Codex and Claude Code integrations
+
+Status: `INSUFFICIENT_EVIDENCE`. PT6 implementation is complete: Codex app-server JSON-RPC stdio,
+Claude Code stream-json, reusable ACP v1 transport, exact discovery/identity, isolated execution,
+cancellation, redacted evidence, authoritative cost handling, public contracts, CLI/UI readiness,
+and fake-executable conformance are implemented. The milestone is not marked complete because the
+required real isolated task evidence is unavailable: Codex 0.144.5 is not authenticated, strict
+Claude Code isolation is unavailable on native Windows, and no qualifying frozen founder suite
+exists. Gate C is not claimed. PT7 was not started.
+
+Changed surface:
+- Added production-shaped Codex and Claude Code runners through the common Villani isolated
+  worktree/evidence lifecycle, plus a reusable fail-closed ACP client and structured subprocess
+  supervision primitives.
+- Added exact harness discovery/readiness, supported version ranges, provisional qualification,
+  repair actions, execution identity, per-model usage/cost, infrastructure failure categories, and
+  configuration-backed external harness registry construction.
+- Added normative/packaged discovery schema, additive agent-system/result schema updates, Python and
+  TypeScript models, protocol fixtures, Flight Recorder validation, Agents CLI/UI presentation,
+  docs, and readable/machine-readable PT6 reports.
+- Added 31 PT6 tests: 29 deterministic parser/protocol/fake-executable cases and 2 explicitly gated
+  real-harness smoke cases. Existing bundles/configuration remain readable; no destructive migration
+  was performed.
+
+Architectural decisions:
+- Codex uses stable app-server JSONL stdio with freshly generated installed-version schemas;
+  experimental WebSocket transport is never used. Claude uses supported non-interactive stream-json
+  with strict sandbox configuration, controlled prompt files, no unsandboxed fallback, and
+  same-attempt-only optional resume.
+- Both harnesses run only in candidate worktrees, deny permission expansion, collect patches from
+  Git, preserve vendor configuration/session roots, redact raw traces, and clean bounded processes
+  and temporary files. Infrastructure overload/rate limits remain distinct from coding failure.
+- ACP connectivity alone does not enable an adapter or establish model/trace parity. Custom model
+  selection requires exact conformance evidence; custom provider/local model substitution is not
+  claimed. External harnesses remain provisional and cannot claim Gate C.
+
+Verification:
+- Final focused PT6/PT5/protocol suite: 59 passed, 2 e2e tests deselected in 9.03 seconds. Opt-in
+  real-harness gate: 2 skipped with the exact missing opt-in reason; no paid execution occurred.
+- Villani Ops: 1,231 passed, 2 host-capability tests skipped, 116 configured tests deselected in
+  307.13 seconds. Villani Code: 686 passed, 1 skipped, 27 warnings in 124.88 seconds.
+- Root closed-loop integration: 11 passed with 2 warnings in 60.25 seconds. Flight Recorder: 21
+  files/112 tests plus typecheck, build, and format check passed.
+- Run Model: 3 files/9 tests plus typecheck/build passed. Web: 4 files/24 tests, typecheck,
+  57-module production build, and format check passed.
+- Ruff passed; focused mypy found no issues in 8 PT6 production modules; Python 3.11 compiled all 8;
+  3 normative/packaged schema pairs were byte-identical; `git diff --check` passed.
+
+Remaining limitations, assumptions, and risks:
+- There is no real-harness completion artifact or frozen founder arm result. Qualification evidence
+  is explicitly `INSUFFICIENT_EVIDENCE`; synthetic conformance does not qualify either system.
+- Raw protocol traces and patches can contain repository data. Redaction is bounded and artifacts
+  are not encrypted. Process/worktree isolation is not a kernel sandbox, so Claude fails closed on
+  this native-Windows host and hostile work requires WSL2/container isolation.
+- The fake harness is portable but this pass executed only on Windows. Two Ops host tests skipped
+  because Unix-domain sockets and FIFO creation are unavailable. The in-app browser had no attached
+  tab, so no screenshot was captured; Web tests/typecheck/build/format passed.
+- Reports: `docs/PT6_COMPLETION_REPORT.{md,json}` and
+  `docs/PT6_QUALIFICATION_EVIDENCE.json`. Temporary PT6 schema/test directories were removed and the
+  unrelated Agentd console-assets directory was preserved.
+
+Next permitted milestone:
+- PT6 remains `INSUFFICIENT_EVIDENCE` until real isolated Codex and Claude tasks and separate frozen
+  founder-suite arms can run in an authorized, credentialed, strictly isolated environment. PT7 was
+  not started.
+
+#### 2026-07-18: Product Transformation Milestone PT7, repository-specific qualification
+
+Status: `INSUFFICIENT_EVIDENCE`. The PT7 implementation is complete: append-only repository and
+task-profile qualification evidence, conservative hierarchical backoff, Wilson statistics,
+exclusions, drift and invalidation, qualification-aware routing, Agents CLI/UI scorecards, durable
+contracts, legacy migration, and Gate C are implemented and passing deterministic validation. The
+milestone is not marked complete because Gate C has no eligible frozen founder-suite observations
+for Villani Code, Codex, or Claude Code on this repository. PT8 was not started.
+
+Changed surface:
+- Added a versioned `repository_qualification_v1` policy and append-only observation/invalidation
+  store keyed by repository identity and lineage, task category/difficulty/risk/capabilities,
+  complete system/environment identity, verification policy, software versions, and time window.
+- Added exact, repository/category, repository-wide, and explicitly compatible cohort evaluation;
+  language and framework never pool evidence. Eligible trials require valid frozen baselines,
+  complete candidate evidence, authoritative binary verification, resolved infrastructure,
+  required review, and no corruption, secret, or direct-target mutation.
+- Added repository-aware `qualify`, `status`, `evidence`, `invalidate`, and `gate-c` commands; Agents
+  now shows exact identity, state, sample, observed acceptance, known cost/duration, recency, caveat,
+  Doctor, and View evidence. Unknown values stay unknown.
+- Added four normative and packaged PT7 schemas, Python and TypeScript models, shared fixtures,
+  semantic validation, an additive configuration migration, legacy excluded-history migration,
+  qualification-aware automatic routing, Web/Agentd presentation, docs, and reports.
+
+Architectural decisions:
+- Automatic routing may select only qualified systems. If none qualifies, it may use one strongest
+  eligible configured provisional fallback with an explicit marker. Experimental routes require a
+  visible same-run manual override, cannot create qualification, and are never selected
+  automatically; unsupported routes cannot be overridden.
+- Qualification requires at least 20 eligible observations at an approved level, zero known false
+  acceptance, Wilson lower bound above the task threshold, exact conformance, and no severe drift.
+  False acceptance, identity/environment/policy/lineage change, capability loss, staleness, or
+  recent reliability breach safely downgrades state without deleting history.
+- Qualification gates execution-policy routing only. Semantic verification remains blind to
+  harness identity, route, cost, qualification state, and competing candidates.
+- Gate C requires repository-specific Villani Code, Codex, and Claude Code scorecards and validates
+  evidence parity, exact identity, conformance, isolation, unsupported behavior, qualification
+  correctness, and automatic eligibility. Empty or partial arms cannot pass or be ranked.
+
+Verification:
+- Focused PT5/PT6/PT7/protocol: 69 passed, 2 deselected in 27.44 seconds. Post-type-fix PT7/protocol:
+  27 passed in 18.85 seconds. Opt-in real-harness gate: 2 skipped, 29 deselected in 0.62 seconds
+  because `VILLANI_REAL_HARNESS_TESTS` was not set to `1`; no paid execution occurred.
+- Villani Ops: 1,241 passed, 2 skipped, 116 deselected in 327.14 seconds. Villani Code: 686 passed,
+  1 skipped, 27 warnings in 131.20 seconds. Agentd: 86 passed in 23.18 seconds. Root closed-loop:
+  11 passed, 2 warnings in 48.92 seconds.
+- Run Model: 4 files/12 tests plus typecheck/build passed. Flight Recorder: 21 files/113 tests plus
+  typecheck/build/format passed. Web: 4 files/25 tests, typecheck, 58-module production build, and
+  format passed; packaged console assets matched all 3 manifest entries.
+- Ruff and focused mypy passed; Python 3.11 compilation passed. Four generated schemas were
+  idempotent and byte-identical to packaged copies. An 18-root secret scan found 0 findings.
+- Live Gate C exited 2 with `INSUFFICIENT_EVIDENCE`: Villani Code is experimental, Codex and Claude
+  Code are unsupported on this host, every arm has sample 0, and no nonqualified automatic route
+  exists.
+
+Remaining limitations, assumptions, and risks:
+- There is no qualifying frozen founder-suite arm evidence. Codex 0.144.5 is unauthenticated and
+  strict Claude Code 2.1.138 isolation is unavailable on native Windows. These facts remain
+  unsupported/insufficient evidence rather than fabricated qualification.
+- No screenshot was captured because the in-app browser had no attached target. Web tests,
+  typecheck, production build, format check, and packaged-asset parity provide UI evidence.
+- Evidence artifacts can contain repository data and are not encrypted. Redaction is bounded;
+  worktree/process isolation is not a kernel sandbox. Unsupported environments fail closed.
+- Existing bundles and configuration remain readable. Legacy capability snapshots remain excluded
+  history and cannot qualify a route. No durable evidence or user source was deleted.
+- Reports: `docs/PT7_COMPLETION_REPORT.{md,json}` and `docs/PT7_GATE_C.json`.
+
+Next permitted milestone:
+- PT7 remains `INSUFFICIENT_EVIDENCE` until Gate C has eligible, matched, repository-specific frozen
+  founder-suite observations for all three systems and passes. PT8 was not started.
+
+#### 2026-07-18: Product Transformation Milestone PT8, total cost per accepted change
+
+Status: `INSUFFICIENT_EVIDENCE`. PT8 implementation is complete: versioned accepted-change
+economics, deterministic explainable route plans, qualified-only optimization, sparse provisional
+fallback, advanced constraints, credible retry/escalation, protected reserves, future-only online
+updates, false-acceptance quarantine, point-in-time policy replay, fail-closed publication, rollback,
+CLI/UI presentation, durable contracts, migration behavior, and deterministic tests are implemented.
+The milestone is not marked complete because the frozen founder input contains zero eligible cases
+and Gate C remains `INSUFFICIENT_EVIDENCE`; reliability and false-acceptance exposure cannot be
+proven for production policy activation. PT9 was not started.
+
+Changed surface:
+- Added the `economics` subsystem with strict money/time accounting, conservative probability,
+  route planning, append-only profiles, online finalization projection, four-strategy evaluation,
+  immutable policy publication, active status, and instant rollback.
+- Integrated content-addressed route plans and validated economics-update receipts into the
+  canonical controller/run manifest; added read-only explain and economics evaluate/status/publish/
+  rollback commands plus hidden advanced run constraints.
+- Added seven normative and packaged PT8 schemas, strict Python/TypeScript models, eight generated
+  fixtures, semantic validation, additive configuration/run-bundle migration, Web/Agentd Agents
+  presentation, Flight Recorder support, documentation, and readable/machine completion reports.
+
+Architectural decisions:
+- Automatic comparison uses qualified routes only and minimizes conservative total accepted-change
+  economics when accounting is complete. Sparse evidence falls back to strongest qualified evidence
+  or one explicitly provisional route; experimental routes are never automatic and unknown inputs
+  remain partial rather than numeric zero.
+- Route inputs are pre-execution evidence only. Task names, benchmark identifiers, future outcomes,
+  hidden patches, language rules, and operating-system quality heuristics are excluded. Semantic
+  verification remains blind to harness, route, economics, qualification, and competitors.
+- Same-system retry requires credible progress and an actionable correction; capability failure or
+  no progress escalates to an eligible stronger fallback while verification/final-validation
+  reserves remain protected. PT8 added no arbitrary retry loop.
+- Online evidence is append-only, eligible, authoritative, and future-only. Infrastructure-excluded,
+  unverified, and forced-policy metric outcomes do not train automatic economics; false acceptance
+  immediately invalidates qualification.
+- Policy publication is deterministic and fail closed: frozen cases replay point-in-time, reliability
+  may not decrease, false-acceptance exposure may not increase, publications are immutable, rollback
+  changes only the active pointer, and no LLM can publish policy.
+
+Verification:
+- Villani Ops: 1,260 passed, 2 skipped, 116 deselected in 354.57 seconds. PT8 mandatory tests:
+  16 passed in 1.30 seconds; controller artifact/update tests: 2 passed in 1.66 seconds; protocol:
+  19 passed in 1.37 seconds.
+- Villani Code: 686 passed, 1 skipped, 27 warnings in 135.38 seconds. Agentd: 86 passed in
+  18.52 seconds. Root closed-loop: 11 passed with 2 warnings in 61.73 seconds.
+- Run Model: 5 files/15 tests plus typecheck/build passed. Flight Recorder: 21 files/114 tests plus
+  typecheck/build/format passed. Web: 4 files/25 tests, typecheck, 59-module production build, and
+  format passed; packaged console assets matched all 3 manifest entries.
+- Ruff lint/format passed; focused mypy found no issues in 8 economics modules; Python 3.11
+  compilation passed. Seven schemas were idempotent and byte-identical to packaged copies; eight
+  fixtures were idempotent; a 16-root secret scan found 0 findings; final `git diff --check` passed.
+- Point-in-time replay emitted all four required scorecards with zero cases and unknown input rate
+  1.0; `safe_to_publish=false`. Publication was refused. Gate C exited nonzero with
+  `INSUFFICIENT_EVIDENCE`. Two opt-in real-harness tests skipped because
+  `VILLANI_REAL_HARNESS_TESTS` was not set to `1`; no paid run occurred.
+
+Remaining limitations, assumptions, and risks:
+- No eligible frozen founder cases exist, so accepted-as-is, false acceptance, total cost, elapsed
+  time, review, escalation, regret, and conservative reliability cannot be compared without
+  fabrication. Production publication correctly remains inactive.
+- No screenshot was captured because the in-app browser inventory was empty. Web tests, typecheck,
+  production build, formatting, and console-asset parity provide UI evidence. The preview process
+  was terminated, port 4173 was clear, and all 6 disposable PT8 paths were removed.
+- Evidence can expose repository/system/provider/economics metadata and is not encrypted. Redaction
+  is bounded; process/worktree isolation is not a kernel sandbox. Existing bundles and configuration
+  remain readable, and legacy configuration does not silently gain online-write side effects.
+- Reports: `docs/PT8_COMPLETION_REPORT.{md,json}`, `docs/PT8_POLICY_EVALUATION.json`,
+  `docs/PT8_FROZEN_POLICY_REPLAY_INPUT.json`, and `docs/PT8_GATE_C.json`.
+
+Next permitted milestone:
+- PT8 remains `INSUFFICIENT_EVIDENCE` until matched frozen founder cases prove policy reliability,
+  false-acceptance safety, and Gate C. PT9 was not started.
+
+#### 2026-07-18: Product Transformation Milestone PT9, adaptive verification and reduced supervision
+
+Status: `INSUFFICIENT_EVIDENCE`. The PT9 implementation is complete: deterministic versioned
+verification plans, standard/elevated/critical risk, generic repository-policy checks, isolated
+focused probes, mandatory blind semantic verification, critical independent verification,
+fail-closed binary authority, compact review packages, explicit local feedback, supervision
+accounting, CLI/UI presentation, durable contracts, migration behavior, and Gate D are implemented.
+The milestone is not marked complete because all three frozen founder arms contain zero eligible
+cases. Lower supervision, zero observed false acceptance, and Gate D PASS are therefore unproved.
+PT10 was not started.
+
+Changed surface:
+- Added the `adaptive_verification_v1` subsystem with strict plan, decision, review, feedback,
+  metrics, and Gate D models plus run-bundle persistence and controller/verifier integration.
+- Added six normative and packaged schemas, matching Python/TypeScript models, valid and semantic
+  invalid fixtures, additive manifest/product/configuration migration, Flight Recorder validation,
+  Single Task proof presentation, documentation, and readable/machine completion reports.
+- Added 13 primary Python tests and 2 Run Model tests; expanded verifier routing, controller,
+  delivery, protocol, Web, Flight Recorder, and installed-CLI E2E coverage.
+
+Architectural decisions:
+- Risk uses explicit task risk, generic security/destructive/migration implications, diff scope,
+  qualification uncertainty, historical verifier failures, and configured sensitive paths. No
+  language, framework, operating-system, benchmark, repository, or task-name behavior was added.
+- Conclusive deterministic failure avoids a redundant semantic call, but semantic verification is
+  mandatory before acceptance. Critical risk additionally requires an independent verifier.
+  Unclear, malformed, error, missing, disagreeing, or incomplete proof normalizes to decision 0.
+- Semantic context is allowlisted and excludes harness identity, route, cost, qualification
+  identity, and competitors. Restricted provenance stays outside semantic context.
+- Focused probes execute inside the candidate environment. Temporary inputs cannot escape or
+  overwrite candidate files, are cleaned in a finally block, and persist only path/hash/size/
+  cleanup evidence in the probe report. Behavior and infrastructure failure remain distinct.
+- Human outcomes are explicit, optional, append-only, and local-first. Missing review time, cost,
+  duration, or full-trace use remains null and unknown. No passive monitoring exists.
+- Gate D cannot pass empty or unmatched evidence and never ranks unknown accounting.
+
+Verification:
+- Villani Ops: 1,278 passed, 2 skipped, 116 deselected in 381.27 seconds. Final focused PT9/routing:
+  23 passed in 1.00 second. Structured installed-CLI E2E: 3 passed in 43.75 seconds.
+- Villani Code: 686 passed, 1 skipped, 27 warnings. Agentd: 86 passed. Root closed loop: 11 passed
+  with 2 warnings in 62.67 seconds. Root protocol: 2 passed with 1 cache warning.
+- Run Model: 6 files/17 tests plus typecheck/build passed. Flight Recorder: 21 files/118 tests plus
+  typecheck/build/format passed. Web: 4 files/25 tests plus typecheck/build/format passed; packaged
+  console parity verified all 3 files.
+- Ruff lint/format passed; Python 3.11 compilation passed; isolated mypy found no issues in 8 PT9
+  production modules. Twenty-seven outputs were deterministic, all 6 schema pairs were
+  byte-identical, the 13-root secret scan found 0 findings, passive-monitor and semantic-identity
+  audits found 0 matches, and `git diff --check` passed.
+- Live Gate D exited 2 with `INSUFFICIENT_EVIDENCE` and
+  `next_milestone_permitted=false`. Explainability and safe fallback pass; the five empirical
+  reliability/economics/review checks remain insufficient.
+
+Remaining limitations, assumptions, and risks:
+- No eligible matched founder cases exist, so lower supervision, accepted-as-is non-regression,
+  zero false acceptance, lower cost/time, and lower review burden cannot be claimed.
+- No screenshot was captured because the required in-app browser returned
+  `Browser is not available: iab`. Web tests, typecheck, production build, format, direct product
+  projection, and packaged-asset parity provide UI evidence.
+- Evidence can contain repository data and is not encrypted. Redaction is bounded; worktree/process
+  isolation is not a kernel sandbox. Two Ops host-capability tests and one opt-in Villani Code
+  external smoke test skip for documented environmental reasons.
+- Existing bundles/configuration remain readable, unknown accounting remains null, and no user
+  source, durable history, vendor configuration, or session directory was deleted.
+- Reports: `docs/PT9_COMPLETION_REPORT.{md,json}`, `docs/PT9_FROZEN_GATE_D_INPUT.json`, and
+  `docs/PT9_GATE_D.json`.
+
+Next permitted milestone:
+- PT9 remains `INSUFFICIENT_EVIDENCE` until matched frozen founder cases make every Gate D check
+  pass. PT10 was not started.

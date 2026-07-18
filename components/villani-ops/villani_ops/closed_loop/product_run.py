@@ -20,6 +20,7 @@ from pydantic import Field, model_validator
 from .durable_io import read_jsonl_tolerant, write_json_atomic
 from .protocol import AccountingStatus, StrictProtocolModel
 from .run_summary import canonical_run_summary
+from .adaptive_verification.models import CompactReviewPackage
 
 
 ProductStage = Literal["Understanding", "Working", "Checking", "Ready"]
@@ -162,6 +163,22 @@ class ProductTargetState(StrictProtocolModel):
         return self
 
 
+class ProductProofPackage(StrictProtocolModel):
+    status: Literal["ready_to_apply", "needs_review"]
+    risk_tier: Literal["standard", "elevated", "critical"]
+    why_villani_trusts_it: str = Field(min_length=1)
+    unresolved_decision: str | None = None
+    artifact: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_status(self) -> "ProductProofPackage":
+        if self.status == "ready_to_apply" and self.unresolved_decision is not None:
+            raise ValueError("ready proof packages cannot retain an unresolved decision")
+        if self.status == "needs_review" and not self.unresolved_decision:
+            raise ValueError("needs-review proof packages require an unresolved decision")
+        return self
+
+
 class ProductRun(StrictProtocolModel):
     schema_version: Literal["villani.product_run.v1"]
     run_identity: ProductRunIdentity
@@ -184,6 +201,7 @@ class ProductRun(StrictProtocolModel):
     recovery_action: ProductRecoveryAction | None
     technical_detail_references: list[str]
     target_repository: ProductTargetState
+    proof_package: ProductProofPackage | None = None
     last_event_sequence: int = Field(ge=1)
     updated_at: str = Field(min_length=1)
 
@@ -196,6 +214,12 @@ class ProductRun(StrictProtocolModel):
             raise ValueError("delivery actions require the Ready to apply verdict")
         if self.final_verdict is not None and self.current_stage != "Ready":
             raise ValueError("a final verdict requires the Ready stage")
+        if (
+            self.proof_package is not None
+            and self.proof_package.status == "ready_to_apply"
+            and self.final_verdict != "Ready to apply"
+        ):
+            raise ValueError("a ready proof package requires the Ready to apply verdict")
         return self
 
 
@@ -737,6 +761,36 @@ def build_product_run(run_directory: str | Path) -> ProductRun:
         )
         if name and (run_directory / name).is_file()
     ]
+    proof_package: ProductProofPackage | None = None
+    proof_artifact = (
+        f"verification/{attempt_id}-review-package.json" if attempt_id else None
+    )
+    if proof_artifact and (run_directory / proof_artifact).is_file():
+        try:
+            compact = CompactReviewPackage.model_validate(
+                _read(run_directory / proof_artifact)
+            )
+        except (TypeError, ValueError):
+            compact = None
+        if compact is not None and (
+            (compact.status == "ready_to_apply" and verdict == "Ready to apply")
+            or compact.status == "needs_review"
+        ):
+            proof_package = ProductProofPackage(
+                status=compact.status,
+                risk_tier=compact.risk_tier,
+                why_villani_trusts_it=_public_text(
+                    compact.why_villani_trusts_it,
+                    "Villani preserved the verification evidence.",
+                ),
+                unresolved_decision=(
+                    _public_text(compact.unresolved_decision, "Review is required.")
+                    if compact.unresolved_decision
+                    else None
+                ),
+                artifact=proof_artifact,
+            )
+            technical.append(proof_artifact)
     actions = _actions(run_id, verdict, state_name, delivery)
     recovery = None
     if verdict in {"Could not prove", "Cancelled", "Needs review"}:
@@ -851,11 +905,23 @@ def build_product_run(run_directory: str | Path) -> ProductRun:
                 label="Recorded evidence",
                 href=f"/console/runs/{run_id}/replay",
                 artifact="events.jsonl",
-            )
+            ),
+            *(
+                [
+                    ProductEvidenceLink(
+                        label="Compact proof package",
+                        href=f"/console/runs/{run_id}/replay",
+                        artifact=proof_artifact,
+                    )
+                ]
+                if proof_package is not None and proof_artifact is not None
+                else []
+            ),
         ],
         recovery_action=recovery,
         technical_detail_references=technical,
         target_repository=_target_state(state_name, materialization, delivery),
+        proof_package=proof_package,
         last_event_sequence=last_event_sequence,
         updated_at=str(
             state.get("updated_at")

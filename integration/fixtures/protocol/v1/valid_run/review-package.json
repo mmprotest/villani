@@ -1,0 +1,46 @@
+{
+  "attempt_id": "attempt_002",
+  "change_summary": "1 file changed in the preserved candidate.",
+  "changed_files": [
+    "src/example.py"
+  ],
+  "checks": [
+    {
+      "evidence_path": "verification/attempt_002-evidence.json",
+      "label": "requirement mapping",
+      "status": "passed"
+    },
+    {
+      "evidence_path": "verification/attempt_002-raw.json",
+      "label": "semantic verifier",
+      "status": "passed"
+    }
+  ],
+  "created_at": "2026-07-18T00:00:00Z",
+  "decision_id": "avd_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "full_evidence_href": "/console/runs/run_protocol_fixture/replay",
+  "known_cost": {
+    "accounting_status": "complete",
+    "amount": 0.42,
+    "currency": "USD",
+    "source": "candidate_attempt_telemetry"
+  },
+  "known_duration": {
+    "accounting_status": "complete",
+    "duration_ms": 1800,
+    "source": "candidate_attempt_telemetry"
+  },
+  "package_id": "rvp_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "requirements_not_proved": [],
+  "requirements_proved": [
+    "req_001"
+  ],
+  "risk_flags": [],
+  "risk_tier": "standard",
+  "run_id": "run_protocol_fixture",
+  "schema_version": "villani.review_package.v1",
+  "status": "ready_to_apply",
+  "task": "Apply the bounded fixture change.",
+  "unresolved_decision": null,
+  "why_villani_trusts_it": "Deterministic integrity checks, requirement mapping, repository evidence, and semantic verification passed."
+}

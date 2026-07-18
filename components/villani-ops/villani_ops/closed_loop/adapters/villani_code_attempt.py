@@ -38,7 +38,7 @@ from villani_ops.execution_environment.models import (
 )
 
 from ..durable_io import write_json_atomic
-from ..costs import actual_attempt_cost
+from ..costs import actual_attempt_cost, provider_reported_attempt_cost
 from ..event_writer import redact_data
 from ..interfaces import AttemptContext, AttemptResult, DependencyFailure, RuntimeEvent
 from ..protocol import AccountingStatus, AttemptSnapshot, FailureDetail
@@ -132,9 +132,7 @@ def _runner_relevant_paths(telemetry: Mapping[str, Any]) -> list[str]:
     raw_summary = telemetry.get("raw_summary")
     summary = raw_summary if isinstance(raw_summary, Mapping) else {}
     values = (
-        telemetry.get("relevant_files_read")
-        or summary.get("relevant_files_read")
-        or []
+        telemetry.get("relevant_files_read") or summary.get("relevant_files_read") or []
     )
     return [str(value) for value in values] if isinstance(values, list) else []
 
@@ -317,7 +315,8 @@ class VillaniCodeAttemptAdapter:
         run_dir = Path(attempt_context.run_directory).resolve()
         attempt_dir.mkdir(parents=True, exist_ok=True)
         backend = self._backend(attempt_context)
-        validate_runtime_credentials(backend)
+        if not bool(getattr(self._runner, "uses_vendor_auth", False)):
+            validate_runtime_credentials(backend)
         isolated = self._isolation.create(attempt_context)
 
         configured_env = attempt_context.policy_configuration.get("runner_env")
@@ -518,6 +517,37 @@ class VillaniCodeAttemptAdapter:
                 worktree_path=str(isolated.copied.worktree_path),
                 baseline_sha256=attempt_context.baseline_sha256,
             )
+        structured_runtime_events: list[RuntimeEvent] = []
+        for index, raw_event in enumerate(runner_result.runtime_events, 1):
+            if not isinstance(raw_event, Mapping):
+                continue
+            raw_timestamp = raw_event.get("timestamp")
+            try:
+                timestamp = datetime.fromisoformat(
+                    str(raw_timestamp).replace("Z", "+00:00")
+                )
+            except ValueError:
+                timestamp = completed_at
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            structured_runtime_events.append(
+                RuntimeEvent(
+                    event_type=str(raw_event.get("event_type") or "warning"),
+                    timestamp=timestamp.astimezone(timezone.utc),
+                    payload=dict(
+                        redact_data(
+                            raw_event.get("payload")
+                            if isinstance(raw_event.get("payload"), Mapping)
+                            else {},
+                            secrets=secrets,
+                        )
+                    ),
+                    source_event_id=str(
+                        raw_event.get("source_event_id") or f"structured-runner:{index}"
+                    ),
+                )
+            )
+        runtime_events = (*runtime_events, *structured_runtime_events)
         if (
             debug_root is not None
             and debug_root.exists()
@@ -545,9 +575,7 @@ class VillaniCodeAttemptAdapter:
             candidate_id=attempt_context.attempt_id,
             task=task_for_quality,
             preparation=candidate_preparation,
-            relevant_paths=_runner_relevant_paths(
-                dict(runner_result.telemetry or {})
-            ),
+            relevant_paths=_runner_relevant_paths(dict(runner_result.telemetry or {})),
             policy_configuration=attempt_context.policy_configuration,
         )
         candidate_quality_path = attempt_dir / "candidate-patch-quality.json"
@@ -667,13 +695,26 @@ class VillaniCodeAttemptAdapter:
         duration_ms = runner_result.duration_ms
         if duration_ms is None:
             duration_ms = measured_duration
-        cost_breakdown = actual_attempt_cost(
-            backend,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            duration_seconds=duration_ms / 1000,
-            started=True,
-        )
+        if (
+            runner_result.total_cost is not None
+            and runner_result.cost_accounting_status == "complete"
+            and runner_result.cost_currency
+            and runner_result.cost_source
+        ):
+            cost_breakdown = provider_reported_attempt_cost(
+                backend,
+                amount=runner_result.total_cost,
+                currency=runner_result.cost_currency,
+                source=runner_result.cost_source,
+            )
+        else:
+            cost_breakdown = actual_attempt_cost(
+                backend,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                duration_seconds=duration_ms / 1000,
+                started=True,
+            )
         cost = cost_breakdown.total
         cost_status = cost_breakdown.accounting_status
         failure: DependencyFailure | None = None
@@ -686,18 +727,27 @@ class VillaniCodeAttemptAdapter:
                 details={"exception_class": runner_exception.__class__.__name__},
             )
         elif runner_result.exit_code != 0:
-            code, failure_classification = _failure_from_runner_output(
-                runner_result.exit_code, stdout, stderr
-            )
+            if runner_result.failure_code:
+                code = runner_result.failure_code
+                failure_classification = (
+                    "coding_failure"
+                    if code in {"codex_coding_failure", "claude_coding_failure"}
+                    else "infrastructure_failure"
+                )
+            else:
+                code, failure_classification = _failure_from_runner_output(
+                    runner_result.exit_code, stdout, stderr
+                )
             failure = DependencyFailure(
                 code=code,
                 message=(
-                    "Villani Code runner command was not found."
+                    f"{getattr(self._runner, 'name', 'coding')} runner command was not found."
                     if code == "executable_not_found"
-                    else f"Villani Code runner exited with {runner_result.exit_code}."
+                    else f"{getattr(self._runner, 'name', 'coding')} runner exited with {runner_result.exit_code}."
                 ),
                 details={
                     "exit_code": runner_result.exit_code,
+                    "retryable": runner_result.failure_retryable,
                     **_failure_snippets(stdout, stderr),
                 },
             )
@@ -708,8 +758,10 @@ class VillaniCodeAttemptAdapter:
                 message=str(redact_data(capture.failure_reason, secrets=secrets)),
             )
 
-        status: Literal["completed", "failed"] = (
-            "completed"
+        status: Literal["completed", "failed", "cancelled"] = (
+            "cancelled"
+            if runner_result.cancelled
+            else "completed"
             if runner_result.exit_code == 0 and not capture.failure_reason
             else "failed"
         )
@@ -723,9 +775,7 @@ class VillaniCodeAttemptAdapter:
         telemetry = redact_data(
             {
                 **dict(runner_result.telemetry or {}),
-                **_runner_efficiency_telemetry(
-                    dict(runner_result.telemetry or {})
-                ),
+                **_runner_efficiency_telemetry(dict(runner_result.telemetry or {})),
                 "backend": {
                     "name": backend.name,
                     "provider": backend.provider,
@@ -751,6 +801,10 @@ class VillaniCodeAttemptAdapter:
                 "token_accounting_status": runner_result.token_accounting_status,
                 "token_accounting_warnings": runner_result.token_accounting_warnings,
                 "provider_reported_total_cost": runner_result.total_cost,
+                "provider_reported_cost_currency": runner_result.cost_currency,
+                "provider_reported_cost_status": runner_result.cost_accounting_status,
+                "provider_reported_cost_source": runner_result.cost_source,
+                "per_model_usage": runner_result.per_model_usage,
                 "cost_breakdown": cost_breakdown.as_dict(),
                 "translated_runtime_event_count": len(runtime_events),
                 "execution_environment": environment_report,
@@ -769,13 +823,9 @@ class VillaniCodeAttemptAdapter:
                     f"attempts/{attempt_context.attempt_id}/"
                     "candidate-patch-quality.json"
                 ),
-                "candidate_quality_report": candidate_quality.model_dump(
-                    mode="json"
-                ),
+                "candidate_quality_report": candidate_quality.model_dump(mode="json"),
                 "relevant_diff_ratio": candidate_quality.relevant_diff_ratio,
-                "line_ending_only_lines": (
-                    candidate_quality.line_ending_only_lines
-                ),
+                "line_ending_only_lines": (candidate_quality.line_ending_only_lines),
                 "generated_files_excluded": (
                     candidate_preparation.generated_files_excluded
                 ),
@@ -809,13 +859,9 @@ class VillaniCodeAttemptAdapter:
                 "total_file_writes": total_file_writes,
                 "commands_executed": runner_result.commands_executed,
                 "commands_failed": runner_result.commands_failed,
-                **_runner_efficiency_telemetry(
-                    dict(runner_result.telemetry or {})
-                ),
+                **_runner_efficiency_telemetry(dict(runner_result.telemetry or {})),
                 "relevant_diff_ratio": candidate_quality.relevant_diff_ratio,
-                "line_ending_only_lines": (
-                    candidate_quality.line_ending_only_lines
-                ),
+                "line_ending_only_lines": (candidate_quality.line_ending_only_lines),
                 "generated_files_excluded": (
                     candidate_preparation.generated_files_excluded
                 ),
@@ -847,12 +893,9 @@ class VillaniCodeAttemptAdapter:
                 f"{candidate_manifest.patch_path}"
             ),
             "candidate_patch_quality_path": (
-                f"attempts/{attempt_context.attempt_id}/"
-                "candidate-patch-quality.json"
+                f"attempts/{attempt_context.attempt_id}/candidate-patch-quality.json"
             ),
-            "candidate_quality_report": candidate_quality.model_dump(
-                mode="json"
-            ),
+            "candidate_quality_report": candidate_quality.model_dump(mode="json"),
             "relevant_diff_ratio": candidate_quality.relevant_diff_ratio,
             "line_ending_only_lines": candidate_quality.line_ending_only_lines,
             "generated_files_excluded": (

@@ -772,17 +772,110 @@ def inventory_document(
     configuration: Mapping[str, Any],
     snapshot: CapabilitySnapshot | None,
     state: Mapping[str, Any],
+    *,
+    qualification_store: Any | None = None,
+    economics_store: Any | None = None,
+    repository_path: str | Path | None = None,
 ) -> dict[str, Any]:
     records = model_records(configuration, snapshot, state)
     from .agent_systems.configuration import build_agent_system_identities
+    from .agent_systems.discovery import discover_agent_harnesses
 
     identities, _by_backend, migration = build_agent_system_identities(
         configuration, configured_backends(configuration)
     )
+    identity_documents = [item.model_dump(mode="json") for item in identities]
+    qualification_context = None
+    if qualification_store is not None and repository_path is not None:
+        from .qualification import (
+            assess_qualification,
+            repository_qualification_context,
+            task_profile,
+        )
+
+        repository = repository_qualification_context(repository_path)
+        backend_values = configured_backends(configuration)
+        by_system = {
+            identity.system_id: backend_values.get(
+                str(identity.configuration.get("backend") or identity.route_name)
+            )
+            for identity in identities
+        }
+        assessments = {
+            identity.system_id: assess_qualification(
+                identity=identity,
+                repository=repository,
+                requested_task=task_profile("*", "easy", "low", ()),
+                configuration=configuration,
+                store=qualification_store,
+                backend_execution_selection=(
+                    by_system[identity.system_id].execution_environment
+                    if by_system[identity.system_id] is not None
+                    else None
+                ),
+            )
+            for identity in identities
+        }
+        economics_profiles: dict[str, dict[str, Any] | None] = {
+            identity.system_id: None for identity in identities
+        }
+        if economics_store is not None:
+            economics_snapshot = economics_store.load_snapshot()
+            if economics_snapshot is None:
+                economics_snapshot = economics_store.rebuild()
+            for identity in identities:
+                matches = [
+                    profile
+                    for profile in economics_snapshot.profiles
+                    if profile.key.repository_id == repository.repository_id
+                    and profile.key.system_id == identity.system_id
+                ]
+                if matches:
+                    latest = max(
+                        matches,
+                        key=lambda profile: (
+                            profile.last_evidence_at is not None,
+                            profile.last_evidence_at,
+                            profile.key.task_profile.category,
+                            profile.key.task_profile.difficulty,
+                            profile.key.task_profile.risk,
+                        ),
+                    )
+                    economics_profiles[identity.system_id] = {
+                        "profile": latest.model_dump(mode="json"),
+                        "matching_profile_count": len(matches),
+                        "scope_note": (
+                            "Latest exact task-profile economics for this repository; "
+                            "other profiles are not pooled by language or framework."
+                        ),
+                    }
+        identity_documents = [
+            {
+                **document,
+                "repository_qualification": assessments[
+                    str(document["system_id"])
+                ].model_dump(mode="json"),
+                "repository_economics": economics_profiles[str(document["system_id"])],
+            }
+            for document in identity_documents
+        ]
+        qualification_context = {
+            "repository_id": repository.repository_id,
+            "repository_head": repository.head,
+            "task_profile": {
+                "category": "*",
+                "difficulty": "easy",
+                "risk": "low",
+                "required_capabilities": [],
+            },
+        }
     return {
         "schema_version": MODEL_INVENTORY_SCHEMA,
         "models": records,
-        "agent_systems": [item.model_dump(mode="json") for item in identities],
+        "agent_systems": identity_documents,
+        "agent_harnesses": [
+            item.model_dump(mode="json") for item in discover_agent_harnesses()
+        ],
         "agent_system_migration": migration,
         "bootstrap_default": default_bootstrap_backend(configuration),
         "capability_states": [item.value for item in CapabilityStatus],
@@ -792,6 +885,19 @@ def inventory_document(
                 1
             ],
             "policy_version": MODEL_POLICY_VERSION,
+            "repository_context": qualification_context,
+        },
+        "economics": {
+            "policy_version": "accepted_change_economics_v1",
+            "objective_version": "total_accepted_change_v1",
+            "default_explanation": (
+                "Villani chose the route most likely to produce a proven change "
+                "at the lowest total cost."
+            ),
+            "unknown_accounting_note": (
+                "Unknown execution, verification, review, retry, or latency inputs "
+                "remain unknown and are never treated as zero."
+            ),
         },
     }
 

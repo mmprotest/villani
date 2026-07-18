@@ -85,6 +85,13 @@ export interface ProductRun {
     accounting_status: "known" | "unknown";
     statement: string;
   };
+  proof_package?: {
+    status: "ready_to_apply" | "needs_review";
+    risk_tier: "standard" | "elevated" | "critical";
+    why_villani_trusts_it: string;
+    unresolved_decision: string | null;
+    artifact: string;
+  } | null;
   last_event_sequence: number;
   updated_at: string;
 }

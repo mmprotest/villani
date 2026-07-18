@@ -1,0 +1,102 @@
+{
+  "exclusions": {},
+  "generated_at": "2026-07-18T03:00:00Z",
+  "observation_count": 1,
+  "profiles": [
+    {
+      "attempt_count_distribution": {
+        "known_count": 1,
+        "maximum": 1.0,
+        "median": 1.0,
+        "minimum": 1.0,
+        "p90": 1.0,
+        "unit": "count",
+        "unknown_count": 0
+      },
+      "cost_distributions": {
+        "execution_cost": {
+          "USD": {
+            "known_count": 1,
+            "maximum": 1.25,
+            "median": 1.25,
+            "minimum": 1.25,
+            "p90": 1.25,
+            "unit": "USD",
+            "unknown_count": 0
+          }
+        },
+        "human_review_cost": {},
+        "retry_escalation_cost": {},
+        "verification_cost": {
+          "USD": {
+            "known_count": 1,
+            "maximum": 0.25,
+            "median": 0.25,
+            "minimum": 0.25,
+            "p90": 0.25,
+            "unit": "USD",
+            "unknown_count": 0
+          }
+        }
+      },
+      "cost_unknown_counts": {
+        "execution_cost": 0,
+        "human_review_cost": 0,
+        "retry_escalation_cost": 0,
+        "verification_cost": 0
+      },
+      "duration_distribution": {
+        "known_count": 1,
+        "maximum": 1200.0,
+        "median": 1200.0,
+        "minimum": 1200.0,
+        "p90": 1200.0,
+        "unit": "ms",
+        "unknown_count": 0
+      },
+      "escalation_count_distribution": {
+        "known_count": 1,
+        "maximum": 0.0,
+        "median": 0.0,
+        "minimum": 0.0,
+        "p90": 0.0,
+        "unit": "count",
+        "unknown_count": 0
+      },
+      "exclusions": {},
+      "failures": 0,
+      "false_acceptance_count": 0,
+      "key": {
+        "repository_id": "repo_fixture_pt8",
+        "route_name": "fixture_economy",
+        "system_id": "asys_4444444444444444444444444444444444444444444444444444444444444444",
+        "system_identity_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "task_profile": {
+          "category": "maintenance",
+          "difficulty": "easy",
+          "required_capabilities": [],
+          "risk": "low"
+        }
+      },
+      "last_evidence_at": "2026-07-18T03:00:00Z",
+      "observation_ids": [
+        "eobs_7777777777777777777777777777777777777777777777777777777777777777"
+      ],
+      "review_minutes_distribution": {
+        "known_count": 0,
+        "maximum": null,
+        "median": null,
+        "minimum": null,
+        "p90": null,
+        "unit": "minutes",
+        "unknown_count": 1
+      },
+      "sample_count": 1,
+      "source_digest": "sha256:ca81a98cf7b06878f374bffa23fadf18347f8793ab56062fd22c0a1f18e036d1",
+      "successes": 1
+    }
+  ],
+  "schema_version": "villani.economics_snapshot.v1",
+  "snapshot_digest": "sha256:1a6156344f27f87fb8ccda1d518ed28fc3015d143cd5151a070814e098f23b42",
+  "source_digest": "sha256:ca81a98cf7b06878f374bffa23fadf18347f8793ab56062fd22c0a1f18e036d1"
+}

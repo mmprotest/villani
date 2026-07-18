@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import re
@@ -21,6 +21,17 @@ from villani_ops.core.backend import Backend
 from villani_ops.providers import validate_runtime_credentials
 
 from ..event_writer import redact_data
+from ..adaptive_verification import (
+    SEMANTIC_CONTEXT_ALLOWLIST,
+    AdaptiveVerificationPlan,
+    binary_decision_from_verification,
+    build_adaptive_verification_plan,
+    build_compact_review_package,
+    load_plan,
+    persist_decision,
+    persist_plan,
+    persist_review_package,
+)
 from ..focused_probes import (
     focused_probe_identity_valid,
     load_focused_probe_report,
@@ -154,6 +165,18 @@ def _requirements(raw: Mapping[str, Any]) -> tuple[Requirement, ...]:
 
 def _risk_texts(raw: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(_text(item) for item in _list(raw.get("riskFlags")))
+
+
+def _focused_probe_execution_value(request: Any) -> dict[str, Any]:
+    value = request.model_dump(mode="json")
+    value["temporary_files"] = [
+        {
+            **item.model_dump(mode="json"),
+            "content": item.content,
+        }
+        for item in request.temporary_files
+    ]
+    return value
 
 
 def _has_acceptance_blocker(risks: tuple[str, ...]) -> bool:
@@ -638,6 +661,233 @@ class VillaniVerifierAdapter:
         self._model = model
         self._backend_config = backend_config
 
+    def _adaptive_plan(
+        self,
+        attempt_context: AttemptContext,
+        attempt_result: AttemptResult,
+        definitions: Sequence[RequirementDefinition],
+    ) -> AdaptiveVerificationPlan:
+        raw_changed = attempt_result.metadata.get("changed_files")
+        changed_files = (
+            [str(item) for item in raw_changed]
+            if isinstance(raw_changed, list)
+            else []
+        )
+        adaptive_configuration = attempt_context.policy_configuration.get(
+            "adaptive_verification"
+        )
+        adaptive = (
+            adaptive_configuration
+            if isinstance(adaptive_configuration, Mapping)
+            else {}
+        )
+        raw_history = attempt_result.metadata.get(
+            "historical_verification_failure_modes",
+            adaptive.get("historical_failure_modes", []),
+        )
+        history = (
+            [str(item) for item in raw_history]
+            if isinstance(raw_history, list)
+            else []
+        )
+        qualification_state = str(
+            attempt_result.metadata.get("qualification_state")
+            or adaptive.get("qualification_state")
+            or "unknown"
+        )
+        plan = build_adaptive_verification_plan(
+            run_id=attempt_context.run_id,
+            attempt_id=attempt_context.attempt_id,
+            task=attempt_context.task,
+            success_criteria=attempt_context.success_criteria,
+            classification=attempt_context.classification,
+            changed_files=changed_files,
+            candidate_patch=attempt_result.patch or "",
+            requirement_ids=[item.requirement_id for item in definitions],
+            policy_configuration=attempt_context.policy_configuration,
+            qualification_state=qualification_state,
+            historical_failure_modes=history,
+        )
+        persist_plan(attempt_context.run_directory, plan)
+        return plan
+
+    def _not_invoked_usage(self, *, failure_state: str) -> tuple[dict[str, Any], ...]:
+        return (
+            {
+                "stage": "verification",
+                "backend": (
+                    self._backend_config.name
+                    if self._backend_config
+                    else self._backend
+                ),
+                "model": (
+                    self._backend_config.model
+                    if self._backend_config
+                    else self._model
+                ),
+                "input_tokens": None,
+                "output_tokens": None,
+                "total_tokens": None,
+                "token_accounting_status": "not_applicable",
+                "model_calls": 0,
+                "model_call_accounting_status": "complete",
+                "cost": None,
+                "cost_accounting_status": "not_applicable",
+                "currency": (
+                    self._backend_config.currency if self._backend_config else "USD"
+                ),
+                "duration_ms": 0,
+                "duration_accounting_status": "complete",
+                "failure_state": failure_state,
+            },
+        )
+
+    def _finalize_adaptive_verification(
+        self,
+        *,
+        attempt_context: AttemptContext,
+        attempt_result: AttemptResult,
+        verification: Verification,
+        plan: AdaptiveVerificationPlan,
+    ) -> Verification:
+        decision = binary_decision_from_verification(
+            plan=plan,
+            attempt_context=attempt_context,
+            attempt_result=attempt_result,
+            verification=verification,
+        )
+        review = build_compact_review_package(
+            plan=plan,
+            decision=decision,
+            attempt_context=attempt_context,
+            attempt_result=attempt_result,
+            verification=verification,
+        )
+        decision_artifact = persist_decision(attempt_context.run_directory, decision)
+        review_artifact = persist_review_package(
+            attempt_context.run_directory, review
+        )
+        run_dir = Path(attempt_context.run_directory).resolve()
+        plan_artifact = (
+            run_dir / "verification" / f"{attempt_context.attempt_id}-plan.json"
+        )
+        cascade_active = bool(
+            attempt_context.policy_configuration.get(
+                "_adaptive_verification_cascade_active"
+            )
+        )
+        pending_independent = bool(
+            decision.reason_code == "independent_verifier_required"
+            and cascade_active
+            and verification.acceptance_eligible
+            and verification.outcome == "accepted"
+        )
+        metadata = {
+            **dict(verification.metadata),
+            "adaptive_verification_policy_version": plan.policy_version,
+            "adaptive_verification_plan_id": plan.plan_id,
+            "adaptive_verification_plan_path": plan_artifact.relative_to(
+                run_dir
+            ).as_posix(),
+            "adaptive_verification_risk_tier": plan.risk_tier,
+            "adaptive_verification_risk_reasons": list(plan.risk_reasons),
+            "adaptive_independent_verifier_required": (
+                plan.independent_verifier_required
+            ),
+            "adaptive_independent_verifier_completed": (
+                decision.independent_verifier_completed
+            ),
+            "adaptive_pending_independent_verifier": pending_independent,
+            "binary_verification_decision_id": decision.decision_id,
+            "binary_verification_decision": decision.decision,
+            "binary_verification_decision_path": decision_artifact.relative_to(
+                run_dir
+            ).as_posix(),
+            "compact_review_package_id": review.package_id,
+            "compact_review_package_path": review_artifact.relative_to(
+                run_dir
+            ).as_posix(),
+            "verification_cost": decision.verification_cost.amount,
+            "verification_cost_accounting_status": (
+                decision.verification_cost.accounting_status
+            ),
+            "pre_adaptive_outcome": verification.outcome,
+            "pre_adaptive_acceptance_eligible": verification.acceptance_eligible,
+            "pre_adaptive_reason": verification.reason,
+        }
+        if decision.decision == 1 or pending_independent:
+            return replace(verification, metadata=metadata)
+        recommended_action: Literal[
+            "accept", "reject", "retry_verifier", "escalate", "fail"
+        ]
+        if decision.infrastructure_status != "resolved":
+            recommended_action = "retry_verifier"
+        elif decision.reason_code == "independent_verifier_required":
+            recommended_action = "escalate"
+        elif decision.semantic_status in {"unclear", "error", "not_invoked"}:
+            recommended_action = "escalate"
+        else:
+            recommended_action = "reject"
+        normalized_outcome: Literal["accepted", "rejected", "unclear", "error"] = (
+            verification.outcome
+            if verification.outcome in {"unclear", "error"}
+            else "rejected"
+        )
+        return replace(
+            verification,
+            outcome=normalized_outcome,
+            acceptance_eligible=False,
+            reason=decision.reason,
+            recommended_action=recommended_action,
+            risk_flags=tuple(verification.risk_flags)
+            + (f"acceptance_blocker:{decision.reason_code}",),
+            metadata=metadata,
+        )
+
+    def finalize_independent_verification(
+        self,
+        attempt_context: AttemptContext,
+        attempt_result: AttemptResult,
+        verification: Verification,
+    ) -> Verification:
+        """Finalize critical-risk proof after a distinct cascade route agrees."""
+
+        plan_value = verification.metadata.get("adaptive_verification_plan_path")
+        if not isinstance(plan_value, str) or not plan_value:
+            return verification
+        plan = load_plan(Path(attempt_context.run_directory) / plan_value)
+        restored = replace(
+            verification,
+            outcome=(
+                "accepted"
+                if verification.metadata.get("pre_adaptive_outcome") == "accepted"
+                else verification.outcome
+            ),
+            acceptance_eligible=bool(
+                verification.metadata.get("pre_adaptive_acceptance_eligible")
+            ),
+            reason=str(
+                verification.metadata.get("pre_adaptive_reason")
+                or verification.reason
+            ),
+            recommended_action=(
+                "accept"
+                if verification.metadata.get("pre_adaptive_acceptance_eligible")
+                else verification.recommended_action
+            ),
+            metadata={
+                **dict(verification.metadata),
+                "independent_verifier_completed": True,
+                "adaptive_pending_independent_verifier": False,
+            },
+        )
+        return self._finalize_adaptive_verification(
+            attempt_context=attempt_context,
+            attempt_result=attempt_result,
+            verification=restored,
+            plan=plan,
+        )
+
     def _llm_usage(
         self, trace_dir: Path, duration_ms: int, failure_state: str
     ) -> tuple[dict[str, Any], ...]:
@@ -757,7 +1007,7 @@ class VillaniVerifierAdapter:
         definitions: Sequence[RequirementDefinition],
         repository_authority: _RepositoryValidationAuthority,
     ) -> dict[str, Any]:
-        return dict(
+        payload = dict(
             redact_data(
                 {
                     "schema_version": "villani.verifier_context.v2",
@@ -777,12 +1027,16 @@ class VillaniVerifierAdapter:
                         "failure_code": repository_authority.failure_code,
                         "report_path": repository_authority.report_path,
                     },
-                    "execution_environment_fingerprint": attempt_result.metadata.get(
-                        "execution_environment_fingerprint"
-                    ),
                 }
             )
         )
+        unexpected = set(payload) - set(SEMANTIC_CONTEXT_ALLOWLIST)
+        if unexpected:
+            raise RuntimeError(
+                "semantic verifier context contains controller-only fields: "
+                f"{sorted(unexpected)!r}"
+            )
+        return payload
 
     def _build_verification(
         self,
@@ -1612,7 +1866,8 @@ class VillaniVerifierAdapter:
                 ),
                 "verification_evidence_path": matrix_relative,
                 "focused_probe_requests": [
-                    item.model_dump(mode="json") for item in pending_requests
+                    _focused_probe_execution_value(item)
+                    for item in pending_requests
                 ],
                 "focused_probe_requests_pending": bool(pending_requests),
                 "focused_probe_rejections": rejected_probes,
@@ -1663,25 +1918,76 @@ class VillaniVerifierAdapter:
             trace_dir = raw_dir / f"{attempt_context.attempt_id}_trace_{suffix}"
             suffix += 1
 
-        if repository_authority.infrastructure_error:
-            raw = {
-                "result": 0,
-                "verdict": "error",
-                "recommendedAction": "retry_verifier",
-                "reason": (
+        definitions = extract_requirements(
+            task_instruction=attempt_context.task,
+            success_criteria=attempt_context.success_criteria,
+            policy_configuration=attempt_context.policy_configuration,
+        )
+        plan = self._adaptive_plan(attempt_context, attempt_result, definitions)
+        eligibility = candidate_eligibility(
+            patch=attempt_result.patch,
+            requires_file_changes=attempt_context.requires_file_changes,
+            attempt_status=attempt_result.status,
+            failure_classification=attempt_result.metadata.get(
+                "failure_classification"
+            ),
+            candidate_quality=_candidate_quality(
+                attempt_result.metadata.get("candidate_quality_report")
+            ),
+        )
+        repository_required = _repository_validation_required(
+            attempt_context.policy_configuration
+        )
+        deterministic_failure: tuple[str, str, str, str] | None = None
+        if eligibility.status != "eligible":
+            deterministic_failure = (
+                "failure",
+                "reject",
+                "Candidate eligibility failed before semantic verification.",
+                "candidate_ineligible",
+            )
+        elif repository_authority.failed:
+            deterministic_failure = (
+                "failure",
+                "reject",
+                "Authoritative repository validation failed on the candidate.",
+                "repository_validation_failed",
+            )
+        elif repository_authority.infrastructure_error:
+            deterministic_failure = (
+                "error",
+                "retry_verifier",
+                (
                     "Repository validation could not execute reliably against "
                     "the preserved candidate."
                 ),
+                "repository_validation_infrastructure_error",
+            )
+        elif repository_required and repository_authority.unavailable:
+            deterministic_failure = (
+                "error",
+                "retry_verifier",
+                "Required repository validation was unavailable.",
+                "repository_validation_unavailable",
+            )
+
+        if deterministic_failure is not None:
+            verdict, action, reason, failure_code = deterministic_failure
+            raw = {
+                "result": 0,
+                "verdict": verdict,
+                "recommendedAction": action,
+                "reason": reason,
                 "requirementResults": [],
                 "successEvidence": [],
                 "failureEvidence": [],
                 "missingEvidence": [],
-                "riskFlags": [],
+                "riskFlags": [f"acceptance_blocker:{failure_code}"],
                 "criticalRequirementCoverageProven": False,
                 "focusedProbeRequests": [],
             }
             write_json_atomic(raw_path, redact_data(raw))
-            return self._build_verification(
+            verification = self._build_verification(
                 attempt_context=attempt_context,
                 attempt_result=attempt_result,
                 repository_authority=repository_authority,
@@ -1690,49 +1996,20 @@ class VillaniVerifierAdapter:
                 invocation_status="completed",
                 resolution_status="not_invoked",
                 resolution_reason=(
-                    "Semantic verification was deferred until repository "
-                    "validation infrastructure is available."
+                    "Semantic verification was skipped because deterministic "
+                    f"evidence conclusively produced {failure_code}."
                 ),
                 subprocess_exit_code=None,
-                llm_usage=(
-                    {
-                        "stage": "verification",
-                        "backend": (
-                            self._backend_config.name
-                            if self._backend_config
-                            else self._backend
-                        ),
-                        "model": (
-                            self._backend_config.model
-                            if self._backend_config
-                            else self._model
-                        ),
-                        "input_tokens": None,
-                        "output_tokens": None,
-                        "total_tokens": None,
-                        "token_accounting_status": "not_applicable",
-                        "model_calls": 0,
-                        "model_call_accounting_status": "complete",
-                        "cost": None,
-                        "cost_accounting_status": "not_applicable",
-                        "currency": (
-                            self._backend_config.currency
-                            if self._backend_config
-                            else "USD"
-                        ),
-                        "duration_ms": 0,
-                        "duration_accounting_status": "complete",
-                        "failure_state": "failed",
-                    },
-                ),
+                llm_usage=self._not_invoked_usage(failure_state="failed"),
                 semantic_verifier_invoked=False,
             )
+            return self._finalize_adaptive_verification(
+                attempt_context=attempt_context,
+                attempt_result=attempt_result,
+                verification=verification,
+                plan=plan,
+            )
 
-        definitions = extract_requirements(
-            task_instruction=attempt_context.task,
-            success_criteria=attempt_context.success_criteria,
-            policy_configuration=attempt_context.policy_configuration,
-        )
         context_payload = self._verification_context(
             attempt_context,
             attempt_result,
@@ -1774,7 +2051,7 @@ class VillaniVerifierAdapter:
         duration_ms = max(int((time.monotonic() - started) * 1000), 0)
         raw_value = redact_data(execution.result)
         raw = raw_value if isinstance(raw_value, dict) else {}
-        return self._build_verification(
+        verification = self._build_verification(
             attempt_context=attempt_context,
             attempt_result=attempt_result,
             repository_authority=repository_authority,
@@ -1793,7 +2070,15 @@ class VillaniVerifierAdapter:
                     else "succeeded"
                 ),
             ),
-            semantic_verifier_invoked=not self._no_llm,
+            semantic_verifier_invoked=(
+                not self._no_llm or self._raw_verifier is not None
+            ),
+        )
+        return self._finalize_adaptive_verification(
+            attempt_context=attempt_context,
+            attempt_result=attempt_result,
+            verification=verification,
+            plan=plan,
         )
 
     def finalize_with_focused_probes(
@@ -1817,7 +2102,7 @@ class VillaniVerifierAdapter:
         repository_authority = _repository_validation_details(
             attempt_context, attempt_result
         )
-        return self._build_verification(
+        verification = self._build_verification(
             attempt_context=attempt_context,
             attempt_result=attempt_result,
             repository_authority=repository_authority,
@@ -1845,4 +2130,24 @@ class VillaniVerifierAdapter:
             semantic_verifier_invoked=bool(
                 initial_verification.metadata.get("semantic_verifier_invoked", True)
             ),
+        )
+        plan_value = initial_verification.metadata.get(
+            "adaptive_verification_plan_path"
+        )
+        if isinstance(plan_value, str) and plan_value:
+            plan = load_plan(run_dir / plan_value)
+        else:
+            definitions = extract_requirements(
+                task_instruction=attempt_context.task,
+                success_criteria=attempt_context.success_criteria,
+                policy_configuration=attempt_context.policy_configuration,
+            )
+            plan = self._adaptive_plan(
+                attempt_context, attempt_result, definitions
+            )
+        return self._finalize_adaptive_verification(
+            attempt_context=attempt_context,
+            attempt_result=attempt_result,
+            verification=verification,
+            plan=plan,
         )

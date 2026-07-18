@@ -1,0 +1,347 @@
+{
+  "$defs": {
+    "DurationEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "sample_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "DurationEstimate",
+      "type": "object"
+    },
+    "MoneyEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "sample_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "MoneyEstimate",
+      "type": "object"
+    },
+    "QualificationTaskProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "difficulty": {
+          "minLength": 1,
+          "title": "Difficulty",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "risk": {
+          "minLength": 1,
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "difficulty",
+        "risk"
+      ],
+      "title": "QualificationTaskProfile",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/economics-observation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted_as_is": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Accepted As Is"
+    },
+    "attempt_count": {
+      "minimum": 1,
+      "title": "Attempt Count",
+      "type": "integer"
+    },
+    "authoritative_verification_complete": {
+      "title": "Authoritative Verification Complete",
+      "type": "boolean"
+    },
+    "duration": {
+      "$ref": "#/$defs/DurationEstimate"
+    },
+    "eligible_for_automatic_policy_metrics": {
+      "title": "Eligible For Automatic Policy Metrics",
+      "type": "boolean"
+    },
+    "eligible_for_profile": {
+      "title": "Eligible For Profile",
+      "type": "boolean"
+    },
+    "escalation_count": {
+      "minimum": 0,
+      "title": "Escalation Count",
+      "type": "integer"
+    },
+    "exclusion_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exclusion Reason"
+    },
+    "execution_cost": {
+      "$ref": "#/$defs/MoneyEstimate"
+    },
+    "false_acceptance": {
+      "default": false,
+      "title": "False Acceptance",
+      "type": "boolean"
+    },
+    "forced_choice": {
+      "title": "Forced Choice",
+      "type": "boolean"
+    },
+    "human_review_cost": {
+      "$ref": "#/$defs/MoneyEstimate"
+    },
+    "infrastructure_status": {
+      "enum": [
+        "resolved",
+        "excluded",
+        "unresolved"
+      ],
+      "title": "Infrastructure Status",
+      "type": "string"
+    },
+    "observation_id": {
+      "pattern": "^eobs_[0-9a-f]{64}$",
+      "title": "Observation Id",
+      "type": "string"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "policy_version": {
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "proved_acceptable": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Proved Acceptable"
+    },
+    "qualification_eligible": {
+      "title": "Qualification Eligible",
+      "type": "boolean"
+    },
+    "qualification_observation_id": {
+      "pattern": "^qobs_[0-9a-f]{64}$",
+      "title": "Qualification Observation Id",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "repository_id": {
+      "minLength": 1,
+      "title": "Repository Id",
+      "type": "string"
+    },
+    "retry_escalation_cost": {
+      "$ref": "#/$defs/MoneyEstimate"
+    },
+    "review_minutes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Review Minutes"
+    },
+    "route_name": {
+      "minLength": 1,
+      "title": "Route Name",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.economics_observation.v1",
+      "default": "villani.economics_observation.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_route_plan_id": {
+      "pattern": "^rplan_[0-9a-f]{64}$",
+      "title": "Source Route Plan Id",
+      "type": "string"
+    },
+    "source_run_id": {
+      "minLength": 1,
+      "title": "Source Run Id",
+      "type": "string"
+    },
+    "system_id": {
+      "pattern": "^asys_[0-9a-f]{64}$",
+      "title": "System Id",
+      "type": "string"
+    },
+    "system_identity_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "System Identity Digest",
+      "type": "string"
+    },
+    "task_profile": {
+      "$ref": "#/$defs/QualificationTaskProfile"
+    },
+    "verification_cost": {
+      "$ref": "#/$defs/MoneyEstimate"
+    }
+  },
+  "required": [
+    "observation_id",
+    "recorded_at",
+    "observed_at",
+    "source_run_id",
+    "source_route_plan_id",
+    "qualification_observation_id",
+    "repository_id",
+    "task_profile",
+    "system_id",
+    "system_identity_digest",
+    "route_name",
+    "policy_version",
+    "forced_choice",
+    "qualification_eligible",
+    "authoritative_verification_complete",
+    "infrastructure_status",
+    "proved_acceptable",
+    "accepted_as_is",
+    "eligible_for_profile",
+    "eligible_for_automatic_policy_metrics",
+    "execution_cost",
+    "verification_cost",
+    "human_review_cost",
+    "retry_escalation_cost",
+    "duration",
+    "attempt_count",
+    "escalation_count"
+  ],
+  "title": "EconomicsObservation",
+  "type": "object"
+}

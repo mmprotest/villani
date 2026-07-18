@@ -1,0 +1,17 @@
+{
+  "actor": "local_user",
+  "attempt_id": "attempt_002",
+  "correction_summary": null,
+  "full_trace_accounting_status": "complete",
+  "full_trace_opened": false,
+  "imported_from": "explicit_cli",
+  "linked_reference": null,
+  "notes": "Fixture outcome entered explicitly.",
+  "outcome": "accepted_as_is",
+  "outcome_id": "hout_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "recorded_at": "2026-07-18T00:00:00Z",
+  "review_minutes": 2.0,
+  "review_time_accounting_status": "complete",
+  "run_id": "run_protocol_fixture",
+  "schema_version": "villani.human_outcome.v1"
+}

@@ -1,0 +1,37 @@
+{
+  "application_without_full_trace_count": 1,
+  "calculated_at": "2026-07-18T00:00:00Z",
+  "correction_count": 0,
+  "eligible_outcome_count": 1,
+  "evidence_expansion_count": 0,
+  "explicit_review_minutes": 2.0,
+  "false_acceptance_count": 0,
+  "false_rejection_count": 0,
+  "full_trace_accounting_status": "complete",
+  "metrics_id": "smet_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "policy_version": "adaptive_verification_v1",
+  "review_cost": {
+    "accounting_status": "complete",
+    "amount": 0.1,
+    "currency": "USD",
+    "source": "explicit_review_minutes_times_configured_rate"
+  },
+  "review_time_accounting_status": "complete",
+  "run_id": "run_protocol_fixture",
+  "schema_version": "villani.supervision_metrics.v1",
+  "source_outcome_ids": [
+    "hout_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  ],
+  "total_accepted_change_cost": {
+    "accounting_status": "complete",
+    "amount": 0.59,
+    "currency": "USD",
+    "source": "accepted_change_cost_components"
+  },
+  "verification_cost": {
+    "accounting_status": "complete",
+    "amount": 0.07,
+    "currency": "USD",
+    "source": "binary_verification_decisions"
+  }
+}

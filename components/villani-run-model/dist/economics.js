@@ -1,0 +1,9 @@
+export const ACCEPTED_CHANGE_POLICY_VERSION = "accepted_change_economics_v1";
+export const ECONOMICS_CONFIGURATION_SCHEMA_VERSION = "villani.accepted_change_economics_configuration.v1";
+export const ROUTE_POLICY_SCHEMA_VERSION = "villani.route_policy.v1";
+export const ROUTE_PLAN_SCHEMA_VERSION = "villani.route_plan.v1";
+export const ECONOMICS_OBSERVATION_SCHEMA_VERSION = "villani.economics_observation.v1";
+export const ECONOMICS_SNAPSHOT_SCHEMA_VERSION = "villani.economics_snapshot.v1";
+export const ROUTE_POLICY_EVALUATION_SCHEMA_VERSION = "villani.route_policy_evaluation.v1";
+export const ROUTE_POLICY_PUBLICATION_SCHEMA_VERSION = "villani.route_policy_publication.v1";
+export const ONLINE_EVIDENCE_UPDATE_SCHEMA_VERSION = "villani.online_evidence_update.v1";

@@ -1,0 +1,13 @@
+{
+  "detail": "Fixture warning preserves history without granting qualification.",
+  "evidence_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+  "evidence_reference": "reviews/pt7-review.json",
+  "invalidation_id": "qinv_5555555555555555555555555555555555555555555555555555555555555555",
+  "reason": "operator_invalidation",
+  "recorded_at": "2026-07-18T02:00:00Z",
+  "repository_id": "repo_fixture_pt7",
+  "route_name": "villani_code",
+  "schema_version": "villani.qualification_invalidation.v1",
+  "severity": "warning",
+  "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+}

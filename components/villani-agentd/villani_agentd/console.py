@@ -29,6 +29,8 @@ from villani_ops.closed_loop.agent_systems.configuration import (
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.interfaces import ClosedLoopRunRequest
 from villani_ops.closed_loop.product_run import build_product_run
+from villani_ops.closed_loop.qualification import QualificationStore
+from villani_ops.closed_loop.economics import EconomicsStore
 from villani_ops.closed_loop.model_management import (
     add_model_to_configuration,
     configured_backends,
@@ -348,7 +350,15 @@ def _model_inventory(
     store = CapabilityStore(home / "capabilities")
     snapshot = store.rebuild(home / "runs").snapshot if refresh else store.load()
     state = _model_state_with_setup_detection(home)
-    return inventory_document(configuration, snapshot, state)
+    repository = _mapping(configuration.get("setup")).get("repository")
+    return inventory_document(
+        configuration,
+        snapshot,
+        state,
+        qualification_store=QualificationStore(home / "qualification"),
+        economics_store=EconomicsStore(home / "economics"),
+        repository_path=repository if isinstance(repository, str) else None,
+    )
 
 
 def _models(configuration: Mapping[str, Any], home: Path) -> list[dict[str, Any]]:
@@ -740,6 +750,9 @@ class ConsoleService:
                 configuration,
                 CapabilityStore(self.home_path / "capabilities").load(),
                 state,
+                qualification_store=QualificationStore(self.home_path / "qualification"),
+                economics_store=EconomicsStore(self.home_path / "economics"),
+                repository_path=_mapping(configuration.get("setup")).get("repository"),
             )
         except (OSError, ValueError, json.JSONDecodeError) as error:
             raise ConsoleDataError(f"Model detection failed: {error}") from error
@@ -986,12 +999,8 @@ class ConsoleService:
                 path = root / name
                 if path.is_file():
                     metadata = path.stat()
-                    fingerprint_parts.append(
-                        f"{name}:{metadata.st_size}:{metadata.st_mtime_ns}"
-                    )
-            fingerprint = hashlib.sha256(
-                "\0".join(fingerprint_parts).encode("utf-8")
-            ).hexdigest()
+                    fingerprint_parts.append(f"{name}:{metadata.st_size}:{metadata.st_mtime_ns}")
+            fingerprint = hashlib.sha256("\0".join(fingerprint_parts).encode("utf-8")).hexdigest()
             cached = self._validation_cache.get(fingerprint)
             if cached is not None:
                 return json.loads(json.dumps(cached))
@@ -1011,9 +1020,7 @@ class ConsoleService:
             "repository_fingerprint": fingerprint,
             **discovery,
             "failure": (
-                None
-                if discovery.get("suggestions")
-                else _product_failure("validation_unavailable")
+                None if discovery.get("suggestions") else _product_failure("validation_unavailable")
             ),
         }
         self._validation_cache[fingerprint] = json.loads(json.dumps(result))
@@ -1208,9 +1215,7 @@ class ConsoleService:
     def start_run(self, body: Mapping[str, Any]) -> dict[str, Any]:
         submission_id = body.get("submission_id")
         if submission_id is not None and (
-            not isinstance(submission_id, str)
-            or not submission_id
-            or len(submission_id) > 200
+            not isinstance(submission_id, str) or not submission_id or len(submission_id) > 200
         ):
             raise ConsoleInputError("submission_id is invalid")
         if isinstance(submission_id, str):
@@ -1474,9 +1479,7 @@ class ConsoleService:
             self._pending_runs[run_id]["status"] = "RUNNING"
             self._run_condition.notify_all()
         try:
-            builder: Callable[
-                [Mapping[str, Any], Callable[[Any], None] | None], Any
-            ]
+            builder: Callable[[Mapping[str, Any], Callable[[Any], None] | None], Any]
             if self._controller_builder is None:
                 from villani_ops.cli.unified import build_controller
 
@@ -1488,9 +1491,7 @@ class ConsoleService:
                 with self._run_condition:
                     record = self._pending_runs.get(run_id)
                     if record is not None:
-                        record["last_event_sequence"] = int(
-                            getattr(event, "sequence", 0) or 0
-                        )
+                        record["last_event_sequence"] = int(getattr(event, "sequence", 0) or 0)
                     self._run_condition.notify_all()
 
             controller = builder(configuration, on_event)
@@ -1594,9 +1595,7 @@ class ConsoleService:
             return failed
         return self._pending_product_run(run_id, pending)
 
-    def _pending_product_run(
-        self, run_id: str, pending: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    def _pending_product_run(self, run_id: str, pending: Mapping[str, Any]) -> dict[str, Any]:
         timestamp = str(pending.get("queued_at") or "unknown")
         return {
             "schema_version": "villani.product_run.v1",
@@ -1783,9 +1782,7 @@ class ConsoleService:
         if persisted_backends:
             configuration["backends"] = persisted_backends
         try:
-            builder: Callable[
-                [Mapping[str, Any], Callable[[Any], None] | None], Any
-            ]
+            builder: Callable[[Mapping[str, Any], Callable[[Any], None] | None], Any]
             if self._controller_builder is None:
                 from villani_ops.cli.unified import build_controller
 

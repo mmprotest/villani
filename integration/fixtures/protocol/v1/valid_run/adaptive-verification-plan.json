@@ -1,0 +1,90 @@
+{
+  "attempt_id": "attempt_002",
+  "candidate_diff_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+  "changed_files": [
+    "src/example.py"
+  ],
+  "created_at": "2026-07-18T00:00:00Z",
+  "criteria_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "deterministic_input_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "historical_failure_modes": [],
+  "independent_verifier_required": false,
+  "manual_review_if_unresolved": true,
+  "nodes": [
+    {
+      "depends_on": [],
+      "disposition": "required",
+      "estimated_model_calls": null,
+      "evidence_requirements": [
+        "candidate patch digest"
+      ],
+      "kind": "diff_integrity",
+      "node_id": "node_diff_integrity",
+      "reason": "The recorded patch must remain isolated and internally consistent.",
+      "repository_commands": []
+    },
+    {
+      "depends_on": [
+        "node_diff_integrity"
+      ],
+      "disposition": "required",
+      "estimated_model_calls": null,
+      "evidence_requirements": [
+        "requirement evidence matrix"
+      ],
+      "kind": "requirement_mapping",
+      "node_id": "node_requirement_mapping",
+      "reason": "Every requirement needs acceptance-grade evidence.",
+      "repository_commands": []
+    },
+    {
+      "depends_on": [
+        "node_requirement_mapping"
+      ],
+      "disposition": "required",
+      "estimated_model_calls": 1,
+      "evidence_requirements": [
+        "binary semantic verdict"
+      ],
+      "kind": "semantic_verifier",
+      "node_id": "node_semantic_verifier",
+      "reason": "Semantic verification is mandatory before acceptance.",
+      "repository_commands": []
+    }
+  ],
+  "plan_id": "avp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "policy_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "policy_version": "adaptive_verification_v1",
+  "qualification_state": "qualified",
+  "requirement_ids": [
+    "req_001"
+  ],
+  "risk_reasons": [
+    "ordinary_bounded_change"
+  ],
+  "risk_tier": "standard",
+  "run_id": "run_protocol_fixture",
+  "schema_version": "villani.adaptive_verification_plan.v1",
+  "semantic_context_allowlist": [
+    "attempt_id",
+    "candidate_patch",
+    "changed_files",
+    "repository_validation",
+    "requirements",
+    "run_id",
+    "schema_version",
+    "success_criteria",
+    "task_prompt"
+  ],
+  "semantic_context_excluded": [
+    "competing_candidates",
+    "cost",
+    "execution_environment_identity",
+    "harness_identity",
+    "model_identity",
+    "provider_identity",
+    "qualification",
+    "route"
+  ],
+  "task_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+}

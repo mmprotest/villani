@@ -1,0 +1,123 @@
+{
+  "arms": [
+    {
+      "accepted_as_is": 1,
+      "case_ids": [
+        "founder_case_001"
+      ],
+      "elapsed_duration": {
+        "accounting_status": "complete",
+        "duration_ms": 4000,
+        "source": "frozen_founder_fixture"
+      },
+      "eligible_cases": 1,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": 8.0,
+      "review_time_accounting_status": "complete",
+      "safe_fallback": true,
+      "strategy": "strongest_only",
+      "total_cost": {
+        "accounting_status": "complete",
+        "amount": 1.2,
+        "currency": "USD",
+        "source": "frozen_founder_fixture"
+      }
+    },
+    {
+      "accepted_as_is": 1,
+      "case_ids": [
+        "founder_case_001"
+      ],
+      "elapsed_duration": {
+        "accounting_status": "complete",
+        "duration_ms": 3200,
+        "source": "frozen_founder_fixture"
+      },
+      "eligible_cases": 1,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": 6.0,
+      "review_time_accounting_status": "complete",
+      "safe_fallback": true,
+      "strategy": "accepted_change_optimizer",
+      "total_cost": {
+        "accounting_status": "complete",
+        "amount": 0.9,
+        "currency": "USD",
+        "source": "frozen_founder_fixture"
+      }
+    },
+    {
+      "accepted_as_is": 1,
+      "case_ids": [
+        "founder_case_001"
+      ],
+      "elapsed_duration": {
+        "accounting_status": "complete",
+        "duration_ms": 2400,
+        "source": "frozen_founder_fixture"
+      },
+      "eligible_cases": 1,
+      "explainable_routes": true,
+      "false_acceptances": 0,
+      "review_minutes": 3.0,
+      "review_time_accounting_status": "complete",
+      "safe_fallback": true,
+      "strategy": "optimizer_plus_adaptive",
+      "total_cost": {
+        "accounting_status": "complete",
+        "amount": 0.7,
+        "currency": "USD",
+        "source": "frozen_founder_fixture"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "check": "matched_founder_cases",
+      "reason": "All arms contain the same 1 frozen cases.",
+      "status": "pass"
+    },
+    {
+      "check": "accepted_as_is_no_regression",
+      "reason": "Adaptive verification did not reduce accepted-as-is outcomes.",
+      "status": "pass"
+    },
+    {
+      "check": "zero_false_acceptance",
+      "reason": "Adaptive verification recorded zero false acceptance on matched cases.",
+      "status": "pass"
+    },
+    {
+      "check": "lower_cost_or_time",
+      "reason": "Adaptive verification lowered a fully accounted cost or elapsed-time measure.",
+      "status": "pass"
+    },
+    {
+      "check": "lower_review_burden",
+      "reason": "Adaptive verification reduced explicit review minutes.",
+      "status": "pass"
+    },
+    {
+      "check": "explainability",
+      "reason": "Every adaptive route and verification expansion is explainable.",
+      "status": "pass"
+    },
+    {
+      "check": "safe_fallback",
+      "reason": "Unresolved proof falls back safely to review or rejection.",
+      "status": "pass"
+    }
+  ],
+  "evidence_references": [
+    "frozen-founder-fixture.json"
+  ],
+  "gate_id": "gated_05979cbba718c3d3ca88e418c45e1c7b5ae8e09c60c3ac185ef4db03df5dd007",
+  "generated_at": "2026-07-18T00:00:00Z",
+  "next_milestone_permitted": true,
+  "policy_version": "adaptive_verification_v1",
+  "schema_version": "villani.gate_d.v1",
+  "status": "PASS",
+  "warnings": []
+}

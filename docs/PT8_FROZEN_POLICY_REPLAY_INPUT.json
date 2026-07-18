@@ -1,0 +1,5 @@
+{
+  "cases": [],
+  "evidence_note": "PT7 Gate C has no eligible frozen founder-suite observations for Villani Code, Codex, or Claude Code on this repository. PT8 retains the empty point-in-time input so policy publication fails closed instead of fabricating matched outcomes.",
+  "source_gate": "docs/PT7_GATE_C.json"
+}

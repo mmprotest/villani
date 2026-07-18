@@ -1,0 +1,215 @@
+{
+  "checks": [
+    {
+      "actual": {
+        "known_cost": false,
+        "known_duration_count": 0,
+        "sample_count": 0,
+        "unknown_duration_count": 0
+      },
+      "check_id": "evidence_parity",
+      "reason": "No eligible observation matches this complete system identity.",
+      "required": "At least one eligible observation with truthful known/unknown cost, duration, review, failure, and false-case accounting.",
+      "status": "insufficient_evidence",
+      "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+    },
+    {
+      "actual": {
+        "identity_drift": [],
+        "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+      },
+      "check_id": "exact_identity",
+      "reason": "Exact-identity evidence is absent.",
+      "required": "Exact harness, model/provider, execution, policy, and software identity.",
+      "status": "insufficient_evidence",
+      "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+    },
+    {
+      "actual": "passed",
+      "check_id": "conformance",
+      "reason": "Exact conformance passed.",
+      "required": "passed for the exact configured harness protocol and model",
+      "status": "pass",
+      "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+    },
+    {
+      "actual": "supported",
+      "check_id": "isolation",
+      "reason": "The system contract requires isolated candidate worktrees.",
+      "required": "supported with evidence",
+      "status": "pass",
+      "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+    },
+    {
+      "actual": {
+        "automatic_eligible": false,
+        "state": "experimental"
+      },
+      "check_id": "unsupported_behavior",
+      "reason": "Unsupported behavior fails closed.",
+      "required": "unsupported and experimental systems are never automatic routes",
+      "status": "pass",
+      "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+    },
+    {
+      "actual": {
+        "false_acceptance_count": 0,
+        "sample_count": 0,
+        "state": "experimental",
+        "threshold": 0.6,
+        "wilson_lower_bound": null
+      },
+      "check_id": "qualification_correctness",
+      "reason": "The derived state is safe but evidence is not yet sufficient for qualification.",
+      "required": "PT7 policy: 20+ approved observations, zero false acceptance, Wilson above threshold, valid conformance, and no severe drift",
+      "status": "insufficient_evidence",
+      "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3"
+    },
+    {
+      "actual": {
+        "experimental_automatic_routes": [],
+        "qualified_routes": []
+      },
+      "check_id": "automatic_routing_eligibility",
+      "reason": "Automatic routing eligibility is fail closed.",
+      "required": "automatic routes are qualified; experimental routes require manual override",
+      "status": "pass",
+      "system_id": null
+    }
+  ],
+  "evidence_snapshot_digest": "sha256:1ac8963c1ec8d3723868b5805acfcf0b820cc8170f9bf70f13c70fab7c79b251",
+  "gate": "C",
+  "generated_at": "2026-07-18T02:00:00Z",
+  "policy_version": "repository_qualification_v1",
+  "repository_head": "7ba4cd9bda42df126336829db4f168606a8e6ccd",
+  "repository_id": "repo_e363cfcb2ce38f2e059c",
+  "schema_version": "villani.gate_c.v1",
+  "scorecards": [
+    {
+      "accepted_as_is": 0,
+      "assessment": {
+        "automatic_eligible": false,
+        "backoff_evidence": [
+          {
+            "approved_for_qualification": true,
+            "cohort": null,
+            "eligible_observation_count": 0,
+            "level": "exact_repository_task",
+            "rejection_reasons": [
+              "no eligible observations"
+            ],
+            "repository_ids": [
+              "repo_e363cfcb2ce38f2e059c"
+            ],
+            "selected": false
+          },
+          {
+            "approved_for_qualification": true,
+            "cohort": null,
+            "eligible_observation_count": 0,
+            "level": "repository_category",
+            "rejection_reasons": [
+              "no eligible observations"
+            ],
+            "repository_ids": [
+              "repo_e363cfcb2ce38f2e059c"
+            ],
+            "selected": false
+          },
+          {
+            "approved_for_qualification": true,
+            "cohort": null,
+            "eligible_observation_count": 0,
+            "level": "repository_wide",
+            "rejection_reasons": [
+              "no eligible observations"
+            ],
+            "repository_ids": [
+              "repo_e363cfcb2ce38f2e059c"
+            ],
+            "selected": false
+          }
+        ],
+        "caveat": "No eligible evidence matches this repository, task profile, and exact system identity.",
+        "doctor_action": "villani agents doctor villani_code",
+        "evaluated_at": "2026-07-18T02:00:00Z",
+        "evidence_action": "villani agents evidence villani_code --repo C:\\Users\\Simon\\OneDrive\\Documents\\Python Scripts\\villani",
+        "manual_override_required": true,
+        "policy_version": "repository_qualification_v1",
+        "provisional_fallback_eligible": false,
+        "repository_head": "7ba4cd9bda42df126336829db4f168606a8e6ccd",
+        "repository_id": "repo_e363cfcb2ce38f2e059c",
+        "route_name": "villani_code",
+        "schema_version": "villani.qualification_assessment.v1",
+        "selected_cohort": null,
+        "selected_level": null,
+        "state": "experimental",
+        "statistics": {
+          "acceptance_rate": null,
+          "accepted_as_is_count": 0,
+          "accepted_change_cost_by_currency": {},
+          "accepted_change_cost_unknown_count": 0,
+          "cost_distribution_by_currency": {},
+          "cost_unknown_count": 0,
+          "drift_flags": [],
+          "duration_distribution": {
+            "known_count": 0,
+            "maximum": null,
+            "median": null,
+            "minimum": null,
+            "p90": null,
+            "unit": "ms",
+            "unknown_count": 0
+          },
+          "exclusions": {},
+          "failures": 0,
+          "false_acceptance_count": 0,
+          "false_case_ids": [],
+          "false_rejection_count": 0,
+          "last_evidence_at": null,
+          "proved_acceptable_count": 0,
+          "review_minutes_distribution": {
+            "known_count": 0,
+            "maximum": null,
+            "median": null,
+            "minimum": null,
+            "p90": null,
+            "unit": "minutes",
+            "unknown_count": 0
+          },
+          "sample_count": 0,
+          "software_version_diversity": {},
+          "successes": 0,
+          "wilson_lower_bound": null
+        },
+        "system_id": "asys_04bbd3b9d395f1493093cf5b2f378ca3537ca8ff45d0d8d029f654fee0d5cdc3",
+        "task_profile": {
+          "category": "maintenance",
+          "difficulty": "easy",
+          "required_capabilities": [],
+          "risk": "low"
+        },
+        "task_wilson_threshold": 0.6,
+        "unsupported_reasons": []
+      },
+      "failures": 0,
+      "false_cases": 0,
+      "harness": "villani-code@1.0.0",
+      "known_cost": false,
+      "known_duration": false,
+      "known_review_time": false,
+      "model": "villani-model",
+      "proved_acceptable": 0,
+      "provider": "local",
+      "system_name": "Villani Code"
+    }
+  ],
+  "status": "INSUFFICIENT_EVIDENCE",
+  "task_profile": {
+    "category": "maintenance",
+    "difficulty": "easy",
+    "required_capabilities": [],
+    "risk": "low"
+  },
+  "unmatched_sample_warning": "one or more systems have no eligible sample; experimental systems are not ranked."
+}

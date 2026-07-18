@@ -44,17 +44,68 @@ from villani_ops.closed_loop.agent_systems.configuration import (
 from villani_ops.closed_loop.agent_systems.registry import (
     build_agent_system_registry,
 )
-from villani_ops.closed_loop.durable_io import read_jsonl_tolerant
+from villani_ops.closed_loop.durable_io import (
+    read_jsonl_tolerant,
+    write_json_atomic,
+)
 from villani_ops.closed_loop.capabilities.report import backend_score_rows
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
+from villani_ops.closed_loop.qualification import (
+    QualificationInvalidation,
+    QualificationObservation,
+    QualificationStore,
+    assess_qualification,
+    build_gate_c_report,
+    observation_from_evaluation_trial,
+    repository_qualification_context,
+    task_profile as qualification_task_profile,
+)
+from villani_ops.closed_loop.qualification.repository import (
+    canonical_digest,
+    qualification_system_identity,
+)
+from villani_ops.closed_loop.qualification.store import (
+    qualification_policy_from_configuration,
+)
+from villani_ops.closed_loop.economics import (
+    EconomicsStore,
+    HistoricalRouteCase,
+    RoutePolicy,
+    RoutePolicyEvaluation,
+    RoutePolicyStore,
+    evaluate_route_policy,
+    route_policy_from_configuration,
+)
+from villani_ops.closed_loop.adaptive_verification import (
+    BinaryVerificationDecision,
+    GateDArm,
+    MoneyAccounting,
+    append_human_outcome,
+    build_supervision_metrics,
+    evaluate_gate_d,
+    load_decision,
+    load_human_outcomes,
+    load_plan,
+    load_supervision_metrics,
+    make_human_outcome,
+    persist_supervision_metrics,
+)
 from villani_ops.closed_loop.offline_evaluation.replay import replay_file
 from villani_ops.evaluation_lab.models import (
     FileChangeRequirement,
     SetupCommand,
     ValidationCommand,
 )
-from villani_ops.evaluation_lab.reporting import build_report, load_trials, write_reports
-from villani_ops.evaluation_lab.reviews import append_review, latest_reviews, load_reviews
+from villani_ops.evaluation_lab.reporting import (
+    build_report,
+    load_trials,
+    write_reports,
+)
+from villani_ops.evaluation_lab.reviews import (
+    append_review,
+    latest_reviews,
+    load_reviews,
+)
 from villani_ops.evaluation_lab.runner import ProductArmExecutor, run_paired_suite
 from villani_ops.evaluation_lab.workspace import (
     add_task as evaluation_add_task,
@@ -180,6 +231,11 @@ agents_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+verification_app = typer.Typer(
+    help="Inspect verification proof, import explicit outcomes, and evaluate Gate D.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 app.add_typer(backend_app, name="backend")
 app.add_typer(capability_app, name="capability")
 app.add_typer(evaluate_app, name="evaluate")
@@ -187,6 +243,385 @@ app.add_typer(eval_app, name="eval")
 app.add_typer(policy_app, name="policy")
 app.add_typer(models_app, name="models")
 app.add_typer(agents_app, name="agents")
+app.add_typer(verification_app, name="verification")
+
+
+def _verification_attempt_id(directory: Path, requested: str | None) -> str:
+    if requested:
+        if Path(requested).name != requested or requested in {".", ".."}:
+            _usage_error("attempt ID must be a single path segment")
+        return requested
+    manifest = _read_json(directory / "manifest.json") or {}
+    selected = manifest.get("selected_attempt_id")
+    if isinstance(selected, str) and selected:
+        return selected
+    attempts = manifest.get("attempt_ids")
+    if isinstance(attempts, list) and attempts and isinstance(attempts[-1], str):
+        return attempts[-1]
+    _usage_error("the run has no recorded attempt to inspect")
+
+
+def _verification_decisions(directory: Path) -> list[BinaryVerificationDecision]:
+    decisions: list[BinaryVerificationDecision] = []
+    verification_directory = directory / "verification"
+    if not verification_directory.is_dir():
+        return decisions
+    for path in sorted(verification_directory.glob("*-decision.json")):
+        decisions.append(load_decision(path))
+    return decisions
+
+
+def _verification_execution_cost(directory: Path) -> MoneyAccounting:
+    manifest = _read_json(directory / "manifest.json") or {}
+    status = str(manifest.get("cost_accounting_status") or "unknown")
+    value = manifest.get("total_cost_usd")
+    if status in {"complete", "partial"} and isinstance(value, (int, float)):
+        return MoneyAccounting(
+            amount=float(value),
+            currency=str(manifest.get("currency") or "USD"),
+            accounting_status=status,  # type: ignore[arg-type]
+            source="canonical_run_manifest",
+        )
+    return MoneyAccounting(
+        amount=None,
+        currency=None,
+        accounting_status=("not_applicable" if status == "not_applicable" else "unknown"),
+        source="canonical_run_cost_unavailable",
+    )
+
+
+def _verification_selected_identity(
+    directory: Path, attempt_id: str
+) -> tuple[str, str]:
+    attempt = _read_json(directory / "attempts" / attempt_id / "attempt.json") or {}
+    system_id = attempt.get("agent_system_id")
+    if not isinstance(system_id, str) or not system_id:
+        _usage_error(
+            "adverse feedback requires the attempt's exact agent-system identity"
+        )
+    identity_reference = attempt.get("agent_system_identity_path")
+    relative = (
+        Path(identity_reference)
+        if isinstance(identity_reference, str) and identity_reference
+        else Path("agent-systems") / f"{system_id}.json"
+    )
+    identity_path = (directory / relative).resolve()
+    if not identity_path.is_relative_to(directory.resolve()):
+        _usage_error("agent-system identity path escapes the run bundle")
+    identity = _read_json(identity_path) or {}
+    if identity.get("system_id") != system_id:
+        _usage_error("the selected attempt's exact agent-system identity is unavailable")
+    route_name = identity.get("route_name")
+    if not isinstance(route_name, str) or not route_name:
+        _usage_error("the selected agent-system route identity is unavailable")
+    return system_id, route_name
+
+
+def _quarantine_adverse_outcome(
+    *,
+    directory: Path,
+    run_id: str,
+    attempt_id: str,
+    outcome_id: str,
+    outcome_kind: str,
+) -> QualificationInvalidation:
+    system_id, route_name = _verification_selected_identity(directory, attempt_id)
+    recorded_at = datetime.now(timezone.utc)
+    evidence_reference = f"runs/{run_id}/human-outcomes.jsonl#{outcome_id}"
+    payload = {
+        "recorded_at": recorded_at,
+        "system_id": system_id,
+        "route_name": route_name,
+        "repository_id": None,
+        "reason": "false_acceptance",
+        "severity": "severe",
+        "evidence_reference": evidence_reference,
+        "evidence_digest": canonical_digest(
+            {"run_id": run_id, "outcome_id": outcome_id, "outcome": outcome_kind}
+        ),
+        "detail": (
+            f"Explicit local outcome {outcome_kind} quarantined automatic use of "
+            "the exact agent system."
+        ),
+    }
+    invalidation = QualificationInvalidation(
+        **payload,
+        invalidation_id=(
+            "qinv_"
+            + canonical_digest(
+                {**payload, "recorded_at": recorded_at.isoformat()}
+            ).removeprefix("sha256:")
+        ),
+    )
+    store = QualificationStore(_home() / "qualification")
+    store.append_invalidation(invalidation)
+    store.rebuild(policy=qualification_policy_from_configuration(_load_config()))
+    return invalidation
+
+
+@verification_app.command("plan")
+def verification_plan(
+    run_id: str = typer.Argument(..., help="Canonical run ID."),
+    attempt_id: str | None = typer.Option(None, "--attempt"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect the deterministic adaptive verification plan without starting work."""
+
+    directory = _run_dir(run_id)
+    if not directory.is_dir():
+        _usage_error(f"run not found: {run_id}")
+    selected = _verification_attempt_id(directory, attempt_id)
+    try:
+        plan = load_plan(directory / "verification" / f"{selected}-plan.json")
+    except (OSError, ValueError, ValidationError, json.JSONDecodeError) as error:
+        _usage_error(f"adaptive verification plan is unavailable: {error}")
+    document = redact_data(plan.model_dump(mode="json"))
+    if json_output:
+        typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
+        return
+    console.print(
+        f"{plan.risk_tier.title()} risk · {len(plan.nodes)} plan nodes · "
+        f"policy {plan.policy_version}"
+    )
+    for node in plan.nodes:
+        console.print(f"- {node.kind}: {node.disposition} — {node.reason}")
+
+
+@verification_app.command("feedback-import")
+def verification_feedback_import(
+    run_id: str = typer.Argument(..., help="Canonical run ID."),
+    outcome: str | None = typer.Option(None, "--outcome"),
+    source_file: Path | None = typer.Option(
+        None, "--file", exists=True, dir_okay=False, readable=True
+    ),
+    attempt_id: str | None = typer.Option(None, "--attempt"),
+    review_minutes: float | None = typer.Option(None, "--review-minutes", min=0),
+    correction_summary: str | None = typer.Option(None, "--correction-summary"),
+    linked_reference: str | None = typer.Option(None, "--linked-reference"),
+    notes: str | None = typer.Option(None, "--notes"),
+    full_trace_opened: bool | None = typer.Option(
+        None, "--opened-full-trace/--did-not-open-full-trace"
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Explicitly import a local human outcome; no repository monitoring occurs."""
+
+    directory = _run_dir(run_id)
+    if not directory.is_dir():
+        _usage_error(f"run not found: {run_id}")
+    if (source_file is None and not outcome) or (
+        source_file is not None and outcome is not None
+    ):
+        _usage_error("provide exactly one explicit --outcome or --file")
+    imported_from = "explicit_cli"
+    if source_file is not None:
+        try:
+            source = _read_json(source_file)
+        except (OSError, json.JSONDecodeError) as error:
+            _usage_error(f"feedback file is unreadable: {error}")
+        if source is None:
+            _usage_error("feedback file must contain one JSON object")
+        if source.get("run_id") not in {None, run_id}:
+            _usage_error("feedback file run_id does not match the requested run")
+        outcome = str(source.get("outcome") or "")
+        attempt_id = str(source.get("attempt_id") or attempt_id or "") or None
+        review_minutes = cast(float | None, source.get("review_minutes"))
+        correction_summary = cast(str | None, source.get("correction_summary"))
+        linked_reference = cast(str | None, source.get("linked_reference"))
+        notes = cast(str | None, source.get("notes"))
+        raw_trace = source.get("full_trace_opened")
+        full_trace_opened = raw_trace if isinstance(raw_trace, bool) else None
+        imported_from = "explicit_local_file"
+    if not outcome:
+        _usage_error("feedback file requires an outcome")
+    selected = _verification_attempt_id(directory, attempt_id)
+    try:
+        human_outcome = make_human_outcome(
+            run_id=run_id,
+            attempt_id=selected,
+            outcome=outcome,
+            review_minutes=review_minutes,
+            full_trace_opened=full_trace_opened,
+            correction_summary=correction_summary,
+            linked_reference=linked_reference,
+            notes=notes,
+            imported_from=imported_from,
+        )
+        appended = append_human_outcome(
+            directory / "human-outcomes.jsonl", human_outcome
+        )
+        adverse = outcome in {"false_acceptance", "reverted", "reopened_defect"}
+        invalidation = (
+            _quarantine_adverse_outcome(
+                directory=directory,
+                run_id=run_id,
+                attempt_id=selected,
+                outcome_id=human_outcome.outcome_id,
+                outcome_kind=outcome,
+            )
+            if adverse
+            else None
+        )
+        configuration = _load_config()
+        economics = configuration.get("economics")
+        economics_policy = (
+            economics.get("policy") if isinstance(economics, Mapping) else None
+        )
+        review_rate = (
+            economics_policy.get("human_review_cost_per_minute")
+            if isinstance(economics_policy, Mapping)
+            else None
+        )
+        metrics = build_supervision_metrics(
+            run_id=run_id,
+            outcomes=load_human_outcomes(directory / "human-outcomes.jsonl"),
+            decisions=_verification_decisions(directory),
+            evidence_expansion_count=len(
+                list((directory / "verification").glob("*-focused-probes.json"))
+            ),
+            review_cost_per_minute=(
+                float(review_rate) if isinstance(review_rate, (int, float)) else None
+            ),
+            execution_cost=_verification_execution_cost(directory),
+        )
+        metrics_path = persist_supervision_metrics(directory, metrics)
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        _usage_error(f"human outcome was rejected: {error}")
+    document = {
+        "schema_version": "villani.human_outcome_import_result.v1",
+        "appended": appended,
+        "outcome": human_outcome.model_dump(mode="json"),
+        "metrics_path": metrics_path.relative_to(directory).as_posix(),
+        "qualification_invalidation": (
+            invalidation.model_dump(mode="json") if invalidation else None
+        ),
+        "passive_monitoring": False,
+    }
+    if json_output:
+        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(
+            f"Recorded {human_outcome.outcome}; review time "
+            f"{human_outcome.review_time_accounting_status}."
+        )
+        if invalidation is not None:
+            console.print("The exact agent system was quarantined from automatic use.")
+
+
+@verification_app.command("feedback")
+def verification_feedback(
+    run_id: str = typer.Argument(...),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show only explicitly imported local outcomes for a run."""
+
+    directory = _run_dir(run_id)
+    if not directory.is_dir():
+        _usage_error(f"run not found: {run_id}")
+    try:
+        outcomes = load_human_outcomes(directory / "human-outcomes.jsonl")
+    except (OSError, ValueError, ValidationError, json.JSONDecodeError) as error:
+        _usage_error(f"human outcomes are unavailable: {error}")
+    document = [item.model_dump(mode="json") for item in outcomes]
+    if json_output:
+        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+    else:
+        if not outcomes:
+            console.print("No explicit human outcome has been imported.")
+        for item in outcomes:
+            review = (
+                f"{item.review_minutes:g} review minutes"
+                if item.review_minutes is not None
+                else "review time unknown"
+            )
+            console.print(f"{item.recorded_at.isoformat()} · {item.outcome} · {review}")
+
+
+@verification_app.command("metrics")
+def verification_metrics(
+    run_id: str = typer.Argument(...),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show persisted local supervision metrics without inventing unknown values."""
+
+    directory = _run_dir(run_id)
+    try:
+        metrics = load_supervision_metrics(directory / "supervision-metrics.json")
+    except (OSError, ValueError, ValidationError, json.JSONDecodeError) as error:
+        _usage_error(f"supervision metrics are unavailable: {error}")
+    document = redact_data(metrics.model_dump(mode="json"))
+    if json_output:
+        typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
+    else:
+        minutes = (
+            f"{metrics.explicit_review_minutes:g} min"
+            if metrics.explicit_review_minutes is not None
+            else "unknown"
+        )
+        console.print(
+            f"Review {minutes} · false acceptance {metrics.false_acceptance_count} · "
+            f"verification cost {metrics.verification_cost.accounting_status}"
+        )
+
+
+@verification_app.command("gate-d")
+def verification_gate_d(
+    input_path: Path = typer.Option(
+        ..., "--input", exists=True, dir_okay=False, readable=True
+    ),
+    output: Path | None = typer.Option(None, "--output", dir_okay=False),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Evaluate matched frozen evidence for Gate D; empty evidence stays insufficient."""
+
+    try:
+        source = _read_json(input_path)
+        if source is None or not isinstance(source.get("arms"), list):
+            raise ValueError("Gate D input requires an arms array")
+        arms = [GateDArm.model_validate(item) for item in source["arms"]]
+        raw_stamp = source.get("generated_at")
+        generated_at = (
+            datetime.fromisoformat(str(raw_stamp).replace("Z", "+00:00"))
+            if raw_stamp
+            else None
+        )
+        references = source.get("evidence_references")
+        report = evaluate_gate_d(
+            arms=arms,
+            generated_at=generated_at,
+            evidence_references=(
+                [str(item) for item in references]
+                if isinstance(references, list)
+                else []
+            ),
+        )
+        if output is not None:
+            write_json_atomic(output.expanduser().resolve(), report)
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        _usage_error(f"Gate D evidence was rejected: {error}")
+    document = report.model_dump(mode="json")
+    if json_output:
+        typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"Gate D: {report.status} · policy {report.policy_version}")
+        for check in report.checks:
+            console.print(f"- {check.check}: {check.status} — {check.reason}")
+    if report.status == "FAIL":
+        raise typer.Exit(1)
+    if report.status == "INSUFFICIENT_EVIDENCE":
+        raise typer.Exit(2)
 
 
 @policy_app.command("explain")
@@ -295,6 +730,8 @@ def policy_explain(
         stage = route.get("stage_budget_projection") or {}
         progress = route.get("credible_progress_assessment") or {}
         sequence = route.get("empirical_sequence") or {}
+        route_plan = route.get("route_plan") or {}
+        route_economics = route_plan.get("sequence_economics") or {}
         console.print(
             f"Decision details: action={route['action']}; "
             f"retry_allowed={route.get('retry_allowed')}; "
@@ -320,6 +757,19 @@ def policy_explain(
             f"fallback={sequence.get('fallback_policy_version') or 'none'}; "
             f"missing_inputs={','.join(sequence.get('missing_inputs', [])) or 'none'}"
         )
+        if route_plan:
+            console.print(route_plan.get("explanation"))
+            console.print(
+                "Accepted-change route: "
+                f"first={route_plan.get('selected_first_system') or 'none'}; "
+                f"fallbacks={' -> '.join(route_plan.get('ordered_fallbacks', [])) or 'none'}; "
+                f"selection={route_plan.get('selection_mode')}; "
+                f"conservative_probability={route_economics.get('conservative_success_probability', 'unknown')}; "
+                f"expected_accepted_change_cost={route_economics.get('expected_accepted_change_cost', 'unknown')}; "
+                f"accounting={route_economics.get('accounting_status', 'unknown')}; "
+                f"policy={route_plan.get('policy_version')}; "
+                f"unknowns={','.join(route_plan.get('unknowns', [])) or 'none'}"
+            )
         selected_verifier = verifier.get("selected") or {}
         console.print(
             f"Verifier route: {selected_verifier.get('route') or 'none'}; "
@@ -442,6 +892,207 @@ def policy_simulate(
     console.print("No causal savings or counterfactual success claim is supported.")
 
 
+def _load_route_policy(path: Path) -> RoutePolicy:
+    return RoutePolicy.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _load_historical_route_cases(path: Path) -> list[HistoricalRouteCase]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    raw_cases = value.get("cases") if isinstance(value, Mapping) else value
+    if not isinstance(raw_cases, list):
+        raise ValueError(
+            "historical route replay input must be a list or an object with cases"
+        )
+    return [HistoricalRouteCase.model_validate(item) for item in raw_cases]
+
+
+@policy_app.command("economics-evaluate")
+def policy_economics_evaluate(
+    cases: Path = typer.Option(
+        ...,
+        "--cases",
+        exists=True,
+        dir_okay=False,
+        help="Frozen point-in-time historical route cases.",
+    ),
+    proposed_policy: Path = typer.Option(
+        ...,
+        "--proposed-policy",
+        exists=True,
+        dir_okay=False,
+        help="Deterministic proposed route-policy document.",
+    ),
+    output: Path | None = typer.Option(None, "--output", dir_okay=False),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Replay a proposed route policy without starting an attempt or activating it."""
+
+    try:
+        configured = route_policy_from_configuration(_load_config())
+        store = RoutePolicyStore()
+        active = store.active_policy(configured)
+        proposed = _load_route_policy(proposed_policy)
+        evaluation = evaluate_route_policy(
+            _load_historical_route_cases(cases),
+            active_policy=active,
+            proposed_policy=proposed,
+        )
+        if output is not None:
+            write_json_atomic(output.expanduser().resolve(), evaluation)
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _usage_error(f"route-policy evaluation failed: {message}")
+    document = redact_data(evaluation.model_dump(mode="json"))
+    if json_output:
+        typer.echo(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    console.print(
+        f"Route policy evaluation: {evaluation.evaluation_id}; "
+        f"cases={evaluation.frozen_case_count}; safe_to_publish={evaluation.safe_to_publish}"
+    )
+    console.print(
+        "Checks: "
+        f"reliability_non_decreasing={evaluation.conservative_reliability_non_decreasing}; "
+        f"false_acceptance_exposure_non_increasing={evaluation.false_acceptance_exposure_non_increasing}"
+    )
+    console.print("Rejections: " + ("; ".join(evaluation.rejection_reasons) or "none"))
+    if output is not None:
+        console.print(f"Evaluation artifact: {output.expanduser().resolve()}")
+
+
+@policy_app.command("economics-status")
+def policy_economics_status(
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show the exact active accepted-change economics policy."""
+
+    try:
+        configured = route_policy_from_configuration(_load_config())
+        store = RoutePolicyStore()
+        publication = store.active_publication()
+        policy = publication.policy if publication is not None else configured
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _usage_error(f"route-policy status failed: {message}")
+    document = {
+        "schema_version": "villani.route_policy_status.v1",
+        "active_policy": policy.model_dump(mode="json"),
+        "published": publication is not None,
+        "publication": publication.model_dump(mode="json") if publication else None,
+    }
+    if json_output:
+        typer.echo(
+            json.dumps(
+                redact_data(document), ensure_ascii=False, indent=2, sort_keys=True
+            )
+        )
+        return
+    console.print(
+        f"Active accepted-change policy: {policy.policy_version}; "
+        f"strategy={policy.strategy}; published={publication is not None}"
+    )
+
+
+@policy_app.command("economics-publish")
+def policy_economics_publish(
+    policy_path: Path = typer.Option(..., "--policy", exists=True, dir_okay=False),
+    evaluation_path: Path = typer.Option(
+        ..., "--evaluation", exists=True, dir_okay=False
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Publish only an exactly evaluated, reliability-preserving deterministic policy."""
+
+    try:
+        policy = _load_route_policy(policy_path)
+        evaluation = RoutePolicyEvaluation.model_validate_json(
+            evaluation_path.read_text(encoding="utf-8")
+        )
+        publication = RoutePolicyStore().publish(policy, evaluation)
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _usage_error(f"route-policy publication refused: {message}")
+    if json_output:
+        typer.echo(
+            json.dumps(
+                redact_data(publication.model_dump(mode="json")),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    console.print(
+        f"Published accepted-change policy {publication.policy.policy_version} "
+        f"from evaluation {publication.evaluation_id}."
+    )
+
+
+@policy_app.command("economics-rollback")
+def policy_economics_rollback(
+    target_version: str | None = typer.Option(None, "--to"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Instantly move the active pointer to a previously published policy."""
+
+    try:
+        publication = RoutePolicyStore().rollback(target_version=target_version)
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+        json.JSONDecodeError,
+    ) as error:
+        message = (
+            _validation_message(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        _usage_error(f"route-policy rollback failed: {message}")
+    if json_output:
+        typer.echo(
+            json.dumps(
+                redact_data(publication.model_dump(mode="json")),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    console.print(f"Active accepted-change policy: {publication.policy.policy_version}")
+
+
 @evaluate_app.command("replay")
 def evaluate_replay(
     input_path: Path = typer.Option(..., "--input", exists=True, dir_okay=False),
@@ -533,7 +1184,9 @@ def evaluation_import_baseline(
     except (OSError, TypeError, ValueError, RuntimeError) as error:
         _usage_error(f"baseline import failed: {error}")
     if json_output:
-        typer.echo(json.dumps(snapshot.model_dump(mode="json"), indent=2, sort_keys=True))
+        typer.echo(
+            json.dumps(snapshot.model_dump(mode="json"), indent=2, sort_keys=True)
+        )
         return
     console.print(f"Baseline digest: {snapshot.baseline_digest}")
     console.print(f"Files captured: {snapshot.file_count}; restore verified: yes")
@@ -589,7 +1242,9 @@ def evaluation_add_task_command(
             for index, value in enumerate(hidden_validation_command or [], start=1)
         ]
         if not visible and not hidden:
-            raise ValueError("at least one authoritative validation command is required")
+            raise ValueError(
+                "at least one authoritative validation command is required"
+            )
         setup = [
             SetupCommand(
                 setup_id=f"setup_{index:03d}",
@@ -618,7 +1273,14 @@ def evaluation_add_task_command(
             future_context_files=tuple(future_context_file or ()),
             confidentiality=confidentiality,
         )
-    except (OSError, TypeError, ValueError, RuntimeError, TaskInputError, ValidationError) as error:
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        RuntimeError,
+        TaskInputError,
+        ValidationError,
+    ) as error:
         _usage_error(f"task capture failed: {error}")
     console.print(f"Task captured: {created.task_id}")
     console.print(f"Task digest: {created.content_digest}")
@@ -689,7 +1351,9 @@ def evaluation_run(
     """Run randomized paired trials sequentially and resume without duplicates."""
 
     try:
-        selected_arms = tuple(value.strip() for value in arms.split(",") if value.strip())
+        selected_arms = tuple(
+            value.strip() for value in arms.split(",") if value.strip()
+        )
         executor = ProductArmExecutor(
             configuration=_load_config(),
             villani_home=_home(),
@@ -749,8 +1413,12 @@ def evaluation_review(
     severity: str = typer.Option("none", "--severity"),
     unblinded: bool = typer.Option(False, "--unblinded"),
     amend: str | None = typer.Option(None, "--amend"),
-    later_rollback: bool | None = typer.Option(None, "--later-rollback/--no-later-rollback"),
-    reopened_defect: bool | None = typer.Option(None, "--reopened-defect/--not-reopened"),
+    later_rollback: bool | None = typer.Option(
+        None, "--later-rollback/--no-later-rollback"
+    ),
+    reopened_defect: bool | None = typer.Option(
+        None, "--reopened-defect/--not-reopened"
+    ),
 ) -> None:
     """Append a human review or amendment; prior labels are never overwritten."""
 
@@ -817,7 +1485,10 @@ def evaluation_gate(
                 {
                     "schema_version": "villani.founder_gate.v1",
                     "status": report.founder_gate_status,
-                    "checks": [item.model_dump(mode="json") for item in report.founder_gate_checks],
+                    "checks": [
+                        item.model_dump(mode="json")
+                        for item in report.founder_gate_checks
+                    ],
                 },
                 indent=2,
                 sort_keys=True,
@@ -884,6 +1555,75 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "classifier_version": "task_classifier_v1",
         "verifier_version": "villani_ops_verifier_pipeline_v1",
         "scorer_version": "empirical_wilson_v1",
+    },
+    "qualification": {
+        "schema_version": "villani.repository_qualification_configuration.v1",
+        "policy": {
+            "policy_version": "repository_qualification_v1",
+            "minimum_qualified_observations": 20,
+            "provisional_maximum_observations": 19,
+            "wilson_z": 1.959963984540054,
+            "task_wilson_thresholds": {
+                "low": 0.60,
+                "medium": 0.70,
+                "high": 0.80,
+            },
+            "maximum_evidence_age_days": 180,
+            "recent_reliability_window": 5,
+            "approved_backoff_levels": [
+                "exact_repository_task",
+                "repository_category",
+                "repository_wide",
+            ],
+            "compatible_repository_cohorts": {},
+            "approved_repository_cohorts": [],
+        },
+    },
+    "economics": {
+        "schema_version": "villani.accepted_change_economics_configuration.v1",
+        "policy": {
+            "schema_version": "villani.route_policy.v1",
+            "policy_version": "accepted_change_economics_v1",
+            "strategy": "accepted_change_optimizer",
+            "objective_version": "total_accepted_change_v1",
+            "conservative_cost_statistic": "p90",
+            "conservative_duration_statistic": "p90",
+            "currency": "USD",
+            "human_review_cost_per_minute": None,
+            "latency_penalty_per_second": None,
+            "allow_provisional_fallback": True,
+            "require_complete_objective_for_comparison": True,
+            "constraints": {
+                "local_only": False,
+                "prefer_local": False,
+                "allowed_providers": [],
+                "preferred_provider": None,
+                "excluded_systems": [],
+                "forced_system": None,
+                "strongest_only": False,
+                "maximum_known_cost_usd": None,
+                "allowed_permission_profiles": [],
+                "allow_experimental_forced": False,
+            },
+        },
+        "constraints": {},
+        "availability": {},
+        "verification_cost_usd": None,
+        "online_update": {"enabled": True},
+    },
+    "adaptive_verification": {
+        "schema_version": "villani.adaptive_verification_configuration.v1",
+        "policy_version": "adaptive_verification_v1",
+        "standard_patch_line_limit": 200,
+        "elevated_patch_line_limit": 600,
+        "standard_changed_file_limit": 6,
+        "elevated_changed_file_limit": 18,
+        "sensitive_paths": [],
+        "generated_artifact_paths": [],
+        "require_independent_verifier_for_critical": True,
+        "require_manual_review_when_proof_impossible": True,
+        "minimum_independent_verifier_capability": 80,
+        "historical_disagreement_window": 20,
     },
     "budgets": {
         "max_attempts": 3,
@@ -992,9 +1732,7 @@ def _load_config() -> dict[str, Any]:
 def _agent_system_registry():
     configuration = _load_config()
     try:
-        return build_agent_system_registry(
-            configuration, _load_backends(configuration)
-        )
+        return build_agent_system_registry(configuration, _load_backends(configuration))
     except (OSError, TypeError, ValueError, ValidationError) as error:
         _usage_error(f"agent-system configuration is invalid: {error}")
 
@@ -1009,11 +1747,27 @@ def agents_list(
     document = {
         "schema_version": "villani.agent_system_inventory.v1",
         "systems": [item.model_dump(mode="json") for item in registry.list()],
+        "harnesses": [item.model_dump(mode="json") for item in registry.discoveries],
         "migration": registry.migration_report,
     }
     if json_output:
-        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
         return
+    for discovery in registry.discoveries:
+        readiness = discovery.readiness
+        console.print(
+            f"detected {discovery.display_name}: "
+            f"installed={'yes' if readiness.installed else 'no'}; "
+            f"version={readiness.exact_version or 'unknown'}; "
+            f"auth={readiness.authentication_status}; "
+            f"protocol={readiness.protocol}; "
+            f"conformance={readiness.conformance_status}; "
+            f"qualification={readiness.qualification_state}; "
+            f"repair={readiness.repair_action}",
+            soft_wrap=True,
+        )
     if not registry.list():
         console.print("No coding agent systems are configured.")
         return
@@ -1023,6 +1777,7 @@ def agents_list(
             f"{identity.harness.version}; model={identity.model_provider.model_id}; "
             f"provider={identity.model_provider.provider}; "
             f"qualification={identity.qualification_status}; "
+            f"auth={identity.readiness.authentication_status if identity.readiness else 'unknown'}; "
             f"enabled={'yes' if identity.production_enabled else 'no'}; "
             f"id={identity.system_id}",
             soft_wrap=True,
@@ -1070,7 +1825,9 @@ def agents_doctor(
         "reports": [item.model_dump(mode="json") for item in reports],
     }
     if json_output:
-        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
     else:
         for report in reports:
             console.print(
@@ -1080,6 +1837,410 @@ def agents_doctor(
                 console.print(f"- {check.name}: {check.status} - {check.message}")
     if reports and any(not item.selectable for item in reports):
         raise typer.Exit(1)
+
+
+def _qualification_assessments(
+    *,
+    repository: Path,
+    category: str,
+    difficulty: str,
+    risk: str,
+    required_capabilities: Sequence[str],
+    reference: str | None = None,
+) -> tuple[
+    dict[str, Any],
+    Any,
+    dict[str, Backend],
+    Any,
+    tuple[Any, ...],
+]:
+    configuration = _load_config()
+    backends = _load_backends(configuration)
+    registry = build_agent_system_registry(configuration, backends)
+    identities = (
+        (registry.inspect(reference),) if reference is not None else registry.list()
+    )
+    context = repository_qualification_context(repository)
+    requested = qualification_task_profile(
+        category, difficulty, risk, required_capabilities
+    )
+    store = QualificationStore(_home() / "qualification")
+    assessments = []
+    for identity in identities:
+        backend_name = next(
+            (
+                name
+                for name, candidate in registry.by_backend.items()
+                if candidate.system_id == identity.system_id
+            ),
+            None,
+        )
+        backend = backends.get(backend_name) if backend_name else None
+        assessments.append(
+            assess_qualification(
+                identity=identity,
+                repository=context,
+                requested_task=requested,
+                configuration=configuration,
+                store=store,
+                backend_execution_selection=(
+                    backend.execution_environment if backend is not None else None
+                ),
+            )
+        )
+    return configuration, registry, backends, context, tuple(assessments)
+
+
+@agents_app.command("qualify")
+def agents_qualify(
+    reference: str = typer.Argument(..., help="Configured route name or system ID."),
+    suite: Path | None = typer.Option(
+        None, "--suite", help="Frozen evaluation-suite directory."
+    ),
+    trial: list[str] | None = typer.Option(
+        None, "--trial", help="Evaluation trial ID; repeat for multiple trials."
+    ),
+    evidence: list[Path] | None = typer.Option(
+        None,
+        "--evidence",
+        help="Validated qualification-observation JSON; repeat for multiple files.",
+    ),
+    category: str | None = typer.Option(None, "--category"),
+    difficulty: str | None = typer.Option(None, "--difficulty"),
+    risk: str | None = typer.Option(None, "--risk"),
+    required_capability: list[str] | None = typer.Option(None, "--required-capability"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Append only evidence that passes the complete PT7 eligibility rules."""
+
+    trial_ids = trial or []
+    evidence_paths = evidence or []
+    if not trial_ids and not evidence_paths:
+        _usage_error("qualify requires at least one --trial or --evidence")
+    if trial_ids and suite is None:
+        _usage_error("--trial requires --suite")
+    configuration = _load_config()
+    backends = _load_backends(configuration)
+    try:
+        registry = build_agent_system_registry(configuration, backends)
+        identity = registry.inspect(reference)
+    except (TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"qualification system is invalid: {error}")
+    store = QualificationStore(_home() / "qualification")
+    appended: list[QualificationObservation] = []
+    unchanged: list[str] = []
+    try:
+        for trial_id in trial_ids:
+            observation = observation_from_evaluation_trial(
+                suite,  # type: ignore[arg-type]
+                trial_id=trial_id,
+                identity=identity,
+                category=category,
+                difficulty=difficulty,
+                risk=risk,
+                required_capabilities=required_capability or (),
+                runs_root=_runs_root(),
+            )
+            if store.append_observation(observation):
+                appended.append(observation)
+            else:
+                unchanged.append(observation.observation_id)
+        for path in evidence_paths:
+            observation = QualificationObservation.model_validate_json(
+                path.expanduser().resolve().read_text(encoding="utf-8")
+            )
+            if observation.eligible:
+                raise ValueError(
+                    f"{path} claims eligible evidence without a locally verified frozen "
+                    "suite; ingest eligible evidence with --suite and --trial"
+                )
+            if observation.system.system_id != identity.system_id:
+                raise ValueError(
+                    f"{path} names a different complete agent-system identity"
+                )
+            expected_system = qualification_system_identity(
+                identity,
+                environment_fingerprint=(
+                    observation.system.execution_environment_fingerprint
+                ),
+            )
+            if observation.system != expected_system:
+                raise ValueError(
+                    f"{path} does not match the exact configured harness, model, "
+                    "provider, protocol, software, and verification-policy identity"
+                )
+            if store.append_observation(observation):
+                appended.append(observation)
+            else:
+                unchanged.append(observation.observation_id)
+        snapshot = store.rebuild(
+            policy=qualification_policy_from_configuration(configuration)
+        )
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"qualification evidence was rejected: {error}")
+    document = {
+        "schema_version": "villani.qualification_ingest_result.v1",
+        "system_id": identity.system_id,
+        "appended": [item.model_dump(mode="json") for item in appended],
+        "unchanged_observation_ids": unchanged,
+        "eligible_appended": sum(item.eligible for item in appended),
+        "excluded_appended": sum(not item.eligible for item in appended),
+        "qualification_created_directly": False,
+        "snapshot_digest": snapshot.snapshot_digest,
+    }
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+    else:
+        console.print(
+            f"Recorded {len(appended)} new observation(s), including "
+            f"{document['eligible_appended']} eligible and {document['excluded_appended']} excluded."
+        )
+        console.print(
+            "Evidence was recorded; status is derived separately by `villani agents status`."
+        )
+
+
+@agents_app.command("status")
+def agents_status(
+    reference: str | None = typer.Argument(
+        None, help="Optional configured route name or system ID."
+    ),
+    repo: Path = typer.Option(Path.cwd(), "--repo"),
+    category: str = typer.Option("*", "--category"),
+    difficulty: str = typer.Option("easy", "--difficulty"),
+    risk: str = typer.Option("low", "--risk"),
+    required_capability: list[str] | None = typer.Option(None, "--required-capability"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show evidence-backed repository/task qualification state."""
+
+    try:
+        _configuration, _registry, _backends, context, assessments = (
+            _qualification_assessments(
+                repository=repo,
+                category=category,
+                difficulty=difficulty,
+                risk=risk,
+                required_capabilities=required_capability or (),
+                reference=reference,
+            )
+        )
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"qualification status is unavailable: {error}")
+    document = {
+        "schema_version": "villani.qualification_status_collection.v1",
+        "repository_id": context.repository_id,
+        "repository_head": context.head,
+        "assessments": [item.model_dump(mode="json") for item in assessments],
+    }
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+        return
+    for assessment in assessments:
+        stats = assessment.statistics
+        rate = (
+            f"{100 * stats.acceptance_rate:.1f}%"
+            if stats.acceptance_rate is not None
+            else "Unknown"
+        )
+        console.print(
+            f"{assessment.route_name}: {assessment.state.upper()} — "
+            f"sample={stats.sample_count}; observed acceptance={rate}; "
+            f"last tested={stats.last_evidence_at or 'Unknown'}"
+        )
+        console.print(f"  {assessment.caveat}")
+        console.print(f"  Doctor: {assessment.doctor_action}")
+        console.print(f"  View evidence: {assessment.evidence_action}")
+
+
+@agents_app.command("evidence")
+def agents_evidence(
+    reference: str = typer.Argument(..., help="Configured route name or system ID."),
+    repo: Path = typer.Option(Path.cwd(), "--repo"),
+    category: str = typer.Option("*", "--category"),
+    difficulty: str = typer.Option("easy", "--difficulty"),
+    risk: str = typer.Option("low", "--risk"),
+    required_capability: list[str] | None = typer.Option(None, "--required-capability"),
+    json_output: bool = typer.Option(True, "--json/--no-json"),
+) -> None:
+    """Inspect immutable observations, exclusions, drift, and backoff evidence."""
+
+    try:
+        _configuration, registry, _backends, context, assessments = (
+            _qualification_assessments(
+                repository=repo,
+                category=category,
+                difficulty=difficulty,
+                risk=risk,
+                required_capabilities=required_capability or (),
+                reference=reference,
+            )
+        )
+        identity = registry.inspect(reference)
+        store = QualificationStore(_home() / "qualification")
+        visible_repository_ids = {
+            repository_id
+            for backoff in assessments[0].backoff_evidence
+            for repository_id in backoff.repository_ids
+        } | {context.repository_id}
+        observations = [
+            item
+            for item in store.load_observations()
+            if item.system.route_name == identity.route_name
+            and item.repository_id in visible_repository_ids
+        ]
+        invalidations = [
+            item
+            for item in store.load_invalidations()
+            if item.route_name == identity.route_name
+            and (
+                item.repository_id is None
+                or item.repository_id == context.repository_id
+            )
+        ]
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"qualification evidence is unavailable: {error}")
+    document = {
+        "schema_version": "villani.qualification_evidence_view.v1",
+        "assessment": assessments[0].model_dump(mode="json"),
+        "observations": [item.model_dump(mode="json") for item in observations],
+        "invalidations": [item.model_dump(mode="json") for item in invalidations],
+    }
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+    else:
+        console.print_json(data=redact_data(document))
+
+
+@agents_app.command("invalidate")
+def agents_invalidate(
+    reference: str = typer.Argument(..., help="Configured route name or system ID."),
+    reason: str = typer.Option(..., "--reason"),
+    detail: str = typer.Option(..., "--detail"),
+    evidence_reference: str = typer.Option(..., "--evidence-reference"),
+    evidence_digest: str | None = typer.Option(None, "--evidence-digest"),
+    severity: str = typer.Option("severe", "--severity"),
+    repo: Path | None = typer.Option(None, "--repo"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Append an invalidation without deleting or rewriting qualification history."""
+
+    configuration = _load_config()
+    backends = _load_backends(configuration)
+    try:
+        registry = build_agent_system_registry(configuration, backends)
+        identity = registry.inspect(reference)
+        repository_id = (
+            repository_qualification_context(repo).repository_id
+            if repo is not None
+            else None
+        )
+        now = datetime.now(timezone.utc)
+        payload = {
+            "recorded_at": now,
+            "system_id": identity.system_id,
+            "route_name": identity.route_name,
+            "repository_id": repository_id,
+            "reason": reason,
+            "severity": severity,
+            "evidence_reference": evidence_reference,
+            "evidence_digest": evidence_digest,
+            "detail": detail,
+        }
+        invalidation = QualificationInvalidation(
+            **payload,
+            invalidation_id=(
+                "qinv_"
+                + canonical_digest(
+                    {
+                        **payload,
+                        "recorded_at": now.isoformat(),
+                    }
+                ).removeprefix("sha256:")
+            ),
+        )
+        store = QualificationStore(_home() / "qualification")
+        changed = store.append_invalidation(invalidation)
+        snapshot = store.rebuild(
+            policy=qualification_policy_from_configuration(configuration)
+        )
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"qualification invalidation was rejected: {error}")
+    document = {
+        "schema_version": "villani.qualification_invalidation_result.v1",
+        "changed": changed,
+        "invalidation": invalidation.model_dump(mode="json"),
+        "history_deleted": False,
+        "snapshot_digest": snapshot.snapshot_digest,
+    }
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+    else:
+        console.print(
+            f"Recorded invalidation {invalidation.invalidation_id}; history was preserved."
+        )
+
+
+@agents_app.command("gate-c")
+def agents_gate_c(
+    repo: Path = typer.Option(Path.cwd(), "--repo"),
+    category: str = typer.Option("*", "--category"),
+    difficulty: str = typer.Option("easy", "--difficulty"),
+    risk: str = typer.Option("low", "--risk"),
+    required_capability: list[str] | None = typer.Option(None, "--required-capability"),
+    output: Path | None = typer.Option(None, "--output"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Calculate repository-specific Gate C and scorecards without ranking unknowns."""
+
+    configuration = _load_config()
+    backends = _load_backends(configuration)
+    try:
+        registry = build_agent_system_registry(configuration, backends)
+        report = build_gate_c_report(
+            identities=registry.list(),
+            backends=backends,
+            repository=repository_qualification_context(repo),
+            requested_task=qualification_task_profile(
+                category,
+                difficulty,
+                risk,
+                required_capability or (),
+            ),
+            configuration=configuration,
+            store=QualificationStore(_home() / "qualification"),
+        )
+        document = report.model_dump(mode="json")
+        if output is not None:
+            write_json_atomic(output.expanduser().resolve(), document)
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"Gate C could not be calculated: {error}")
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+    else:
+        console.print(f"Gate C: {report.status}")
+        for scorecard in report.scorecards:
+            console.print(
+                f"- {scorecard.system_name}: {scorecard.assessment.state}; "
+                f"sample={scorecard.assessment.statistics.sample_count}; "
+                f"accepted-as-is={scorecard.accepted_as_is}; failures={scorecard.failures}"
+            )
+        if report.unmatched_sample_warning:
+            console.print(f"Warning: {report.unmatched_sample_warning}")
+    if report.status == "FAIL":
+        raise typer.Exit(1)
+    if report.status == "INSUFFICIENT_EVIDENCE":
+        raise typer.Exit(2)
 
 
 def _load_backends(configuration: Mapping[str, Any]) -> dict[str, Backend]:
@@ -1836,6 +2997,10 @@ def build_policy_preview(
     """Classify once and project both coding and verifier routes read-only."""
 
     effective_configuration = apply_policy_preset(configuration, preset)
+    qualification_values = effective_configuration.setdefault("qualification", {})
+    if not isinstance(qualification_values, dict):
+        raise ValueError("qualification configuration must be an object")
+    qualification_values["repository_path"] = str(repository.resolve())
     backends = {
         backend.name: backend
         for backend in configured_model_backends(effective_configuration).values()
@@ -1884,10 +3049,21 @@ def build_policy_preview(
         }
     )
     snapshot = _capability_snapshot(refresh=True)
+    qualification_store = QualificationStore()
+    registry = build_agent_system_registry(
+        effective_configuration,
+        backends,
+        qualification_store=qualification_store,
+    )
+    configured_route_policy = route_policy_from_configuration(effective_configuration)
     decision = BootstrapPolicyEngine(
         backends,
         effective_configuration,
         capability_snapshot=snapshot,
+        qualification_store=qualification_store,
+        agent_system_by_backend=registry.by_backend,
+        economics_store=EconomicsStore(),
+        route_policy=RoutePolicyStore().active_policy(configured_route_policy),
     ).decide(
         initial_policy_context(
             effective,
@@ -2183,16 +3359,19 @@ def build_controller(
     """Construct only the canonical controller and its M4/M5 dependencies."""
 
     configured_backends = _load_backends(configuration)
+    qualification_store = QualificationStore()
     try:
-        agent_registry = build_agent_system_registry(configuration, configured_backends)
+        agent_registry = build_agent_system_registry(
+            configuration,
+            configured_backends,
+            qualification_store=qualification_store,
+        )
     except (TypeError, ValueError, ValidationError) as error:
         _usage_error(f"agent-system configuration is invalid: {error}")
     selectable_coding_backends = {
         name
         for name, identity in agent_registry.by_backend.items()
         if identity.production_enabled
-        and identity.qualification_status in {"qualified", "bootstrap"}
-        and identity.harness.harness_id == "villani-code"
     }
     backends = {
         name: (
@@ -2207,7 +3386,10 @@ def build_controller(
     _validate_run_backends(backends)
     for backend_name, identity in agent_registry.by_backend.items():
         backend = configured_backends[backend_name]
-        if identity.production_enabled and identity.harness.harness_id == "villani-code":
+        if (
+            identity.production_enabled
+            and identity.harness.harness_id == "villani-code"
+        ):
             execution = ExecutionEnvironmentConfig.from_configuration(
                 configuration, backend.execution_environment
             )
@@ -2251,10 +3433,17 @@ def build_controller(
                     "currency conversion is not performed"
                 )
     capability_snapshot = CapabilityStore().load()
+    economics_store = EconomicsStore()
+    configured_route_policy = route_policy_from_configuration(configuration)
+    active_route_policy = RoutePolicyStore().active_policy(configured_route_policy)
     policy = BootstrapPolicyEngine(
         backends,
         configuration,
         capability_snapshot=capability_snapshot,
+        qualification_store=qualification_store,
+        agent_system_by_backend=agent_registry.by_backend,
+        economics_store=economics_store,
+        route_policy=active_route_policy,
     )
     from villani_ops.closed_loop.plugins import (
         BuiltinAgentRunnerPlugin,
@@ -2429,6 +3618,8 @@ def build_controller(
         materializer=BuiltinMaterializerPlugin(materializer_impl),
         on_event=on_event,
         event_sink=build_agentd_event_sink(),
+        qualification_store=qualification_store,
+        economics_store=economics_store,
     )
 
 
@@ -2610,7 +3801,9 @@ def prepare_repository_validation(
         }
         if not quiet:
             for item in commands:
-                console.print(f"Validation: {item['display_command']} (manual override)")
+                console.print(
+                    f"Validation: {item['display_command']} (manual override)"
+                )
     else:
         configured = _configured_validation_commands(configuration)
         discovery = discover_repository_validation(repository)
@@ -2721,7 +3914,9 @@ def _run_progress_listener(
     debug: bool = False,
 ) -> Callable[[Any], None]:
     ordinals: dict[str, int] = {}
-    current_stage: Literal["Understanding", "Working", "Checking", "Ready"] | None = None
+    current_stage: Literal["Understanding", "Working", "Checking", "Ready"] | None = (
+        None
+    )
     current_sentence: str | None = None
 
     def listener(event: Any) -> None:
@@ -2763,7 +3958,9 @@ def _run_progress_listener(
                     markup=False,
                 )
         if debug:
-            console.print(json.dumps(redact_data(event_value), sort_keys=True), markup=False)
+            console.print(
+                json.dumps(redact_data(event_value), sort_keys=True), markup=False
+            )
 
     setattr(listener, "run_created", False)
     setattr(listener, "run_id", None)
@@ -2787,7 +3984,11 @@ def _money(value: Any, status: Any, currency: Any = "USD") -> str:
 
 
 def _count_text(value: Any) -> str:
-    return str(value) if isinstance(value, int) and not isinstance(value, bool) else "Unknown"
+    return (
+        str(value)
+        if isinstance(value, int) and not isinstance(value, bool)
+        else "Unknown"
+    )
 
 
 def _cost_text(value: Any, status: Any, currency: Any = "USD") -> str:
@@ -3157,6 +4358,10 @@ def _execute_new_run(
 ) -> ClosedLoopRunResult:
     runs_root = _runs_root()
     runs_root.mkdir(parents=True, exist_ok=True)
+    qualification = configuration.setdefault("qualification", {})
+    if not isinstance(qualification, dict):
+        _usage_error("config qualification must be a YAML object")
+    qualification["repository_path"] = str(repository.resolve())
     builder = _controller_builder or build_controller
     progress_listener = (
         None
@@ -3200,7 +4405,11 @@ def _execute_new_run(
         cancelled_directory = (
             runs_root / str(cancelled_run_id) if cancelled_run_id else None
         )
-        if cancelled_run_id and cancelled_directory is not None and cancelled_directory.is_dir():
+        if (
+            cancelled_run_id
+            and cancelled_directory is not None
+            and cancelled_directory.is_dir()
+        ):
             try:
                 cancelled_result = controller.cancel(str(cancelled_run_id), runs_root)
                 _print_terminal_summary(
@@ -3326,6 +4535,47 @@ def run_command(
         "--preset",
         help="Performance, Reliable, Balanced, Local first, Cheapest acceptable, or Custom.",
     ),
+    agent_system: str | None = typer.Option(
+        None,
+        "--agent-system",
+        help="Advanced manual route override by configured route name or system ID.",
+    ),
+    allow_experimental: bool = typer.Option(
+        False,
+        "--allow-experimental",
+        help="Acknowledge that the manually selected repository route is Experimental.",
+    ),
+    local_only: bool | None = typer.Option(
+        None,
+        "--local-only/--allow-remote",
+        help="Advanced privacy constraint: allow only qualified local systems.",
+        hidden=True,
+    ),
+    maximum_known_route_cost: float | None = typer.Option(
+        None,
+        "--maximum-known-route-cost",
+        min=0,
+        help="Advanced constraint on the known USD route-cost subtotal.",
+        hidden=True,
+    ),
+    preferred_provider: str | None = typer.Option(
+        None,
+        "--preferred-provider",
+        help="Advanced preference applied only among otherwise eligible systems.",
+        hidden=True,
+    ),
+    exclude_system: list[str] | None = typer.Option(
+        None,
+        "--exclude-system",
+        help="Advanced route, backend, or system-ID exclusion; repeat as needed.",
+        hidden=True,
+    ),
+    strongest_only: bool | None = typer.Option(
+        None,
+        "--strongest-only/--optimize-route",
+        help="Advanced control: bypass economics ordering and use strongest evidence.",
+        hidden=True,
+    ),
     policy_selection: str = typer.Option(
         "configured",
         "--policy",
@@ -3360,6 +4610,80 @@ def run_command(
         policy_selection=policy_selection,
         routing_mode=mode,
     )
+    economics = configuration.setdefault("economics", {})
+    if not isinstance(economics, dict):
+        _usage_error("config economics must be a YAML object")
+    constraints = economics.setdefault("constraints", {})
+    if not isinstance(constraints, dict):
+        _usage_error("config economics.constraints must be a YAML object")
+    if local_only is not None:
+        constraints["local_only"] = local_only
+    if maximum_known_route_cost is not None:
+        constraints["maximum_known_cost_usd"] = maximum_known_route_cost
+    if preferred_provider is not None:
+        constraints["preferred_provider"] = preferred_provider
+    if exclude_system:
+        constraints["excluded_systems"] = sorted(set(exclude_system))
+    if strongest_only is not None:
+        constraints["strongest_only"] = strongest_only
+    if allow_experimental and agent_system is None:
+        _usage_error("--allow-experimental requires --agent-system")
+    if agent_system is not None:
+        try:
+            backends = _load_backends(configuration)
+            registry = build_agent_system_registry(configuration, backends)
+            identity = registry.inspect(agent_system)
+            backend_name = next(
+                name
+                for name, candidate in registry.by_backend.items()
+                if candidate.system_id == identity.system_id
+            )
+            backend = backends[backend_name]
+            assessment = assess_qualification(
+                identity=identity,
+                repository=repository_qualification_context(repository),
+                requested_task=qualification_task_profile(
+                    "unknown", "hard", "high", ()
+                ),
+                configuration=configuration,
+                store=QualificationStore(),
+                backend_execution_selection=backend.execution_environment,
+            )
+        except (
+            OSError,
+            StopIteration,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as error:
+            _usage_error(f"manual agent-system override is invalid: {error}")
+        if assessment.state == "unsupported":
+            _usage_error(
+                f"{identity.route_name} is Unsupported for this repository: {assessment.caveat}"
+            )
+        if assessment.state == "experimental" and not allow_experimental:
+            _usage_error(
+                f"{identity.route_name} is Experimental for this repository; rerun with "
+                "--agent-system and --allow-experimental to acknowledge manual-only execution"
+            )
+        qualification = configuration.setdefault("qualification", {})
+        if not isinstance(qualification, dict):
+            _usage_error("config qualification must be a YAML object")
+        qualification["manual_override"] = {
+            "route_name": identity.route_name,
+            "system_id": identity.system_id,
+            "allow_experimental": allow_experimental,
+            "display_state": assessment.state,
+            "qualification_created": False,
+        }
+        constraints["forced_system"] = identity.route_name
+        constraints["allow_experimental_forced"] = allow_experimental
+        typer.echo(
+            f"Manual agent-system override: {identity.route_name} — "
+            f"{assessment.state.capitalize()}. The forced choice is excluded from "
+            "automatic-policy metrics; qualification still requires every evidence rule.",
+            err=True,
+        )
     prepare_repository_validation(
         configuration,
         repository,
@@ -4124,7 +5448,9 @@ def evidence_command(
     document = {
         "schema_version": "villani.evidence_index.v1",
         "run_id": run_id,
-        "evidence_links": [item.model_dump(mode="json") for item in product.evidence_links],
+        "evidence_links": [
+            item.model_dump(mode="json") for item in product.evidence_links
+        ],
         "technical_detail_references": product.technical_detail_references,
     }
     if json_output:

@@ -106,6 +106,8 @@ def test_required_failure_blocks_and_authoritative_pass_allows(tmp_path: Path) -
             "targeted_test_command",
             argv=[sys.executable, "-c", "raise SystemExit(0)"],
         ),
+        node("review", "independent_llm_review", grade="strong"),
+        llm_review=lambda *_: {"passed": True, "grade": "strong"},
     )
     assert failed.required_failures == ("tests",) and not failed.acceptance_eligible
     assert passed.authoritative_acceptance_present and passed.acceptance_eligible
@@ -152,7 +154,11 @@ def test_all_builtin_node_kinds_have_deterministic_results(tmp_path: Path) -> No
         node("trace", "trace_consistency", required=False),
         node("review", "independent_llm_review", grade="strong", required=False),
     )
-    result = execute(tmp_path, *nodes)
+    result = execute(
+        tmp_path,
+        *nodes,
+        llm_review=lambda *_: {"passed": True, "grade": "strong"},
+    )
     assert {item.kind for item in result.node_results} == {item.kind for item in nodes}
     assert result.acceptance_eligible
     assert (

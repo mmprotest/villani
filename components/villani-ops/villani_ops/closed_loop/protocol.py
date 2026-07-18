@@ -155,6 +155,11 @@ class RunArtifactPaths(StrictProtocolModel):
     run_summary: str = Field(default="run-summary.json", min_length=1)
     product_run: str = Field(default="product-run.json", min_length=1)
     agent_systems: str | None = Field(default=None, min_length=1)
+    route_plans: str | None = Field(default=None, min_length=1)
+    economics_update: str | None = Field(default=None, min_length=1)
+    adaptive_verification: str | None = Field(default=None, min_length=1)
+    human_outcomes: str | None = Field(default=None, min_length=1)
+    supervision_metrics: str | None = Field(default=None, min_length=1)
 
 
 class RunManifestSnapshot(StrictProtocolModel):

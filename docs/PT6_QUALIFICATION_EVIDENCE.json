@@ -1,0 +1,107 @@
+{
+  "schema_version": "villani.pt6_qualification_evidence.v1",
+  "milestone": "PT6",
+  "assessment_date": "2026-07-18",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "gate_c_claimed": false,
+  "qualification_changed": false,
+  "reason": "The structured adapters and fake-executable conformance suite pass, but no qualifying frozen founder suite exists in this workspace, Codex authentication is not ready, and native-Windows Claude Code cannot provide the required strict sandbox. No real paid harness task was executed.",
+  "frozen_founder_suite": {
+    "status": "not_available",
+    "qualifying_real_suites": 0,
+    "paired_real_tasks": 0,
+    "repositories": 0,
+    "source": "docs/product/PT4_FOUNDER_EVIDENCE_SUFFICIENCY.json",
+    "source_status": "INSUFFICIENT_EVIDENCE",
+    "synthetic_fixtures_counted": 0
+  },
+  "arms": [
+    {
+      "harness_id": "villani-code",
+      "installed": true,
+      "exact_version": "0.1.0rc1",
+      "authentication_status": "not_applicable",
+      "protocol": "villani.harness_adapter.v1",
+      "isolation_ready": true,
+      "qualification_state": "bootstrap",
+      "founder_suite_execution": "not_run",
+      "reason": "No qualifying frozen founder suite is present."
+    },
+    {
+      "harness_id": "codex",
+      "installed": true,
+      "exact_version": "0.144.5",
+      "supported_version_range": ">=0.144.0,<0.145.0",
+      "authentication_status": "not_ready",
+      "protocol": "codex-app-server-jsonrpc-stdio",
+      "protocol_probe": "passed",
+      "isolation_ready": true,
+      "qualification_state": "provisional",
+      "founder_suite_execution": "not_run",
+      "reason": "Codex authentication is not ready and no qualifying frozen founder suite is present.",
+      "repair_action": "Run `codex login`."
+    },
+    {
+      "harness_id": "claude-code",
+      "installed": true,
+      "exact_version": "2.1.138",
+      "supported_version_range": ">=2.1.138,<2.2.0",
+      "authentication_status": "ready",
+      "protocol": "claude-code-stream-json",
+      "protocol_probe": "passed",
+      "isolation_ready": false,
+      "qualification_state": "provisional",
+      "founder_suite_execution": "not_run",
+      "reason": "Strict Claude Code sandboxing is unavailable on native Windows and no qualifying frozen founder suite is present.",
+      "repair_action": "Use WSL2 or an outer container with proven strict isolation."
+    }
+  ],
+  "conformance": {
+    "fake_executable_suite": {
+      "status": "passed",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt6_structured_harnesses.py villani_ops\\tests\\test_pt5_agent_systems.py villani_ops\\tests\\closed_loop\\test_protocol.py -m 'not e2e' --basetemp ..\\..\\.pt6-test-temp\\focused-post-types",
+      "result": "59 passed, 2 deselected in 9.03s",
+      "host": "Windows",
+      "portable_fake": "components/villani-ops/villani_ops/tests/fixtures/pt6/fake_structured_harness.py"
+    },
+    "real_harness_smoke_gate": {
+      "status": "skipped",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt6_structured_harnesses.py -m e2e -rs --basetemp ..\\..\\.pt6-test-temp\\real-gate",
+      "result": "2 skipped, 29 deselected in 0.63s",
+      "reason": "VILLANI_REAL_HARNESS_TESTS is not set to 1."
+    },
+    "mandatory_case_coverage": [
+      "successful_patch",
+      "no_patch",
+      "command_recovery",
+      "permission_request",
+      "cancellation",
+      "rate_limit_retry",
+      "malformed_output",
+      "unsupported_version",
+      "schema_change",
+      "missing_final_result",
+      "partial_patch_on_crash",
+      "known_cost",
+      "unknown_cost",
+      "non_ascii_and_spaced_paths",
+      "large_output",
+      "no_mutation_outside_isolation",
+      "secret_redaction"
+    ]
+  },
+  "claims_refused": [
+    "Codex or Claude Code qualification",
+    "Gate C",
+    "arbitrary model interchange",
+    "cross-operating-system execution evidence beyond the Windows run",
+    "real-harness task completion on this host"
+  ],
+  "next_evidence": [
+    "Provide a qualifying frozen founder suite and execute each harness as a separate arm.",
+    "Authenticate Codex without exposing credentials.",
+    "Run Claude Code in WSL2 or a container with strict isolation available.",
+    "Set VILLANI_REAL_HARNESS_TESTS=1 only in a cost-bounded authorized environment."
+  ],
+  "pt7_started": false
+}

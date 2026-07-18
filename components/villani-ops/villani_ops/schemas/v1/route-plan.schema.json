@@ -1,0 +1,756 @@
+{
+  "$defs": {
+    "AcceptedChangeObjective": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "conservative_acceptance_probability": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conservative Acceptance Probability"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "execution_cost": {
+          "$ref": "#/$defs/MoneyEstimate"
+        },
+        "expected_accepted_change_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Accepted Change Cost"
+        },
+        "expected_duration": {
+          "$ref": "#/$defs/DurationEstimate"
+        },
+        "human_review_cost": {
+          "$ref": "#/$defs/MoneyEstimate"
+        },
+        "known_numerator_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Known Numerator Cost"
+        },
+        "latency_penalty": {
+          "$ref": "#/$defs/MoneyEstimate"
+        },
+        "objective_version": {
+          "const": "total_accepted_change_v1",
+          "default": "total_accepted_change_v1",
+          "title": "Objective Version",
+          "type": "string"
+        },
+        "partial_expected_known_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Partial Expected Known Cost"
+        },
+        "probability_source": {
+          "minLength": 1,
+          "title": "Probability Source",
+          "type": "string"
+        },
+        "retry_escalation_cost": {
+          "$ref": "#/$defs/MoneyEstimate"
+        },
+        "unknown_components": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknown Components",
+          "type": "array"
+        },
+        "verification_cost": {
+          "$ref": "#/$defs/MoneyEstimate"
+        }
+      },
+      "required": [
+        "execution_cost",
+        "verification_cost",
+        "human_review_cost",
+        "retry_escalation_cost",
+        "latency_penalty",
+        "probability_source",
+        "accounting_status",
+        "unknown_components",
+        "expected_duration"
+      ],
+      "title": "AcceptedChangeObjective",
+      "type": "object"
+    },
+    "DurationEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "sample_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "DurationEstimate",
+      "type": "object"
+    },
+    "MoneyEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "sample_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Sample Count",
+          "type": "integer"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "MoneyEstimate",
+      "type": "object"
+    },
+    "QualificationTaskProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "difficulty": {
+          "minLength": 1,
+          "title": "Difficulty",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "risk": {
+          "minLength": 1,
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "difficulty",
+        "risk"
+      ],
+      "title": "QualificationTaskProfile",
+      "type": "object"
+    },
+    "RouteConsideration": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "title": "Availability",
+          "type": "string"
+        },
+        "backend_name": {
+          "title": "Backend Name",
+          "type": "string"
+        },
+        "capability_score": {
+          "title": "Capability Score",
+          "type": "number"
+        },
+        "conservative_acceptance_probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Conservative Acceptance Probability"
+        },
+        "eligible": {
+          "title": "Eligible",
+          "type": "boolean"
+        },
+        "harness": {
+          "title": "Harness",
+          "type": "string"
+        },
+        "local": {
+          "title": "Local",
+          "type": "boolean"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "objective": {
+          "$ref": "#/$defs/AcceptedChangeObjective"
+        },
+        "permission_profile": {
+          "title": "Permission Profile",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "qualification_level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Qualification Level"
+        },
+        "qualification_sample_count": {
+          "title": "Qualification Sample Count",
+          "type": "integer"
+        },
+        "qualification_state": {
+          "enum": [
+            "qualified",
+            "provisional",
+            "experimental",
+            "unsupported"
+          ],
+          "title": "Qualification State",
+          "type": "string"
+        },
+        "rejection_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rejection Reasons",
+          "type": "array"
+        },
+        "route_name": {
+          "title": "Route Name",
+          "type": "string"
+        },
+        "system_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "System Id"
+        },
+        "task_probability_threshold": {
+          "title": "Task Probability Threshold",
+          "type": "number"
+        },
+        "unknowns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknowns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "backend_name",
+        "route_name",
+        "system_id",
+        "harness",
+        "model",
+        "provider",
+        "local",
+        "permission_profile",
+        "availability",
+        "qualification_state",
+        "qualification_level",
+        "qualification_sample_count",
+        "conservative_acceptance_probability",
+        "task_probability_threshold",
+        "capability_score",
+        "eligible",
+        "rejection_reasons",
+        "unknowns",
+        "objective"
+      ],
+      "title": "RouteConsideration",
+      "type": "object"
+    },
+    "RouteConstraints": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_experimental_forced": {
+          "default": false,
+          "title": "Allow Experimental Forced",
+          "type": "boolean"
+        },
+        "allowed_permission_profiles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Permission Profiles",
+          "type": "array"
+        },
+        "allowed_providers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Providers",
+          "type": "array"
+        },
+        "excluded_systems": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Systems",
+          "type": "array"
+        },
+        "forced_system": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forced System"
+        },
+        "local_only": {
+          "default": false,
+          "title": "Local Only",
+          "type": "boolean"
+        },
+        "maximum_known_cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Known Cost Usd"
+        },
+        "prefer_local": {
+          "default": false,
+          "title": "Prefer Local",
+          "type": "boolean"
+        },
+        "preferred_provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preferred Provider"
+        },
+        "strongest_only": {
+          "default": false,
+          "title": "Strongest Only",
+          "type": "boolean"
+        }
+      },
+      "title": "RouteConstraints",
+      "type": "object"
+    },
+    "RouteSequenceEconomics": {
+      "additionalProperties": false,
+      "properties": {
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "conservative_success_probability": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conservative Success Probability"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "expected_accepted_change_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Accepted Change Cost"
+        },
+        "expected_cost_before_acceptance": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Cost Before Acceptance"
+        },
+        "expected_duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Duration Ms"
+        },
+        "systems": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Systems",
+          "type": "array"
+        },
+        "unknowns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknowns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "systems",
+        "accounting_status",
+        "unknowns"
+      ],
+      "title": "RouteSequenceEconomics",
+      "type": "object"
+    }
+  },
+  "$id": "https://villani.dev/schemas/v1/route-plan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "automatic_policy_metrics_eligible": {
+      "title": "Automatic Policy Metrics Eligible",
+      "type": "boolean"
+    },
+    "constraints": {
+      "$ref": "#/$defs/RouteConstraints"
+    },
+    "evidence_cutoff": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Cutoff"
+    },
+    "explanation": {
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "forced_choice": {
+      "title": "Forced Choice",
+      "type": "boolean"
+    },
+    "input_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Input Digest",
+      "type": "string"
+    },
+    "ordered_fallbacks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ordered Fallbacks",
+      "type": "array"
+    },
+    "plan_id": {
+      "pattern": "^rplan_[0-9a-f]{64}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "policy_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Policy Digest",
+      "type": "string"
+    },
+    "policy_version": {
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "repository_head": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repository Head"
+    },
+    "repository_id": {
+      "minLength": 1,
+      "title": "Repository Id",
+      "type": "string"
+    },
+    "reserves": {
+      "additionalProperties": true,
+      "title": "Reserves",
+      "type": "object"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.route_plan.v1",
+      "default": "villani.route_plan.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_first_system": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Selected First System"
+    },
+    "selection_mode": {
+      "enum": [
+        "accepted_change_optimizer",
+        "sparse_strongest_evidence",
+        "strongest_only",
+        "cheapest_qualified",
+        "provisional_fallback",
+        "forced",
+        "no_safe_route",
+        "sequential_retry",
+        "sequential_escalation"
+      ],
+      "title": "Selection Mode",
+      "type": "string"
+    },
+    "sequence_economics": {
+      "$ref": "#/$defs/RouteSequenceEconomics"
+    },
+    "systems_considered": {
+      "items": {
+        "$ref": "#/$defs/RouteConsideration"
+      },
+      "title": "Systems Considered",
+      "type": "array"
+    },
+    "task_profile": {
+      "$ref": "#/$defs/QualificationTaskProfile"
+    },
+    "unknowns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unknowns",
+      "type": "array"
+    }
+  },
+  "required": [
+    "plan_id",
+    "run_id",
+    "repository_id",
+    "task_profile",
+    "policy_version",
+    "policy_digest",
+    "input_digest",
+    "systems_considered",
+    "selected_first_system",
+    "ordered_fallbacks",
+    "sequence_economics",
+    "reserves",
+    "constraints",
+    "selection_mode",
+    "forced_choice",
+    "automatic_policy_metrics_eligible",
+    "unknowns",
+    "explanation"
+  ],
+  "title": "RoutePlan",
+  "type": "object"
+}

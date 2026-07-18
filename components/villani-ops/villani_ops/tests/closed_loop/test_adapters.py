@@ -467,7 +467,9 @@ def test_real_adapter_path_isolates_captures_verifies_selects_and_applies(
 ) -> None:
     repo = _tiny_repo(tmp_path)
     runner = InjectedVillaniCodeRunner([{"value": "changed\n"}])
-    controller = _controller([_attempt_policy(), policy("select")], runner, None)
+    controller = _controller(
+        [_attempt_policy(), policy("select")], runner, _accepted_raw
+    )
 
     result = controller.run(_request(tmp_path, repo))
 
@@ -675,7 +677,7 @@ def test_materialization_preserves_captured_files_when_apply_helper_omits_names(
     controller = _controller(
         [_attempt_policy(), policy("select")],
         runner,
-        None,
+        _accepted_raw,
         materializer=PatchMaterializerAdapter(apply_service=apply_without_names),
     )
 
@@ -1097,13 +1099,13 @@ def test_no_llm_advisory_does_not_mask_authoritative_behavior_failure(
     )
     raw_path = result.run_directory / verification["raw_verifier_artifact"]
     raw = json.loads(raw_path.read_text(encoding="utf-8"))
-    assert raw["recommendedAction"] == "run_more_tests"
+    assert raw["recommendedAction"] == "reject"
     assert result.terminal_state == "EXHAUSTED"
     assert verification["outcome"] == "rejected"
     assert verification["acceptance_eligible"] is False
     assert verification["metadata"]["semantic_verifier_invoked"] is False
-    assert verification["metadata"]["raw_recommended_action"] == "run_more_tests"
-    assert verification["metadata"]["normalized_recommended_action"] == "escalate"
+    assert verification["metadata"]["raw_recommended_action"] == "reject"
+    assert verification["metadata"]["normalized_recommended_action"] == "reject"
     assert verification["metadata"]["invocation_status"] == "completed"
     assert (
         verification["metadata"]["computed_final_reason_code"]

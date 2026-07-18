@@ -106,6 +106,10 @@ from .policy import (
     BootstrapPolicyEngine,
     configured_backends,
 )
+from .economics.models import RoutePlan
+from .economics.runtime_update import record_runtime_economics
+from .economics.store import EconomicsStore
+from .qualification.store import QualificationStore
 from .progress import (
     AttemptProgressAssessment,
     assess_attempt_progress,
@@ -279,6 +283,8 @@ class ClosedLoopController:
         on_event: Callable[[EventEnvelope], None] | None = None,
         failure_injector: Callable[[str], None] | None = None,
         event_sink: RunEventSink | None = None,
+        qualification_store: QualificationStore | None = None,
+        economics_store: EconomicsStore | None = None,
     ) -> None:
         self._classifier = classifier
         self._policy_engine = policy_engine
@@ -292,6 +298,8 @@ class ClosedLoopController:
         self._on_event = on_event
         self._failure_injector = failure_injector
         self._event_sink = event_sink
+        self._qualification_store = qualification_store
+        self._economics_store = economics_store
         manifests: list[Any] = []
         for dependency in (attempt_runner, verifier, selector, materializer):
             manifest = getattr(dependency, "plugin_manifest", None)
@@ -301,9 +309,7 @@ class ClosedLoopController:
         self._plugin_identities = tuple(manifest.identity() for manifest in manifests)
         raw_agent_systems = getattr(attempt_runner, "agent_system_identities", ())
         self._agent_system_identities = tuple(
-            item.model_dump(mode="json")
-            if hasattr(item, "model_dump")
-            else dict(item)
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item)
             for item in raw_agent_systems
             if hasattr(item, "model_dump") or isinstance(item, Mapping)
         )
@@ -967,7 +973,9 @@ class ClosedLoopController:
                 if attempt.metadata.get("repair_source_attempt_id")
                 else None
             ),
-            cancellation_event=(runtime.request.cancellation_event or threading.Event()),
+            cancellation_event=(
+                runtime.request.cancellation_event or threading.Event()
+            ),
         )
 
     def _artifact_text(self, runtime: _Runtime, value: str | None) -> str:
@@ -1416,9 +1424,7 @@ class ClosedLoopController:
             runtime, context, result, start.timestamp, self._now()
         )
         runtime.attempt_results[attempt_id] = result
-        self._record_attempt_failure(
-            runtime, attempt_id, "infrastructure_failure"
-        )
+        self._record_attempt_failure(runtime, attempt_id, "infrastructure_failure")
         self._transition(
             runtime,
             "ATTEMPT_COMPLETED",
@@ -2255,9 +2261,7 @@ class ClosedLoopController:
                         _mapping_copy(
                             cast(
                                 Mapping[str, Any],
-                                attempt.metadata.get(
-                                    "attempt_progress_assessment"
-                                ),
+                                attempt.metadata.get("attempt_progress_assessment"),
                             )
                         )
                         if isinstance(
@@ -2384,6 +2388,15 @@ class ClosedLoopController:
             )
             runtime.store.append_policy_decision(snapshot)
             runtime.policy_decisions.append(snapshot)
+            route_plan_value = snapshot.metadata.get("route_plan")
+            if isinstance(route_plan_value, Mapping):
+                route_plan = RoutePlan.model_validate(route_plan_value)
+                if route_plan.run_id != runtime.run_id:
+                    raise ValueError("route plan belongs to another run")
+                runtime.store.write_protocol(
+                    f"route-plans/{snapshot.decision_id}.json",
+                    route_plan.model_dump(mode="json"),
+                )
             if attempt_id is not None:
                 runtime.allocated_attempt_ids.add(attempt_id)
         except Exception as error:
@@ -2629,9 +2642,7 @@ class ClosedLoopController:
             "credible_progress_assessment": decision.metadata.get(
                 "credible_progress_assessment"
             ),
-            "stage_budget_projection": decision.metadata.get(
-                "stage_budget_projection"
-            ),
+            "stage_budget_projection": decision.metadata.get("stage_budget_projection"),
         }
         current = runtime.machine.state
         if decision.action in {"exhaust", "fail"}:
@@ -3104,7 +3115,9 @@ class ClosedLoopController:
             ),
             baseline_sha256=plan.baseline_sha256,
             repair_source_attempt_id=plan.repair_source_attempt_id,
-            cancellation_event=(runtime.request.cancellation_event or threading.Event()),
+            cancellation_event=(
+                runtime.request.cancellation_event or threading.Event()
+            ),
         )
         if context_override is not None and attempt_id in runtime.candidate_plans:
             plan = runtime.candidate_plans[attempt_id]
@@ -3513,9 +3526,7 @@ class ClosedLoopController:
                     )
             metadata.update(
                 {
-                    "attempt_progress_assessment": assessment.model_dump(
-                        mode="json"
-                    ),
+                    "attempt_progress_assessment": assessment.model_dump(mode="json"),
                     "material_progress": assessment.credible_progress,
                 }
             )
@@ -3958,6 +3969,34 @@ class ClosedLoopController:
         normalized = normalized.model_copy(
             update={"metadata": metadata, "llm_usage": verification_usage}
         )
+        verifier_cost = normalized.metadata.get("verification_cost")
+        verifier_cost_status = str(
+            normalized.metadata.get("verification_cost_accounting_status")
+            or ""
+        )
+        if not verifier_cost_status:
+            applicable_usage = [
+                item
+                for item in normalized.llm_usage
+                if item.cost_accounting_status != "not_applicable"
+            ]
+            known_costs = [
+                item.cost for item in applicable_usage if item.cost is not None
+            ]
+            unknown_cost = any(
+                item.cost_accounting_status in {"unknown", "partial"}
+                or item.cost is None
+                for item in applicable_usage
+            )
+            if known_costs:
+                verifier_cost = sum(known_costs)
+                verifier_cost_status = "partial" if unknown_cost else "complete"
+            elif applicable_usage:
+                verifier_cost = None
+                verifier_cost_status = "unknown"
+            else:
+                verifier_cost = None
+                verifier_cost_status = "not_applicable"
         runtime.store.write_protocol(
             f"verification/{context.attempt_id}.json", normalized
         )
@@ -3982,9 +4021,8 @@ class ClosedLoopController:
                     "authority_source": normalized.metadata.get(
                         "authority_source", "unspecified"
                     ),
-                    "verifier_cost_usd": sum(
-                        item.cost or 0 for item in normalized.llm_usage
-                    ),
+                    "verifier_cost_usd": verifier_cost,
+                    "verifier_cost_accounting_status": verifier_cost_status,
                 }
             ),
             attempt_id=context.attempt_id,
@@ -6133,6 +6171,43 @@ class ClosedLoopController:
                     if self._agent_system_identities
                     else None
                 ),
+                route_plans=(
+                    "route-plans"
+                    if any(
+                        isinstance(item.metadata.get("route_plan"), Mapping)
+                        for item in runtime.policy_decisions
+                    )
+                    else None
+                ),
+                economics_update=(
+                    "economics-update.json"
+                    if (runtime.store.run_directory / "economics-update.json").is_file()
+                    else None
+                ),
+                adaptive_verification=(
+                    "verification"
+                    if any(
+                        (
+                            runtime.store.run_directory
+                            / "verification"
+                            / f"{attempt.attempt_id}-plan.json"
+                        ).is_file()
+                        for attempt in runtime.attempts
+                    )
+                    else None
+                ),
+                human_outcomes=(
+                    "human-outcomes.jsonl"
+                    if (runtime.store.run_directory / "human-outcomes.jsonl").is_file()
+                    else None
+                ),
+                supervision_metrics=(
+                    "supervision-metrics.json"
+                    if (
+                        runtime.store.run_directory / "supervision-metrics.json"
+                    ).is_file()
+                    else None
+                ),
             ),
             metadata={
                 "policy_configuration": redact_data(
@@ -6484,6 +6559,16 @@ class ClosedLoopController:
         if state not in {*TERMINAL_STATES, "AWAITING_APPROVAL"}:
             state = "FAILED"
         if runtime.machine.terminal:
+            report = record_runtime_economics(
+                runtime=runtime,
+                identity_documents=self._agent_system_identities,
+                qualification_store=self._qualification_store,
+                economics_store=self._economics_store,
+                recorded_at=self._now(),
+            )
+            if report is not None:
+                runtime.store.write_protocol("economics-update.json", report)
+                self._persist_manifest(runtime)
             persist_run_summary(runtime.store.run_directory)
             persist_product_run(runtime.store.run_directory)
         cost, accounting = self._actual_cost(runtime)

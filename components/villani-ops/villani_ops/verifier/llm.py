@@ -278,6 +278,22 @@ LLM_TOOLS = [
                                     "type": "array",
                                     "items": {"type": "string"},
                                 },
+                                "temporary_files": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "required": ["path", "purpose", "content"],
+                                        "properties": {
+                                            "path": {"type": "string"},
+                                            "purpose": {"type": "string"},
+                                            "content": {
+                                                "type": "string",
+                                                "maxLength": 262144,
+                                            },
+                                        },
+                                    },
+                                },
                                 "reason": {"type": "string"},
                             },
                         },
@@ -900,8 +916,8 @@ def _parse(s):
 
 def _schema_text():
     return """Final verdict schema (return exactly this shape):
-{ "type": "final_verdict", "result": 0, "verdict": "success|failure|unclear|error", "recommendedAction": "accept|reject|retry_verifier|escalate", "reason": "evidence-grounded reason", "requirementResults": [{"id":"stable requirement id","requirement":"requirement text","critical":true,"status":"passed|failed|unclear|not_assessed","evidence":["existing evidence id"],"risks":["string"]}], "successEvidence": [{"id":"evidence id","kind":"repository_validation|focused_probe|static_patch_evidence|source_inspection|debug_trace|semantic_reasoning","summary":"string"}], "failureEvidence": [], "missingEvidence": [], "riskFlags": [], "criticalRequirementCoverageProven": false, "focusedProbeRequests": [{"probe_id":"stable probe id","requirement_ids":["stable requirement id"],"argv":["executable","arg"],"timeout_seconds":30,"expected_exit_code":0,"expected_stdout":null,"expected_stdout_contains":[],"expected_stderr_contains":[],"reason":"why this exact behavior needs executable evidence"}], "toolsUsed": [{"tool":"read_repo_file","reason":"string","evidence_id":"semantic_tool_001","status":"ok"}] }
-Rules: result is always 1 or 0. Result 1 requires verdict success. Failure, unclear, and error require result 0. Preserve requirement IDs supplied in the verification context. Link every passed critical requirement to existing evidence IDs. Never invent command execution. A directly testable critical requirement without authoritative executable coverage must be unclear/missing and should receive an argv-only focusedProbeRequest. Shell strings and candidate mutations are prohibited. Raw model result is advisory; deterministic evidence remains authoritative.
+{ "type": "final_verdict", "result": 0, "verdict": "success|failure|unclear|error", "recommendedAction": "accept|reject|retry_verifier|escalate", "reason": "evidence-grounded reason", "requirementResults": [{"id":"stable requirement id","requirement":"requirement text","critical":true,"status":"passed|failed|unclear|not_assessed","evidence":["existing evidence id"],"risks":["string"]}], "successEvidence": [{"id":"evidence id","kind":"repository_validation|focused_probe|static_patch_evidence|source_inspection|debug_trace|semantic_reasoning","summary":"string"}], "failureEvidence": [], "missingEvidence": [], "riskFlags": [], "criticalRequirementCoverageProven": false, "focusedProbeRequests": [{"probe_id":"stable probe id","requirement_ids":["stable requirement id"],"argv":["executable","arg"],"timeout_seconds":30,"expected_exit_code":0,"expected_stdout":null,"expected_stdout_contains":[],"expected_stderr_contains":[],"temporary_files":[{"path":".villani-probes/input.txt","purpose":"minimal behavior input","content":"input"}],"reason":"why this exact behavior needs executable evidence"}], "toolsUsed": [{"tool":"read_repo_file","reason":"string","evidence_id":"semantic_tool_001","status":"ok"}] }
+Rules: result is always 1 or 0. Result 1 requires verdict success. Failure, unclear, and error require result 0. Preserve requirement IDs supplied in the verification context. Link every passed critical requirement to existing evidence IDs. Never invent command execution. A directly testable critical requirement without authoritative executable coverage must be unclear/missing and should receive a focusedProbeRequest. Shell strings and candidate mutations are prohibited. Temporary files are optional, must be minimal behavior inputs under safe relative paths, and must never contain an expected solution, replacement source, credentials, or hidden future result. Raw model result is advisory; deterministic evidence remains authoritative.
 Tool-call schema:
 { "type": "tool_call", "tool": "search_commands", "args": {"query": "PASS", "limit": 10} }
 Return exactly one JSON object."""

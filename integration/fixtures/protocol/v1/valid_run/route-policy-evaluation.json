@@ -1,0 +1,159 @@
+{
+  "active_policy_digest": "sha256:ed306fe9d86d006a5a6ae9137f816d29f35a9d426cf42b781adfdde5b9b1250f",
+  "active_policy_version": "accepted-change-fixture-active",
+  "comparisons": [
+    {
+      "active_choice": "fixture_economy",
+      "active_false_acceptance_exposure": false,
+      "active_probability": 0.84,
+      "case_id": "founder-fixture-pt8",
+      "evidence_cutoff": "2026-07-18T03:00:00Z",
+      "proposed_choice": "fixture_economy",
+      "proposed_false_acceptance_exposure": false,
+      "proposed_probability": 0.84,
+      "reliability_non_decreasing": true
+    }
+  ],
+  "conservative_reliability_non_decreasing": true,
+  "evaluation_id": "rpeval_1b38ba37403272955895ea3f5549a246f64c7c758da33d23671a0b4c97d4d65c",
+  "false_acceptance_exposure_non_increasing": true,
+  "frozen_case_count": 1,
+  "generated_at": "2026-07-18T03:00:00Z",
+  "point_in_time_replay": true,
+  "proposed_policy_digest": "sha256:cde6d6caa56b7a815601026d0fb33655a7355358d65ca50d75e345fbb4cbfad3",
+  "proposed_policy_version": "accepted-change-fixture-v1",
+  "rejection_reasons": [],
+  "safe_to_publish": true,
+  "schema_version": "villani.route_policy_evaluation.v1",
+  "source_digest": "sha256:50a405f4810b3c435e24467e9d665dc1532c7761dace047d87536c9be1b62814",
+  "strategy_metrics": [
+    {
+      "accepted_as_is": 1,
+      "case_count": 1,
+      "elapsed_duration": {
+        "accounting_status": "complete",
+        "duration_ms": 1200.0,
+        "sample_count": 1,
+        "source": "frozen_point_in_time_replay"
+      },
+      "escalation_count": 0,
+      "failures": 0,
+      "false_acceptance": 0,
+      "proved_acceptable": 1,
+      "regret": {
+        "accounting_status": "complete",
+        "amount": 0.0,
+        "currency": "USD",
+        "sample_count": 1,
+        "source": "measurable_successful_outcomes_only"
+      },
+      "review_minutes": 0.0,
+      "strategy": "strongest_only",
+      "total_cost": {
+        "accounting_status": "complete",
+        "amount": 1.5,
+        "currency": "USD",
+        "sample_count": 1,
+        "source": "frozen_point_in_time_replay"
+      },
+      "unknown_input_rate": 0.0,
+      "unmatched_outcome_count": 0
+    },
+    {
+      "accepted_as_is": 1,
+      "case_count": 1,
+      "elapsed_duration": {
+        "accounting_status": "complete",
+        "duration_ms": 1200.0,
+        "sample_count": 1,
+        "source": "frozen_point_in_time_replay"
+      },
+      "escalation_count": 0,
+      "failures": 0,
+      "false_acceptance": 0,
+      "proved_acceptable": 1,
+      "regret": {
+        "accounting_status": "complete",
+        "amount": 0.0,
+        "currency": "USD",
+        "sample_count": 1,
+        "source": "measurable_successful_outcomes_only"
+      },
+      "review_minutes": 0.0,
+      "strategy": "cheapest_qualified",
+      "total_cost": {
+        "accounting_status": "complete",
+        "amount": 1.5,
+        "currency": "USD",
+        "sample_count": 1,
+        "source": "frozen_point_in_time_replay"
+      },
+      "unknown_input_rate": 0.0,
+      "unmatched_outcome_count": 0
+    },
+    {
+      "accepted_as_is": 1,
+      "case_count": 1,
+      "elapsed_duration": {
+        "accounting_status": "complete",
+        "duration_ms": 1200.0,
+        "sample_count": 1,
+        "source": "frozen_point_in_time_replay"
+      },
+      "escalation_count": 0,
+      "failures": 0,
+      "false_acceptance": 0,
+      "proved_acceptable": 1,
+      "regret": {
+        "accounting_status": "complete",
+        "amount": 0.0,
+        "currency": "USD",
+        "sample_count": 1,
+        "source": "measurable_successful_outcomes_only"
+      },
+      "review_minutes": 0.0,
+      "strategy": "accepted_change_optimizer",
+      "total_cost": {
+        "accounting_status": "complete",
+        "amount": 1.5,
+        "currency": "USD",
+        "sample_count": 1,
+        "source": "frozen_point_in_time_replay"
+      },
+      "unknown_input_rate": 0.0,
+      "unmatched_outcome_count": 0
+    },
+    {
+      "accepted_as_is": 0,
+      "case_count": 1,
+      "elapsed_duration": {
+        "accounting_status": "unknown",
+        "duration_ms": null,
+        "sample_count": 0,
+        "source": "frozen_point_in_time_replay"
+      },
+      "escalation_count": null,
+      "failures": 0,
+      "false_acceptance": 0,
+      "proved_acceptable": 0,
+      "regret": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "sample_count": 0,
+        "source": "measurable_successful_outcomes_only"
+      },
+      "review_minutes": null,
+      "strategy": "forced",
+      "total_cost": {
+        "accounting_status": "unknown",
+        "amount": null,
+        "currency": null,
+        "sample_count": 0,
+        "source": "frozen_point_in_time_replay"
+      },
+      "unknown_input_rate": 0.0,
+      "unmatched_outcome_count": 1
+    }
+  ]
+}

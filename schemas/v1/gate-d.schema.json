@@ -1,0 +1,300 @@
+{
+  "$defs": {
+    "DurationAccounting": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "DurationAccounting",
+      "type": "object"
+    },
+    "GateDArm": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "enum": [
+            "strongest_only",
+            "accepted_change_optimizer",
+            "optimizer_plus_adaptive"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        },
+        "case_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Case Ids",
+          "type": "array"
+        },
+        "eligible_cases": {
+          "minimum": 0,
+          "title": "Eligible Cases",
+          "type": "integer"
+        },
+        "accepted_as_is": {
+          "minimum": 0,
+          "title": "Accepted As Is",
+          "type": "integer"
+        },
+        "false_acceptances": {
+          "minimum": 0,
+          "title": "False Acceptances",
+          "type": "integer"
+        },
+        "total_cost": {
+          "$ref": "#/$defs/MoneyAccounting"
+        },
+        "elapsed_duration": {
+          "$ref": "#/$defs/DurationAccounting"
+        },
+        "review_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Minutes"
+        },
+        "review_time_accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ],
+          "title": "Review Time Accounting Status",
+          "type": "string"
+        },
+        "explainable_routes": {
+          "title": "Explainable Routes",
+          "type": "boolean"
+        },
+        "safe_fallback": {
+          "title": "Safe Fallback",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "strategy",
+        "case_ids",
+        "eligible_cases",
+        "accepted_as_is",
+        "false_acceptances",
+        "total_cost",
+        "elapsed_duration",
+        "review_time_accounting_status",
+        "explainable_routes",
+        "safe_fallback"
+      ],
+      "title": "GateDArm",
+      "type": "object"
+    },
+    "GateDCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "enum": [
+            "matched_founder_cases",
+            "accepted_as_is_no_regression",
+            "zero_false_acceptance",
+            "lower_cost_or_time",
+            "lower_review_burden",
+            "explainability",
+            "safe_fallback"
+          ],
+          "title": "Check",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "insufficient_evidence"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "status",
+        "reason"
+      ],
+      "title": "GateDCheck",
+      "type": "object"
+    },
+    "MoneyAccounting": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "accounting_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Accounting Status",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accounting_status",
+        "source"
+      ],
+      "title": "MoneyAccounting",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "villani.gate_d.v1",
+      "default": "villani.gate_d.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "gate_id": {
+      "pattern": "^gated_[0-9a-f]{64}$",
+      "title": "Gate Id",
+      "type": "string"
+    },
+    "policy_version": {
+      "const": "adaptive_verification_v1",
+      "default": "adaptive_verification_v1",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INSUFFICIENT_EVIDENCE"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "arms": {
+      "items": {
+        "$ref": "#/$defs/GateDArm"
+      },
+      "title": "Arms",
+      "type": "array"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/GateDCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "evidence_references": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence References",
+      "type": "array"
+    },
+    "next_milestone_permitted": {
+      "title": "Next Milestone Permitted",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "gate_id",
+    "generated_at",
+    "status",
+    "arms",
+    "checks",
+    "warnings",
+    "evidence_references",
+    "next_milestone_permitted"
+  ],
+  "title": "GateDReport",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/gate-d.schema.json"
+}

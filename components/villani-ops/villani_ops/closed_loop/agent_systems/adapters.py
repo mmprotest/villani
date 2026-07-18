@@ -17,6 +17,12 @@ from ..adapters.villani_code_attempt import VillaniCodeAttemptAdapter
 from ..durable_io import write_json_atomic
 from ..event_writer import redact_data
 from ..interfaces import AttemptContext, AttemptResult, RuntimeEvent
+from ..qualification import (
+    QualificationStore,
+    assess_qualification,
+    repository_qualification_context,
+    task_profile,
+)
 from .models import (
     AgentSystemDoctorReport,
     AgentSystemIdentity,
@@ -24,6 +30,7 @@ from .models import (
     DoctorCheck,
     HarnessArtifact,
     HarnessCost,
+    HarnessExecutionIdentity,
     HarnessInfrastructureFailure,
     HARNESS_LIFECYCLE_OPERATIONS,
     HARNESS_RUNTIME_CONTRACT,
@@ -42,9 +49,11 @@ def _relative_artifact_path(context: AttemptContext, path: str | None) -> str | 
     candidate = Path(path)
     if candidate.is_absolute():
         try:
-            return candidate.resolve().relative_to(
-                Path(context.run_directory).resolve()
-            ).as_posix()
+            return (
+                candidate.resolve()
+                .relative_to(Path(context.run_directory).resolve())
+                .as_posix()
+            )
         except ValueError:
             return None
     normalized = PurePosixPath(str(path).replace("\\", "/"))
@@ -53,7 +62,9 @@ def _relative_artifact_path(context: AttemptContext, path: str | None) -> str | 
     return normalized.as_posix()
 
 
-def _artifact(context: AttemptContext, kind: str, path: str | None) -> HarnessArtifact | None:
+def _artifact(
+    context: AttemptContext, kind: str, path: str | None
+) -> HarnessArtifact | None:
     relative = _relative_artifact_path(context, path)
     if relative is None:
         return None
@@ -87,12 +98,19 @@ def _raw_event_name(harness_id: str, event_name: str) -> str:
 def _failure_category(code: str) -> str:
     lowered = code.lower()
     for token, category in (
+        ("overload", "transport_overload"),
+        ("rate_limit", "rate_limit"),
+        ("rate_limited", "rate_limit"),
         ("cancel", "cancellation"),
         ("timeout", "timeout"),
         ("protocol", "protocol"),
+        ("schema", "protocol"),
+        ("version", "protocol"),
         ("executable", "missing_executable"),
         ("permission", "permission"),
         ("credential", "permission"),
+        ("auth", "permission"),
+        ("sandbox", "environment"),
         ("environment", "environment"),
         ("malformed", "malformed_output"),
         ("oversized", "oversized_output"),
@@ -156,9 +174,7 @@ def normalize_events(
                 NormalizedHarnessEvent(
                     sequence=len(events) + 1,
                     timestamp=event_timestamp,
-                    name=_raw_event_name(
-                        identity.harness.harness_id, raw.event_type
-                    ),
+                    name=_raw_event_name(identity.harness.harness_id, raw.event_type),
                     payload=payload,
                     raw_namespace=identity.harness.harness_id,
                     raw_name=raw.event_type,
@@ -227,7 +243,7 @@ class HarnessAdapter(Protocol):
 
 
 class VillaniCodeHarnessAdapter:
-    """Expose Villani Code through the complete PT5 lifecycle contract."""
+    """Expose one structured runner through Villani's shared isolation boundary."""
 
     def __init__(
         self,
@@ -235,8 +251,13 @@ class VillaniCodeHarnessAdapter:
         backends: Mapping[str, Backend],
         *,
         implementation: VillaniCodeAttemptAdapter | None = None,
+        command: str | None = None,
     ) -> None:
         self.identity = identity
+        self._command = command or str(
+            self.identity.configuration.get("harness", {}).get("command_identity")
+            or "villani-code"
+        )
         self._implementation = implementation or VillaniCodeAttemptAdapter(
             backends=backends
         )
@@ -244,10 +265,7 @@ class VillaniCodeHarnessAdapter:
         self._lock = threading.RLock()
 
     def probe(self) -> Mapping[str, Any]:
-        command = str(
-            self.identity.configuration.get("harness", {}).get("command")
-            or "villani-code"
-        )
+        command = self._command
         prefix = resolve_command_prefix(command)
         return {
             "protocol_version": self.identity.harness.protocol_version,
@@ -308,13 +326,24 @@ class VillaniCodeHarnessAdapter:
         self, context: AttemptContext, result: AttemptResult
     ) -> tuple[HarnessArtifact, ...]:
         candidates = (
-            ("patch", f"attempts/{context.attempt_id}/patch.diff" if result.patch is not None else None),
+            (
+                "patch",
+                f"attempts/{context.attempt_id}/patch.diff"
+                if result.patch is not None
+                else None,
+            ),
             ("stdout", f"attempts/{context.attempt_id}/stdout.log"),
             ("stderr", f"attempts/{context.attempt_id}/stderr.log"),
             ("raw_trace", result.trace_path),
             ("telemetry", result.telemetry_path),
-            ("candidate_bundle", str(result.metadata.get("candidate_bundle_path") or "") or None),
-            ("repository_validation", str(result.metadata.get("repository_validation_path") or "") or None),
+            (
+                "candidate_bundle",
+                str(result.metadata.get("candidate_bundle_path") or "") or None,
+            ),
+            (
+                "repository_validation",
+                str(result.metadata.get("repository_validation_path") or "") or None,
+            ),
         )
         return tuple(
             item
@@ -331,7 +360,16 @@ class VillaniCodeHarnessAdapter:
         cleanup: CleanupResult,
     ) -> HarnessResult:
         changed = result.metadata.get("changed_files")
-        changed_files = [str(item).replace("\\", "/") for item in changed] if isinstance(changed, (list, tuple)) else []
+        changed_files = (
+            [str(item).replace("\\", "/") for item in changed]
+            if isinstance(changed, (list, tuple))
+            else []
+        )
+        infrastructure_failure = bool(
+            result.error is not None
+            and result.error.code
+            not in {"codex_coding_failure", "claude_coding_failure"}
+        )
         failure = (
             HarnessInfrastructureFailure(
                 code=result.error.code,
@@ -344,20 +382,84 @@ class VillaniCodeHarnessAdapter:
                 ),
                 details=dict(result.error.details),
             )
-            if result.error is not None
+            if infrastructure_failure and result.error is not None
             else None
         )
         if context.baseline_sha256 is None:
             raise ValueError("harness result requires an immutable baseline digest")
         try:
-            if Path(result.worktree_path).resolve() == Path(
-                context.repository_path
-            ).resolve():
+            if (
+                Path(result.worktree_path).resolve()
+                == Path(context.repository_path).resolve()
+            ):
                 raise ValueError(
                     "harness execution must not use the target repository directly"
                 )
         except OSError as error:
             raise ValueError("harness worktree identity is invalid") from error
+        raw_execution_identity = result.runner_telemetry.get(
+            "harness_execution_identity"
+        )
+        execution_identity = None
+        if isinstance(raw_execution_identity, Mapping):
+            execution_identity = HarnessExecutionIdentity.model_validate(
+                {
+                    "harness_id": raw_execution_identity.get("harness_id")
+                    or self.identity.harness.harness_id,
+                    "harness_version": raw_execution_identity.get("harness_version")
+                    or self.identity.harness.version,
+                    "protocol": raw_execution_identity.get("protocol")
+                    or self.identity.harness.protocol,
+                    "protocol_version": raw_execution_identity.get("protocol_version")
+                    or self.identity.harness.protocol_version,
+                    "protocol_schema_digest": raw_execution_identity.get(
+                        "protocol_schema_digest"
+                    ),
+                    "session_id": raw_execution_identity.get("session_id"),
+                    "thread_id": raw_execution_identity.get("thread_id"),
+                    "turn_id": raw_execution_identity.get("turn_id"),
+                    "model_id": raw_execution_identity.get("model_id"),
+                    "provider": raw_execution_identity.get("provider"),
+                    "reasoning_effort": raw_execution_identity.get("reasoning_effort"),
+                    "system_metadata": raw_execution_identity.get("system_metadata")
+                    if isinstance(
+                        raw_execution_identity.get("system_metadata"), Mapping
+                    )
+                    else {},
+                }
+            )
+        raw_per_model = result.runner_telemetry.get("per_model_usage")
+        per_model_usage = (
+            {
+                str(model): dict(value)
+                for model, value in raw_per_model.items()
+                if isinstance(value, Mapping) and not str(model).startswith("_")
+            }
+            if isinstance(raw_per_model, Mapping)
+            else {}
+        )
+        raw_per_model_cost = (
+            raw_per_model.get("_cost_usd")
+            if isinstance(raw_per_model, Mapping)
+            else None
+        )
+        per_model_cost = (
+            {
+                str(model): float(value)
+                for model, value in raw_per_model_cost.items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            }
+            if isinstance(raw_per_model_cost, Mapping)
+            else {}
+        )
+        reported_currency = result.runner_telemetry.get(
+            "provider_reported_cost_currency"
+        )
+        reported_source = result.runner_telemetry.get("provider_reported_cost_source")
+        raw_cost_breakdown = result.runner_telemetry.get("cost_breakdown")
+        cost_breakdown = (
+            raw_cost_breakdown if isinstance(raw_cost_breakdown, Mapping) else {}
+        )
         return HarnessResult(
             system_id=self.identity.system_id,
             session_id=session.session_id,
@@ -371,20 +473,35 @@ class VillaniCodeHarnessAdapter:
             stderr=result.stderr,
             normalized_events=list(events),
             raw_trace=dict(result.trace),
+            execution_identity=execution_identity,
             usage=HarnessUsage(
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 accounting_status=result.token_accounting_status,
+                per_model=per_model_usage,
             ),
             cost=HarnessCost(
                 amount=result.cost_usd,
                 currency=(
-                    self.identity.billing.currency
+                    str(
+                        reported_currency
+                        or cost_breakdown.get("currency")
+                        or self.identity.billing.currency
+                    )
                     if result.cost_usd is not None
                     else None
                 ),
                 accounting_status=result.cost_accounting_status,
-                source=self.identity.billing.cost_source,
+                source=(
+                    str(
+                        reported_source
+                        or cost_breakdown.get("source")
+                        or self.identity.billing.cost_source
+                    )
+                    if result.cost_usd is not None
+                    else None
+                ),
+                per_model=per_model_cost,
             ),
             duration_ms=result.duration_ms,
             duration_accounting_status=result.duration_accounting_status,
@@ -409,6 +526,7 @@ class VillaniCodeHarnessAdapter:
     def doctor(self) -> AgentSystemDoctorReport:
         probe = self.probe()
         available = bool(probe["available"])
+        readiness = self.identity.readiness
         return AgentSystemDoctorReport(
             system_id=self.identity.system_id,
             checked_at=utc_now(),
@@ -425,12 +543,10 @@ class VillaniCodeHarnessAdapter:
                 ),
                 DoctorCheck(
                     name="protocol_negotiation",
-                    status=(
-                        "pass"
-                        if self.identity.harness.protocol_version
-                        == "villani.harness_adapter.v1"
-                        else "fail"
-                    ),
+                    status="pass"
+                    if readiness is None
+                    or readiness.details.get("protocol_probe") != "failed"
+                    else "fail",
                     message=f"Protocol {self.identity.harness.protocol_version}.",
                 ),
                 DoctorCheck(
@@ -442,6 +558,63 @@ class VillaniCodeHarnessAdapter:
                         else "Harness executable is missing."
                     ),
                     evidence={"command": probe["command"]},
+                ),
+                DoctorCheck(
+                    name="exact_version",
+                    status=(
+                        "pass"
+                        if readiness is None or readiness.version_supported is not False
+                        else "fail"
+                    ),
+                    message=(
+                        f"Detected {self.identity.harness.version}; supported range "
+                        f"{readiness.supported_version_range or 'adapter-managed'}."
+                        if readiness is not None
+                        else f"Detected {self.identity.harness.version}."
+                    ),
+                ),
+                DoctorCheck(
+                    name="authentication",
+                    status=(
+                        "pass"
+                        if readiness is None
+                        or readiness.authentication_status
+                        in {"ready", "not_applicable"}
+                        else "fail"
+                        if readiness.authentication_status == "not_ready"
+                        else "unknown"
+                    ),
+                    message=(
+                        f"Authentication is {readiness.authentication_status}."
+                        if readiness is not None
+                        else "Authentication is adapter-managed."
+                    ),
+                ),
+                DoctorCheck(
+                    name="qualification",
+                    status=(
+                        "pass"
+                        if self.identity.qualification_status
+                        in {"qualified", "bootstrap"}
+                        else "unknown"
+                        if self.identity.qualification_status
+                        in {"experimental", "provisional"}
+                        else "fail"
+                    ),
+                    message=(
+                        f"Qualification is {self.identity.qualification_status}; "
+                        "Gate C is not implied."
+                    ),
+                    evidence={
+                        "conformance_status": (
+                            readiness.conformance_status if readiness else "not_run"
+                        ),
+                        "repair_action": (
+                            readiness.repair_action
+                            if readiness
+                            else "Run the harness conformance suite."
+                        ),
+                    },
                 ),
             ],
         )
@@ -473,21 +646,87 @@ class AgentSystemAttemptRunner:
         adapters: Mapping[str, HarnessAdapter],
         *,
         migration_report: Mapping[str, Any],
+        qualification_store: QualificationStore | None = None,
+        backends: Mapping[str, Backend] | None = None,
     ) -> None:
         self.agent_system_identities = identities
         self.agent_system_identity_by_backend = dict(by_backend)
         self._adapters = dict(adapters)
         self.agent_system_migration_report = dict(migration_report)
+        self.qualification_store = qualification_store
+        self.backends = dict(backends or {})
 
-    def _resolve(self, backend_name: str) -> tuple[AgentSystemIdentity, HarnessAdapter]:
-        identity = self.agent_system_identity_by_backend.get(backend_name)
+    def _resolve(
+        self, backend_name: str | AttemptContext
+    ) -> tuple[AgentSystemIdentity, HarnessAdapter]:
+        context = backend_name if isinstance(backend_name, AttemptContext) else None
+        resolved_backend_name = (
+            context.backend_name if context is not None else backend_name
+        )
+        identity = self.agent_system_identity_by_backend.get(resolved_backend_name)
         if identity is None:
             raise ValueError(
-                f"backend {backend_name!r} has no configured agent system"
+                f"backend {resolved_backend_name!r} has no configured agent system"
             )
         if not identity.production_enabled:
             raise ValueError(f"agent system {identity.system_id} is disabled")
-        if identity.qualification_status not in {"qualified", "bootstrap"}:
+        if context is not None and self.qualification_store is not None:
+            classification = context.classification
+            requested = task_profile(
+                str(classification.get("category") or "unknown"),
+                str(classification.get("difficulty") or "hard"),
+                str(classification.get("risk") or "high"),
+                classification.get("required_capabilities") or (),
+            )
+            backend = self.backends.get(resolved_backend_name)
+            try:
+                assessment = assess_qualification(
+                    identity=identity,
+                    repository=repository_qualification_context(
+                        context.repository_path
+                    ),
+                    requested_task=requested,
+                    configuration=context.policy_configuration,
+                    store=self.qualification_store,
+                    backend_execution_selection=(
+                        backend.execution_environment if backend is not None else None
+                    ),
+                )
+            except Exception as error:
+                raise ValueError(
+                    f"repository qualification could not be proved for {identity.system_id}: {error}"
+                ) from error
+            qualification = context.policy_configuration.get("qualification")
+            values = qualification if isinstance(qualification, Mapping) else {}
+            manual = values.get("manual_override")
+            manual_values = manual if isinstance(manual, Mapping) else {}
+            manual_route = str(manual_values.get("route_name") or "")
+            manual_experimental = bool(
+                manual_values.get("allow_experimental") is True
+                and manual_route
+                in {resolved_backend_name, identity.route_name}
+            )
+            if assessment.state == "unsupported":
+                raise ValueError(
+                    f"agent system {identity.system_id} is unsupported for this repository: {assessment.caveat}"
+                )
+            if assessment.state == "experimental" and not manual_experimental:
+                raise ValueError(
+                    f"agent system {identity.system_id} is Experimental and requires an explicit manual override"
+                )
+            if assessment.state not in {
+                "qualified",
+                "provisional",
+                "experimental",
+            }:
+                raise ValueError(
+                    f"agent system {identity.system_id} is not eligible for this repository"
+                )
+        elif identity.qualification_status not in {
+            "qualified",
+            "bootstrap",
+            "provisional",
+        }:
             raise ValueError(
                 f"agent system {identity.system_id} is not qualified for production"
             )
@@ -499,7 +738,7 @@ class AgentSystemAttemptRunner:
         return identity, adapter
 
     def run(self, attempt_context: AttemptContext) -> AttemptResult:
-        identity, adapter = self._resolve(attempt_context.backend_name)
+        identity, adapter = self._resolve(attempt_context)
         session = adapter.prepare_session(attempt_context)
         try:
             result = adapter.execute_task(session, attempt_context)
@@ -555,11 +794,14 @@ class AgentSystemAttemptRunner:
         updated = execute(attempt_context, attempt_result, requests)
         return replace(
             updated,
-            metadata={**dict(updated.metadata), **{
-                key: value
-                for key, value in attempt_result.metadata.items()
-                if key.startswith("agent_system_") or key.startswith("harness_")
-            }},
+            metadata={
+                **dict(updated.metadata),
+                **{
+                    key: value
+                    for key, value in attempt_result.metadata.items()
+                    if key.startswith("agent_system_") or key.startswith("harness_")
+                },
+            },
         )
 
 

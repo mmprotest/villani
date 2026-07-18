@@ -1,0 +1,67 @@
+{
+  "accepted_as_is": true,
+  "attempt_count": 1,
+  "authoritative_verification_complete": true,
+  "duration": {
+    "accounting_status": "complete",
+    "duration_ms": 1200.0,
+    "sample_count": 1,
+    "source": "pt8_protocol_fixture"
+  },
+  "eligible_for_automatic_policy_metrics": true,
+  "eligible_for_profile": true,
+  "escalation_count": 0,
+  "exclusion_reason": null,
+  "execution_cost": {
+    "accounting_status": "complete",
+    "amount": 1.25,
+    "currency": "USD",
+    "sample_count": 1,
+    "source": "pt8_protocol_fixture"
+  },
+  "false_acceptance": false,
+  "forced_choice": false,
+  "human_review_cost": {
+    "accounting_status": "not_applicable",
+    "amount": null,
+    "currency": null,
+    "sample_count": 0,
+    "source": "pt8_protocol_fixture"
+  },
+  "infrastructure_status": "resolved",
+  "observation_id": "eobs_7777777777777777777777777777777777777777777777777777777777777777",
+  "observed_at": "2026-07-18T03:00:00Z",
+  "policy_version": "accepted-change-fixture-v1",
+  "proved_acceptable": true,
+  "qualification_eligible": true,
+  "qualification_observation_id": "qobs_6666666666666666666666666666666666666666666666666666666666666666",
+  "recorded_at": "2026-07-18T03:00:00Z",
+  "repository_id": "repo_fixture_pt8",
+  "retry_escalation_cost": {
+    "accounting_status": "not_applicable",
+    "amount": null,
+    "currency": null,
+    "sample_count": 0,
+    "source": "pt8_protocol_fixture"
+  },
+  "review_minutes": null,
+  "route_name": "fixture_economy",
+  "schema_version": "villani.economics_observation.v1",
+  "source_route_plan_id": "rplan_cf664487fc275ba350c7d0f4e89453e80733704331462ed080c6361a93106d14",
+  "source_run_id": "run_fixture_pt8",
+  "system_id": "asys_4444444444444444444444444444444444444444444444444444444444444444",
+  "system_identity_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "task_profile": {
+    "category": "maintenance",
+    "difficulty": "easy",
+    "required_capabilities": [],
+    "risk": "low"
+  },
+  "verification_cost": {
+    "accounting_status": "complete",
+    "amount": 0.25,
+    "currency": "USD",
+    "sample_count": 1,
+    "source": "pt8_protocol_fixture"
+  }
+}

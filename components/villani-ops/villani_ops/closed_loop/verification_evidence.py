@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -144,6 +145,58 @@ class RequirementDefinition(StrictVerificationModel):
     source: RequirementSource
 
 
+class FocusedProbeTemporaryFile(StrictVerificationModel):
+    path: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    content: str | None = Field(default=None, exclude=True, repr=False)
+    content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    content_bytes: int = Field(ge=0, le=262_144)
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_content_identity(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            return value
+        output = dict(value)
+        content = output.get("content")
+        if isinstance(content, str):
+            encoded = content.encode("utf-8")
+            output.setdefault(
+                "content_sha256", f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+            )
+            output.setdefault("content_bytes", len(encoded))
+        return output
+
+    @model_validator(mode="after")
+    def validate_file(self) -> "FocusedProbeTemporaryFile":
+        posix = PurePosixPath(self.path.replace("\\", "/"))
+        windows = PureWindowsPath(self.path)
+        if (
+            posix.is_absolute()
+            or windows.is_absolute()
+            or windows.drive
+            or ".." in posix.parts
+            or self.path.endswith(("/", "\\"))
+        ):
+            raise ValueError("focused probe temporary file must be a safe relative file")
+        if self.content is not None:
+            encoded = self.content.encode("utf-8")
+            if len(encoded) != self.content_bytes:
+                raise ValueError("temporary file byte count does not match content")
+            digest = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+            if digest != self.content_sha256:
+                raise ValueError("temporary file digest does not match content")
+        return self
+
+
+class FocusedProbeTemporaryFileEvidence(StrictVerificationModel):
+    path: str = Field(min_length=1)
+    content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    content_bytes: int = Field(ge=0, le=262_144)
+    created: bool
+    removed: bool
+
+
 class FocusedProbeRequest(StrictVerificationModel):
     probe_id: str = Field(min_length=1)
     requirement_ids: list[str] = Field(min_length=1)
@@ -153,6 +206,7 @@ class FocusedProbeRequest(StrictVerificationModel):
     expected_stdout: str | None = None
     expected_stdout_contains: list[str] = Field(default_factory=list)
     expected_stderr_contains: list[str] = Field(default_factory=list)
+    temporary_files: list[FocusedProbeTemporaryFile] = Field(default_factory=list)
     reason: str = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -169,6 +223,9 @@ class FocusedProbeRequest(StrictVerificationModel):
             set(self.expected_stderr_contains)
         ):
             raise ValueError("expected_stderr_contains must be unique")
+        paths = [item.path.replace("\\", "/") for item in self.temporary_files]
+        if len(paths) != len(set(paths)):
+            raise ValueError("focused probe temporary file paths must be unique")
         return self
 
 
@@ -181,6 +238,9 @@ class FocusedProbeResult(StrictVerificationModel):
     evidence_id: str = Field(min_length=1)
     effective_timeout_seconds: int = Field(ge=1)
     reason: str = Field(min_length=1)
+    temporary_files: list[FocusedProbeTemporaryFileEvidence] = Field(
+        default_factory=list
+    )
 
     @model_validator(mode="after")
     def validate_result(self) -> "FocusedProbeResult":

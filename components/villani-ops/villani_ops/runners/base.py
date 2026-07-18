@@ -50,7 +50,9 @@ class CandidateExecutionAcknowledgement(BaseModel):
             ).encode("utf-8")
         ).hexdigest()
         if self.effective_configuration_digest != expected:
-            raise ValueError("effective configuration digest does not match applied dimensions")
+            raise ValueError(
+                "effective configuration digest does not match applied dimensions"
+            )
         if self.runner_acknowledged and not self.applied_dimensions:
             raise ValueError("runner acknowledgement requires applied dimensions")
         return self
@@ -83,6 +85,10 @@ class RunnerResult(BaseModel):
     output_tokens: int = 0
     total_tokens: int | None = None
     total_cost: float | None = None
+    cost_currency: str | None = None
+    cost_accounting_status: str = "unknown"
+    cost_source: str | None = None
+    per_model_usage: dict[str, Any] = Field(default_factory=dict)
     usage_records: list[Any] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
     debug_artifact_dir: str | None = None
@@ -105,6 +111,10 @@ class RunnerResult(BaseModel):
     first_command_seconds: float | None = None
     token_accounting_status: str = "missing"
     token_accounting_warnings: list[str] = Field(default_factory=list)
+    runtime_events: list[dict[str, Any]] = Field(default_factory=list)
+    failure_code: str | None = None
+    failure_retryable: bool | None = None
+    cancelled: bool = False
     telemetry: dict[str, Any] = Field(default_factory=dict)
 
 

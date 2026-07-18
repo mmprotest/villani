@@ -117,6 +117,13 @@
           "default": null,
           "title": "Currency"
         },
+        "per_model": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Per Model",
+          "type": "object"
+        },
         "source": {
           "anyOf": [
             {
@@ -136,6 +143,130 @@
       "title": "HarnessCost",
       "type": "object"
     },
+    "HarnessExecutionIdentity": {
+      "additionalProperties": false,
+      "description": "Identity actually acknowledged by the harness during this attempt.",
+      "properties": {
+        "harness_id": {
+          "minLength": 1,
+          "title": "Harness Id",
+          "type": "string"
+        },
+        "harness_version": {
+          "minLength": 1,
+          "title": "Harness Version",
+          "type": "string"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
+        },
+        "protocol": {
+          "minLength": 1,
+          "title": "Protocol",
+          "type": "string"
+        },
+        "protocol_schema_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protocol Schema Digest"
+        },
+        "protocol_version": {
+          "minLength": 1,
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "system_metadata": {
+          "additionalProperties": true,
+          "title": "System Metadata",
+          "type": "object"
+        },
+        "thread_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thread Id"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        }
+      },
+      "required": [
+        "harness_id",
+        "harness_version",
+        "protocol",
+        "protocol_version"
+      ],
+      "title": "HarnessExecutionIdentity",
+      "type": "object"
+    },
     "HarnessInfrastructureFailure": {
       "additionalProperties": false,
       "properties": {
@@ -151,6 +282,8 @@
             "malformed_output",
             "oversized_output",
             "cleanup",
+            "transport_overload",
+            "rate_limit",
             "unknown"
           ],
           "title": "Category",
@@ -230,6 +363,14 @@
           ],
           "default": null,
           "title": "Output Tokens"
+        },
+        "per_model": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Per Model",
+          "type": "object"
         }
       },
       "required": [
@@ -352,6 +493,17 @@
       ],
       "default": null,
       "title": "Duration Ms"
+    },
+    "execution_identity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HarnessExecutionIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "harness_status": {
       "enum": [

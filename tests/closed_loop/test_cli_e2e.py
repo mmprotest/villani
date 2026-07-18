@@ -85,7 +85,7 @@ def _tiny_repo(tmp_path: Path) -> Path:
     return repo
 
 
-FAKE_CODE = r'''from __future__ import annotations
+FAKE_CODE = r"""from __future__ import annotations
 import json
 import os
 import sys
@@ -140,7 +140,7 @@ summary = {
 (trace / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
 (trace / "final_summary.json").write_text(json.dumps(summary), encoding="utf-8")
 print(f"completed {attempt}")
-'''
+"""
 
 
 def _fake_executable(tmp_path: Path) -> Path:
@@ -177,15 +177,25 @@ class SequenceVerifier:
                 confidence=0.99,
                 reason="The economy backend lacks required capability.",
                 recommended_action="escalate",
-                requirement_results=(Requirement(
-                    requirement_id="addition", description="addition works",
-                    outcome="failed", evidence_ids=("test-fail",),
-                ),),
-                failure_evidence=(EvidenceItem(
-                    evidence_id="test-fail", kind="test_result",
-                    summary="test_add failed",
-                ),),
-                metadata={"failure_category": "capability_failure", "verifier_version": "m9_e2e_v1"},
+                requirement_results=(
+                    Requirement(
+                        requirement_id="addition",
+                        description="addition works",
+                        outcome="failed",
+                        evidence_ids=("test-fail",),
+                    ),
+                ),
+                failure_evidence=(
+                    EvidenceItem(
+                        evidence_id="test-fail",
+                        kind="test_result",
+                        summary="test_add failed",
+                    ),
+                ),
+                metadata={
+                    "failure_category": "capability_failure",
+                    "verifier_version": "m9_e2e_v1",
+                },
             )
         return Verification(
             verifier="m9_deterministic_verifier",
@@ -194,14 +204,21 @@ class SequenceVerifier:
             confidence=0.99,
             reason="The repository test proves addition works.",
             recommended_action="accept",
-            requirement_results=(Requirement(
-                requirement_id="addition", description="addition works",
-                outcome="passed", evidence_ids=("test-pass",),
-            ),),
-            success_evidence=(EvidenceItem(
-                evidence_id="test-pass", kind="test_result",
-                summary="test_add passed",
-            ),),
+            requirement_results=(
+                Requirement(
+                    requirement_id="addition",
+                    description="addition works",
+                    outcome="passed",
+                    evidence_ids=("test-pass",),
+                ),
+            ),
+            success_evidence=(
+                EvidenceItem(
+                    evidence_id="test-pass",
+                    kind="test_result",
+                    summary="test_add passed",
+                ),
+            ),
             metadata={"verifier_version": "m9_e2e_v1"},
         )
 
@@ -247,11 +264,14 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     config["budgets"]["max_attempts"] = 2
     config["backends"] = {
         "economy": {
-            "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-small",
+            "provider": "local",
+            "base_url": "http://127.0.0.1:1/v1",
+            "model": "fake-small",
             # The default manual-score uncertainty penalty is 20.  A configured
             # estimate of 45 therefore remains eligible for this easy-task
             # escalation fixture with an effective capability of 25.
-            "roles": ["classification", "coding"], "capability_score": 45,
+            "roles": ["classification", "coding"],
+            "capability_score": 45,
             "billing_mode": "fixed",
             "fixed_cost_per_attempt": 0.01,
             "command_name": str(executable),
@@ -259,8 +279,11 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
             "metadata": {"allow_dummy_api_key": True},
         },
         "capable": {
-            "provider": "local", "base_url": "http://127.0.0.1:1/v1", "model": "fake-large",
-            "roles": ["coding"], "capability_score": 90,
+            "provider": "local",
+            "base_url": "http://127.0.0.1:1/v1",
+            "model": "fake-large",
+            "roles": ["coding"],
+            "capability_score": 90,
             "billing_mode": "fixed",
             "fixed_cost_per_attempt": 0.10,
             "command_name": str(executable),
@@ -274,12 +297,21 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     def builder(configuration: Any, on_event: Any) -> ClosedLoopController:
         backends = configured_backends(configuration)
         return ClosedLoopController(
-            classifier=type("Classifier", (), {"classify": lambda self, task, context: Classification(
-                difficulty="easy", risk="low", category="bug_fix",
-                confidence=0.99, needs_tests=True,
-                reasoning_summary="deterministic command e2e",
-                metadata={"classifier_version": "m9_e2e_v1"},
-            )})(),
+            classifier=type(
+                "Classifier",
+                (),
+                {
+                    "classify": lambda self, task, context: Classification(
+                        difficulty="easy",
+                        risk="low",
+                        category="bug_fix",
+                        confidence=0.99,
+                        needs_tests=True,
+                        reasoning_summary="deterministic command e2e",
+                        metadata={"classifier_version": "m9_e2e_v1"},
+                    )
+                },
+            )(),
             policy_engine=BootstrapPolicyEngine(backends, configuration),
             attempt_runner=VillaniCodeAttemptAdapter(backends=backends),
             verifier=verifier,
@@ -293,9 +325,18 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     result = runner.invoke(
         unified.app,
         [
-            "run", "Fix calculator addition", "--repo", str(repo),
-            "--success-criteria", "test_add passes", "--max-attempts", "2",
-            "--preset", "Balanced", "--delivery", "apply",
+            "run",
+            "Fix calculator addition",
+            "--repo",
+            str(repo),
+            "--success-criteria",
+            "test_add passes",
+            "--max-attempts",
+            "2",
+            "--preset",
+            "Balanced",
+            "--delivery",
+            "apply",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -305,13 +346,29 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
         if line.startswith("Run ID:")
     )
     run_dir = home / "runs" / run_id
-    events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text().splitlines()]
-    classification_sequence = next(e["sequence"] for e in events if e["event_type"] == "classification_completed")
-    policy_sequence = next(e["sequence"] for e in events if e["event_type"] == "policy_decision_started")
+    events = [
+        json.loads(line) for line in (run_dir / "events.jsonl").read_text().splitlines()
+    ]
+    classification_sequence = next(
+        e["sequence"] for e in events if e["event_type"] == "classification_completed"
+    )
+    policy_sequence = next(
+        e["sequence"] for e in events if e["event_type"] == "policy_decision_started"
+    )
     assert classification_sequence < policy_sequence
     assert len(verifier.calls) == 2
-    assert json.loads((run_dir / "verification" / "attempt_001.json").read_text())["acceptance_eligible"] is False
-    assert json.loads((run_dir / "verification" / "attempt_002.json").read_text())["acceptance_eligible"] is True
+    assert (
+        json.loads((run_dir / "verification" / "attempt_001.json").read_text())[
+            "acceptance_eligible"
+        ]
+        is False
+    )
+    assert (
+        json.loads((run_dir / "verification" / "attempt_002.json").read_text())[
+            "acceptance_eligible"
+        ]
+        is True
+    )
     selection = json.loads((run_dir / "selection.json").read_text())
     assert selection["eligible_candidate_ids"] == ["attempt_002"]
     assert selection["selected_candidate_ids"] == ["attempt_002"]
@@ -322,7 +379,9 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     assert manifest["total_duration_ms"] == 50
     assert manifest["total_cost_usd"] == pytest.approx(0.11)
     assert manifest["cost_accounting_status"] == "complete"
-    assert (repo / "calculator.py").read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
+    assert (repo / "calculator.py").read_text(
+        encoding="utf-8"
+    ) == "def add(a, b):\n    return a + b\n"
     _run([sys.executable, "-m", "unittest", "-q"], repo)
 
     node = shutil.which("node")
@@ -330,15 +389,23 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     rendered = tmp_path / "flight-recorder"
     _run(
         [
-            node, str(FLIGHT_RECORDER), "launch", "--provider", "villani",
-            "--root", str(home / "runs"), "--run-id", run_id,
-            "--no-open", "--out", str(rendered),
+            node,
+            str(FLIGHT_RECORDER),
+            "launch",
+            "--provider",
+            "villani",
+            "--root",
+            str(home / "runs"),
+            "--run-id",
+            run_id,
+            "--no-open",
+            "--out",
+            str(rendered),
         ],
         ROOT,
     )
     html = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in rendered.rglob("*.html")
+        path.read_text(encoding="utf-8") for path in rendered.rglob("*.html")
     )
     assert "attempt_001" in html and "attempt_002" in html
     assert "attempt_002" in html and "fake-large" in html
@@ -394,7 +461,9 @@ def test_public_cli_two_backend_end_to_end_and_flight_recorder(
     with Session(engine) as session:
         session.add(Organization(id="org_e2e", name="E2E"))
         session.flush()
-        session.add(Workspace(organization_id="org_e2e", id="workspace_e2e", name="E2E"))
+        session.add(
+            Workspace(organization_id="org_e2e", id="workspace_e2e", name="E2E")
+        )
         session.flush()
         session.add(
             Project(
@@ -467,7 +536,80 @@ class _DeterministicOpenAIHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length", "0"))
         payload = json.loads(self.rfile.read(length) or b"{}")
         tools = payload.get("tools") or []
-        if not tools:
+        tool_names = {
+            str(tool.get("function", {}).get("name") or "")
+            for tool in tools
+            if isinstance(tool, dict)
+        }
+        if "verifier_final_verdict" in tool_names:
+            user_content = "\n".join(
+                str(message.get("content") or "")
+                for message in payload.get("messages") or []
+                if isinstance(message, dict) and message.get("role") == "user"
+            )
+            marker = "Closed-loop verification context:\n"
+            context_text = user_content.split(marker, 1)[1].split(
+                "\nEvidence packet:\n", 1
+            )[0]
+            verification_context = json.loads(context_text)
+            semantic_evidence_id = "semantic-local-e2e"
+            requirement_results = [
+                {
+                    "id": requirement["requirement_id"],
+                    "requirement": requirement["description"],
+                    "critical": bool(requirement.get("critical")),
+                    "status": "passed",
+                    "evidence": [semantic_evidence_id],
+                    "risks": [],
+                }
+                for requirement in verification_context.get("requirements") or []
+            ]
+            verdict = {
+                "result": 1,
+                "verdict": "success",
+                "recommendedAction": "accept",
+                "reason": (
+                    "The candidate patch matches the requested behavior and the "
+                    "authoritative repository validation passed."
+                ),
+                "requirementResults": requirement_results,
+                "successEvidence": [
+                    {
+                        "id": semantic_evidence_id,
+                        "kind": "semantic_reasoning",
+                        "summary": (
+                            "The changed implementation matches the task and is "
+                            "supported by repository validation."
+                        ),
+                    }
+                ],
+                "failureEvidence": [],
+                "missingEvidence": [],
+                "riskFlags": [],
+                "criticalRequirementCoverageProven": True,
+                "focusedProbeRequests": [],
+                "toolsUsed": [],
+            }
+            response = {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": "verdict-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "verifier_final_verdict",
+                                        "arguments": json.dumps(verdict),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        elif not tools:
             content = json.dumps(
                 {
                     "difficulty": "easy",
@@ -480,7 +622,9 @@ class _DeterministicOpenAIHandler(BaseHTTPRequestHandler):
                     "confidence": 0.99,
                 }
             )
-            response = {"choices": [{"message": {"role": "assistant", "content": content}}]}
+            response = {
+                "choices": [{"message": {"role": "assistant", "content": content}}]
+            }
         else:
             type(self).calls += 1
             if self.calls == 1:
@@ -497,7 +641,11 @@ class _DeterministicOpenAIHandler(BaseHTTPRequestHandler):
                         ),
                     },
                 }
-                response = {"choices": [{"message": {"role": "assistant", "tool_calls": [tool]}}]}
+                response = {
+                    "choices": [
+                        {"message": {"role": "assistant", "tool_calls": [tool]}}
+                    ]
+                }
             elif self.calls == 2:
                 tool = {
                     "id": "bash-1",
@@ -507,10 +655,25 @@ class _DeterministicOpenAIHandler(BaseHTTPRequestHandler):
                         "arguments": json.dumps({"command": "python -m unittest -q"}),
                     },
                 }
-                response = {"choices": [{"message": {"role": "assistant", "tool_calls": [tool]}}]}
+                response = {
+                    "choices": [
+                        {"message": {"role": "assistant", "tool_calls": [tool]}}
+                    ]
+                }
             else:
-                response = {"choices": [{"message": {"role": "assistant", "content": "Completed the requested fix."}}]}
-        body = json.dumps({**response, "usage": {"prompt_tokens": 12, "completion_tokens": 6}}).encode()
+                response = {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "Completed the requested fix.",
+                            }
+                        }
+                    ]
+                }
+        body = json.dumps(
+            {**response, "usage": {"prompt_tokens": 12, "completion_tokens": 6}}
+        ).encode()
         self.send_response(200)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(body)))
@@ -541,12 +704,20 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
         environment["VILLANI_HOME"] = str(home)
         environment["VILLANI_CODE_INLINE_PROMPT_LIMIT"] = "1"
         proxy_names = (
-            "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
-            "http_proxy", "https_proxy", "all_proxy",
-            "NO_PROXY", "no_proxy",
-            "GIT_ASKPASS", "SSH_ASKPASS",
-            "VSCODE_GIT_ASKPASS_NODE", "VSCODE_GIT_ASKPASS_EXTRA_ARGS",
-            "VSCODE_GIT_ASKPASS_MAIN", "VSCODE_GIT_IPC_HANDLE",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+            "NO_PROXY",
+            "no_proxy",
+            "GIT_ASKPASS",
+            "SSH_ASKPASS",
+            "VSCODE_GIT_ASKPASS_NODE",
+            "VSCODE_GIT_ASKPASS_EXTRA_ARGS",
+            "VSCODE_GIT_ASKPASS_MAIN",
+            "VSCODE_GIT_IPC_HANDLE",
         )
         for name in proxy_names:
             environment.pop(name, None)
@@ -581,13 +752,14 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
                 "provider": "local",
                 "base_url": f"http://127.0.0.1:{server.server_port}/v1",
                 "model": "deterministic",
-                "roles": ["classification", "coding"],
+                "roles": ["classification", "coding", "review"],
                 "capability_score": 100,
                 "billing_mode": "unknown",
                 "command_name": villani_code,
                 "metadata": {"allow_dummy_api_key": True},
             }
         }
+        config["verifier"].update({"no_llm": False, "backend": "local-stub"})
         unified._write_config(home / "config.yaml", config)
         doctor = subprocess.run(
             [villani, "doctor", "--repo", str(repo), "--json"],
@@ -613,6 +785,9 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
                 "The test suite passes",
                 "--delivery",
                 "apply",
+                "--agent-system",
+                "local-stub",
+                "--allow-experimental",
             ],
             cwd=ROOT,
             env=environment,
@@ -621,7 +796,13 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
         )
         output = result.stdout + result.stderr
         assert result.returncode == 0, output
-        assert (repo / "calculator.py").read_text(encoding="utf-8").endswith("return a + b\n")
+        assert "Manual agent-system override: local-stub" in output
+        assert "Experimental" in output
+        assert (
+            (repo / "calculator.py")
+            .read_text(encoding="utf-8")
+            .endswith("return a + b\n")
+        )
         _run([sys.executable, "-m", "unittest", "-q"], repo)
         run_id = next(
             line.split(":", 1)[1].strip()
@@ -633,7 +814,9 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
         assert state["state"] == "COMPLETED"
         event_types = {
             json.loads(line)["event_type"]
-            for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (run_dir / "events.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
         }
         assert {
             "classification_completed",
@@ -654,10 +837,16 @@ def test_public_local_stub_quickstart_uses_real_villani_code_cli(
         assert execution_environment["provider"] == "inherit"
         assert execution_environment["fingerprint"]
         preflight = json.loads((run_dir / "preflight.json").read_text(encoding="utf-8"))
-        assert preflight["execution_environment_fingerprint"] == execution_environment["fingerprint"]
+        assert (
+            preflight["execution_environment_fingerprint"]
+            == execution_environment["fingerprint"]
+        )
         assert preflight["inferred_setup_executed"] is False
         resource = json.loads((run_dir / "resource.json").read_text(encoding="utf-8"))
-        assert resource["attributes"]["villani.execution_environment.fingerprint"] == execution_environment["fingerprint"]
+        assert (
+            resource["attributes"]["villani.execution_environment.fingerprint"]
+            == execution_environment["fingerprint"]
+        )
         assert not (attempt_dir / "worktree").exists()
 
         node = shutil.which("node")
@@ -772,13 +961,14 @@ def test_windows_powershell_installed_cli_accepts_multiline_task_file(
                 "provider": "local",
                 "base_url": f"http://127.0.0.1:{server.server_port}/v1",
                 "model": "deterministic",
-                "roles": ["classification", "coding"],
+                "roles": ["classification", "coding", "review"],
                 "capability_score": 100,
                 "billing_mode": "unknown",
                 "command_name": str(villani_code),
                 "metadata": {"allow_dummy_api_key": True},
             }
         }
+        config["verifier"].update({"no_llm": False, "backend": "local-stub"})
         unified._write_config(home / "config.yaml", config)
 
         def ps_literal(value: str | Path) -> str:
@@ -792,6 +982,8 @@ def test_windows_powershell_installed_cli_accepts_multiline_task_file(
                 f"    --repo {ps_literal(repo)} `",
                 f"    --success-criteria {ps_literal('The test suite passes')} `",
                 "    --delivery suggest `",
+                "    --agent-system local-stub `",
+                "    --allow-experimental `",
                 "    --max-attempts 1",
                 "exit $LASTEXITCODE",
             ]
@@ -813,6 +1005,8 @@ def test_windows_powershell_installed_cli_accepts_multiline_task_file(
         output = result.stdout + result.stderr
         assert result.returncode != 2, output
         assert result.returncode == 0, output
+        assert "Manual agent-system override: local-stub" in output
+        assert "Experimental" in output
         assert "unexpected extra argument" not in output.lower()
         run_directories = [
             path

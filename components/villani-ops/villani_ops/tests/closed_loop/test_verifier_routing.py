@@ -346,11 +346,10 @@ def test_failed_repository_validation_blocks_semantic_acceptance(
     )
     assert result.acceptance_eligible is False
     assert result.outcome == "rejected"
-    assert backend.calls == 1
-    assert (
-        result.metadata["computed_final_reason_code"] == "repository_validation_failed"
-    )
-    assert result.metadata["verifier_disagreement"] is True
+    assert backend.calls == 0
+    assert result.metadata["redundant_semantic_call_avoided"] is True
+    assert result.metadata["semantic_verifier_invoked"] is False
+    assert "verifier_disagreement" not in result.metadata
 
 
 def test_no_eligible_authority_fails_closed(tmp_path: Path) -> None:

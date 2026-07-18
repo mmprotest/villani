@@ -22,26 +22,44 @@ from .models import (
     CapabilityState,
     HarnessConformanceCheck,
     HarnessConformanceReport,
+    HarnessDiscovery,
+    HarnessExecutionIdentity,
     HarnessResult,
+    HarnessReadiness,
     HarnessSession,
     NormalizedHarnessEvent,
 )
 
 
 _LAZY_EXPORTS = {
-    "AGENT_SYSTEM_CONFIGURATION_VERSION": ("configuration", "AGENT_SYSTEM_CONFIGURATION_VERSION"),
+    "ACPClient": ("acp", "ACPClient"),
+    "ACPRunResult": ("acp", "ACPRunResult"),
+    "AGENT_SYSTEM_CONFIGURATION_VERSION": (
+        "configuration",
+        "AGENT_SYSTEM_CONFIGURATION_VERSION",
+    ),
     "AgentSystemAttemptRunner": ("adapters", "AgentSystemAttemptRunner"),
     "AgentSystemRegistry": ("registry", "AgentSystemRegistry"),
     "HarnessAdapter": ("adapters", "HarnessAdapter"),
     "MIGRATION_VERSION": ("configuration", "MIGRATION_VERSION"),
     "REQUIRED_CONFORMANCE_CHECKS": ("conformance", "REQUIRED_CONFORMANCE_CHECKS"),
-    "SUPPORTED_PRODUCTION_HARNESSES": ("configuration", "SUPPORTED_PRODUCTION_HARNESSES"),
+    "SUPPORTED_PRODUCTION_HARNESSES": (
+        "configuration",
+        "SUPPORTED_PRODUCTION_HARNESSES",
+    ),
     "VillaniCodeHarnessAdapter": ("adapters", "VillaniCodeHarnessAdapter"),
     "build_agent_system_identities": ("configuration", "build_agent_system_identities"),
     "build_agent_system_registry": ("registry", "build_agent_system_registry"),
     "build_agent_system_runner": ("registry", "build_agent_system_runner"),
-    "build_harness_conformance_report": ("conformance", "build_harness_conformance_report"),
-    "migrate_agent_system_configuration": ("configuration", "migrate_agent_system_configuration"),
+    "build_harness_conformance_report": (
+        "conformance",
+        "build_harness_conformance_report",
+    ),
+    "discover_agent_harnesses": ("discovery", "discover_agent_harnesses"),
+    "migrate_agent_system_configuration": (
+        "configuration",
+        "migrate_agent_system_configuration",
+    ),
 }
 
 
@@ -59,6 +77,8 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "AGENT_SYSTEM_CONFIGURATION_VERSION",
+    "ACPClient",
+    "ACPRunResult",
     "AGENT_SYSTEM_SCHEMA_VERSION",
     "AgentSystemAttemptRunner",
     "AgentSystemDoctorReport",
@@ -74,7 +94,10 @@ __all__ = [
     "HarnessAdapter",
     "HarnessConformanceCheck",
     "HarnessConformanceReport",
+    "HarnessDiscovery",
+    "HarnessExecutionIdentity",
     "HarnessResult",
+    "HarnessReadiness",
     "HarnessSession",
     "MIGRATION_VERSION",
     "NORMALIZED_EVENT_NAMES",
@@ -86,5 +109,6 @@ __all__ = [
     "build_agent_system_registry",
     "build_agent_system_runner",
     "build_harness_conformance_report",
+    "discover_agent_harnesses",
     "migrate_agent_system_configuration",
 ]

@@ -1,0 +1,65 @@
+{
+  "attempt_id": "attempt_002",
+  "blockers": [],
+  "decided_at": "2026-07-18T00:00:00Z",
+  "decision": 1,
+  "decision_id": "avd_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "independent_verifier_completed": false,
+  "independent_verifier_required": false,
+  "infrastructure_status": "resolved",
+  "node_results": [
+    {
+      "commands": [],
+      "evidence_paths": [
+        "verification/attempt_002-evidence.json"
+      ],
+      "node_id": "node_diff_integrity",
+      "reason": "The required proof passed.",
+      "status": "passed"
+    },
+    {
+      "commands": [],
+      "evidence_paths": [
+        "verification/attempt_002-evidence.json"
+      ],
+      "node_id": "node_requirement_mapping",
+      "reason": "The required proof passed.",
+      "status": "passed"
+    },
+    {
+      "commands": [],
+      "evidence_paths": [
+        "verification/attempt_002-evidence.json"
+      ],
+      "node_id": "node_semantic_verifier",
+      "reason": "The required proof passed.",
+      "status": "passed"
+    }
+  ],
+  "normalized_from": "unclear",
+  "plan_id": "avp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "reason": "All required deterministic and semantic evidence passed.",
+  "reason_code": "proved_acceptable",
+  "requirements_not_proved": [],
+  "requirements_proved": [
+    "req_001"
+  ],
+  "run_id": "run_protocol_fixture",
+  "schema_version": "villani.binary_verification_decision.v1",
+  "semantic_status": "unclear",
+  "verification_cost": {
+    "accounting_status": "complete",
+    "amount": 0.07,
+    "currency": "USD",
+    "source": "authoritative_verifier_usage"
+  },
+  "verifier_provenance": [
+    {
+      "artifact_path": "verification/attempt_002-raw.json",
+      "independent": false,
+      "invocation_status": "completed",
+      "verifier_identity_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "verifier_role": "semantic"
+    }
+  ]
+}

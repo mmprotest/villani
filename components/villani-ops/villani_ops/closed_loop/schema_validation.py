@@ -22,7 +22,31 @@ from .product_run import ProductRun
 from .agent_systems.models import (
     AgentSystemIdentity,
     HarnessConformanceReport,
+    HarnessDiscovery,
     HarnessResult,
+)
+from .qualification.models import (
+    GateCReport,
+    QualificationInvalidation,
+    QualificationObservation,
+    QualificationSnapshot,
+)
+from .economics.models import (
+    EconomicsObservation,
+    EconomicsSnapshot,
+    OnlineEvidenceUpdateReport,
+    RoutePlan,
+    RoutePolicy,
+    RoutePolicyEvaluation,
+    RoutePolicyPublication,
+)
+from .adaptive_verification.models import (
+    AdaptiveVerificationPlan,
+    BinaryVerificationDecision,
+    CompactReviewPackage,
+    GateDReport,
+    HumanOutcome,
+    SupervisionMetrics,
 )
 from villani_ops.evaluation_lab.models import (
     EvaluationReport,
@@ -63,8 +87,7 @@ SCHEMA_VERSION_TO_PATH: dict[str, Path] = {
     "villani.verification.v1": SCHEMA_ROOT / "verification.schema.json",
     "villani.selection.v1": SCHEMA_ROOT / "selection.schema.json",
     "villani.materialization.v1": SCHEMA_ROOT / "materialization.schema.json",
-    "villani.validation_coverage.v1": SCHEMA_ROOT
-    / "validation-coverage.schema.json",
+    "villani.validation_coverage.v1": SCHEMA_ROOT / "validation-coverage.schema.json",
     "villani.run_summary.v1": SCHEMA_ROOT / "run-summary.schema.json",
     "villani.product_run.v1": SCHEMA_ROOT / "product-run.schema.json",
     "villani.evaluation_suite.v1": SCHEMA_ROOT / "evaluation-suite.schema.json",
@@ -76,6 +99,34 @@ SCHEMA_VERSION_TO_PATH: dict[str, Path] = {
     "villani.harness_result.v1": SCHEMA_ROOT / "harness-result.schema.json",
     "villani.harness_conformance_report.v1": SCHEMA_ROOT
     / "harness-conformance-report.schema.json",
+    "villani.harness_discovery.v1": SCHEMA_ROOT / "harness-discovery.schema.json",
+    "villani.qualification_observation.v1": SCHEMA_ROOT
+    / "qualification-observation.schema.json",
+    "villani.qualification_invalidation.v1": SCHEMA_ROOT
+    / "qualification-invalidation.schema.json",
+    "villani.qualification_snapshot.v1": SCHEMA_ROOT
+    / "qualification-snapshot.schema.json",
+    "villani.gate_c.v1": SCHEMA_ROOT / "gate-c.schema.json",
+    "villani.economics_observation.v1": SCHEMA_ROOT
+    / "economics-observation.schema.json",
+    "villani.economics_snapshot.v1": SCHEMA_ROOT / "economics-snapshot.schema.json",
+    "villani.online_evidence_update.v1": SCHEMA_ROOT
+    / "online-evidence-update.schema.json",
+    "villani.route_plan.v1": SCHEMA_ROOT / "route-plan.schema.json",
+    "villani.route_policy.v1": SCHEMA_ROOT / "route-policy.schema.json",
+    "villani.route_policy_evaluation.v1": SCHEMA_ROOT
+    / "route-policy-evaluation.schema.json",
+    "villani.route_policy_publication.v1": SCHEMA_ROOT
+    / "route-policy-publication.schema.json",
+    "villani.adaptive_verification_plan.v1": SCHEMA_ROOT
+    / "adaptive-verification-plan.schema.json",
+    "villani.binary_verification_decision.v1": SCHEMA_ROOT
+    / "binary-verification-decision.schema.json",
+    "villani.review_package.v1": SCHEMA_ROOT / "review-package.schema.json",
+    "villani.human_outcome.v1": SCHEMA_ROOT / "human-outcome.schema.json",
+    "villani.supervision_metrics.v1": SCHEMA_ROOT
+    / "supervision-metrics.schema.json",
+    "villani.gate_d.v1": SCHEMA_ROOT / "gate-d.schema.json",
 }
 SCHEMA_V2_VERSION_TO_PATH: dict[str, Path] = {
     "villani.telemetry_envelope.v2": SCHEMA_ROOT_V2 / "telemetry-envelope.schema.json",
@@ -108,6 +159,24 @@ ALL_PROTOCOL_MODELS: dict[str, type[BaseModel]] = {
     "villani.agent_system.v1": AgentSystemIdentity,
     "villani.harness_result.v1": HarnessResult,
     "villani.harness_conformance_report.v1": HarnessConformanceReport,
+    "villani.harness_discovery.v1": HarnessDiscovery,
+    "villani.qualification_observation.v1": QualificationObservation,
+    "villani.qualification_invalidation.v1": QualificationInvalidation,
+    "villani.qualification_snapshot.v1": QualificationSnapshot,
+    "villani.gate_c.v1": GateCReport,
+    "villani.economics_observation.v1": EconomicsObservation,
+    "villani.economics_snapshot.v1": EconomicsSnapshot,
+    "villani.online_evidence_update.v1": OnlineEvidenceUpdateReport,
+    "villani.route_plan.v1": RoutePlan,
+    "villani.route_policy.v1": RoutePolicy,
+    "villani.route_policy_evaluation.v1": RoutePolicyEvaluation,
+    "villani.route_policy_publication.v1": RoutePolicyPublication,
+    "villani.adaptive_verification_plan.v1": AdaptiveVerificationPlan,
+    "villani.binary_verification_decision.v1": BinaryVerificationDecision,
+    "villani.review_package.v1": CompactReviewPackage,
+    "villani.human_outcome.v1": HumanOutcome,
+    "villani.supervision_metrics.v1": SupervisionMetrics,
+    "villani.gate_d.v1": GateDReport,
 }
 
 
@@ -257,6 +326,48 @@ def _validate_accounting(document: Mapping[str, Any]) -> list[ProtocolValidation
                             ("rankings", index),
                         )
                     )
+    elif version == "villani.qualification_observation.v1":
+        issues.extend(
+            _accounting_issues(
+                document,
+                ("cost_amount", "cost_currency"),
+                "cost_accounting_status",
+            )
+        )
+        issues.extend(
+            _accounting_issues(
+                document,
+                ("duration_ms",),
+                "duration_accounting_status",
+            )
+        )
+    elif version == "villani.economics_observation.v1":
+        for component_name in (
+            "execution_cost",
+            "verification_cost",
+            "human_review_cost",
+            "retry_escalation_cost",
+        ):
+            component = document.get(component_name)
+            if isinstance(component, Mapping):
+                issues.extend(
+                    _accounting_issues(
+                        component,
+                        ("amount", "currency"),
+                        "accounting_status",
+                        (component_name,),
+                    )
+                )
+        duration = document.get("duration")
+        if isinstance(duration, Mapping):
+            issues.extend(
+                _accounting_issues(
+                    duration,
+                    ("duration_ms",),
+                    "accounting_status",
+                    ("duration",),
+                )
+            )
     return issues
 
 
@@ -270,6 +381,23 @@ def _semantic_issues(document: Mapping[str, Any]) -> list[ProtocolValidationIssu
         "villani.evaluation_trial.v1",
         "villani.human_review.v1",
         "villani.evaluation_report.v1",
+        "villani.qualification_observation.v1",
+        "villani.qualification_invalidation.v1",
+        "villani.qualification_snapshot.v1",
+        "villani.gate_c.v1",
+        "villani.economics_observation.v1",
+        "villani.economics_snapshot.v1",
+        "villani.online_evidence_update.v1",
+        "villani.route_plan.v1",
+        "villani.route_policy.v1",
+        "villani.route_policy_evaluation.v1",
+        "villani.route_policy_publication.v1",
+        "villani.adaptive_verification_plan.v1",
+        "villani.binary_verification_decision.v1",
+        "villani.review_package.v1",
+        "villani.human_outcome.v1",
+        "villani.supervision_metrics.v1",
+        "villani.gate_d.v1",
     }:
         try:
             ALL_PROTOCOL_MODELS[str(version)].model_validate(document)
@@ -409,6 +537,23 @@ def parse_protocol_document(
     | EvaluationTrial
     | HumanReview
     | EvaluationReport
+    | QualificationObservation
+    | QualificationInvalidation
+    | QualificationSnapshot
+    | GateCReport
+    | EconomicsObservation
+    | EconomicsSnapshot
+    | OnlineEvidenceUpdateReport
+    | RoutePlan
+    | RoutePolicy
+    | RoutePolicyEvaluation
+    | RoutePolicyPublication
+    | AdaptiveVerificationPlan
+    | BinaryVerificationDecision
+    | CompactReviewPackage
+    | HumanOutcome
+    | SupervisionMetrics
+    | GateDReport
 ):
     validate_protocol_document(value)
     schema_version = value["schema_version"]
@@ -423,7 +568,24 @@ def parse_protocol_document(
         | EvaluationTask
         | EvaluationTrial
         | HumanReview
-        | EvaluationReport,
+        | EvaluationReport
+        | QualificationObservation
+        | QualificationInvalidation
+        | QualificationSnapshot
+        | GateCReport
+        | EconomicsObservation
+        | EconomicsSnapshot
+        | OnlineEvidenceUpdateReport
+        | RoutePlan
+        | RoutePolicy
+        | RoutePolicyEvaluation
+        | RoutePolicyPublication
+        | AdaptiveVerificationPlan
+        | BinaryVerificationDecision
+        | CompactReviewPackage
+        | HumanOutcome
+        | SupervisionMetrics
+        | GateDReport,
         ALL_PROTOCOL_MODELS[schema_version].model_validate(value),
     )
 

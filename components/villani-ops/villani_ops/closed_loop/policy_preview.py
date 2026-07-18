@@ -119,7 +119,9 @@ def _verifier_route_explanation(
                 }
             )
         except ValueError as error:
-            excluded.append({"route": backend_name or f"route-{index + 1}", "reasons": [str(error)]})
+            excluded.append(
+                {"route": backend_name or f"route-{index + 1}", "reasons": [str(error)]}
+            )
             continue
         rejection: list[str] = []
         if not entry.available:
@@ -176,9 +178,7 @@ def build_policy_preview_document(
     configuration: Mapping[str, Any],
     backends: Mapping[str, Backend],
 ) -> dict[str, Any]:
-    eligible = [
-        asdict(item) for item in decision.considered_backends if item.eligible
-    ]
+    eligible = [asdict(item) for item in decision.considered_backends if item.eligible]
     excluded = [
         asdict(item) for item in decision.considered_backends if not item.eligible
     ]
@@ -203,10 +203,14 @@ def build_policy_preview_document(
             "Selected model capability is not qualified empirical evidence."
         )
     stage_projection = _mapping(decision.metadata.get("stage_budget_projection"))
+    route_plan = _mapping(decision.metadata.get("route_plan"))
     if stage_projection and not stage_projection.get("reserve_satisfied", False):
         uncertainty.append("Required downstream stage reserves are not satisfied.")
     if not uncertainty:
         uncertainty.append("No unresolved routing uncertainty was recorded.")
+    route_unknowns = route_plan.get("unknowns", []) if route_plan else []
+    for item in route_unknowns:
+        uncertainty.append(f"Route economics input is unknown: {item}.")
     backend_explanations = [
         {
             "backend": item.backend_name,
@@ -250,28 +254,47 @@ def build_policy_preview_document(
                 "credible_progress_assessment"
             ),
             "next_higher_backend": decision.metadata.get("next_higher_backend"),
-            "stage_budget_projection": decision.metadata.get(
-                "stage_budget_projection"
-            ),
+            "stage_budget_projection": decision.metadata.get("stage_budget_projection"),
             "empirical_sequence": decision.metadata.get("empirical_optimizer"),
             "override_status": (
                 provenance.get("explicit_override") if provenance else False
             ),
+            "route_plan": dict(route_plan) if route_plan else None,
         },
         "backend_explanations": backend_explanations,
         "selected_verifier_route": _verifier_route_explanation(
             configuration, backends, effective_classification
         ),
         "estimated_cost": {
-            "value": chosen.estimated_cost_usd if chosen else None,
-            "status": chosen.cost_accounting_status if chosen else "unknown",
-            "currency": next(
-                (
-                    backend.currency
-                    for backend in backends.values()
-                    if backend.name == decision.chosen_backend
-                ),
-                None,
+            "value": (
+                _mapping(route_plan.get("sequence_economics")).get(
+                    "expected_accepted_change_cost"
+                )
+                if route_plan
+                else chosen.estimated_cost_usd
+                if chosen
+                else None
+            ),
+            "status": (
+                _mapping(route_plan.get("sequence_economics")).get(
+                    "accounting_status", "unknown"
+                )
+                if route_plan
+                else chosen.cost_accounting_status
+                if chosen
+                else "unknown"
+            ),
+            "currency": (
+                _mapping(route_plan.get("sequence_economics")).get("currency")
+                if route_plan
+                else next(
+                    (
+                        backend.currency
+                        for backend in backends.values()
+                        if backend.name == decision.chosen_backend
+                    ),
+                    None,
+                )
             ),
         },
         "uncertainty": uncertainty,

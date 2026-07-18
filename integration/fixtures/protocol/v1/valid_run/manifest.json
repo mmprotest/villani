@@ -27,7 +27,10 @@
     "validation_coverage": "validation-coverage.json",
     "run_summary": "run-summary.json",
     "product_run": "product-run.json",
-    "agent_systems": "agent-systems/index.json"
+    "agent_systems": "agent-systems/index.json",
+    "adaptive_verification": "verification",
+    "human_outcomes": "human-outcome.json",
+    "supervision_metrics": "supervision-metrics.json"
   },
   "metadata": {
     "fixture": true

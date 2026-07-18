@@ -810,7 +810,12 @@ def test_policy_explain_reports_capability_provenance_and_reserves(
     )
 
     assert explained.exit_code == 0, explained.output
-    assert "Coding route: strong / strong-model" in explained.output
+    assert "Coding route: none / none" in explained.output
+    assert "selection=no_safe_route" in explained.output
+    assert (
+        "no qualified system exists and this system is not an eligible provisional fallback"
+        in explained.output
+    )
     assert "Backend weak: configured=80.0; effective=55.0" in explained.output
     assert "provenance=bootstrap" in explained.output
     assert "confidence=low" in explained.output

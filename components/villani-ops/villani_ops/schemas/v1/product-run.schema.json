@@ -35,6 +35,7 @@
     "recovery_action": { "anyOf": [{ "$ref": "#/$defs/recovery_action" }, { "type": "null" }] },
     "technical_detail_references": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
     "target_repository": { "$ref": "#/$defs/target_repository" },
+    "proof_package": { "anyOf": [{ "$ref": "#/$defs/proof_package" }, { "type": "null" }] },
     "last_event_sequence": { "type": "integer", "minimum": 1 },
     "updated_at": { "type": "string", "minLength": 1 }
   },
@@ -53,6 +54,7 @@
     "action": { "type": "object", "additionalProperties": false, "required": ["id", "label", "method", "href"], "properties": { "id": { "enum": ["apply_change", "create_branch", "open_pull_request", "cancel", "retry", "review_evidence"] }, "label": { "type": "string", "minLength": 1 }, "method": { "enum": ["GET", "POST"] }, "href": { "type": "string", "minLength": 1 } } },
     "evidence_link": { "type": "object", "additionalProperties": false, "required": ["label", "href", "artifact"], "properties": { "label": { "type": "string", "minLength": 1 }, "href": { "type": "string", "minLength": 1 }, "artifact": { "type": "string", "minLength": 1 } } },
     "recovery_action": { "type": "object", "additionalProperties": false, "required": ["label", "instruction", "href"], "properties": { "label": { "type": "string", "minLength": 1 }, "instruction": { "type": "string", "minLength": 1 }, "href": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] } } },
-    "target_repository": { "type": "object", "additionalProperties": false, "required": ["modified", "accounting_status", "statement"], "properties": { "modified": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] }, "accounting_status": { "enum": ["known", "unknown"] }, "statement": { "type": "string", "minLength": 1 } } }
+    "target_repository": { "type": "object", "additionalProperties": false, "required": ["modified", "accounting_status", "statement"], "properties": { "modified": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] }, "accounting_status": { "enum": ["known", "unknown"] }, "statement": { "type": "string", "minLength": 1 } } },
+    "proof_package": { "type": "object", "additionalProperties": false, "required": ["status", "risk_tier", "why_villani_trusts_it", "unresolved_decision", "artifact"], "properties": { "status": { "enum": ["ready_to_apply", "needs_review"] }, "risk_tier": { "enum": ["standard", "elevated", "critical"] }, "why_villani_trusts_it": { "type": "string", "minLength": 1 }, "unresolved_decision": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }, "artifact": { "type": "string", "minLength": 1 } } }
   }
 }

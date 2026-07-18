@@ -1,0 +1,151 @@
+{
+  "schema_version": "villani.route_policy_evaluation.v1",
+  "evaluation_id": "rpeval_aefd7fcc088c2e679cea43ea9df8dc182a19a23bb7149a07d364e3aaeb65fc01",
+  "generated_at": "2026-07-18T07:04:19.751739Z",
+  "active_policy_version": "accepted_change_economics_v1",
+  "active_policy_digest": "sha256:347b9b82f54eef5160947247dba5f0df4910c1b50a48a21731de8c03a7e426eb",
+  "proposed_policy_version": "accepted-change-fixture-v1",
+  "proposed_policy_digest": "sha256:cde6d6caa56b7a815601026d0fb33655a7355358d65ca50d75e345fbb4cbfad3",
+  "point_in_time_replay": true,
+  "frozen_case_count": 0,
+  "comparisons": [],
+  "strategy_metrics": [
+    {
+      "strategy": "strongest_only",
+      "case_count": 0,
+      "accepted_as_is": 0,
+      "proved_acceptable": 0,
+      "false_acceptance": 0,
+      "failures": 0,
+      "total_cost": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "elapsed_duration": {
+        "duration_ms": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "review_minutes": null,
+      "escalation_count": null,
+      "regret": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "measurable_successful_outcomes_only",
+        "sample_count": 0
+      },
+      "unknown_input_rate": 1.0,
+      "unmatched_outcome_count": 0
+    },
+    {
+      "strategy": "cheapest_qualified",
+      "case_count": 0,
+      "accepted_as_is": 0,
+      "proved_acceptable": 0,
+      "false_acceptance": 0,
+      "failures": 0,
+      "total_cost": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "elapsed_duration": {
+        "duration_ms": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "review_minutes": null,
+      "escalation_count": null,
+      "regret": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "measurable_successful_outcomes_only",
+        "sample_count": 0
+      },
+      "unknown_input_rate": 1.0,
+      "unmatched_outcome_count": 0
+    },
+    {
+      "strategy": "accepted_change_optimizer",
+      "case_count": 0,
+      "accepted_as_is": 0,
+      "proved_acceptable": 0,
+      "false_acceptance": 0,
+      "failures": 0,
+      "total_cost": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "elapsed_duration": {
+        "duration_ms": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "review_minutes": null,
+      "escalation_count": null,
+      "regret": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "measurable_successful_outcomes_only",
+        "sample_count": 0
+      },
+      "unknown_input_rate": 1.0,
+      "unmatched_outcome_count": 0
+    },
+    {
+      "strategy": "forced",
+      "case_count": 0,
+      "accepted_as_is": 0,
+      "proved_acceptable": 0,
+      "false_acceptance": 0,
+      "failures": 0,
+      "total_cost": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "elapsed_duration": {
+        "duration_ms": null,
+        "accounting_status": "unknown",
+        "source": "frozen_point_in_time_replay",
+        "sample_count": 0
+      },
+      "review_minutes": null,
+      "escalation_count": null,
+      "regret": {
+        "amount": null,
+        "currency": null,
+        "accounting_status": "unknown",
+        "source": "measurable_successful_outcomes_only",
+        "sample_count": 0
+      },
+      "unknown_input_rate": 1.0,
+      "unmatched_outcome_count": 0
+    }
+  ],
+  "conservative_reliability_non_decreasing": false,
+  "false_acceptance_exposure_non_increasing": false,
+  "safe_to_publish": false,
+  "rejection_reasons": [
+    "conservative reliability would decrease or cannot be proven",
+    "false-acceptance exposure would increase or cannot be proven",
+    "no frozen historical cases"
+  ],
+  "source_digest": "sha256:71f1a448e1ac77d0482fe5df418c69fd1b23c4431f0239c289ab044ddc745cfa"
+}

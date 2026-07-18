@@ -146,3 +146,29 @@ def actual_attempt_cost(
         started=started,
         source="captured_telemetry_and_backend_config",
     )
+
+
+def provider_reported_attempt_cost(
+    backend: Backend,
+    *,
+    amount: float,
+    currency: str,
+    source: str,
+) -> CostBreakdown:
+    """Preserve a provider-authoritative attempt total without re-estimating it."""
+
+    if amount < 0:
+        raise ValueError("provider-reported cost cannot be negative")
+    normalized_currency = currency.strip().upper()
+    if len(normalized_currency) != 3:
+        raise ValueError("provider-reported cost requires a three-letter currency")
+    return CostBreakdown(
+        input_token_cost=None,
+        output_token_cost=None,
+        compute_time_cost=None,
+        fixed_cost=None,
+        total=float(amount),
+        currency=normalized_currency,
+        accounting_status="complete",
+        source=source,
+    )

@@ -36,6 +36,25 @@ function useAsync<T>(load: (signal: AbortSignal) => Promise<T>, keys: unknown[])
   return { value, error };
 }
 
+function formatObservedRate(value: number | null | undefined): string {
+  return value == null ? "Unknown" : `${(value * 100).toFixed(1)}%`;
+}
+
+function formatAcceptedCost(
+  distributions:
+    Record<string, { median: number | null; known_count: number }> | undefined,
+): string {
+  if (!distributions) return "Unknown";
+  const known = Object.entries(distributions)
+    .filter(([, value]) => value.known_count > 0 && value.median != null)
+    .map(([currency, value]) => `${currency} ${value.median!.toFixed(4)}`);
+  return known.length ? known.join("; ") : "Unknown";
+}
+
+function formatDuration(value: number | null | undefined): string {
+  return value == null ? "Unknown" : `${(value / 1000).toFixed(1)} s`;
+}
+
 export function AgentsPage({ client }: { client: ConsoleClient }) {
   const { value, error } = useAsync<ConsoleModelInventory>(
     (signal) => client.models(signal),
@@ -43,6 +62,10 @@ export function AgentsPage({ client }: { client: ConsoleClient }) {
   );
   const models = value?.models.filter((model) => model.configured) ?? [];
   const systems = value?.agent_systems ?? [];
+  const harnesses = value?.agent_harnesses ?? [];
+  const configuredHarnessIds = new Set(
+    systems.map((system) => system.harness.harness_id),
+  );
   return (
     <ProductShell surface="agents" title="Agents">
       <div className="console-stack">
@@ -50,9 +73,21 @@ export function AgentsPage({ client }: { client: ConsoleClient }) {
           Complete configured agent systems, with connection and evidence details kept
           together.
         </PageIntro>
+        <Panel className="agent-route-explanation">
+          <div className="v-panel__body console-stack">
+            <strong>
+              {value?.economics?.default_explanation ??
+                "Villani chose the route most likely to produce a proven change at the lowest total cost."}
+            </strong>
+            <span className="console-muted">
+              {value?.economics?.unknown_accounting_note ??
+                "Unknown route inputs remain Unknown and are not treated as zero."}
+            </span>
+          </div>
+        </Panel>
         {error && <ErrorState title="Agents are unavailable" detail={error} />}
         {!value && !error && <LoadingState title="Loading agents" />}
-        {value && !systems.length && !models.length && (
+        {value && !systems.length && !models.length && !harnesses.length && (
           <EmptyState
             title="No agent system is configured"
             detail="Continue setup to detect and verify a local agent connection."
@@ -60,6 +95,41 @@ export function AgentsPage({ client }: { client: ConsoleClient }) {
             <a href="/console/onboarding">Continue setup</a>
           </EmptyState>
         )}
+        {harnesses
+          .filter((harness) => !configuredHarnessIds.has(harness.harness_id))
+          .map((harness) => (
+            <Panel key={harness.harness_id} className="agent-system">
+              <PanelHeader
+                title={harness.display_name}
+                meta="Detected harness"
+                actions={
+                  <StatusBadge
+                    status={harness.readiness.installed ? "selected" : "failed"}
+                    label={harness.readiness.installed ? "INSTALLED" : "MISSING"}
+                  />
+                }
+              />
+              <div className="v-panel__body console-stack">
+                <KeyValueGrid
+                  items={[
+                    ["Exact version", harness.readiness.exact_version ?? "Unknown"],
+                    ["Authentication", harness.readiness.authentication_status],
+                    ["Protocol", harness.readiness.protocol],
+                    [
+                      "Version range",
+                      harness.readiness.supported_version_range ?? "Adapter-managed",
+                    ],
+                    ["Conformance", harness.readiness.conformance_status],
+                    ["Qualification", harness.readiness.qualification_state],
+                    ["Custom model", harness.readiness.custom_model_capability],
+                    ["Custom provider", harness.readiness.custom_provider_capability],
+                    ["Local model", harness.readiness.local_model_capability],
+                    ["Repair action", harness.readiness.repair_action],
+                  ]}
+                />
+              </div>
+            </Panel>
+          ))}
         {systems.map((system) => {
           const supported = Object.values(system.capabilities).filter(
             (capability) => capability.state === "supported",
@@ -67,9 +137,23 @@ export function AgentsPage({ client }: { client: ConsoleClient }) {
           const unknown = Object.values(system.capabilities).filter(
             (capability) => capability.state === "unknown",
           ).length;
-          const ready =
-            system.production_enabled &&
-            ["qualified", "bootstrap"].includes(system.qualification_status);
+          const qualification = system.repository_qualification;
+          const repositoryEconomics = system.repository_economics;
+          const economics = repositoryEconomics?.profile;
+          const qualificationState = qualification?.state ?? "unknown";
+          const ready = qualificationState === "qualified";
+          const status =
+            qualificationState === "qualified"
+              ? "selected"
+              : qualificationState === "unsupported"
+                ? "failed"
+                : "unknown";
+          const verdict =
+            qualificationState === "qualified"
+              ? "completed"
+              : qualificationState === "unsupported"
+                ? "failed"
+                : "unknown";
           return (
             <Panel key={system.system_id} className="agent-system">
               <PanelHeader
@@ -77,21 +161,118 @@ export function AgentsPage({ client }: { client: ConsoleClient }) {
                 meta={system.route_name}
                 actions={
                   <StatusBadge
-                    status={ready ? "selected" : "failed"}
-                    label={ready ? "SELECTABLE" : "DISABLED"}
+                    status={status}
+                    label={qualificationState.toUpperCase()}
                   />
                 }
               />
               <div className="v-panel__body console-stack">
                 <ResultVerdict
-                  status={ready ? "completed" : "failed"}
-                  label={ready ? "Ready for tasks" : "Not selectable"}
+                  status={verdict}
+                  label={
+                    ready
+                      ? "Eligible for automatic selection"
+                      : qualificationState === "provisional"
+                        ? "Eligible only as a provisional fallback"
+                        : qualificationState === "experimental"
+                          ? "Manual override required"
+                          : "Not automatically selectable"
+                  }
                   detail={`${system.harness.harness_id}@${system.harness.version} · ${system.model_provider.provider}/${system.model_provider.model_id}`}
                 />
                 <KeyValueGrid
                   items={[
-                    ["Qualification", system.qualification_status],
+                    ["Repository qualification", qualificationState],
+                    [
+                      "Observed acceptance",
+                      formatObservedRate(qualification?.statistics.acceptance_rate),
+                    ],
+                    [
+                      "Median accepted-change cost",
+                      formatAcceptedCost(
+                        qualification?.statistics.accepted_change_cost_by_currency,
+                      ),
+                    ],
+                    [
+                      "Median duration",
+                      formatDuration(
+                        qualification?.statistics.duration_distribution.median,
+                      ),
+                    ],
+                    [
+                      "Eligible sample",
+                      qualification?.statistics.sample_count ?? "Unknown",
+                    ],
+                    [
+                      "Conservative acceptance",
+                      qualification?.statistics.wilson_lower_bound == null
+                        ? "Unknown"
+                        : qualification.statistics.wilson_lower_bound.toFixed(3),
+                    ],
+                    [
+                      "Latest execution cost (median)",
+                      formatAcceptedCost(economics?.cost_distributions.execution_cost),
+                    ],
+                    [
+                      "Latest verification cost (median)",
+                      formatAcceptedCost(
+                        economics?.cost_distributions.verification_cost,
+                      ),
+                    ],
+                    [
+                      "Latest review cost (median)",
+                      formatAcceptedCost(
+                        economics?.cost_distributions.human_review_cost,
+                      ),
+                    ],
+                    [
+                      "Latest retry/escalation cost (median)",
+                      formatAcceptedCost(
+                        economics?.cost_distributions.retry_escalation_cost,
+                      ),
+                    ],
+                    [
+                      "Economics evidence",
+                      economics
+                        ? `${economics.sample_count} eligible / ${repositoryEconomics?.matching_profile_count ?? 1} task profile(s)`
+                        : "Unknown",
+                    ],
+                    [
+                      "Last tested",
+                      qualification?.statistics.last_evidence_at ?? "Unknown",
+                    ],
+                    [
+                      "Evidence level",
+                      qualification?.selected_level ?? "No matching evidence",
+                    ],
+                    [
+                      "Caveat",
+                      qualification?.caveat ??
+                        "Repository context is unavailable; no qualification is implied.",
+                    ],
                     ["Harness protocol", system.harness.protocol_version],
+                    [
+                      "Installed",
+                      system.readiness
+                        ? system.readiness.installed
+                          ? "Yes"
+                          : "No"
+                        : "Unknown",
+                    ],
+                    [
+                      "Authentication",
+                      system.readiness?.authentication_status ?? "Unknown",
+                    ],
+                    [
+                      "Conformance",
+                      system.readiness?.conformance_status ?? "Not recorded",
+                    ],
+                    [
+                      "Doctor",
+                      qualification?.doctor_action ??
+                        system.readiness?.repair_action ??
+                        "Run agents doctor",
+                    ],
                     ["Execution provider", system.execution.execution_provider],
                     ["Permission profile", system.execution.permission_profile],
                     ["Network policy", system.execution.network_policy],
@@ -100,6 +281,54 @@ export function AgentsPage({ client }: { client: ConsoleClient }) {
                     ["Billing", system.billing.mode],
                   ]}
                 />
+                <details className="run-advanced">
+                  <summary>View evidence</summary>
+                  <KeyValueGrid
+                    items={[
+                      [
+                        "Evidence command",
+                        qualification?.evidence_action ?? "Unavailable",
+                      ],
+                      [
+                        "Wilson lower bound",
+                        qualification?.statistics.wilson_lower_bound == null
+                          ? "Unknown"
+                          : qualification.statistics.wilson_lower_bound.toFixed(3),
+                      ],
+                      [
+                        "Exclusions",
+                        qualification
+                          ? JSON.stringify(qualification.statistics.exclusions)
+                          : "Unknown",
+                      ],
+                      [
+                        "Economics task profile",
+                        economics
+                          ? `${economics.key.task_profile.category} / ${economics.key.task_profile.difficulty} / ${economics.key.task_profile.risk}`
+                          : "Unknown",
+                      ],
+                      [
+                        "Economics unknown inputs",
+                        economics
+                          ? JSON.stringify(economics.cost_unknown_counts)
+                          : "Unknown",
+                      ],
+                      [
+                        "Economics scope",
+                        repositoryEconomics?.scope_note ??
+                          "No matching repository economics evidence.",
+                      ],
+                      [
+                        "Drift",
+                        qualification?.statistics.drift_flags.length
+                          ? qualification.statistics.drift_flags
+                              .map((flag) => `${flag.code} (${flag.severity})`)
+                              .join(", ")
+                          : "None recorded",
+                      ],
+                    ]}
+                  />
+                </details>
                 <details className="run-advanced">
                   <summary>Complete system identity</summary>
                   <KeyValueGrid

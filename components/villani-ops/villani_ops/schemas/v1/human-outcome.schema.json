@@ -1,0 +1,156 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "villani.human_outcome.v1",
+      "default": "villani.human_outcome.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "outcome_id": {
+      "pattern": "^hout_[0-9a-f]{64}$",
+      "title": "Outcome Id",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "attempt_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt Id"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "accepted_as_is",
+        "corrected_before_use",
+        "reverted",
+        "reopened_defect",
+        "false_acceptance",
+        "false_rejection"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "review_minutes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Review Minutes"
+    },
+    "review_time_accounting_status": {
+      "enum": [
+        "complete",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "Review Time Accounting Status",
+      "type": "string"
+    },
+    "full_trace_opened": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Full Trace Opened"
+    },
+    "full_trace_accounting_status": {
+      "enum": [
+        "complete",
+        "unknown",
+        "not_applicable"
+      ],
+      "title": "Full Trace Accounting Status",
+      "type": "string"
+    },
+    "correction_summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correction Summary"
+    },
+    "linked_reference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Linked Reference"
+    },
+    "imported_from": {
+      "enum": [
+        "explicit_cli",
+        "explicit_local_file"
+      ],
+      "title": "Imported From",
+      "type": "string"
+    },
+    "actor": {
+      "default": "local_user",
+      "minLength": 1,
+      "title": "Actor",
+      "type": "string"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "outcome_id",
+    "run_id",
+    "recorded_at",
+    "outcome",
+    "review_time_accounting_status",
+    "full_trace_accounting_status",
+    "imported_from"
+  ],
+  "title": "HumanOutcome",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/human-outcome.schema.json"
+}

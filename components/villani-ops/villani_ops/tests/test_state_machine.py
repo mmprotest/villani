@@ -11,9 +11,15 @@ from villani_ops.policy_engine.engine import ExecutionStrategy
 from villani_ops.review.reviewer import ReviewResult
 
 _PATCH = Path(tempfile.gettempdir()) / "villani_ops_test_git.patch"
-_PATCH.write_text(
-    "diff --git a/hello.txt b/hello.txt\nindex 7898192..6178079 100644\n--- a/hello.txt\n+++ b/hello.txt\n@@ -1 +1 @@\n-old\n+new\n"
-)
+_PATCH_TEXT = "diff --git a/hello.txt b/hello.txt\nindex 7898192..6178079 100644\n--- a/hello.txt\n+++ b/hello.txt\n@@ -1 +1 @@\n-old\n+new\n"
+
+
+def patch_path() -> str:
+    # Other tests may clean the shared process temp root; keep this fixture local
+    # to each decision instead of relying on collection-time filesystem state.
+    _PATCH.parent.mkdir(parents=True, exist_ok=True)
+    _PATCH.write_text(_PATCH_TEXT, encoding="utf-8")
+    return str(_PATCH)
 
 
 def strat():
@@ -29,7 +35,7 @@ def attempt(exit_code=0, status="validated", r=None):
         "attempt_id": "attempt_001",
         "exit_code": exit_code,
         "status": status,
-        "patch_path": str(_PATCH),
+        "patch_path": patch_path(),
         "changed_files": ["hello.txt"],
         "review": (r or review()).model_dump(mode="json"),
     }

@@ -444,6 +444,7 @@ class VerificationGraphExecutor:
             and not missing_required
             and not conflicting
             and authoritative
+            and llm_pass
         )
         return VerificationGraphResult(
             graph_id=graph.graph_id,

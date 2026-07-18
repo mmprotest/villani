@@ -1,0 +1,443 @@
+{
+  "schema_version": "villani.milestone_completion_report.v1",
+  "milestone": "PT7",
+  "title": "Build Repository-Specific Qualification",
+  "assessment_date": "2026-07-18",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "implementation_status": "complete",
+  "acceptance_status": "not_proven",
+  "status_reason": "The repository-aware qualification implementation, contracts, migrations, routing guard, scorecards, Agents experience, and deterministic tests are complete. Gate C is INSUFFICIENT_EVIDENCE because no eligible frozen founder-suite observations exist for Villani Code, Codex, or Claude Code on this repository; PT7 therefore cannot be reported COMPLETE.",
+  "gate_c": {
+    "status": "INSUFFICIENT_EVIDENCE",
+    "artifact": "docs/PT7_GATE_C.json",
+    "command_exit_code": 2,
+    "repository_id": "repo_e363cfcb2ce38f2e059c",
+    "repository_head": "7ba4cd9bda42df126336829db4f168606a8e6ccd",
+    "policy_version": "repository_qualification_v1",
+    "scorecards": [
+      {
+        "system": "Villani Code",
+        "installed_version": "0.1.0rc1",
+        "state": "experimental",
+        "eligible_observations": 0,
+        "automatic_eligible": false
+      },
+      {
+        "system": "Codex",
+        "installed_version": "0.144.5",
+        "state": "unsupported",
+        "eligible_observations": 0,
+        "automatic_eligible": false,
+        "reason": "authentication is not ready and the route is not production-enabled"
+      },
+      {
+        "system": "Claude Code",
+        "installed_version": "2.1.138",
+        "state": "unsupported",
+        "eligible_observations": 0,
+        "automatic_eligible": false,
+        "reason": "strict isolation is unavailable on native Windows and the route is not production-enabled"
+      }
+    ],
+    "ranking": "not_performed",
+    "ranking_reason": "Every scorecard has zero eligible observations, so comparison or ranking would be materially unmatched and misleading."
+  },
+  "files": {
+    "added": [
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-BDVFjkQh.js",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-D0m9i5XQ.css",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-ops/villani_ops/closed_loop/qualification/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/evaluation.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/gate.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/models.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/policy.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/repository.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/scoring.py",
+      "components/villani-ops/villani_ops/closed_loop/qualification/store.py",
+      "components/villani-ops/villani_ops/schemas/v1/gate-c.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/qualification-invalidation.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/qualification-observation.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/qualification-snapshot.schema.json",
+      "components/villani-ops/villani_ops/tests/test_pt7_repository_qualification.py",
+      "components/villani-run-model/dist/qualification.d.ts",
+      "components/villani-run-model/dist/qualification.js",
+      "components/villani-run-model/src/qualification.ts",
+      "components/villani-run-model/test/qualification.test.ts",
+      "components/villani-web/dist/assets/index-BDVFjkQh.js",
+      "docs/PT7_COMPLETION_REPORT.json",
+      "docs/PT7_COMPLETION_REPORT.md",
+      "docs/PT7_GATE_C.json",
+      "docs/REPOSITORY_QUALIFICATION.md",
+      "integration/fixtures/protocol/v1/invalid/qualification_unknown_cost_as_zero.json",
+      "integration/fixtures/protocol/v1/valid_run/gate-c.json",
+      "integration/fixtures/protocol/v1/valid_run/qualification-invalidation.json",
+      "integration/fixtures/protocol/v1/valid_run/qualification-observation.json",
+      "integration/fixtures/protocol/v1/valid_run/qualification-snapshot.json",
+      "schemas/v1/gate-c.schema.json",
+      "schemas/v1/qualification-invalidation.schema.json",
+      "schemas/v1/qualification-observation.schema.json",
+      "schemas/v1/qualification-snapshot.schema.json"
+    ],
+    "changed": [
+      "PLANS.md",
+      "components/villani-agentd/villani_agentd/console.py",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "components/villani-ops/README.md",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/adapters.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/registry.py",
+      "components/villani-ops/villani_ops/closed_loop/model_management.py",
+      "components/villani-ops/villani_ops/closed_loop/policy.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-run-model/dist/index.d.ts",
+      "components/villani-run-model/dist/index.js",
+      "components/villani-run-model/src/index.ts",
+      "components/villani-web/dist/index.html",
+      "components/villani-web/src/ProductPages.tsx",
+      "components/villani-web/src/consoleApi.ts",
+      "components/villani-web/test/console.test.tsx",
+      "docs/AGENT_SYSTEMS.md",
+      "scripts/generate-harness-schemas.py",
+      "tests/closed_loop/test_cli_e2e.py",
+      "tests/closed_loop/test_protocol_contract.py"
+    ],
+    "deleted": [
+      "components/villani-web/dist/assets/index-Db_ajSzJ.js"
+    ],
+    "migrated": [
+      "The default configuration gained an additive, versioned repository_qualification_v1 policy block; existing configuration remains readable and unknown policy fields fail closed.",
+      "Legacy non-repository capability snapshots are imported only as excluded history and can never create qualification.",
+      "Four additive v1 wire contracts were added to the normative and packaged schema sets; existing run bundles remain readable.",
+      "The generated Villani Web bundle and packaged Agentd console assets were refreshed from the same verified production build."
+    ],
+    "scope_note": "The worktree also contains the immediately preceding, user-authorized PT6 changes documented in docs/PT6_COMPLETION_REPORT.json. This list identifies PT7 additions and PT7-touched shared files; PT6 changes were preserved."
+  },
+  "architecture_and_product_decisions": [
+    "Qualification history is append-only: observations and invalidations are retained, snapshots are content-addressed, and later rollback or reopened-defect amendments change derived state without deleting prior evidence.",
+    "The repository key uses Git identity and lineage, task category/difficulty/risk/required capabilities, complete harness/model/provider/serving identity, execution environment, verification-policy version, software versions, and time window.",
+    "Backoff is conservative and ordered: exact repository/task profile, repository/category, repository-wide system, then explicitly declared compatible repository cohort. Language and framework metadata never pool evidence.",
+    "Only frozen real-founder-work trials with a valid baseline, complete candidate artifacts, authoritative binary verification, resolved infrastructure, required human review, and no corruption, secret, or direct-target mutation are eligible. Every exclusion is persisted by reason.",
+    "The policy is repository_qualification_v1: zero eligible observations is experimental; 1-19 with zero false acceptance is provisional; qualification requires at least 20 observations at an approved level, zero known false acceptance, Wilson lower bound above the risk threshold, valid exact conformance, and no severe drift.",
+    "Known cost is grouped by authoritative currency. Unknown cost, duration, and review time remain null with explicit accounting; no zero is fabricated.",
+    "Harness/model/provider/environment/policy/lineage changes, capability loss, recent reliability breach, false acceptance, and staleness produce drift or invalidation and safely downgrade the current assessment without erasing history.",
+    "Automatic routing accepts qualified systems only. When none is qualified, one strongest evidence-backed provisional configured route may be selected with an explicit fallback marker. Experimental systems require a same-run manual override and unsupported systems cannot be overridden.",
+    "The semantic verifier contract remains blind to harness identity, route, cost, qualification state, and competing candidates; qualification gates only backend selection before execution.",
+    "Gate C requires scorecards for Villani Code, Codex, and Claude Code and validates evidence parity, exact identity, conformance, isolation, unsupported behavior, qualification correctness, and routing eligibility. Empty or partial arms cannot pass."
+  ],
+  "public_contracts": {
+    "schemas": [
+      "villani.qualification_observation.v1",
+      "villani.qualification_invalidation.v1",
+      "villani.qualification_snapshot.v1",
+      "villani.gate_c.v1"
+    ],
+    "python_models": "components/villani-ops/villani_ops/closed_loop/qualification/models.py",
+    "typescript_models": "components/villani-run-model/src/qualification.ts",
+    "backward_compatibility": "All new configuration and bundle documents are additive. Legacy capability snapshots are preserved as excluded evidence, not silently converted to eligible trials."
+  },
+  "tests_added": {
+    "python": {
+      "file": "components/villani-ops/villani_ops/tests/test_pt7_repository_qualification.py",
+      "tests": 9,
+      "coverage": [
+        "state transitions, inclusion/exclusion, Wilson math, and unknown cost",
+        "hierarchical backoff and no language/framework pooling",
+        "false-acceptance amendment, drift, lineage, and requalification",
+        "append-only invalidation and actionable unsupported state",
+        "automatic eligibility and manual experimental override",
+        "Gate C pass/fail/insufficient behavior and required scorecards",
+        "legacy migration exclusion",
+        "qualify/status/evidence/invalidate/gate-c CLI commands",
+        "fail-closed unknown qualification policy fields"
+      ]
+    },
+    "typescript": {
+      "file": "components/villani-run-model/test/qualification.test.ts",
+      "tests": 3,
+      "coverage": [
+        "stable wire and policy versions",
+        "zero-evidence and unknown-cost representation",
+        "explicit automatic, provisional, and manual eligibility"
+      ]
+    },
+    "updated_integration_coverage": [
+      "Root quickstarts prove that zero-evidence local-stub runs require explicit --agent-system and --allow-experimental.",
+      "Normative and packaged protocol suites validate all four PT7 documents and reject numeric-zero unknown cost.",
+      "Agents UI tests cover repository state, observed acceptance, known/unknown medians, sample count, caveat, Doctor, and View evidence."
+    ]
+  },
+  "validation_commands": [
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt7_repository_qualification.py --basetemp .pt7-test-temp\\targeted",
+      "result": "Initial collection failed on a circular import from qualification.store to event_writer; after lazy-import remediation, 9 passed in 18.40s.",
+      "status": "remediated"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\closed_loop\\test_protocol.py --basetemp .pt7-test-temp\\protocol",
+      "result": "Initial result was 17 passed, 1 failed because the zero-cost fixture produced only a generic semantic error; after adding accounting_status validation, 18 passed in 0.88s.",
+      "status": "remediated"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt7_repository_qualification.py villani_ops\\tests\\test_pt6_structured_harnesses.py villani_ops\\tests\\test_pt5_agent_systems.py villani_ops\\tests\\closed_loop\\test_protocol.py -m \"not e2e\" --basetemp .pt7-test-temp\\focused",
+      "result": "69 passed, 2 deselected in 27.44s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:VILLANI_REAL_HARNESS_TESTS=$null; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt6_structured_harnesses.py -m e2e",
+      "result": "2 skipped, 29 deselected in 0.62s; exact skip reason: VILLANI_REAL_HARNESS_TESTS is not set to 1. No paid execution occurred.",
+      "status": "skipped"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .pt7-test-temp\\full",
+      "result": "1241 passed, 2 skipped, 116 deselected in 327.14s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-code",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .pt7-test-temp\\full",
+      "result": "686 passed, 1 skipped, 27 warnings in 131.20s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-agentd",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp .pt7-test-temp\\full",
+      "result": "86 passed in 23.18s.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q --basetemp .pt7-integration-temp",
+      "result": "Initial result was 4 failed, 7 passed, 3 warnings in 26.29s because three zero-evidence routes were correctly blocked and the fixture count was stale. After making the tests use explicit experimental manual override and updating the fixture count, 11 passed, 2 warnings in 48.92s.",
+      "status": "remediated"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm test",
+      "result": "4 files and 12 tests passed; Vitest duration 518ms.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm run typecheck",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-run-model",
+      "command": "npm run build",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm test",
+      "result": "21 files and 113 tests passed in 6.91s.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run typecheck",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run build",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run format:check",
+      "result": "Initially identified 3 files, then passed after Prettier formatting.",
+      "status": "remediated"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm test; npm run typecheck; npm run build; npm run format:check",
+      "result": "Inside the filesystem sandbox, typecheck and format passed while Vite/esbuild access caused test and build failures. The failing commands were rerun with the approved escalation below.",
+      "status": "environment_retry"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm test",
+      "result": "4 files and 25 tests passed in 2.15s under approved escalation.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run build",
+      "result": "58 modules transformed; index-BDVFjkQh.js and index-D0m9i5XQ.css emitted; passed under approved escalation.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run typecheck",
+      "result": "Passed with exit code 0.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-web",
+      "command": "npm run format:check",
+      "result": "Initially identified 3 files, then passed after Prettier formatting.",
+      "status": "remediated"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\ruff.exe check villani_ops\\closed_loop\\qualification villani_ops\\closed_loop\\policy.py villani_ops\\closed_loop\\model_management.py villani_ops\\cli\\unified.py villani_ops\\closed_loop\\schema_validation.py",
+      "result": "Initial run found 4 unused imports; final run: All checks passed.",
+      "status": "remediated"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\ruff.exe format --check villani_ops\\closed_loop\\qualification villani_ops\\closed_loop\\policy.py villani_ops\\closed_loop\\model_management.py villani_ops\\cli\\unified.py villani_ops\\closed_loop\\schema_validation.py",
+      "result": "14 files already formatted.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\mypy.exe --follow-imports=skip --ignore-missing-imports villani_ops\\closed_loop\\qualification villani_ops\\closed_loop\\policy.py villani_ops\\closed_loop\\model_management.py villani_ops\\cli\\unified.py villani_ops\\closed_loop\\schema_validation.py",
+      "result": "An unrestricted preliminary run reported 243 repository/transitive findings; the first direct-only run found 12 PT7 issues. After correcting constants, variable reuse, and fcntl annotations: Success: no issues found in 7 source files.",
+      "status": "remediated"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$env:TEMP=(Resolve-Path .).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops\\tests\\test_pt7_repository_qualification.py villani_ops\\tests\\closed_loop\\test_protocol.py --basetemp .pt7-test-temp\\post-mypy",
+      "result": "27 passed in 18.85s.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& C:\\Users\\Simon\\AppData\\Local\\Programs\\Python\\Python311\\python.exe -m compileall -q components\\villani-ops\\villani_ops\\closed_loop\\qualification components\\villani-ops\\villani_ops\\closed_loop\\policy.py components\\villani-ops\\villani_ops\\closed_loop\\schema_validation.py components\\villani-ops\\villani_ops\\closed_loop\\model_management.py components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-agentd\\villani_agentd\\console.py",
+      "result": "Passed with exit code 0 under Python 3.11.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\check-secrets.py components\\villani-ops\\villani_ops\\closed_loop\\qualification components\\villani-ops\\villani_ops\\closed_loop\\policy.py components\\villani-ops\\villani_ops\\closed_loop\\model_management.py components\\villani-ops\\villani_ops\\closed_loop\\schema_validation.py components\\villani-ops\\villani_ops\\cli\\unified.py components\\villani-ops\\villani_ops\\tests\\test_pt7_repository_qualification.py components\\villani-agentd\\villani_agentd\\console.py components\\villani-web\\src\\ProductPages.tsx components\\villani-web\\src\\consoleApi.ts components\\villani-flight-recorder\\src\\providers\\villaniProtocol.ts components\\villani-flight-recorder\\src\\providers\\villaniSchemaValidation.ts components\\villani-run-model\\src\\qualification.ts schemas\\v1\\gate-c.schema.json schemas\\v1\\qualification-observation.schema.json schemas\\v1\\qualification-invalidation.schema.json schemas\\v1\\qualification-snapshot.schema.json integration\\fixtures\\protocol\\v1\\valid_run docs\\REPOSITORY_QUALIFICATION.md",
+      "result": "Secret scan passed: 18 roots, 0 findings.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "$names = @('gate-c.schema.json','qualification-invalidation.schema.json','qualification-observation.schema.json','qualification-snapshot.schema.json'); $before = @{}; foreach ($name in $names) { $before[$name] = (Get-FileHash -Algorithm SHA256 (Join-Path 'schemas\\v1' $name)).Hash }; & .venv\\Scripts\\python.exe scripts\\generate-harness-schemas.py; foreach ($name in $names) { $normative = Join-Path 'schemas\\v1' $name; $packaged = Join-Path 'components\\villani-ops\\villani_ops\\schemas\\v1' $name; $after = (Get-FileHash -Algorithm SHA256 $normative).Hash; $packageHash = (Get-FileHash -Algorithm SHA256 $packaged).Hash; if ($before[$name] -ne $after) { throw \"non-idempotent schema: $name\" }; if ($after -ne $packageHash) { throw \"schema copy mismatch: $name\" } }",
+      "result": "All 4 generated PT7 schemas were idempotent and normative/packaged copies were byte-identical. SHA256: gate-c 7C4669D1A8C60A3E6E3647814443890DD24B5E1752B79BE7F23BCF1D8BEE3FAF; invalidation C8E1511CE15CD74DF156821E41C3B515275100C6C13CEEFED88C11D1A651E4AC; observation 27E3A7C94F5A12C1BAB38F82D21A9641F237735A4FB5EC4B92DC22426D015266; snapshot 309E4EE8E78B0237ABDA2BA64FF0C22C5D32099EDF57FEA13C1547DAFF54DD0F.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\sync-console-assets.py --check",
+      "result": "Console assets verified: 3 files.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m villani_ops.cli.unified agents list --repo ..\\..",
+      "result": "Detected Villani Code 0.1.0rc1 (conformance passed), Codex 0.144.5 (protocol probe passed, authentication not ready), and Claude Code 2.1.138 (authentication ready, strict native-Windows isolation unavailable), with actionable repair commands.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m villani_ops.cli.unified agents gate-c --repo ..\\.. --category maintenance --difficulty easy --risk low --output ..\\..\\docs\\PT7_GATE_C.json",
+      "result": "Exited 2 with INSUFFICIENT_EVIDENCE, wrote all 3 required repository-specific scorecards, and reported no nonqualified automatic routes.",
+      "status": "insufficient_evidence"
+    },
+    {
+      "cwd": ".",
+      "command": "in-app browser setup and target enumeration",
+      "result": "No in-app browser target was attached (targets=[]), so the required browser skill prohibited substituting an unrelated browser and no screenshot was captured.",
+      "status": "skipped"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -c \"import json; from pathlib import Path; from villani_ops.closed_loop.schema_validation import validate_protocol_document; from villani_ops.closed_loop.qualification.models import GateCReport; value=json.loads(Path('../../docs/PT7_GATE_C.json').read_text(encoding='utf-8')); validate_protocol_document(value); GateCReport.model_validate(value); print('PT7 Gate C schema and Python model validation passed')\"",
+      "result": "PT7 Gate C schema and Python model validation passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": "components/villani-ops",
+      "command": "$null = Get-Content ..\\..\\docs\\PT7_COMPLETION_REPORT.json -Raw | ConvertFrom-Json",
+      "result": "PT7 completion report JSON parse passed.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "git diff --check",
+      "result": "Passed with exit code 0; Git emitted only existing line-ending conversion warnings.",
+      "status": "passed"
+    },
+    {
+      "cwd": ".",
+      "command": "Test-Path -LiteralPath <each verified PT7 temporary target>",
+      "result": "All 8 cleanup targets returned exists=False.",
+      "status": "passed"
+    }
+  ],
+  "end_to_end_artifacts_and_screenshots": {
+    "artifacts": [
+      "docs/PT7_GATE_C.json",
+      "integration/fixtures/protocol/v1/valid_run/gate-c.json",
+      "integration/fixtures/protocol/v1/valid_run/qualification-observation.json",
+      "integration/fixtures/protocol/v1/valid_run/qualification-invalidation.json",
+      "integration/fixtures/protocol/v1/valid_run/qualification-snapshot.json",
+      "components/villani-web/dist/assets/index-BDVFjkQh.js",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json"
+    ],
+    "screenshots": [],
+    "screenshot_reason": "The in-app browser had no attached target. UI verification is provided by 25 passing Web tests, typecheck, the 58-module production build, format check, and packaged-console asset parity."
+  },
+  "known_failures_and_skips": [
+    "Gate C is INSUFFICIENT_EVIDENCE: all three systems have zero eligible frozen founder-suite observations for this repository.",
+    "The two real-harness tests were skipped because VILLANI_REAL_HARNESS_TESTS was not set to 1; no credentials or paid run were used.",
+    "Villani Ops skipped two existing host-capability tests on native Windows; Villani Code skipped one opt-in external smoke test.",
+    "Codex authentication is not ready. Claude Code cannot prove strict isolation on native Windows. These conditions correctly produce unsupported rather than fabricated qualification.",
+    "No screenshot was captured because the in-app browser had no attached target.",
+    "Preliminary circular-import, protocol-keyword, routing-fixture, formatting, lint, type, and Web sandbox failures were remediated; their final focused and full suites pass."
+  ],
+  "risks": {
+    "security": [
+      "Qualification imports reject secret-shaped ledger content and eligible evidence cannot be asserted by arbitrary JSON import, but trial patches and raw run artifacts can still contain repository data and require operator review.",
+      "Worktree/process isolation is not a kernel sandbox; unsupported environment states fail closed and must not be manually bypassed."
+    ],
+    "privacy": [
+      "Repository identity is derived from local Git lineage and stored in local qualification records. Evidence exports can expose repository metadata even when protocol logs are redacted."
+    ],
+    "data_loss": [
+      "Qualification evidence is append-only and materialization remains limited to the selected recorded patch. No durable evidence or user source was deleted; only reproducible PT7 temp directories were removed after their resolved workspace paths were verified."
+    ],
+    "compatibility": [
+      "Old bundles and configuration remain readable. Legacy capability snapshots do not qualify a system and are preserved as excluded history.",
+      "Policy, exact system identity, serving engine, environment, or repository-lineage changes can intentionally downgrade an otherwise successful historical profile."
+    ]
+  },
+  "user_facing_behavior": {
+    "before": "Installed/readiness and provisional harness information was visible, but there was no repository/task-profile qualification ledger, statistical confidence, conservative backoff, drift invalidation, Gate C scorecard, or routing eligibility guard.",
+    "after": "Agents shows each exact system's repository-specific state, observed acceptance, median accepted-change cost when known, duration, sample count, last tested time, caveat, Doctor action, and evidence action. Users can qualify from frozen trials, inspect status/evidence, append invalidations, and generate Gate C. Automatic selection cannot use experimental systems; a manual experimental run is visibly labeled and cannot itself create qualification."
+  },
+  "cleanup": {
+    "removed": [
+      ".pt7-integration-temp",
+      ".pt7-live-home",
+      ".pt7-smoke-home",
+      "components/villani-ops/.pt7-fixture-temp",
+      "components/villani-ops/.pt7-test-temp",
+      "components/villani-agentd/.pt7-test-temp",
+      "components/villani-code/.pt7-test-temp",
+      "components/villani-ops/villani_ops_test_git.patch"
+    ],
+    "recovery": "These were reproducible generated test/config artifacts and were removed permanently after path verification. No durable source or qualification evidence was removed."
+  },
+  "pt8_started": false
+}
