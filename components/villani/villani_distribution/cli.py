@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import secrets
 import sys
 import urllib.error
 import urllib.request
@@ -11,9 +13,18 @@ from typing import Sequence
 import typer
 
 from villani_ops.cli.unified import app
+from villani_ops.closed_loop.agent_systems.discovery import discover_agent_harnesses
+from villani_ops.closed_loop.agent_systems.registry import build_agent_system_registry
 from villani_ops.diagnostics import RepositoryDiagnosticError
+from villani_ops.self_service.entitlements import (
+    EntitlementError,
+    development_license_bytes,
+    install_license,
+    load_entitlement,
+)
 
 from .migrations import MigrationError, check_upgrade
+from .maintenance import CleanupError, cleanup
 from .diagnostics import (
     render_human,
     render_json,
@@ -46,6 +57,8 @@ from .services import (
     uninstall_service,
     villani_home,
 )
+from .support_bundle import SupportBundleBuilder, SupportBundleError
+from .update_system import UpdateError, UpdateManager, installed_version
 
 # The distribution owns the friendly public versions of these commands. Keep
 # the lower-level commands available in the internal component CLI only.
@@ -59,6 +72,389 @@ service_app = typer.Typer(
     add_completion=False,
 )
 app.add_typer(service_app, name="service")
+update_app = typer.Typer(
+    help="Check, preview, install, and roll back user-controlled updates.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+license_app = typer.Typer(
+    help="Inspect and install offline Villani entitlements.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+support_app = typer.Typer(
+    help="Preview and create a privacy-preserving local support archive.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(update_app, name="update")
+app.add_typer(license_app, name="license")
+app.add_typer(support_app, name="support")
+
+
+def _self_service_error(error: Exception) -> None:
+    typer.echo(f"Error: {error}", err=True)
+    raise typer.Exit(2) from error
+
+
+@app.command("version")
+def version_command(
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Print the exact canonical product version."""
+
+    value = {
+        "schema_version": "villani.version.v1",
+        "version": installed_version(),
+        "components_share_version": True,
+    }
+    typer.echo(json.dumps(value, sort_keys=True) if json_output else f"Villani {value['version']}")
+
+
+@update_app.command("status")
+def update_status_command(
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Read update state without making a network request."""
+
+    try:
+        state = UpdateManager(villani_home()).status()
+    except UpdateError as error:
+        _self_service_error(error)
+    value = state.model_dump(mode="json")
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+        return
+    typer.echo(f"Installed: {state.installed_version}")
+    typer.echo(f"Channel: {state.policy.channel}")
+    typer.echo(f"State: {state.status}")
+    typer.echo("Automatic updates: disabled (updates are always user controlled)")
+    if state.available_version:
+        typer.echo(f"Available: {state.available_version}")
+    if state.release_notes:
+        typer.echo(f"Release notes: {state.release_notes}")
+
+
+@update_app.command("channel")
+def update_channel_command(
+    channel: str = typer.Argument(..., help="stable, beta, or pinned"),
+    pinned_version: str | None = typer.Option(None, "--version"),
+    feed: str | None = typer.Option(None, "--feed"),
+    checks_enabled: bool | None = typer.Option(
+        None, "--checks/--no-checks", help="Enable or disable explicit update checks."
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Select a channel; this never checks or installs automatically."""
+
+    try:
+        policy = UpdateManager(villani_home()).set_policy(
+            channel,
+            pinned_version=pinned_version,
+            feed_url=feed,
+            checks_enabled=checks_enabled,
+        )
+    except UpdateError as error:
+        _self_service_error(error)
+    value = policy.model_dump(mode="json")
+    typer.echo(
+        json.dumps(value, sort_keys=True)
+        if json_output
+        else f"Update channel set to {policy.channel}. No update was checked or installed."
+    )
+
+
+@update_app.command("check")
+def update_check_command(
+    feed: str | None = typer.Option(None, "--feed"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Fetch only release metadata; no source, prompts, or repository data is sent."""
+
+    try:
+        state = UpdateManager(villani_home()).check(feed_url=feed)
+    except UpdateError as error:
+        _self_service_error(error)
+    value = state.model_dump(mode="json")
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+        return
+    typer.echo(
+        f"Villani {state.available_version} is {state.status}. No update was installed."
+    )
+    if state.release_notes:
+        typer.echo(state.release_notes)
+
+
+@update_app.command("preview")
+def update_preview_command(
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Preview compatibility and data migrations without changing anything."""
+
+    try:
+        manager = UpdateManager(villani_home())
+        state = manager.status()
+        migration = manager.migration_preview()
+    except UpdateError as error:
+        _self_service_error(error)
+    value = {
+        "schema_version": "villani.update_preview.v1",
+        "installed_version": state.installed_version,
+        "available_version": state.available_version,
+        "channel": state.policy.channel,
+        "release_notes": state.release_notes,
+        "migration": migration.model_dump(mode="json"),
+        "artifact_verification_required": True,
+        "atomic_switch": True,
+        "rollback_available": bool(state.previous_installation),
+        "repositories_modified": False,
+        "source_uploaded": False,
+    }
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+        return
+    typer.echo(f"Installed: {state.installed_version}")
+    typer.echo(f"Candidate: {state.available_version or 'not checked'}")
+    typer.echo("Repositories modified: no")
+    typer.echo("Source uploaded: no")
+    typer.echo(
+        "Migrations: "
+        + ("; ".join(migration.actions) if migration.actions else "none required")
+    )
+
+
+def _install_update(
+    *,
+    artifact: Path | None,
+    sha256: str | None,
+    json_output: bool,
+) -> None:
+    try:
+        manager = UpdateManager(villani_home())
+        if artifact is None:
+            if sha256 is not None:
+                raise UpdateError("--sha256 requires --artifact")
+            state = manager.install_checked_update()
+        else:
+            if sha256 is None:
+                raise UpdateError("offline artifact installation requires --sha256")
+            if not artifact.expanduser().is_file():
+                raise UpdateError(f"artifact does not exist: {artifact}")
+            state = manager.install_artifact(
+                str(artifact.expanduser().resolve()), sha256.lower()
+            )
+    except UpdateError as error:
+        _self_service_error(error)
+    value = state.model_dump(mode="json")
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+    else:
+        typer.echo(f"Villani {state.installed_version} was verified and activated atomically.")
+        typer.echo(f"Launchers: {villani_home() / 'bin'}")
+        typer.echo("Rollback: villani update rollback")
+
+
+@update_app.command("install")
+def update_install_command(
+    artifact: Path | None = typer.Option(None, "--artifact"),
+    sha256: str | None = typer.Option(None, "--sha256"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Explicitly install the checked release or an offline verified archive."""
+
+    _install_update(artifact=artifact, sha256=sha256, json_output=json_output)
+
+
+@app.command("install")
+def install_command(
+    artifact: Path = typer.Option(..., "--artifact"),
+    sha256: str = typer.Option(..., "--sha256"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Install a standalone offline artifact into the managed per-user location."""
+
+    _install_update(artifact=artifact, sha256=sha256, json_output=json_output)
+
+
+@update_app.command("rollback")
+def update_rollback_command(
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Atomically restore the previous verified installation and configuration backup."""
+
+    try:
+        state = UpdateManager(villani_home()).rollback()
+    except UpdateError as error:
+        _self_service_error(error)
+    value = state.model_dump(mode="json")
+    typer.echo(
+        json.dumps(value, sort_keys=True)
+        if json_output
+        else f"Rolled back to Villani {state.installed_version}; startup and doctor verification passed."
+    )
+
+
+@license_app.command("status")
+def license_status_command(
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Check the local entitlement without contacting a licensing service."""
+
+    state = load_entitlement(villani_home())
+    value = state.model_dump(mode="json")
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+        return
+    typer.echo(f"Tier: {state.tier.title()}")
+    typer.echo(f"Status: {state.status}")
+    typer.echo("Licensing network used: no")
+    typer.echo("Source data shared: no")
+    typer.echo("Recorded evidence remains readable: yes")
+    if state.repair_action:
+        typer.echo(state.repair_action)
+
+
+@license_app.command("install")
+def license_install_command(
+    source: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Verify and atomically install a signed offline license file."""
+
+    try:
+        state = install_license(source, villani_home())
+    except EntitlementError as error:
+        _self_service_error(error)
+    value = state.model_dump(mode="json")
+    typer.echo(
+        json.dumps(value, sort_keys=True)
+        if json_output
+        else f"Villani {state.tier.title()} license installed locally ({state.status})."
+    )
+
+
+@license_app.command("development")
+def license_development_command(
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Install the signed development fixture when explicitly enabled by environment."""
+
+    if os.environ.get("VILLANI_ALLOW_DEVELOPMENT_LICENSE") != "1":
+        _self_service_error(
+            EntitlementError(
+                "development fixtures are disabled; set VILLANI_ALLOW_DEVELOPMENT_LICENSE=1 only in development"
+            )
+        )
+    home = villani_home()
+    source = home / f"development-license-{secrets.token_hex(4)}.json"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        source.write_bytes(development_license_bytes())
+        state = install_license(source, home)
+    except (OSError, EntitlementError) as error:
+        _self_service_error(error)
+    finally:
+        source.unlink(missing_ok=True)
+    value = state.model_dump(mode="json")
+    typer.echo(
+        json.dumps(value, sort_keys=True)
+        if json_output
+        else "Signed development Pro fixture installed; production use remains disabled."
+    )
+
+
+def _support_preview(run_ids: Sequence[str]):
+    report = run_doctor()
+    return SupportBundleBuilder(villani_home()).preview(
+        run_ids=run_ids,
+        doctor=report.as_dict(),
+    )
+
+
+@support_app.command("preview")
+def support_preview_command(
+    run_id: list[str] | None = typer.Option(None, "--run"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show exactly what a support archive would include; create nothing."""
+
+    try:
+        manifest = _support_preview(run_id or [])
+    except SupportBundleError as error:
+        _self_service_error(error)
+    value = manifest.model_dump(mode="json")
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+        return
+    typer.echo("Support bundle preview (no archive created)")
+    for item in manifest.items:
+        typer.echo(f"- {'include' if item.included else 'exclude'}: {item.logical_name} — {item.reason}")
+    typer.echo("Upload: never automatic")
+
+
+@support_app.command("create")
+def support_create_command(
+    run_id: list[str] | None = typer.Option(None, "--run"),
+    confirm_manifest: bool = typer.Option(
+        False,
+        "--confirm-manifest",
+        help="Confirm that the manifest preview was reviewed.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Create one local archive only after explicit manifest confirmation."""
+
+    selected_runs = run_id or []
+    try:
+        report = run_doctor()
+        builder = SupportBundleBuilder(villani_home())
+        preview = builder.preview(run_ids=selected_runs, doctor=report.as_dict())
+        if not confirm_manifest:
+            typer.echo(json.dumps(preview.model_dump(mode="json"), sort_keys=True))
+            raise SupportBundleError(
+                "review the manifest above, then rerun with --confirm-manifest"
+            )
+        archive, manifest = builder.create(
+            run_ids=selected_runs,
+            doctor=report.as_dict(),
+        )
+    except SupportBundleError as error:
+        _self_service_error(error)
+    value = {
+        "archive": str(archive),
+        "manifest": manifest.model_dump(mode="json"),
+    }
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+    else:
+        typer.echo(f"Support archive created locally: {archive}")
+        typer.echo(f"SHA-256: {manifest.archive_sha256}")
+        typer.echo("Upload: not performed")
+
+
+@app.command("cleanup")
+def cleanup_command(
+    apply: bool = typer.Option(
+        False, "--apply", help="Apply the displayed cache/log retention plan."
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Preview stale cache cleanup; run bundles and evidence are never selected."""
+
+    try:
+        report = cleanup(villani_home(), apply=apply)
+    except CleanupError as error:
+        _self_service_error(error)
+    value = report.as_dict()
+    if json_output:
+        typer.echo(json.dumps(value, sort_keys=True))
+        return
+    typer.echo(f"Cleanup {'applied' if apply else 'dry run'}: {len(report.items)} item(s)")
+    typer.echo(f"Eligible bytes: {report.reclaimed_bytes}")
+    typer.echo("Run bundles deleted: 0")
+    if not apply:
+        typer.echo("Run with --apply to remove only the listed caches and retained logs.")
 
 
 @app.command("install-service", hidden=True)
@@ -241,6 +637,11 @@ def setup_command(
         None, "--endpoint", help="Also inspect this OpenAI-compatible endpoint."
     ),
     model: str | None = typer.Option(None, "--model", help="Select a detected model by name."),
+    coding_system: str = typer.Option(
+        "auto",
+        "--coding-system",
+        help="auto, villani-code, codex, or claude-code",
+    ),
     start: bool | None = typer.Option(
         None, "--start/--no-start", help="Start Villani Service after configuration."
     ),
@@ -303,6 +704,18 @@ def setup_command(
         if installed_sessions
         else "No supported coding-session history sources were detected."
     )
+    harnesses = discover_agent_harnesses()
+    typer.echo("Coding systems:")
+    for harness in harnesses:
+        readiness = harness.readiness
+        typer.echo(
+            f"- {harness.display_name}: installed={readiness.installed}; "
+            f"version={readiness.exact_version or 'not detected'}; "
+            f"auth={readiness.authentication_status}; "
+            f"protocol={readiness.conformance_status}; "
+            f"qualification={readiness.qualification_state}; "
+            f"repair={readiness.repair_action}"
+        )
     before_service = service_status()
     typer.echo(
         "Villani Service is running."
@@ -334,12 +747,50 @@ def setup_command(
     if not capability_probe.succeeded:
         raise SetupError("the selected backend failed the small capability probe")
 
+    requested_coding_system = coding_system.strip().lower()
+    if requested_coding_system == "auto":
+        # The bundled Villani Code route has acceptance-grade conformance and
+        # works with every detected provider. External systems stay visible and
+        # selectable but are never silently promoted from provisional evidence.
+        requested_coding_system = "villani-code"
+    if requested_coding_system not in {"villani-code", "codex", "claude-code"}:
+        raise SetupError("--coding-system must be auto, villani-code, codex, or claude-code")
+    selected_harness = next(
+        item for item in harnesses if item.harness_id == requested_coding_system
+    )
+    readiness = selected_harness.readiness
+    if not readiness.installed:
+        raise SetupError(readiness.repair_action)
+    if readiness.version_supported is False:
+        raise SetupError(readiness.repair_action)
+    if readiness.authentication_status not in {"ready", "not_applicable"}:
+        raise SetupError(readiness.repair_action)
+    if requested_coding_system in {"codex", "claude-code"} and not (
+        readiness.details.get("protocol_probe") == "passed"
+        or readiness.conformance_status == "passed"
+    ):
+        raise SetupError(readiness.repair_action)
+    if requested_coding_system == "claude-code" and not readiness.details.get(
+        "strict_sandbox_available"
+    ):
+        raise SetupError(readiness.repair_action)
+    if requested_coding_system == "codex" and not os.environ.get("OPENAI_API_KEY"):
+        raise SetupError(
+            "Codex setup requires OPENAI_API_KEY for the configured provider identity; "
+            "set it, then run: villani setup --coding-system codex"
+        )
+    typer.echo(f"Selected coding system: {selected_harness.display_name}")
+
     configuration = build_configuration(
         selected,
         selected_model,
         repository=repository,
         session_sources=sessions,
+        coding_system=requested_coding_system,
+        coding_command=readiness.command_identity,
     )
+    configured_backends = validate_configuration(configuration)
+    configured_registry = build_agent_system_registry(configuration, configured_backends)
     write_result = write_configuration_atomic(config_path, configuration)
     typer.echo(f"Configuration saved atomically: {write_result.path}")
     if write_result.backup_path:
@@ -396,6 +847,11 @@ def setup_command(
         "provider": selected.as_dict(),
         "selected_model": selected_model,
         "session_sources": [item.as_dict() for item in sessions],
+        "harnesses": [item.model_dump(mode="json") for item in harnesses],
+        "selected_coding_system": requested_coding_system,
+        "configured_agent_systems": [
+            item.model_dump(mode="json") for item in configured_registry.list()
+        ],
         "connection_probe": connection_probe.as_dict(),
         "capability_probe": capability_probe.as_dict(),
         "configuration": write_result.as_dict(),
@@ -416,11 +872,16 @@ def doctor_command(
         None, "--repo", help="Repository to inspect without mutation."
     ),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable diagnostics."),
+    installation_only: bool = typer.Option(
+        False,
+        "--installation-only",
+        help="Verify only package, version, migration, update, entitlement, and storage health.",
+    ),
 ) -> None:
     """Check configuration, model, service, storage, repository, and console health."""
 
     try:
-        report = run_doctor(repository=repo)
+        report = run_doctor(repository=repo, installation_only=installation_only)
     except RepositoryDiagnosticError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(2) from error
@@ -450,10 +911,33 @@ def open_command(
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     try:
-        if arguments and arguments[0] not in {"--help", "-h", "setup", "doctor"}:
+        if arguments in (["--version"], ["-V"]):
+            print(f"Villani {installed_version()}")
+            return 0
+        if arguments and arguments[0] not in {
+            "--help",
+            "-h",
+            "setup",
+            "doctor",
+            "version",
+            "update",
+            "install",
+            "license",
+            "support",
+            "cleanup",
+        }:
             check_upgrade(villani_home(), apply=True)
         app(args=arguments, prog_name="villani", standalone_mode=True)
-    except (MigrationError, ServiceError, SetupError, OSError) as error:
+    except (
+        CleanupError,
+        EntitlementError,
+        MigrationError,
+        ServiceError,
+        SetupError,
+        SupportBundleError,
+        UpdateError,
+        OSError,
+    ) as error:
         print(f"villani: {error}", file=sys.stderr)
         return 2
     return 0

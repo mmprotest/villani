@@ -24,7 +24,7 @@ const program = new Command();
 program
     .name("villani-flight-recorder")
     .description("Villani's internal session parsing and replay-data compatibility CLI.\n\nOpen the product with:\n  villani open\n\nAdvanced diagnostics:\n  vfr scan --all\n  vfr sessions")
-    .version("0.1.0");
+    .version("1.0.0");
 function scanProgress(json, quiet) {
     return json || quiet ? undefined : (m) => console.error(m);
 }

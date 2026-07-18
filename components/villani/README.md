@@ -8,6 +8,12 @@ villani doctor
 villani open
 ```
 
+Standalone release archives can be installed without Python or a checkout by running
+the extracted `villani install --artifact ARCHIVE --sha256 DIGEST` bootstrap command.
+The managed installation provides user-controlled update/rollback, Doctor, local
+privacy-redacted support bundles, cleanup previews, and offline entitlements. The full
+cross-platform procedure is in `docs/SELF_SERVICE.md` at the repository root.
+
 The guided setup detects a repository and available models, validates the selected backend, writes configuration atomically, and offers to start Villani Service and run a disposable sample task. It does not ask for internal routing scores or require manual YAML editing.
 
 Setup also migrates the selected coding backend into a non-secret, content-addressed Villani Code

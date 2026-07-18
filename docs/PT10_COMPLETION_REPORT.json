@@ -1,0 +1,674 @@
+{
+  "schema_version": "villani.milestone_completion_report.v1",
+  "milestone": "PT10",
+  "title": "Ship the Self-Service Daily-Driver Pro Product",
+  "assessment_date": "2026-07-18",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "implementation_status": "complete",
+  "acceptance_status": "not_proven_cross_platform",
+  "canonical_version": "1.0.0",
+  "status_reason": "The PT10 implementation and Windows x86_64 release certification are complete. The standalone artifact, no-YAML setup, accepted task, proof, Doctor, update and rollback, support bundle, entitlement safety, scans, performance gate, and screenshots all passed. The milestone cannot be reported COMPLETE because the committed macOS and Linux hosted certification jobs have not produced current run artifacts in this pass.",
+  "pt11_started": false,
+  "acceptance_criteria": [
+    {
+      "criterion": "Normal setup requires no YAML",
+      "status": "met_on_certified_windows_platform",
+      "evidence": ".release-smoke/pt10-onboarding-screenshots-final/onboarding-report.json records ONBOARDING GATE PASSED from the installed product; setup created a safe default configuration without manual YAML editing."
+    },
+    {
+      "criterion": "Built artifacts work independently",
+      "status": "met_on_certified_windows_platform_cross_platform_evidence_pending",
+      "evidence": "The Windows archive installed and ran from an external consumer directory with source checkout, source virtual environment, PYTHONPATH, NODE_PATH, and sibling node_modules excluded. The hosted macOS/Linux jobs are committed but not observed."
+    },
+    {
+      "criterion": "Updates roll back safely",
+      "status": "met_on_certified_windows_platform",
+      "evidence": "Package certification exercised preflight, artifact verification, migration preview, configuration backup, side-by-side install, atomic switch, startup and install-Doctor verification, and verified rollback."
+    },
+    {
+      "criterion": "Doctor gives exact repair actions",
+      "status": "met",
+      "evidence": "Doctor covers installation, versions, service, storage, config, migrations, repository, Git, harnesses, auth, protocol, provider/model, permissions, isolation, validation, qualification, stale runs, dead letters, update state, and disk. Every non-pass record carries one exact action and evidence path and declares repositories_modified=false."
+    },
+    {
+      "criterion": "Support preserves privacy",
+      "status": "met",
+      "evidence": "The final package smoke created and inspected an opt-in local archive, verified its exact manifest and digests, found no default run evidence or checkout/home paths, and confirmed all privacy flags and uploaded=false."
+    },
+    {
+      "criterion": "Entitlements do not compromise safety",
+      "status": "met",
+      "evidence": "Centralized checks retain isolation, acceptance-grade verification, evidence, manual delivery, and Activity for Free and after expiry. Evidence readability and accepted-run verification are never gated."
+    },
+    {
+      "criterion": "Default product remains New task, Activity, Agents, Settings",
+      "status": "met",
+      "evidence": "Web tests, production build, packaged asset parity, and screenshots verify the four-item default navigation."
+    },
+    {
+      "criterion": "No later milestone is started",
+      "status": "met",
+      "evidence": "PT11 was not started."
+    },
+    {
+      "criterion": "Windows, macOS, and Linux release certification is current",
+      "status": "insufficient_evidence",
+      "evidence": "Windows x86_64 has a passing current certification artifact. The new hosted macOS and Linux matrix has not run in this local pass, so their artifact/install/task/update/rollback/support evidence is unavailable."
+    }
+  ],
+  "platform_certification": {
+    "windows_x86_64": {
+      "status": "passed",
+      "artifact": ".release-smoke/pt10-final/release/villani-1.0.0-windows-x86_64.zip",
+      "artifact_sha256": "e3276fd3b3526b10945f4a981eca69b696c8a385494813e3daa064fe946b2365",
+      "archive_bytes": 238721711,
+      "expanded_bytes": 318593997,
+      "manifest_files": 8,
+      "sbom_components": 287,
+      "certification": ".release-smoke/pt10-final/release/pt10-platform-certification.json",
+      "artifact_scan": ".release-smoke/pt10-final/release/release-artifact-scan.json",
+      "dependency_audit": ".release-smoke/pt10-final/release/dependency-audit.json",
+      "performance_report": ".release-smoke/pt10-final/release/performance-report.json"
+    },
+    "macos": {
+      "status": "not_observed",
+      "configured_job": ".github/workflows/ci.yml",
+      "reason": "Hosted certification was not run in this Windows-local pass."
+    },
+    "linux": {
+      "status": "not_observed",
+      "configured_job": ".github/workflows/ci.yml",
+      "reason": "Hosted certification was not run in this Windows-local pass."
+    }
+  },
+  "files": {
+    "added": [
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-D0m9i5XQ.css",
+      "components/villani-agentd/villani_agentd/console_assets/assets/index-DbblgCLO.js",
+      "components/villani-agentd/villani_agentd/console_assets/console-assets.json",
+      "components/villani-agentd/villani_agentd/console_assets/index.html",
+      "components/villani-ops/villani_ops/schemas/v1/doctor.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/entitlement-state.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/license.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/package-manifest.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/support-bundle-manifest.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/update-feed.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/update-policy.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/update-state.schema.json",
+      "components/villani-ops/villani_ops/self_service/__init__.py",
+      "components/villani-ops/villani_ops/self_service/contracts.py",
+      "components/villani-ops/villani_ops/self_service/entitlements.py",
+      "components/villani-ops/villani_ops/self_service/fixtures/development-pro.json",
+      "components/villani-ops/villani_ops/self_service/state.py",
+      "components/villani-ops/villani_ops/tests/test_pt10_self_service.py",
+      "components/villani-run-model/dist/selfService.d.ts",
+      "components/villani-run-model/dist/selfService.js",
+      "components/villani-run-model/src/selfService.ts",
+      "components/villani-web/dist/assets/index-DbblgCLO.js",
+      "components/villani/tests/test_pt10_performance.py",
+      "components/villani/tests/test_pt10_self_service.py",
+      "components/villani/villani_distribution/maintenance.py",
+      "components/villani/villani_distribution/support_bundle.py",
+      "components/villani/villani_distribution/update_system.py",
+      "docs/PT10_COMPLETION_REPORT.json",
+      "docs/PT10_COMPLETION_REPORT.md",
+      "docs/SELF_SERVICE.md",
+      "integration/fixtures/licenses/development-pro.json",
+      "integration/fixtures/licenses/development-tampered.json",
+      "release/RELEASE_NOTES.md",
+      "release/VERSION",
+      "release/performance-targets.json",
+      "release/release-metadata.json",
+      "schemas/v1/doctor.schema.json",
+      "schemas/v1/entitlement-state.schema.json",
+      "schemas/v1/license.schema.json",
+      "schemas/v1/package-manifest.schema.json",
+      "schemas/v1/support-bundle-manifest.schema.json",
+      "schemas/v1/update-feed.schema.json",
+      "schemas/v1/update-policy.schema.json",
+      "schemas/v1/update-state.schema.json",
+      "scripts/check-version-contract.py",
+      "scripts/generate-pt10-schemas.py",
+      "scripts/pt10-performance-gate.py",
+      "scripts/scan-release-artifact.py"
+    ],
+    "changed": [
+      ".github/workflows/ci.yml",
+      "PLANS.md",
+      "README.md",
+      "components/villani-agentd/pyproject.toml",
+      "components/villani-agentd/tests/test_agentd_core.py",
+      "components/villani-agentd/tests/test_console.py",
+      "components/villani-agentd/villani_agentd/__init__.py",
+      "components/villani-agentd/villani_agentd/cli.py",
+      "components/villani-agentd/villani_agentd/config.py",
+      "components/villani-agentd/villani_agentd/console.py",
+      "components/villani-agentd/villani_agentd/server.py",
+      "components/villani-agentd/villani_agentd/structured_log.py",
+      "components/villani-agentd/villani_agentd/wrapper.py",
+      "components/villani-code/pyproject.toml",
+      "components/villani-code/villani_code/__init__.py",
+      "components/villani-control-plane/pyproject.toml",
+      "components/villani-control-plane/villani_control_plane/__init__.py",
+      "components/villani-control-plane/villani_control_plane/main.py",
+      "components/villani-flight-recorder/dist/cli.js",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/package-lock.json",
+      "components/villani-flight-recorder/package.json",
+      "components/villani-flight-recorder/src/cli.ts",
+      "components/villani-ops/pyproject.toml",
+      "components/villani-ops/villani_ops/__init__.py",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/adapters.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/configuration.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/discovery.py",
+      "components/villani-ops/villani_ops/closed_loop/controller.py",
+      "components/villani-ops/villani_ops/closed_loop/policy.py",
+      "components/villani-ops/villani_ops/closed_loop/presentation.py",
+      "components/villani-ops/villani_ops/evaluation_lab/runner.py",
+      "components/villani-ops/villani_ops/tests/test_unified_cli.py",
+      "components/villani-run-model/dist/console.d.ts",
+      "components/villani-run-model/dist/index.d.ts",
+      "components/villani-run-model/dist/index.js",
+      "components/villani-run-model/package-lock.json",
+      "components/villani-run-model/package.json",
+      "components/villani-run-model/src/console.ts",
+      "components/villani-run-model/src/index.ts",
+      "components/villani-ui/package-lock.json",
+      "components/villani-ui/package.json",
+      "components/villani-web/dist/index.html",
+      "components/villani-web/package-lock.json",
+      "components/villani-web/package.json",
+      "components/villani-web/src/ConsoleApp.tsx",
+      "components/villani-web/src/ProductPages.tsx",
+      "components/villani-web/src/SingleTaskPage.tsx",
+      "components/villani-web/src/consoleApi.ts",
+      "components/villani-web/src/consoleContext.tsx",
+      "components/villani-web/test/console.test.tsx",
+      "components/villani/README.md",
+      "components/villani/pyproject.toml",
+      "components/villani/tests/test_onboarding_integration.py",
+      "components/villani/villani_distribution/__init__.py",
+      "components/villani/villani_distribution/cli.py",
+      "components/villani/villani_distribution/diagnostics.py",
+      "components/villani/villani_distribution/migrations.py",
+      "components/villani/villani_distribution/onboarding.py",
+      "deploy/helm/villani-control-plane/Chart.yaml",
+      "deploy/helm/villani-control-plane/values.yaml",
+      "docs/DISTRIBUTION.md",
+      "docs/SUPPLY_CHAIN.md",
+      "onboarding-verification/capture_screenshots.mjs",
+      "onboarding-verification/run_onboarding_gate.py",
+      "release/component-compatibility.json",
+      "scripts/build-release.py",
+      "scripts/ci-package-smoke.py",
+      "scripts/sync-console-assets.py"
+    ],
+    "deleted": [
+      "components/villani-web/dist/assets/index-DvFaI5_1.js"
+    ],
+    "migrated": [
+      "Configuration remains config_version 1; setup writes additive self-service defaults and update preflight rejects newer or malformed configuration before mutation.",
+      "Existing spool state is inspected or migrated through the existing versioned agentd spool migrator; update preview performs the inspection without mutation and installation backs up configuration first.",
+      "Run protocol majors 1 and 2 remain readable; no old run bundle is rewritten and absent PT10 fields remain unavailable rather than synthesized.",
+      "Eight additive v1 self-service contracts were added to the normative root and packaged Ops schema directories; no existing schema was replaced.",
+      "The prior Web production JavaScript asset was replaced by index-DbblgCLO.js and the exact built HTML/CSS/JavaScript set was synchronized into Agentd packaging."
+    ]
+  },
+  "architecture_and_product_decisions": [
+    "One release/VERSION value drives all Python packages, Node packages, Helm, compatibility metadata, release metadata, CLI output, and Console Settings; the contract checker verifies every declaration.",
+    "Release archives are deterministic platform artifacts with commands, release notes, a strict package manifest, SHA256SUMS, update feed, and CycloneDX SBOM inventory. Installation is tested without checkout, source virtualenv, sibling node_modules, PYTHONPATH, or NODE_PATH.",
+    "Only platforms with a passing certification artifact are claimed certified. The workflow targets Windows, macOS, and Linux, but this report claims Windows only because hosted artifacts for the other two were not observed.",
+    "Setup inspects repositories and detects Villani Code, Codex, Claude Code, authentication, model/provider identity, protocol conformance, and qualification without executing inferred repository commands. It writes the strongest safe initial route and non-destructive delivery defaults without requiring YAML edits.",
+    "The update client is user-controlled: stable, beta, and pinned channels exist, no forced update exists, and checks send only the installed Villani version. Remote feeds require HTTPS; local files and loopback are explicit exceptions for offline and certification workflows.",
+    "Updates use an exclusive cross-process lock, validate size/SHA/archive contents, preview compatibility, back up configuration, install side-by-side, atomically switch a stable launcher, verify startup and install Doctor, journal crash recovery, and retain a verified rollback target.",
+    "Doctor is evidence-first and non-mutating. Every failure identifies the failed dimension, states repositories_modified=false, provides exactly one repair command/action, and points to durable evidence.",
+    "Support export is opt-in, local, previewable, exact-manifested, and never auto-uploaded. The allowlist excludes run evidence by default and redacts secrets, prompts, source, diffs, repository names, usernames, absolute paths, and terminal content.",
+    "Entitlement checks are centralized in Villani Ops. Core isolation, acceptance-grade verification, evidence, manual delivery, and Activity remain available on Free and after expiry. Pro gates only advanced qualification/routing/escalation/verification/learning, pull-request delivery, analytics, and export.",
+    "Licenses are locally verified RS256 documents; only the public key is shipped. Development licenses require VILLANI_ALLOW_DEVELOPMENT_LICENSE=1, invalid replacement fails before changing current state, no source is sent to licensing, and declared offline grace is bounded at 90 days.",
+    "Daily CLI and Console workflows operate from a repository root, preserve the default New task/Activity/Agents/Settings navigation, support Activity repeat, proof copy and evidence deep links, branch or entitled pull-request delivery, and explicit later correction/revert import.",
+    "Maintenance is dry-run by default and never deletes runs, configuration, licenses, current/previous installs, or evidence. Structured logs rotate at 5 MiB with three backups, and the idle service starts no local model or GPU process."
+  ],
+  "schema_and_configuration_migrations": {
+    "normative_contracts": [
+      "villani.doctor.v1",
+      "villani.entitlement_state.v1",
+      "villani.license.v1",
+      "villani.package_manifest.v1",
+      "villani.support_bundle_manifest.v1",
+      "villani.update_feed.v1",
+      "villani.update_policy.v1",
+      "villani.update_state.v1"
+    ],
+    "config_version": 1,
+    "readable_run_protocol_majors": [1, 2],
+    "migration_behavior": "Preview is read-only. Apply uses the existing versioned spool migrator, writes migration-state.json atomically, and is preceded by configuration backup during update. Newer, malformed, or unsupported state fails before the active installation changes.",
+    "backwards_readability": "Existing config v1, spool state, and run protocol v1/v2 remain readable. No existing run bundle or configuration is destructively rewritten by setup."
+  },
+  "tests_added": [
+    {
+      "path": "components/villani-ops/villani_ops/tests/test_pt10_self_service.py",
+      "coverage": "Strict self-service contracts, centralized entitlements, development-license gate, offline grace and expiry safety, one-system Free projection, Pro route/delivery checks, and state persistence."
+    },
+    {
+      "path": "components/villani/tests/test_pt10_self_service.py",
+      "coverage": "Update channels/pinning, HTTPS/local feeds, no source upload, artifact and traversal rejection, preview/backup/switch/rollback/recovery/locking, support privacy and manifest integrity, maintenance safety, and CLI workflows."
+    },
+    {
+      "path": "components/villani/tests/test_pt10_performance.py",
+      "coverage": "Shell render and startup/Doctor budgets plus repository non-mutation."
+    },
+    {
+      "path": "components/villani-ops/villani_ops/tests/test_unified_cli.py",
+      "coverage": "Expanded entitlement-aware route and delivery behavior, license state, proof, and explicit feedback import."
+    },
+    {
+      "path": "components/villani-agentd/tests/test_agentd_core.py",
+      "coverage": "Version, update/entitlement state, bounded logs, service and Console API behavior."
+    },
+    {
+      "path": "components/villani-agentd/tests/test_console.py",
+      "coverage": "Packaged standalone Console assets, exact asset manifest, and normal-user serving behavior."
+    },
+    {
+      "path": "components/villani-web/test/console.test.tsx",
+      "coverage": "Settings version/update/entitlement/support/Doctor, Activity repeat, Pro gating, proof copy/deep link, feedback import, and default navigation."
+    },
+    {
+      "path": "components/villani/tests/test_onboarding_integration.py",
+      "coverage": "Expanded standalone onboarding, installed runtime identity, task proof, delivery modes, service cleanup, and screenshot certification."
+    }
+  ],
+  "validations": [
+    {
+      "command": "$env:TEMP=(Resolve-Path ..\\..\\.test-temp).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp ..\\..\\.test-temp\\code-full-pt10",
+      "cwd": "components/villani-code",
+      "result": "686 passed, 1 skipped, 27 warnings in 135.68s",
+      "status": "passed"
+    },
+    {
+      "command": "$env:TEMP=(Resolve-Path ..\\..\\.test-temp).Path; $env:TMP=$env:TEMP; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp ..\\..\\.test-temp\\ops-full-pt10",
+      "cwd": "components/villani-ops",
+      "result": "2 failed, 1283 passed, 2 skipped, 116 deselected in 350.22s",
+      "status": "preliminary_failure_fixed",
+      "details": "One legacy pull-request test lacked the newly required explicit Pro fixture and was updated. One unchanged process-heartbeat test hit OneDrive atomic-replace interference."
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops/tests/test_villani_code_process.py -k heartbeat -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-heartbeat",
+      "cwd": "components/villani-ops",
+      "result": "1 passed in 1.09s",
+      "status": "passed",
+      "details": "The unchanged heartbeat test passed outside the OneDrive-synchronized directory."
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-ops-full-clean",
+      "cwd": "components/villani-ops",
+      "result": "1285 passed, 2 skipped, 116 deselected in 319.78s",
+      "status": "passed_authoritative"
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-agentd-initial",
+      "cwd": "components/villani-agentd",
+      "result": "6 failed, 81 passed in 21.68s",
+      "status": "preliminary_failure_fixed",
+      "details": "A tempfile-created Console staging directory retained a private Windows ACL after rename. Staging now uses a sibling directory created with Path.mkdir so repository ACLs are inherited."
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q tests/test_console.py -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-agentd-console",
+      "cwd": "components/villani-agentd",
+      "result": "6 passed in 4.14s",
+      "status": "passed"
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-agentd-final",
+      "cwd": "components/villani-agentd",
+      "result": "87 passed in 20.49s",
+      "status": "passed"
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-distribution-full",
+      "cwd": "components/villani",
+      "result": "76 passed in 210.39s",
+      "status": "passed_before_final_privacy_test"
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-distribution-final",
+      "cwd": "components/villani",
+      "result": "77 passed in 204.82s",
+      "status": "passed_authoritative"
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & ..\\..\\.venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-control-plane",
+      "cwd": "components/villani-control-plane",
+      "result": "80 passed, 9 skipped, 43 warnings in 13.62s",
+      "status": "passed"
+    },
+    {
+      "command": "$env:TEMP='C:\\tmp'; $env:TMP='C:\\tmp'; & .venv\\Scripts\\python.exe -m pytest tests/closed_loop -q -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-closed-loop",
+      "cwd": ".",
+      "result": "11 passed, 1 warning in 48.97s",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-run-model",
+      "result": "6 test files, 17 tests passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-run-model",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-run-model",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-ui",
+      "result": "4 tests passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-ui",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "result": "21 test files, 118 tests passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-flight-recorder",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-flight-recorder",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "cwd": "components/villani-web",
+      "result": "Initial run reached the tests after approved execution outside the filesystem sandbox and found one new Repeat assertion mismatch; the test was corrected to match deterministic deduplication. Final result: 4 test files, 25 tests passed.",
+      "status": "passed_after_test_correction"
+    },
+    {
+      "command": "npm run typecheck",
+      "cwd": "components/villani-web",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "components/villani-web",
+      "result": "passed; Vite transformed 61 modules and emitted index-DbblgCLO.js and index-D0m9i5XQ.css",
+      "status": "passed"
+    },
+    {
+      "command": "npm run format:check",
+      "cwd": "components/villani-web",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/sync-console-assets.py --check",
+      "cwd": ".",
+      "result": "3 files verified against the packaged Console asset manifest",
+      "status": "passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/check-version-contract.py",
+      "cwd": ".",
+      "result": "canonical version 1.0.0; 30 declarations verified",
+      "status": "passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/generate-pt10-schemas.py --check",
+      "cwd": ".",
+      "result": "8 normative/package schema pairs verified",
+      "status": "passed"
+    },
+    {
+      "command": "$pt10ChangedPython = @(git diff --name-only --diff-filter=ACM -- '*.py'); $pt10UntrackedPython = @(git ls-files --others --exclude-standard -- '*.py'); & .venv\\Scripts\\ruff.exe check @pt10ChangedPython @pt10UntrackedPython",
+      "cwd": ".",
+      "result": "All checks passed",
+      "status": "passed",
+      "details": "The argument list was the changed PT10 Python source/test/script inventory; no broad fixture traversal was used for the authoritative result."
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m compileall -q components/villani components/villani-agentd components/villani-code components/villani-control-plane components/villani-ops scripts onboarding-verification",
+      "cwd": ".",
+      "result": "exit code 0",
+      "status": "passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\mypy.exe components/villani/villani_distribution",
+      "cwd": ".",
+      "result": "Success: no issues found in 11 source files",
+      "status": "passed_after_fix",
+      "details": "Two initial PT10 os.sys findings were corrected."
+    },
+    {
+      "command": "& .venv\\Scripts\\mypy.exe components/villani-agentd/villani_agentd",
+      "cwd": ".",
+      "result": "Success: no issues found in 25 source files",
+      "status": "passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/check-secrets.py integration\\fixtures docs release",
+      "cwd": ".",
+      "result": "3 roots scanned; 0 findings",
+      "status": "passed"
+    },
+    {
+      "command": "npm audit --omit=dev",
+      "cwd": "components/villani-flight-recorder",
+      "result": "0 vulnerabilities",
+      "status": "passed"
+    },
+    {
+      "command": "npm audit --omit=dev",
+      "cwd": "components/villani-web",
+      "result": "0 vulnerabilities",
+      "status": "passed"
+    },
+    {
+      "command": "npm audit --omit=dev",
+      "cwd": "components/villani-run-model",
+      "result": "0 vulnerabilities",
+      "status": "passed"
+    },
+    {
+      "command": "npm audit --omit=dev",
+      "cwd": "components/villani-ui",
+      "result": "0 vulnerabilities",
+      "status": "passed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/ci-package-smoke.py --work-root .release-smoke\\pt10-current --release-root .release-smoke\\pt10-current\\release",
+      "cwd": ".",
+      "result": "failed after 173.6s at Windows command invocation for a launcher path containing spaces",
+      "status": "preliminary_failure_fixed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/ci-package-smoke.py --work-root .release-smoke\\pt10-current-2 --release-root .release-smoke\\pt10-current-2\\release",
+      "cwd": ".",
+      "result": "failed after 199.1s because the isolated environment inherited pip 25.0.1 with 6 advisories; Villani runtime dependencies were not implicated",
+      "status": "preliminary_failure_fixed"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/ci-package-smoke.py --work-root .release-smoke\\pt10-current-3 --release-root .release-smoke\\pt10-current-3\\release",
+      "cwd": ".",
+      "result": "passed in 201.4s before the final support-redaction hardening",
+      "status": "passed_superseded"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe scripts/ci-package-smoke.py --work-root .release-smoke\\pt10-final --release-root .release-smoke\\pt10-final\\release",
+      "cwd": ".",
+      "result": "passed in 201.7s; 8-file artifact, 287 SBOM components, install/Doctor/update/rollback/support/cleanup all verified, pip audit had no known vulnerabilities, secret scan found 0, Microsoft Defender exited 0 with no threats",
+      "status": "passed_authoritative"
+    },
+    {
+      "command": "& .venv\\Scripts\\python.exe -m pytest -q components/villani/tests/test_pt10_self_service.py components/villani/tests/test_pt10_performance.py -p no:cacheprovider --basetemp C:\\tmp\\villani-pt10-final-focused",
+      "cwd": ".",
+      "result": "11 passed in 4.76s",
+      "status": "passed"
+    },
+    {
+      "command": "$env:VILLANI_ONBOARDING_ALLOW_EXTERNAL_ARTIFACTS='1'; & .venv\\Scripts\\python.exe onboarding-verification/run_onboarding_gate.py --artifacts .release-smoke\\pt10-onboarding-screenshots --python .release-smoke\\pt10-current-3\\venv\\Scripts\\python.exe",
+      "cwd": ".",
+      "result": "ONBOARDING GATE PASSED; visual inspection then found screenshot 04 and 05 byte-identical because both captured full replay",
+      "status": "preliminary_visual_failure_fixed"
+    },
+    {
+      "command": "$env:VILLANI_ONBOARDING_ALLOW_EXTERNAL_ARTIFACTS='1'; & .venv\\Scripts\\python.exe onboarding-verification/run_onboarding_gate.py --artifacts .release-smoke\\pt10-onboarding-screenshots-final --python .release-smoke\\pt10-current-3\\venv\\Scripts\\python.exe",
+      "cwd": ".",
+      "result": "ONBOARDING GATE PASSED in 119.7s; sample COMPLETED with attempt_001 accepted, 1 repository check, 3 requirements proved, all delivery modes passed, 1080 files scanned with 0 findings, service stopped, and 5 distinct screenshots captured",
+      "status": "passed_authoritative"
+    },
+    {
+      "command": "node --check onboarding-verification/capture_screenshots.mjs",
+      "cwd": ".",
+      "result": "exit code 0; no syntax errors",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "cwd": ".",
+      "result": "exit code 0; no whitespace errors; informational LF-to-CRLF conversion warnings only",
+      "status": "passed"
+    },
+    {
+      "command": "Get-Content docs\\PT10_COMPLETION_REPORT.json -Raw | ConvertFrom-Json | Out-Null",
+      "cwd": ".",
+      "result": "parsed successfully; required-field audit reported status=INSUFFICIENT_EVIDENCE, pt11_started=False, and 46 validation entries before the final inventory entries were appended",
+      "status": "passed"
+    },
+    {
+      "command": "$report = Get-Content docs\\PT10_COMPLETION_REPORT.json -Raw | ConvertFrom-Json; $reported = @($report.files.added + $report.files.changed + $report.files.deleted | Sort-Object -Unique); $actual = @(git -c core.excludesFile=NUL status --porcelain=v1 --untracked-files=all | ForEach-Object { $_.Substring(3).Replace('\\','/') } | Sort-Object -Unique); Compare-Object -ReferenceObject $reported -DifferenceObject $actual",
+      "cwd": ".",
+      "result": "reporting audit failed because this Git build rejects NUL as an excludes file; no repository or product state changed",
+      "status": "preliminary_validation_command_failure_fixed"
+    },
+    {
+      "command": "$report = Get-Content docs\\PT10_COMPLETION_REPORT.json -Raw | ConvertFrom-Json; $reported = @($report.files.added + $report.files.changed + $report.files.deleted | Sort-Object -Unique); $actual = @(git status --porcelain=v1 --untracked-files=all | ForEach-Object { $_.Substring(3).Replace('\\','/') } | Sort-Object -Unique); $delta = @(Compare-Object -ReferenceObject $reported -DifferenceObject $actual); if ($delta.Count -ne 0) { throw \"PT10 file inventory differs from git status in $($delta.Count) path(s)\" }; Write-Output \"PT10 file inventory verified: $($actual.Count) exact paths\"",
+      "cwd": ".",
+      "result": "PT10 file inventory verified: 119 exact paths",
+      "status": "passed"
+    }
+  ],
+  "known_non_pt10_static_baseline": [
+    {
+      "command": "broader Villani Code mypy run",
+      "result": "132 pre-existing errors in 10 unrelated files"
+    },
+    {
+      "command": "broader Villani Ops mypy run",
+      "result": "446 pre-existing errors in 94 files"
+    },
+    {
+      "command": "broader Control Plane mypy run",
+      "result": "17 pre-existing errors in 8 files"
+    },
+    {
+      "command": "broad Ruff traversal including benchmark fixtures",
+      "result": "36 pre-existing fixture/source findings; authoritative changed-file Ruff passed"
+    }
+  ],
+  "end_to_end_artifacts": {
+    "release_directory": ".release-smoke/pt10-final/release",
+    "platform_certification": ".release-smoke/pt10-final/release/pt10-platform-certification.json",
+    "artifact_scan": ".release-smoke/pt10-final/release/release-artifact-scan.json",
+    "dependency_audit": ".release-smoke/pt10-final/release/dependency-audit.json",
+    "performance_report": ".release-smoke/pt10-final/release/performance-report.json",
+    "update_feed": ".release-smoke/pt10-final/release/update-feed.json",
+    "onboarding_report": ".release-smoke/pt10-onboarding-screenshots-final/onboarding-report.json",
+    "onboarding_state": "COMPLETED",
+    "selected_attempt": "attempt_001",
+    "acceptance_decision": true,
+    "repository_checks_passed": 1,
+    "requirements_proved": 3,
+    "support_bundle": "created_inspected_and_not_uploaded",
+    "screenshots_visually_inspected": true
+  },
+  "screenshots": [
+    {
+      "path": ".release-smoke/pt10-onboarding-screenshots-final/screenshots/01-setup-flow.png",
+      "sha256": "26593C6C6B053E6E2266823B78EA605468F8037FB7469EF43E186D62EC2E335F"
+    },
+    {
+      "path": ".release-smoke/pt10-onboarding-screenshots-final/screenshots/02-doctor.png",
+      "sha256": "7F41F7BE956165B858924DA0F4184D8BA6F005898B16E6BEB7C587C2C379A3E1"
+    },
+    {
+      "path": ".release-smoke/pt10-onboarding-screenshots-final/screenshots/03-villani-console.png",
+      "sha256": "FFA97A9D55F1D33DD97BCA7C5CF05031D516F50CD0B1A5C0764B924572F2FBB4"
+    },
+    {
+      "path": ".release-smoke/pt10-onboarding-screenshots-final/screenshots/04-sample-run.png",
+      "sha256": "CB0DDE4BEB674354D97363D1724A0D3057298501CC4281E27E3949A97A518CAC"
+    },
+    {
+      "path": ".release-smoke/pt10-onboarding-screenshots-final/screenshots/05-sample-replay.png",
+      "sha256": "44643D4B84A7F9241D84EF267DA8FA6E3B9231C88F97D7DE8BF8529A5C87956F"
+    }
+  ],
+  "known_failures_and_skips": [
+    "macOS and Linux hosted certification jobs were not executed in this pass; this is the PT10 acceptance blocker.",
+    "The first full Ops run had one legacy test that did not install the newly required explicit Pro fixture; the test was corrected. The same run had one OneDrive atomic-replace heartbeat failure; the unchanged test passed in C:\\tmp and the authoritative full suite then passed there.",
+    "The first normal-user Agentd run exposed Windows ACL inheritance on tempfile staging; the implementation now stages in an inheriting sibling directory and the focused and full suites pass.",
+    "The first package smoke failed on a Windows launcher path containing spaces. The runner now invokes stable .cmd launchers through cmd /d /s /c call, and later certifications pass.",
+    "The second package smoke correctly failed dependency audit because seeded pip 25.0.1 had six advisories. The isolated venv now upgrades pip before audit and binds pip-audit to that interpreter; the final audit has no known vulnerabilities.",
+    "The first screenshot gate passed mechanically but visual QA found the sample-run and replay captures identical. The capture selectors and gate were tightened; final images are distinct and visually inspected.",
+    "Two Ops host-capability tests are skipped by the suite on unsupported Windows facilities, and opt-in external harness tests were not run because no paid or authenticated real external run was authorized."
+  ],
+  "risks": {
+    "security": [
+      "The release archive has SHA256 and strict manifest verification but no publisher signature or signed update-feed envelope yet.",
+      "Worktree/process isolation is not a kernel sandbox; hostile repositories require a stronger configured provider.",
+      "The development Pro fixture is deliberately gated by VILLANI_ALLOW_DEVELOPMENT_LICENSE=1 and must never be enabled in production automation."
+    ],
+    "privacy": [
+      "Support bundles are redacted and local but not encrypted at rest; users must protect the archive after creation.",
+      "Explicitly selected run evidence can still contain repository-sensitive semantic content after bounded redaction and requires manifest review before sharing.",
+      "Certification screenshots contain local test paths by design and are local evidence, not support-bundle contents."
+    ],
+    "data_loss": [
+      "Atomic update and rollback are covered on Windows, but macOS/Linux behavior lacks current hosted evidence.",
+      "Maintenance is dry-run by default and protects durable runs/config/licenses/current/previous installs; operator-selected future destructive cleanup still requires review."
+    ],
+    "compatibility": [
+      "Only Windows x86_64 is currently certified by evidence in this pass.",
+      "Existing config v1 and run protocol v1/v2 remain readable; newer unsupported state fails closed.",
+      "Real authenticated Codex and Claude Code model/provider qualification was not exercised; setup reports their observed readiness without fabrication."
+    ]
+  },
+  "assumptions": [
+    "Python 3.11 remains the production compatibility floor; local artifact certification used Python 3.12.10 as recorded in the onboarding report.",
+    "A hosted CI run is required before claiming macOS or Linux certification; workflow presence alone is not certification evidence.",
+    "No payment processing is in scope for PT10; license verification and development fixtures are the authorized entitlement surface.",
+    "Unknown cost, provider capability, model identity, conformance, validation, and qualification remain unknown/null until observed evidence exists."
+  ],
+  "user_facing_behavior": {
+    "before": "Installation depended on a source checkout and manual component knowledge; setup could require configuration editing; there was no unified safe update/rollback, comprehensive Doctor, privacy-reviewed support export, centralized entitlement surface, or complete daily workflow in Settings and Activity.",
+    "after": "A developer can install a standalone artifact, run guided setup without YAML, detect and assess coding systems, perform an accepted repository task, inspect/copy/deep-link proof, repeat Activity, deliver manually or by branch and entitled pull request, inspect exact version and entitlement/update state, update or roll back explicitly, run exact-action Doctor diagnostics, and preview/create a local redacted support archive."
+  },
+  "scope_boundary": "PT11 was not started."
+}

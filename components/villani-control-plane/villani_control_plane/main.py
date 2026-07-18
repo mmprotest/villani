@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from . import __version__
 from .api import router
 from .config import get_settings
 from .database import SessionFactory
@@ -44,7 +45,7 @@ async def lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Villani Control Plane",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 

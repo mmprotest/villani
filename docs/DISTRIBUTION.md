@@ -17,6 +17,15 @@ The intended published command is `pipx install villani`. This pass builds local
 
 Each Windows, macOS, and Linux CI runner builds its own platform wheel and a self-contained ZIP containing `villani`, `villani-code`, `villani-agentd`, and `vfr`. PyInstaller produces the Python runtime executable; the native Flight Recorder executable is included alongside it. A platform is supportable only while its CI build and command smoke remain green.
 
+The ZIP is the canonical offline artifact. `package-manifest.json` enumerates every
+allowed member with its digest, size, and executable bit; extra content fails closed.
+`SBOM.cdx.json` inventories the shipped Python and bundled Node applications and their
+declared or locked dependencies. CI executes the archive outside the checkout, installs
+it into an empty home, verifies startup and Doctor, exercises atomic update/rollback and
+support creation, audits dependencies, scans secrets/package contents, measures the PT10
+performance contract, and retains a machine-readable platform certification. Linux
+release certification also requires an external ClamAV scan with an updated database.
+
 ## Guided setup and public service
 
 `villani setup` is the supported first-run path. It detects a Git repository, loopback model
@@ -53,6 +62,17 @@ CI uses redirected service-definition roots and dry-run platform commands as the
 ## Upgrade safety
 
 Before managed commands and normal product execution, Villani checks the configuration version, SQLite `user_version`, and canonical run protocol major versions. Agentd is the single source of truth for the spool contract. Legacy daemon spools with the known table layout migrate idempotently from versions 0 through 3 to version 4 without rewriting runs, events, artifacts, retry state, dead letters, or local-import records. Dry-run checks never mutate the spool, and an existing version 4 spool opens unchanged. A newer unsupported config, spool, or protocol version stops the older executable instead of downgrading data.
+
+Updates are explicit stable, beta, or pinned policy choices. Check requests contain only
+the exact installed version, verify platform/config compatibility, and never upload
+source. Installation backs up configuration and uses a durable journal plus a
+side-by-side atomic switch. Startup and installation-only Doctor authorize the switch;
+failure restores the prior installation and configuration. Windows launchers execute a
+verified version-addressed runner outside the switchable directory so the active binary
+cannot defeat directory replacement. Direct invocation from that directory fails before
+mutation and prints the exact stable-launcher repair command.
+
+The user guide for the complete lifecycle is [SELF_SERVICE.md](SELF_SERVICE.md).
 
 ## Checksums and signing
 

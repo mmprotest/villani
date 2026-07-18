@@ -706,11 +706,24 @@ class AgentSystemAttemptRunner:
                 and manual_route
                 in {resolved_backend_name, identity.route_name}
             )
+            setup = context.policy_configuration.get("setup")
+            setup_values = setup if isinstance(setup, Mapping) else {}
+            model_management = context.policy_configuration.get("model_management")
+            model_values = (
+                model_management if isinstance(model_management, Mapping) else {}
+            )
+            setup_bootstrap_experimental = bool(
+                setup_values.get("bootstrap_policy") is True
+                and str(model_values.get("bootstrap_default") or "")
+                == resolved_backend_name
+            )
             if assessment.state == "unsupported":
                 raise ValueError(
                     f"agent system {identity.system_id} is unsupported for this repository: {assessment.caveat}"
                 )
-            if assessment.state == "experimental" and not manual_experimental:
+            if assessment.state == "experimental" and not (
+                manual_experimental or setup_bootstrap_experimental
+            ):
                 raise ValueError(
                     f"agent system {identity.system_id} is Experimental and requires an explicit manual override"
                 )

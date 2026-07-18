@@ -360,9 +360,9 @@ def _assert_sample_evidence(run_root: Path) -> dict[str, Any]:
     attempt_roots = sorted((run_root / "attempts").glob("attempt_*"))
     eligible_verifications = []
     for verification_path in sorted((run_root / "verification").glob("attempt_*.json")):
-        if verification_path.stem.endswith("-evidence") or verification_path.stem.endswith(
-            "-focused-probes"
-        ):
+        if verification_path.stem.endswith(
+            "-evidence"
+        ) or verification_path.stem.endswith("-focused-probes"):
             continue
         document = json.loads(verification_path.read_text(encoding="utf-8"))
         if document.get("acceptance_eligible") is True:
@@ -411,9 +411,7 @@ def _assert_sample_evidence(run_root: Path) -> dict[str, Any]:
         raise GateFailure("sample validation coverage did not prove every requirement")
 
     verification = json.loads(
-        (run_root / "verification" / f"{attempt_id}.json").read_text(
-            encoding="utf-8"
-        )
+        (run_root / "verification" / f"{attempt_id}.json").read_text(encoding="utf-8")
     )
     evidence = json.loads(
         (run_root / "verification" / f"{attempt_id}-evidence.json").read_text(
@@ -422,8 +420,7 @@ def _assert_sample_evidence(run_root: Path) -> dict[str, Any]:
     )
     if (
         verification.get("acceptance_eligible") is not True
-        or verification.get("metadata", {}).get("semantic_verifier_status")
-        != "success"
+        or verification.get("metadata", {}).get("semantic_verifier_status") != "success"
         or evidence.get("final_result") != 1
         or evidence.get("final_reason_code") != "accepted"
     ):
@@ -446,8 +443,7 @@ def _assert_sample_evidence(run_root: Path) -> dict[str, Any]:
     if (
         classification.get("difficulty") != "easy"
         or (metadata.get("raw_classification") or {}).get("difficulty") != "easy"
-        or (metadata.get("effective_classification") or {}).get("difficulty")
-        != "easy"
+        or (metadata.get("effective_classification") or {}).get("difficulty") != "easy"
         or signals.get("behavior_count") != 1
     ):
         raise GateFailure("narrow sample was not calibrated and persisted as easy")
@@ -472,7 +468,10 @@ def _assert_sample_evidence(run_root: Path) -> dict[str, Any]:
         raise GateFailure("sample presentation diverged from the canonical summary")
     for name in ("final_report.md", "selection_report.md"):
         report_text = (run_root / name).read_text(encoding="utf-8")
-        if "Repository checks: passed 1, failed 0, not run 0, unavailable 0." not in report_text:
+        if (
+            "Repository checks: passed 1, failed 0, not run 0, unavailable 0."
+            not in report_text
+        ):
             raise GateFailure(f"{name} diverged from the canonical summary")
     return {
         "attempt_count": len(attempt_roots),
@@ -498,9 +497,7 @@ def _scan_evidence_for_secrets(
 ) -> dict[str, Any]:
     matches: list[dict[str, str]] = []
     scanned = 0
-    generic = re.compile(
-        rb"(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})"
-    )
+    generic = re.compile(rb"(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})")
     for path in sorted(item for item in artifacts.rglob("*") if item.is_file()):
         try:
             contents = path.read_bytes()
@@ -804,7 +801,7 @@ def _transcript_html(setup: str, doctor: str, open_output: str) -> str:
         return (
             f'<section id="{identifier}" class="v-panel transcript-panel">'
             f'<header class="v-panel-header"><h2 class="v-panel-header__title">'
-            f"{html.escape(title)}</h2><span class=\"v-panel-header__meta\">"
+            f'{html.escape(title)}</h2><span class="v-panel-header__meta">'
             f"{html.escape(command)}</span></header>"
             f'<div class="v-panel__body"><pre class="v-code">{html.escape(body)}</pre></div>'
             f"</section>"
@@ -1097,6 +1094,24 @@ def run_gate(
         console_url = str(service_document["console_url"])
         if console_url not in opened.stdout:
             raise GateFailure("villani open did not return the running console URL")
+        # Pull-request delivery is a Pro workflow.  Release certification uses
+        # the signed, offline development fixture explicitly; production builds
+        # cannot enable this path without the development-only environment gate.
+        env["VILLANI_ALLOW_DEVELOPMENT_LICENSE"] = "1"
+        development_license = _run(
+            records,
+            artifacts,
+            "08-development-license",
+            [*prefix, "license", "development", "--json"],
+            env=env,
+        )
+        development_entitlement = json.loads(development_license.stdout)
+        if (
+            development_entitlement.get("tier") != "pro"
+            or development_entitlement.get("status") not in {"active", "offline_grace"}
+            or development_entitlement.get("issuer") != "development"
+        ):
+            raise GateFailure("signed development Pro entitlement was not activated")
         delivery_modes = _prove_delivery_modes(
             records=records,
             artifacts=artifacts,
@@ -1148,6 +1163,8 @@ def run_gate(
                         f"required screenshot is missing or empty: {path}"
                     )
                 screenshots.append(str(path))
+            if expected[-2].read_bytes() == expected[-1].read_bytes():
+                raise GateFailure("sample run and replay screenshots are identical")
         report.update(
             {
                 "verdict": "ONBOARDING GATE PASSED",
@@ -1165,6 +1182,7 @@ def run_gate(
                 "sample_selected_attempt": manifest["selected_attempt_id"],
                 "sample_evidence": sample_evidence,
                 "dead_letters": 0,
+                "development_entitlement": development_entitlement,
                 "delivery_modes": delivery_modes,
                 "screenshots": screenshots,
             }

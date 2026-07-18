@@ -257,9 +257,14 @@ def _villani_code(command: str) -> HarnessDiscovery:
     prefix, identity = resolve_harness_command(command, "villani-code")
     version: str | None
     try:
-        version = importlib.metadata.version("villani-code")
-    except importlib.metadata.PackageNotFoundError:
-        version = "0.1.0rc1" if prefix else None
+        from villani_code import __version__ as code_version
+
+        version = code_version
+    except ImportError:
+        try:
+            version = importlib.metadata.version("villani-code")
+        except importlib.metadata.PackageNotFoundError:
+            version = "1.0.0" if prefix else None
     readiness = HarnessReadiness(
         installed=prefix is not None,
         command_identity=identity,

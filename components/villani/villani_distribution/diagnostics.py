@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
+import hashlib
 import json
 import os
 import shutil
@@ -11,6 +12,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -20,7 +22,13 @@ from villani_ops.diagnostics import (
     build_repository_diagnostics,
     resolve_doctor_repository,
 )
+from villani_ops.closed_loop.agent_systems.discovery import discover_agent_harnesses
+from villani_ops.closed_loop.durable_io import write_json_atomic
+from villani_ops.self_service import PackageManifest, load_entitlement
+from pydantic import ValidationError
 
+from . import __version__
+from .migrations import MigrationError, check_upgrade
 from .onboarding import (
     SetupError,
     load_configuration,
@@ -28,6 +36,7 @@ from .onboarding import (
     validate_configuration,
 )
 from .services import ServiceError, service_status, villani_home
+from .update_system import UpdateError, UpdateManager
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,9 +46,16 @@ class DiagnosticCheck:
     message: str
     recovery_action: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
+    repositories_modified: bool = False
+    evidence_path: str = "diagnostics/doctor-latest.json"
 
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+    def as_dict(self, *, evidence_path: str | None = None) -> dict[str, Any]:
+        value = asdict(self)
+        value["repositories_modified"] = False
+        value["evidence_path"] = evidence_path or self.evidence_path
+        if self.status == "fail" and not self.recovery_action:
+            value["recovery_action"] = "Run: villani doctor --json"
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +64,7 @@ class DiagnosticReport:
     healthy: bool
     checks: tuple[DiagnosticCheck, ...]
     details: dict[str, Any] = field(default_factory=dict)
+    evidence_path: str = "diagnostics/doctor-latest.json"
 
     def as_dict(self) -> dict[str, Any]:
         value = {
@@ -60,7 +77,11 @@ class DiagnosticReport:
                 "warnings": sum(item.status == "warn" for item in self.checks),
                 "failed": sum(item.status == "fail" for item in self.checks),
             },
-            "checks": [item.as_dict() for item in self.checks],
+            "checks": [
+                item.as_dict(evidence_path=self.evidence_path) for item in self.checks
+            ],
+            "repositories_modified": False,
+            "evidence_path": self.evidence_path,
         }
         value.update(self.details)
         value["schema_version"] = "villani.doctor.v1"
@@ -71,19 +92,31 @@ class DiagnosticReport:
             "warnings": sum(item.status == "warn" for item in self.checks),
             "failed": sum(item.status == "fail" for item in self.checks),
         }
-        value["checks"] = [item.as_dict() for item in self.checks]
+        value["checks"] = [
+            item.as_dict(evidence_path=self.evidence_path) for item in self.checks
+        ]
+        value["repositories_modified"] = False
+        value["evidence_path"] = self.evidence_path
         return value
 
 
 _COMPONENTS = {
-    "villani": ("villani_distribution", "0.3.0rc1"),
-    "villani-ops": ("villani_ops", "0.2.0"),
-    "villani-code": ("villani_code", "0.1.0rc1"),
-    "villani-agentd": ("villani_agentd", "0.1.0"),
+    "villani": ("villani_distribution", __version__),
+    "villani-ops": ("villani_ops", __version__),
+    "villani-code": ("villani_code", __version__),
+    "villani-agentd": ("villani_agentd", __version__),
 }
 
 
 def _version(distribution: str, fallback: str = "unknown") -> str:
+    component = _COMPONENTS.get(distribution)
+    if component is not None:
+        try:
+            value = getattr(importlib.import_module(component[0]), "__version__", None)
+        except ImportError:
+            value = None
+        if isinstance(value, str) and value:
+            return value
     try:
         return importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
@@ -151,7 +184,7 @@ def _repository_check(repository: Path | None, source: str, *, explicit: bool) -
             "repository_access",
             "fail" if explicit else "warn",
             "No accessible Git repository is available for inspection.",
-            "Supply one with: villani doctor --repo PATH" if not explicit else None,
+            "Supply one with: villani doctor --repo PATH",
             {"path": None, "source": source, "requested": explicit},
         )
     return DiagnosticCheck(
@@ -482,23 +515,302 @@ def _console_check(url: str | None, *, service_running: bool = False) -> Diagnos
     )
 
 
+def _migration_check(home: Path) -> DiagnosticCheck:
+    try:
+        report = check_upgrade(home, apply=False)
+    except MigrationError as error:
+        return DiagnosticCheck(
+            "migrations",
+            "fail",
+            f"Migration compatibility failed: {error}",
+            "Run: villani update rollback",
+        )
+    return DiagnosticCheck(
+        "migrations",
+        "pass",
+        "Configuration, spool, and recorded run protocols are readable.",
+        details={
+            **asdict(report),
+            "preview_only": True,
+            "destructive": False,
+        },
+    )
+
+
+def _update_check(home: Path) -> DiagnosticCheck:
+    try:
+        state = UpdateManager(home).status()
+    except UpdateError as error:
+        return DiagnosticCheck(
+            "update_state",
+            "fail",
+            f"Update state is invalid: {error}",
+            "Run: villani update channel stable",
+        )
+    if state.status == "failed":
+        return DiagnosticCheck(
+            "update_state",
+            "fail",
+            f"The last update failed: {state.error or 'no failure detail was recorded'}",
+            "Run: villani update rollback",
+            state.model_dump(mode="json"),
+        )
+    if state.status == "available":
+        return DiagnosticCheck(
+            "update_state",
+            "warn",
+            f"Villani {state.available_version} is available; no update is forced.",
+            "Run: villani update preview",
+            state.model_dump(mode="json"),
+        )
+    return DiagnosticCheck(
+        "update_state",
+        "pass",
+        f"Update channel {state.policy.channel} is user controlled; no update is forced.",
+        details=state.model_dump(mode="json"),
+    )
+
+
+def _entitlement_check(home: Path, environ: Mapping[str, str]) -> DiagnosticCheck:
+    state = load_entitlement(home, environ=environ)
+    if state.status in {"invalid", "expired"}:
+        return DiagnosticCheck(
+            "entitlements",
+            "warn",
+            (
+                "The local Pro license is invalid or expired. Core safety and all recorded "
+                "evidence remain available."
+            ),
+            state.repair_action or "Run: villani license status",
+            state.model_dump(mode="json"),
+        )
+    if state.status == "offline_grace":
+        return DiagnosticCheck(
+            "entitlements",
+            "warn",
+            "Villani Pro is in offline grace; evidence and core safety are unaffected.",
+            "Run: villani license status",
+            state.model_dump(mode="json"),
+        )
+    return DiagnosticCheck(
+        "entitlements",
+        "pass",
+        f"Villani {state.tier.title()} entitlement is {state.status} and was checked locally.",
+        details=state.model_dump(mode="json"),
+    )
+
+
+def _managed_installation_check(home: Path) -> DiagnosticCheck:
+    root = home / "current"
+    manifest_path = root / "package-manifest.json"
+    if not root.is_dir():
+        return DiagnosticCheck(
+            "installation_manifest",
+            "pass",
+            "Villani is installed through a package environment rather than the managed side-by-side directory.",
+            details={"managed_installation": False},
+        )
+    if not manifest_path.is_file():
+        return DiagnosticCheck(
+            "installation_manifest",
+            "fail",
+            "The managed installation has no package manifest.",
+            "Run: villani update rollback",
+            {"manifest": str(manifest_path)},
+        )
+    try:
+        manifest = PackageManifest.model_validate_json(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        for item in manifest.files:
+            relative = Path(item.path)
+            path = (root / relative).resolve()
+            if not path.is_relative_to(root.resolve()) or not path.is_file():
+                raise ValueError(f"missing package member {item.path}")
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if digest != item.sha256 or path.stat().st_size != item.size_bytes:
+                raise ValueError(f"package member digest mismatch for {item.path}")
+    except (OSError, ValueError, ValidationError) as error:
+        return DiagnosticCheck(
+            "installation_manifest",
+            "fail",
+            f"Managed package verification failed: {error}",
+            "Run: villani update rollback",
+            {"manifest": str(manifest_path)},
+        )
+    return DiagnosticCheck(
+        "installation_manifest",
+        "pass",
+        f"Managed package {manifest.version} contents match their manifest.",
+        details={
+            "version": manifest.version,
+            "operating_system": manifest.operating_system,
+            "architecture": manifest.architecture,
+            "file_count": len(manifest.files),
+        },
+    )
+
+
+def _harness_checks() -> list[DiagnosticCheck]:
+    checks: list[DiagnosticCheck] = []
+    try:
+        discoveries = discover_agent_harnesses()
+    except (OSError, RuntimeError, ValueError) as error:
+        return [
+            DiagnosticCheck(
+                "harness_discovery",
+                "fail",
+                f"Coding-system discovery failed: {error}",
+                "Run: villani agents doctor",
+            )
+        ]
+    for discovery in discoveries:
+        readiness = discovery.readiness
+        required = discovery.harness_id == "villani-code"
+        identifier = discovery.harness_id
+        checks.append(
+            DiagnosticCheck(
+                f"harness:{identifier}",
+                "pass" if readiness.installed else ("fail" if required else "warn"),
+                (
+                    f"{discovery.display_name} {readiness.exact_version or ''} is installed."
+                    if readiness.installed
+                    else f"{discovery.display_name} is not installed."
+                ),
+                None if readiness.installed else readiness.repair_action,
+                discovery.model_dump(mode="json"),
+            )
+        )
+        if readiness.installed:
+            authentication_ready = readiness.authentication_status in {
+                "ready",
+                "not_applicable",
+            }
+            checks.append(
+                DiagnosticCheck(
+                    f"authentication:{identifier}",
+                    "pass" if authentication_ready else "warn",
+                    f"{discovery.display_name} authentication is {readiness.authentication_status}.",
+                    None if authentication_ready else readiness.repair_action,
+                    {"authentication_status": readiness.authentication_status},
+                )
+            )
+            protocol_ready = bool(
+                readiness.conformance_status == "passed"
+                or readiness.details.get("protocol_probe") == "passed"
+            )
+            checks.append(
+                DiagnosticCheck(
+                    f"protocol:{identifier}",
+                    "pass" if protocol_ready else "warn",
+                    f"{discovery.display_name} protocol conformance is {readiness.conformance_status}.",
+                    None if protocol_ready else readiness.repair_action,
+                    {
+                        "protocol": readiness.protocol,
+                        "conformance_status": readiness.conformance_status,
+                        "protocol_probe": readiness.details.get("protocol_probe"),
+                    },
+                )
+            )
+            qualified = readiness.qualification_state in {"qualified", "bootstrap"}
+            checks.append(
+                DiagnosticCheck(
+                    f"qualification:{identifier}",
+                    "pass" if qualified else "warn",
+                    f"{discovery.display_name} qualification is {readiness.qualification_state}.",
+                    None if qualified else readiness.repair_action,
+                    {"qualification_state": readiness.qualification_state},
+                )
+            )
+    return checks
+
+
+def _stale_runs_check(home: Path) -> DiagnosticCheck:
+    root = home / "runs"
+    stale: list[str] = []
+    if root.is_dir():
+        now = datetime.now(timezone.utc).timestamp()
+        for directory in root.iterdir():
+            state_path = directory / "state.json"
+            if not directory.is_dir() or not state_path.is_file():
+                continue
+            try:
+                value = json.loads(state_path.read_text(encoding="utf-8"))
+                terminal = bool(value.get("terminal")) if isinstance(value, dict) else False
+                age = now - state_path.stat().st_mtime
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not terminal and age > 24 * 60 * 60:
+                stale.append(directory.name)
+    return DiagnosticCheck(
+        "stale_runs",
+        "warn" if stale else "pass",
+        (
+            f"{len(stale)} run(s) have been non-terminal for more than 24 hours."
+            if stale
+            else "No stale non-terminal runs were detected."
+        ),
+        "Run: villani runs" if stale else None,
+        {"count": len(stale), "run_ids": stale[:100]},
+    )
+
+
+def _log_retention_check(home: Path) -> DiagnosticCheck:
+    path = home / "agentd" / "agentd.log"
+    size = path.stat().st_size if path.is_file() else 0
+    limit = 5 * 1024 * 1024
+    return DiagnosticCheck(
+        "bounded_logs",
+        "fail" if size > limit + 4096 else "pass",
+        (
+            f"The active service log is {size} bytes and exceeds its 5 MiB bound."
+            if size > limit + 4096
+            else "Service logs are within the tested 5 MiB active-file bound."
+        ),
+        "Run: villani cleanup --apply" if size > limit + 4096 else None,
+        {"size_bytes": size, "active_limit_bytes": limit, "retained_backups": 3},
+    )
+
+
 def run_doctor(
     *,
     repository: Path | None = None,
     environ: Mapping[str, str] | None = None,
     cwd: Path | None = None,
+    installation_only: bool = False,
 ) -> DiagnosticReport:
     env = dict(os.environ if environ is None else environ)
     home = villani_home(env)
+    evidence_path = home / "diagnostics" / "doctor-latest.json"
     checks: list[DiagnosticCheck] = [
         DiagnosticCheck(
             "version",
             "pass",
-            f"Villani {_version('villani', '0.3.0rc1')}",
+            f"Villani {_version('villani', __version__)}",
         ),
         _component_check(),
         _package_health_check(),
+        _managed_installation_check(home),
+        _migration_check(home),
+        _update_check(home),
+        _entitlement_check(home, env),
+        _storage_check(home),
+        _log_retention_check(home),
     ]
+    if installation_only:
+        healthy = not any(item.status == "fail" for item in checks)
+        report = DiagnosticReport(
+            utc_now(),
+            healthy,
+            tuple(checks),
+            {"installation_only": True, "inferred_commands_executed": False},
+            str(evidence_path),
+        )
+        try:
+            write_json_atomic(evidence_path, report.as_dict())
+        except OSError:
+            pass
+        return report
     configuration_checks, configuration, backends = _configuration_checks(home)
     checks.extend(configuration_checks)
     setup = configuration.get("setup") if isinstance(configuration, Mapping) else None
@@ -665,6 +977,7 @@ def run_doctor(
         )
     checks.extend(_backend_checks(backends, core["backend_connectivity"]))
     checks.extend(_adapter_checks(core.get("adapters", [])))
+    checks.extend(_harness_checks())
     capabilities = core.get("required_capabilities", {})
     recovery_by_capability = {
         "disk": "Free at least 100 MiB, then run: villani doctor",
@@ -681,6 +994,60 @@ def run_doctor(
                     recovery,
                 )
             )
+    disk_usable = capabilities.get("disk") is not False
+    checks.append(
+        DiagnosticCheck(
+            "disk",
+            "pass" if disk_usable else "fail",
+            "Disk capacity is sufficient for isolated work."
+            if disk_usable
+            else "Disk capacity is insufficient for isolated work.",
+            None if disk_usable else "Free at least 100 MiB, then run: villani doctor",
+            core.get("disk", {}),
+        )
+    )
+    isolation_usable = capabilities.get("execution_provider") is not False
+    checks.append(
+        DiagnosticCheck(
+            "isolation",
+            "pass" if isolation_usable else "fail",
+            "The configured execution provider can create isolated attempts."
+            if isolation_usable
+            else "The configured execution provider cannot provide required isolation.",
+            None
+            if isolation_usable
+            else "Repair the configured execution environment, then run: villani doctor",
+            {"execution_providers": core.get("execution_providers", [])},
+        )
+    )
+    validation_commands = core.get("likely_test_commands", [])
+    checks.append(
+        DiagnosticCheck(
+            "validation",
+            "pass" if validation_commands else "warn",
+            (
+                f"{len(validation_commands)} repository validation command(s) were detected without execution."
+                if validation_commands
+                else "No repository validation command was detected; alternative evidence will be required."
+            ),
+            None
+            if validation_commands
+            else "Run a task with: villani run TASK --validation-command COMMAND",
+            {"commands": validation_commands, "executed": False},
+        )
+    )
+    checks.append(
+        DiagnosticCheck(
+            "permissions",
+            "pass" if capabilities.get("repository") is not False else "fail",
+            "Repository and local storage permissions are sufficient."
+            if capabilities.get("repository") is not False
+            else "Repository permissions are insufficient.",
+            None
+            if capabilities.get("repository") is not False
+            else "Fix read/write permissions, then run: villani doctor",
+        )
+    )
     checks.append(_git_check())
     checks.append(
         _repository_check(
@@ -689,16 +1056,23 @@ def run_doctor(
             explicit=repository is not None,
         )
     )
-    checks.append(_storage_check(home))
     checks.append(
         _console_check(
             status.console_url if status else None,
             service_running=bool(status and status.running),
         )
     )
+    checks.append(_stale_runs_check(home))
     healthy = not any(item.status == "fail" for item in checks)
     core["repository_source"] = repository_source
-    return DiagnosticReport(utc_now(), healthy, tuple(checks), core)
+    report = DiagnosticReport(
+        utc_now(), healthy, tuple(checks), core, str(evidence_path)
+    )
+    try:
+        write_json_atomic(evidence_path, report.as_dict())
+    except OSError:
+        pass
+    return report
 
 
 def render_human(report: DiagnosticReport) -> str:
@@ -708,6 +1082,9 @@ def render_human(report: DiagnosticReport) -> str:
         lines.append(f"[{labels[check.status]}] {check.message}")
         if check.recovery_action:
             lines.append(check.recovery_action)
+        if check.status == "fail":
+            lines.append("Repositories modified: no")
+            lines.append(f"Evidence: {report.evidence_path}")
     lines.extend(("", "Villani is ready." if report.healthy else "Villani needs attention."))
     return "\n".join(lines)
 

@@ -553,14 +553,61 @@ export function SettingsPage({ client }: { client: ConsoleClient }) {
             <KeyValueGrid
               items={[
                 ["Installed version", environment.version],
+                ["Update state", environment.update.status],
+                ["Available version", environment.update.available_version ?? "None"],
                 [
                   "Migration",
                   environment.setup.valid ? "No blocked migration" : "Needs attention",
                 ],
                 ["Configuration format", environment.setup.schema_version ?? "Unknown"],
-                ["Update channel", "Not configured"],
+                [
+                  "Update channel",
+                  environment.update.policy.channel === "pinned"
+                    ? `pinned (${environment.update.policy.pinned_version})`
+                    : environment.update.policy.channel,
+                ],
               ]}
             />
+            <div className="v-panel__body console-stack">
+              <code>villani update status</code>
+              <code>villani update check</code>
+            </div>
+          </Panel>
+          <Panel id="entitlement">
+            <PanelHeader title="Entitlement" />
+            <KeyValueGrid
+              items={[
+                ["Plan", environment.entitlement.tier.toUpperCase()],
+                ["Status", environment.entitlement.status],
+                [
+                  "Offline grace ends",
+                  environment.entitlement.offline_grace_ends_at ?? "Not applicable",
+                ],
+                [
+                  "Evidence remains readable",
+                  environment.entitlement.evidence_readable ? "Yes" : "No",
+                ],
+              ]}
+            />
+            <div className="v-panel__body console-stack">
+              {!!environment.entitlement.locked_features.length && (
+                <p className="v-muted">
+                  Pro options: {environment.entitlement.locked_features.join(", ")}
+                </p>
+              )}
+              <code>villani license status</code>
+            </div>
+          </Panel>
+          <Panel id="support">
+            <PanelHeader title="Support bundle" />
+            <div className="v-panel__body console-stack">
+              <p>
+                Preview a local, default-redacted manifest before explicitly creating an
+                archive. Villani never uploads it automatically.
+              </p>
+              <code>villani support preview</code>
+              <code>villani support create --confirm-manifest</code>
+            </div>
           </Panel>
         </div>
         <Panel id="diagnostics">
@@ -571,6 +618,8 @@ export function SettingsPage({ client }: { client: ConsoleClient }) {
               ["Villani home", environment.storage.home || "Hosted workspace"],
               ["Synchronization failures", environment.synchronization.dead_letters],
               ["Last service error", environment.service.last_error ?? "None"],
+              ["Exact repair command", "villani doctor"],
+              ["Later correction import", "villani verification feedback-import"],
             ]}
           />
           {!!environment.setup.issues.length && (

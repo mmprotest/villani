@@ -9,3 +9,4 @@ export * from "./agentSystem.js";
 export * from "./qualification.js";
 export * from "./economics.js";
 export * from "./adaptiveVerification.js";
+export * from "./selfService.js";

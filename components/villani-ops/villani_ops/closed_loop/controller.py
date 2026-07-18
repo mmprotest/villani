@@ -1897,7 +1897,7 @@ class ClosedLoopController:
                 "repository_id": str(runtime.request.repository_path),
                 "repository": Path(runtime.request.repository_path).name,
                 "agent_name": "villani-ops",
-                "agent_version": "0.2.0",
+                "agent_version": "1.0.0",
                 "lineage": _mapping_copy(runtime.request.lineage),
             },
         )

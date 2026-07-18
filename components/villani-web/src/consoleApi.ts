@@ -46,6 +46,8 @@ export interface RunChoice {
   id: string;
   label: string;
   description: string;
+  available?: boolean;
+  requires_tier?: "pro";
 }
 
 export interface ConsoleRunOptions {
@@ -58,6 +60,8 @@ export interface ConsoleRunOptions {
   policy_presets: PolicyPreset[];
   advanced_policies: RunChoice[];
   routing_modes: string[];
+  routing_mode_availability?: Record<string, boolean>;
+  entitlement: ConsoleBootstrap["entitlement"];
   defaults: {
     delivery_mode: string;
     approval_mode: string;
@@ -397,6 +401,61 @@ const workspaceFallback = (): ConsoleBootstrap => ({
   storage: { home: "", runs: "", spool: "", writable: false },
   models: [],
   active_policy: null,
+  entitlement: {
+    schema_version: "villani.entitlement_state.v1",
+    tier: "free",
+    status: "free",
+    license_id: null,
+    issuer: null,
+    issued_at: null,
+    expires_at: null,
+    offline_grace_ends_at: null,
+    effective_features: [
+      "activity",
+      "doctor",
+      "evidence_read",
+      "isolation",
+      "manual_delivery",
+      "one_agent_system",
+      "support_bundle",
+      "updates",
+      "verification",
+    ],
+    locked_features: [],
+    core_safety_features: [],
+    evidence_readable: true,
+    accepted_runs_verifiable: true,
+    licensing_network_used: false,
+    source_data_shared: false,
+    repair_action: null,
+    evidence_path: "",
+  },
+  update: {
+    schema_version: "villani.update_state.v1",
+    installed_version: "unknown",
+    policy: {
+      schema_version: "villani.update_policy.v1",
+      channel: "stable",
+      pinned_version: null,
+      feed_url: null,
+      checks_enabled: true,
+    },
+    status: "idle",
+    available_version: null,
+    last_checked_at: null,
+    release_notes: null,
+    artifact_url: null,
+    artifact_sha256: null,
+    migration_preview: null,
+    active_installation: null,
+    previous_installation: null,
+    configuration_backup: null,
+    evidence_path: null,
+    error: null,
+    repositories_modified: false,
+    source_uploaded: false,
+    forced: false,
+  },
 });
 
 export class ConsoleClient {
@@ -458,7 +517,14 @@ export class ConsoleClient {
 
   async bootstrap(signal?: AbortSignal): Promise<ConsoleBootstrap> {
     try {
-      return await this.get<ConsoleBootstrap>("/v1/console/bootstrap", signal);
+      const value = await this.get<ConsoleBootstrap>("/v1/console/bootstrap", signal);
+      const fallback = workspaceFallback();
+      return {
+        ...fallback,
+        ...value,
+        entitlement: value.entitlement ?? fallback.entitlement,
+        update: value.update ?? fallback.update,
+      };
     } catch (error) {
       if (signal?.aborted) throw error;
       // Older connected deployments do not expose the Console bootstrap yet.

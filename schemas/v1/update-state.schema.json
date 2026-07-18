@@ -1,0 +1,222 @@
+{
+  "$id": "https://schemas.villani.local/v1/update-state.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "active_installation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "artifact_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "available_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "configuration_backup": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "forced": {
+      "const": false
+    },
+    "installed_version": {
+      "type": "string"
+    },
+    "last_checked_at": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "migration_preview": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "checked_run_bundles": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "configuration_backup_required": {
+          "type": "boolean"
+        },
+        "configuration_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "destructive": {
+          "const": false
+        },
+        "protocol_majors": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "repositories_modified": {
+          "const": false
+        },
+        "spool_version_after": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "spool_version_before": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "configuration_version",
+        "spool_version_before",
+        "spool_version_after",
+        "checked_run_bundles",
+        "protocol_majors",
+        "actions",
+        "configuration_backup_required",
+        "destructive",
+        "repositories_modified"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "policy": {
+      "$id": "https://schemas.villani.local/v1/update-policy.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "enum": [
+            "stable",
+            "beta",
+            "pinned"
+          ]
+        },
+        "checks_enabled": {
+          "type": "boolean"
+        },
+        "feed_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pinned_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schema_version": {
+          "const": "villani.update_policy.v1"
+        }
+      },
+      "required": [
+        "schema_version",
+        "channel",
+        "pinned_version",
+        "feed_url",
+        "checks_enabled"
+      ],
+      "title": "Villani update policy v1",
+      "type": "object"
+    },
+    "previous_installation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "release_notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "repositories_modified": {
+      "const": false
+    },
+    "schema_version": {
+      "const": "villani.update_state.v1"
+    },
+    "source_uploaded": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "idle",
+        "current",
+        "available",
+        "downloaded",
+        "installing",
+        "verified",
+        "rolled_back",
+        "failed"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "installed_version",
+    "policy",
+    "status",
+    "available_version",
+    "last_checked_at",
+    "release_notes",
+    "artifact_url",
+    "artifact_sha256",
+    "migration_preview",
+    "active_installation",
+    "previous_installation",
+    "configuration_backup",
+    "evidence_path",
+    "error",
+    "repositories_modified",
+    "source_uploaded",
+    "forced"
+  ],
+  "title": "Villani update state v1",
+  "type": "object"
+}

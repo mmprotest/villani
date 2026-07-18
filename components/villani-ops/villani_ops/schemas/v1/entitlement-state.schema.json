@@ -1,0 +1,121 @@
+{
+  "$id": "https://schemas.villani.local/v1/entitlement-state.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted_runs_verifiable": {
+      "const": true
+    },
+    "core_safety_features": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "effective_features": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "evidence_path": {
+      "type": "string"
+    },
+    "evidence_readable": {
+      "const": true
+    },
+    "expires_at": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "issued_at": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "issuer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "license_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "licensing_network_used": {
+      "const": false
+    },
+    "locked_features": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "offline_grace_ends_at": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "repair_action": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "const": "villani.entitlement_state.v1"
+    },
+    "source_data_shared": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "free",
+        "active",
+        "offline_grace",
+        "expired",
+        "invalid"
+      ]
+    },
+    "tier": {
+      "enum": [
+        "free",
+        "pro"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "tier",
+    "status",
+    "license_id",
+    "issuer",
+    "issued_at",
+    "expires_at",
+    "offline_grace_ends_at",
+    "effective_features",
+    "locked_features",
+    "core_safety_features",
+    "evidence_readable",
+    "accepted_runs_verifiable",
+    "licensing_network_used",
+    "source_data_shared",
+    "repair_action",
+    "evidence_path"
+  ],
+  "title": "Villani entitlement state v1",
+  "type": "object"
+}

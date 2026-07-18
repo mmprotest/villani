@@ -353,6 +353,15 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
                     "privacy": {"secrets_exposed": False, "local_first": True},
                     "synchronization": bootstrap["synchronization"],
                     "workspace": bootstrap["workspace"],
+                    "version": bootstrap["version"],
+                    "entitlement": bootstrap["entitlement"],
+                    "update": bootstrap["update"],
+                    "commands": {
+                        "doctor": "villani doctor",
+                        "update_status": "villani update status",
+                        "support_preview": "villani support preview",
+                        "license_status": "villani license status",
+                    },
                 },
             )
             return True

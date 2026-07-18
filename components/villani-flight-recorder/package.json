@@ -1,6 +1,6 @@
 {
   "name": "villani-flight-recorder",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Villani session parsing, indexing, and replay data engine with a compatibility CLI.",
   "type": "module",
   "bin": {

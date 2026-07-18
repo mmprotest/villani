@@ -116,31 +116,37 @@ function accountingIssues(document, valueKeys, statusKey, instancePath = "") {
 function adaptiveMoneyIssues(value, instancePath) {
     if (!isRecord(value))
         return [];
-    const known = value.accounting_status === "complete" || value.accounting_status === "partial";
+    const known = value.accounting_status === "complete" ||
+        value.accounting_status === "partial";
     const hasMoney = value.amount !== null && value.currency !== null;
     if (known !== hasMoney) {
-        return [{
+        return [
+            {
                 instancePath,
                 keyword: "accounting_status",
                 message: known
                     ? "known money requires amount and currency"
                     : "unknown money must remain null",
-            }];
+            },
+        ];
     }
     return [];
 }
 function adaptiveDurationIssues(value, instancePath) {
     if (!isRecord(value))
         return [];
-    const known = value.accounting_status === "complete" || value.accounting_status === "partial";
+    const known = value.accounting_status === "complete" ||
+        value.accounting_status === "partial";
     if (known !== (value.duration_ms !== null)) {
-        return [{
+        return [
+            {
                 instancePath,
                 keyword: "accounting_status",
                 message: known
                     ? "known duration requires duration_ms"
                     : "unknown duration must remain null",
-            }];
+            },
+        ];
     }
     return [];
 }
@@ -680,10 +686,13 @@ function semanticErrors(document) {
     }
     if (version === "villani.review_package.v1") {
         if (document.status === "ready_to_apply" &&
-            ((Array.isArray(document.requirements_not_proved) && document.requirements_not_proved.length > 0) ||
+            ((Array.isArray(document.requirements_not_proved) &&
+                document.requirements_not_proved.length > 0) ||
                 document.unresolved_decision !== null ||
                 (Array.isArray(document.checks) &&
-                    document.checks.filter(isRecord).some((check) => check.status !== "passed")))) {
+                    document.checks
+                        .filter(isRecord)
+                        .some((check) => check.status !== "passed")))) {
             errors.push({
                 instancePath: "/status",
                 keyword: "review_package_authority",
@@ -720,14 +729,16 @@ function semanticErrors(document) {
                     : "unknown full-trace use must remain null",
             });
         }
-        if (document.outcome === "corrected_before_use" && !document.correction_summary) {
+        if (document.outcome === "corrected_before_use" &&
+            !document.correction_summary) {
             errors.push({
                 instancePath: "/correction_summary",
                 keyword: "human_outcome",
                 message: "corrected outcomes require a correction summary",
             });
         }
-        if (["reverted", "reopened_defect"].includes(String(document.outcome)) && !document.linked_reference) {
+        if (["reverted", "reopened_defect"].includes(String(document.outcome)) &&
+            !document.linked_reference) {
             errors.push({
                 instancePath: "/linked_reference",
                 keyword: "human_outcome",
@@ -757,7 +768,9 @@ function semanticErrors(document) {
         errors.push(...adaptiveMoneyIssues(document.verification_cost, "/verification_cost"), ...adaptiveMoneyIssues(document.review_cost, "/review_cost"), ...adaptiveMoneyIssues(document.total_accepted_change_cost, "/total_accepted_change_cost"));
     }
     if (version === "villani.gate_d.v1") {
-        const arms = Array.isArray(document.arms) ? document.arms.filter(isRecord) : [];
+        const arms = Array.isArray(document.arms)
+            ? document.arms.filter(isRecord)
+            : [];
         arms.forEach((arm, index) => {
             errors.push(...adaptiveMoneyIssues(arm.total_cost, `/arms/${index}/total_cost`), ...adaptiveDurationIssues(arm.elapsed_duration, `/arms/${index}/elapsed_duration`));
             const known = ["complete", "partial"].includes(String(arm.review_time_accounting_status));
@@ -772,9 +785,11 @@ function semanticErrors(document) {
         const statuses = Array.isArray(document.checks)
             ? document.checks.filter(isRecord).map((check) => String(check.status))
             : [];
-        if ((document.status === "PASS" && statuses.some((status) => status !== "pass")) ||
+        if ((document.status === "PASS" &&
+            statuses.some((status) => status !== "pass")) ||
             (document.status === "FAIL" && !statuses.includes("fail")) ||
-            (document.status === "INSUFFICIENT_EVIDENCE" && !statuses.includes("insufficient_evidence")) ||
+            (document.status === "INSUFFICIENT_EVIDENCE" &&
+                !statuses.includes("insufficient_evidence")) ||
             document.next_milestone_permitted !== (document.status === "PASS")) {
             errors.push({
                 instancePath: "/status",

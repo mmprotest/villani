@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "villani"
-version = "0.3.0rc1"
+version = "1.0.0"
 description = "Local-first Villani coding-agent product distribution"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "villani-ops==0.2.0",
-  "villani-code==0.1.0rc1",
-  "villani-agentd==0.1.0",
+  "villani-ops==1.0.0",
+  "villani-code==1.0.0",
+  "villani-agentd==1.0.0",
+  "packaging>=23",
   "PyYAML>=6",
 ]
 

@@ -7,8 +7,8 @@ import argparse
 import hashlib
 import json
 import os
+import secrets
 import shutil
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,22 +43,35 @@ def expected(source: Path) -> dict[str, str]:
     return values
 
 
-def synchronize(source: Path, destination: Path) -> dict[str, str]:
+def _staging_directory(destination: Path) -> Path:
+    for _attempt in range(10):
+        candidate = destination.parent / (
+            f".{destination.name}.{secrets.token_hex(8)}"
+        )
+        try:
+            candidate.mkdir()
+        except FileExistsError:
+            continue
+        return candidate
+    raise RuntimeError("could not allocate a Console asset staging directory")
+
+
+def synchronize(
+    source: Path, destination: Path, *, force: bool = False
+) -> dict[str, str]:
     values = expected(source)
     manifest_path = destination / MANIFEST
     try:
         packaged_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         packaged_manifest = None
-    if inventory(destination) == values and packaged_manifest == {
+    if not force and inventory(destination) == values and packaged_manifest == {
         "schema_version": "villani.console_assets.v1",
         "files": values,
     }:
         return values
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(
-        tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent)
-    )
+    temporary = _staging_directory(destination)
     backup = destination.with_name(f".{destination.name}.previous")
     try:
         for relative in values:
@@ -98,6 +111,7 @@ def main() -> int:
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--destination", type=Path, default=DEFAULT_DESTINATION)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     source = args.source.resolve()
     destination = args.destination.resolve()
@@ -118,7 +132,7 @@ def main() -> int:
             )
         print(f"Console assets verified: {len(source_values)} files")
         return 0
-    values = synchronize(source, destination)
+    values = synchronize(source, destination, force=args.force)
     print(f"Console assets synchronized: {len(values)} files -> {destination}")
     return 0
 

@@ -1,3 +1,3 @@
 """Public Villani distribution support."""
 
-__version__ = "0.3.0rc1"
+__version__ = "1.0.0"

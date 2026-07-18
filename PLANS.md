@@ -4570,3 +4570,89 @@ Remaining limitations, assumptions, and risks:
 Next permitted milestone:
 - PT9 remains `INSUFFICIENT_EVIDENCE` until matched frozen founder cases make every Gate D check
   pass. PT10 was not started.
+
+#### 2026-07-18: Product Transformation Milestone PT10, self-service daily-driver Pro product
+
+Status: `INSUFFICIENT_EVIDENCE`. The PT10 implementation is complete and the Windows x86_64
+release candidate passed standalone package, install, setup, real-task, proof, Doctor, update,
+rollback, support-bundle, supply-chain, performance, and screenshot certification. The milestone is
+not marked complete because the macOS and Linux hosted certification matrix has not produced current
+run artifacts in this pass; cross-platform release acceptance therefore remains unproved. PT11 was
+not started.
+
+Changed surface:
+- Added canonical 1.0.0 versioning, deterministic standalone release archives, package manifests,
+  CycloneDX SBOM inventory, strict artifact inspection, dependency/secret/malware scans, offline
+  installation documentation, and a Windows/macOS/Linux CI certification matrix.
+- Added no-YAML guided setup, exact-version reporting, comprehensive Doctor evidence, local
+  privacy-redacted support bundles, retention/cleanup, bounded logs, performance targets, and
+  user-controlled stable, beta, and pinned updates with preview, backup, atomic switch, startup
+  verification, crash recovery, and rollback.
+- Added centralized Free/Pro entitlements with signed development fixtures and offline grace,
+  preserving all core safety and durable evidence after expiry; added CLI/Console branch and Pro
+  pull-request delivery, Activity repeat, proof copy/deep links, and explicit later correction or
+  revert import.
+- Added eight normative and packaged schemas, strict Python/TypeScript models, Console Settings and
+  daily-workflow presentation, distribution and self-service documentation, tests, screenshots, and
+  readable/machine PT10 completion reports.
+
+Architectural decisions:
+- The public packages, Helm chart, compatibility document, release metadata, CLI, and Settings share
+  one canonical version. Artifacts install without a checkout, sibling node_modules, source venv,
+  PYTHONPATH, or NODE_PATH.
+- Updates are opt-in and local-first. Checks send only the Villani version, accept HTTPS or an
+  explicitly local feed, verify size/SHA/strict archive contents, preview configuration and spool
+  compatibility before mutation, stage side-by-side, atomically switch a stable launcher, verify
+  startup and install Doctor, and preserve a verified rollback target. No forced update exists.
+- Entitlement decisions are centralized. Free retains one configured system, isolation,
+  acceptance-grade verification/evidence, manual delivery, and Activity; Pro gates only advanced
+  routing, escalation, qualification, learning, pull-request delivery, analytics, and export.
+  Expiry never hides evidence or weakens verification, and licensing receives no source.
+- Support bundles are explicit local exports with a preview and strict allowlist. Secrets, prompts,
+  source, diffs, repository names, usernames, absolute paths, and terminal content are redacted by
+  default; run evidence is absent unless exact run IDs are selected, and upload is never automatic.
+- Existing config v1, spool versions, and run protocol v1/v2 remain readable. Migration checks are
+  additive, previewable, backed up before switching, and fail closed on newer or malformed state.
+
+Verification:
+- Villani Code: 686 passed, 1 skipped, 27 warnings in 135.68 seconds. Villani Ops authoritative
+  clean run: 1,285 passed, 2 skipped, 116 deselected in 319.78 seconds. Agentd: 87 passed in
+  20.49 seconds. Distribution: 77 passed in 204.82 seconds. Control Plane: 80 passed, 9 skipped,
+  43 warnings in 13.62 seconds. Root closed loop: 11 passed with 1 warning in 48.97 seconds.
+- Run Model: 6 files/17 tests plus typecheck/build passed. UI: 4 tests plus build passed. Flight
+  Recorder: 21 files/118 tests plus typecheck/build/format passed. Web: 4 files/25 tests plus
+  typecheck/build/format passed. Packaged Console parity verified all 3 manifest entries.
+- Version contract verified 30 declarations at 1.0.0; all 8 schema pairs were byte-identical; scoped
+  Ruff, Python compilation, and scoped mypy passed; source credential scan found 0 findings; all
+  four npm production audits and the isolated Python dependency audit found 0 vulnerabilities.
+- Final Windows package smoke passed in 201.7 seconds. The 8-file artifact expanded to 318,593,997
+  bytes, contained 287 SBOM components, had SHA256
+  `e3276fd3b3526b10945f4a981eca69b696c8a385494813e3daa064fe946b2365`, produced 0 secret
+  findings, and passed Microsoft Defender with no threats. Install, Doctor, stable update, migration
+  preview, atomic switch, startup verification, rollback, support inspection, and dry-run cleanup
+  all passed.
+- Final onboarding gate passed in 119.7 seconds from the installed product: setup required no YAML,
+  the sample run completed with one accepted attempt, one repository check, and three proved
+  requirements; all delivery modes passed, 1,080 files produced 0 secret findings, the service was
+  stopped, and five distinct screenshots were captured and inspected.
+
+Remaining limitations, assumptions, and risks:
+- Only Windows x86_64 has a current platform-certification artifact. macOS and Linux are configured
+  in hosted CI and documented, but their clean artifact/install/task/update/rollback/support runs
+  were not observed here. This is the sole PT10 acceptance-evidence blocker.
+- Release candidates use SHA256 plus a strict content manifest but do not yet carry a publisher
+  signature or signed update-feed envelope. Support/evidence archives are redacted but not encrypted
+  at rest. Worktree/process isolation is not a kernel sandbox.
+- Real authenticated Codex and Claude Code qualification was not exercised; the end-to-end gate used
+  Villani Code and fake external-conformance coverage. Unknown provider cost remains null with an
+  accounting status.
+- Broader repository mypy/Ruff baselines contain pre-existing findings outside the PT10-scoped
+  checks. One OneDrive-hosted process-heartbeat test failed from atomic-replace interference and
+  passed unchanged in `C:\tmp`; the authoritative full Ops suite passed there.
+- Reports: `docs/PT10_COMPLETION_REPORT.md` and `docs/PT10_COMPLETION_REPORT.json`. Windows package
+  evidence is under `.release-smoke/pt10-final/release`; onboarding evidence and screenshots are
+  under `.release-smoke/pt10-onboarding-screenshots-final`.
+
+Next permitted milestone:
+- PT10 remains `INSUFFICIENT_EVIDENCE` until clean macOS and Linux hosted certification artifacts
+  pass the committed matrix. PT11 was not started.

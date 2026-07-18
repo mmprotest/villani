@@ -1,0 +1,130 @@
+{
+  "$id": "https://schemas.villani.local/v1/support-bundle-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archive_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "archive_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "diffs_included": {
+      "const": false
+    },
+    "explicit_run_ids": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "generated_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "included": {
+            "type": "boolean"
+          },
+          "logical_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source_class": {
+            "enum": [
+              "versions",
+              "schemas",
+              "logs",
+              "doctor",
+              "failure_codes",
+              "run_evidence"
+            ]
+          }
+        },
+        "required": [
+          "logical_name",
+          "source_class",
+          "included",
+          "reason",
+          "size_bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "preview": {
+      "type": "boolean"
+    },
+    "prompts_included": {
+      "const": false
+    },
+    "redactions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "repositories_modified": {
+      "const": false
+    },
+    "schema_version": {
+      "const": "villani.support_bundle_manifest.v1"
+    },
+    "source_included": {
+      "const": false
+    },
+    "terminal_content_included": {
+      "const": false
+    },
+    "uploaded": {
+      "const": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "generated_at",
+    "preview",
+    "explicit_run_ids",
+    "items",
+    "redactions",
+    "archive_name",
+    "archive_sha256",
+    "uploaded",
+    "repositories_modified",
+    "prompts_included",
+    "source_included",
+    "diffs_included",
+    "terminal_content_included"
+  ],
+  "title": "Villani privacy-preserving support bundle manifest v1",
+  "type": "object"
+}

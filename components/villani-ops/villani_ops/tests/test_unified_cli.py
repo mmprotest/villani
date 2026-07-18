@@ -521,11 +521,22 @@ def test_run_defaults_to_current_git_repository(
 def test_run_exposes_each_public_delivery_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    isolated_home: Path,
     delivery_mode: str,
     materialization_type: str,
     approval_mode: str,
 ) -> None:
     _init()
+    if delivery_mode == "pull-request":
+        monkeypatch.setenv("VILLANI_ALLOW_DEVELOPMENT_LICENSE", "1")
+        shutil.copyfile(
+            REPOSITORY_ROOT
+            / "integration"
+            / "fixtures"
+            / "licenses"
+            / "development-pro.json",
+            isolated_home / "license.json",
+        )
     repository = tmp_path / "repo"
     repository.mkdir()
     monkeypatch.setattr(unified, "_git_repository_root", lambda path: repository)

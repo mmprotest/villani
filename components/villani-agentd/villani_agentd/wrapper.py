@@ -15,6 +15,7 @@ from .config import Limits
 from .process import CapturedStream, ProcessResult, run_process
 from .trace_context import propagated_environment
 from .adapters import AdapterContext, get_adapter
+from . import __version__
 
 
 def _now() -> datetime:
@@ -75,7 +76,7 @@ def _event(
         resource=ResourceV2(
             schema_version="villani.resource.v2",
             service_name="villani-agentd",
-            service_version="0.1.0",
+            service_version=__version__,
             deployment_environment="local",
             host_id=None,
             process_id=str(os.getpid()),

@@ -1,0 +1,67 @@
+{
+  "$id": "https://schemas.villani.local/v1/license.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expires_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "features": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "issued_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "issuer": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "license_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "offline_grace_days": {
+      "maximum": 90,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "villani.license.v1"
+    },
+    "signature": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "signature_algorithm": {
+      "const": "RS256"
+    },
+    "subject": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "tier": {
+      "const": "pro"
+    }
+  },
+  "required": [
+    "schema_version",
+    "license_id",
+    "tier",
+    "issued_at",
+    "expires_at",
+    "offline_grace_days",
+    "features",
+    "issuer",
+    "subject",
+    "signature_algorithm",
+    "signature"
+  ],
+  "title": "Villani offline license v1",
+  "type": "object"
+}

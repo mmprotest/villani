@@ -1,0 +1,21 @@
+{
+  "expires_at": "2099-12-31T23:59:59Z",
+  "features": [
+    "multi_harness_qualification",
+    "automatic_routing_escalation",
+    "adaptive_verification",
+    "repository_learning",
+    "pull_request_delivery",
+    "analytics",
+    "advanced_export"
+  ],
+  "issued_at": "2026-07-18T00:00:00Z",
+  "issuer": "development",
+  "license_id": "dev_pt10_fixture",
+  "offline_grace_days": 14,
+  "schema_version": "villani.license.v1",
+  "signature": "auVS5l0LTUReSHs_jnyTQ8Jwe16_FG_OpPPa2r_Qi7Co_TPww6fCEODaM-0gdPn9mQAF1zbOjT4NMJz_e3uJc-3l-kokG9nYn2L3RuYmE5hsNkgnNLfair6Niz6R03ccvgXMUd9CmJkU7TC8-W1xS3BaWP5435gPuKoh1NJOSkx9YnM0ZRZbg2D1ptTit1-kTO7DfvDF8ZrZrW8RhJBGA_055E331k4qKoggtBb4vPA-IhuTK2BTKlDVwf0YzVCtlVTsdM164CZgQ8rrwkdpXULVDtTZwM5XA7eMWs4pZSf_qVUhoJzTnLSWEUWT4he5Bc-q4jKlVFBA0HSzCrjKzQ",
+  "signature_algorithm": "RS256",
+  "subject": "local-development",
+  "tier": "pro"
+}

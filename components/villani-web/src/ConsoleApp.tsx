@@ -246,6 +246,14 @@ export function filterHistory(
   });
 }
 
+function repeatTaskLink(entry: ConsoleHistoryEntry): string | null {
+  if (entry.kind !== "run" || !entry.repository || !entry.task) return null;
+  return `/console?${new URLSearchParams({
+    repository: entry.repository,
+    task: entry.task,
+  }).toString()}`;
+}
+
 function ActivityPage({ client }: { client: ConsoleClient }) {
   const [filters, setFilters] = useState(initialFilters);
   const [refresh, setRefresh] = useState(false);
@@ -420,15 +428,21 @@ function ActivityPage({ client }: { client: ConsoleClient }) {
                 {
                   key: "next",
                   header: "Next action",
-                  render: (entry) => (
-                    <a href={entry.deep_link}>
-                      {entry.kind === "session"
-                        ? "Review session"
-                        : /fail|reject|exhaust/i.test(entry.status)
-                          ? "Review evidence"
-                          : "Open task"}
-                    </a>
-                  ),
+                  render: (entry) => {
+                    const repeat = repeatTaskLink(entry);
+                    return (
+                      <div className="console-stack console-stack--compact">
+                        <a href={entry.deep_link}>
+                          {entry.kind === "session"
+                            ? "Review session"
+                            : /fail|reject|exhaust/i.test(entry.status)
+                              ? "Review evidence"
+                              : "Open task"}
+                        </a>
+                        {repeat && <a href={repeat}>Repeat task</a>}
+                      </div>
+                    );
+                  },
                 },
               ]}
             />

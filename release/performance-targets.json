@@ -1,0 +1,90 @@
+{
+  "schema_version": "villani.performance_targets.v1",
+  "version": "1.0.0",
+  "targets": [
+    {
+      "id": "shell_version_render_p95",
+      "description": "An installed standalone `villani --version` process renders and exits.",
+      "maximum": 5000,
+      "unit": "milliseconds",
+      "evidence": "python scripts/pt10-performance-gate.py --command <installed-villani> --home <empty-home> --output <report>"
+    },
+    {
+      "id": "installation_doctor_startup_p95",
+      "description": "Installation-only doctor starts, renders valid JSON, and exits without repository access.",
+      "maximum": 10000,
+      "unit": "milliseconds",
+      "evidence": "python scripts/pt10-performance-gate.py --command <installed-villani> --home <empty-home> --output <report>"
+    },
+    {
+      "id": "idempotent_submission_duplicate_runs",
+      "description": "Repeating one submission id creates no additional canonical run.",
+      "maximum": 0,
+      "unit": "additional_runs",
+      "evidence": "python -m pytest -q components/villani-agentd/tests/test_console.py -k idempotent"
+    },
+    {
+      "id": "durable_acknowledged_event_loss",
+      "description": "Acknowledged duplicate or retried event batches lose no canonical event.",
+      "maximum": 0,
+      "unit": "events",
+      "evidence": "python -m pytest -q components/villani-agentd/tests/test_agentd_core.py -k idempotent"
+    },
+    {
+      "id": "console_reconnect",
+      "description": "Activity polling recovers after one transient connection failure.",
+      "maximum": 2,
+      "unit": "seconds",
+      "evidence": "npm test -- --run test/console.test.tsx"
+    },
+    {
+      "id": "structured_log_active_file",
+      "description": "The active structured service log rotates at a bounded size.",
+      "maximum": 5242880,
+      "unit": "bytes",
+      "evidence": "python -m pytest -q components/villani-agentd/tests/test_agentd_core.py -k structured_log"
+    },
+    {
+      "id": "structured_log_backups",
+      "description": "Structured service log retention is bounded.",
+      "maximum": 3,
+      "unit": "files",
+      "evidence": "python -m pytest -q components/villani-agentd/tests/test_agentd_core.py -k structured_log"
+    },
+    {
+      "id": "cleanup_default_mutations",
+      "description": "Retention cleanup is a dry run unless the user explicitly applies it.",
+      "maximum": 0,
+      "unit": "mutations",
+      "evidence": "python -m pytest -q components/villani/tests/test_pt10_self_service.py -k cleanup"
+    },
+    {
+      "id": "retention_run_deletions",
+      "description": "Automatic maintenance never deletes run bundles or configuration.",
+      "maximum": 0,
+      "unit": "runs",
+      "evidence": "python -m pytest -q components/villani/tests/test_pt10_self_service.py -k cleanup"
+    },
+    {
+      "id": "crash_recovery_repository_mutations",
+      "description": "Interrupted update recovery restores the prior installation without touching repositories.",
+      "maximum": 0,
+      "unit": "repositories",
+      "evidence": "python -m pytest -q components/villani/tests/test_pt10_self_service.py -k interrupted_switch"
+    },
+    {
+      "id": "idle_cpu_time",
+      "description": "An idle local service consumes at most a short bounded CPU burst over a two-second observation.",
+      "maximum": 0.25,
+      "unit": "cpu_seconds_per_2_seconds",
+      "evidence": "python -m pytest -q components/villani/tests/test_pt10_performance.py -k idle"
+    },
+    {
+      "id": "idle_model_or_gpu_processes",
+      "description": "An idle Villani service launches no model server or GPU worker process.",
+      "maximum": 0,
+      "unit": "processes",
+      "evidence": "python -m pytest -q components/villani/tests/test_pt10_performance.py -k idle"
+    }
+  ]
+}

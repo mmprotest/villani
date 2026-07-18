@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import importlib.metadata
 import json
 import os
@@ -95,6 +96,17 @@ class FinalVerifier(Protocol):
 
 
 def _version(distribution: str, fallback: str = "unknown") -> str:
+    module_name = {
+        "villani-ops": "villani_ops",
+        "villani-code": "villani_code",
+    }.get(distribution)
+    if module_name:
+        try:
+            value = getattr(importlib.import_module(module_name), "__version__", None)
+        except ImportError:
+            value = None
+        if isinstance(value, str) and value:
+            return value
     try:
         return importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
@@ -189,8 +201,8 @@ def _environment_identity(*, execution_provider: str) -> tuple[str, dict[str, An
         "platform": platform.platform(),
         "machine": platform.machine(),
         "execution_provider": execution_provider,
-        "villani_ops": _version("villani-ops", "0.2.0+source"),
-        "villani_code": _version("villani-code", "0.1.0+source"),
+        "villani_ops": _version("villani-ops", "1.0.0"),
+        "villani_code": _version("villani-code", "1.0.0"),
     }
     return canonical_digest(document), document
 
@@ -247,11 +259,11 @@ class ProductArmExecutor:
         metadata = self.backend.metadata if isinstance(self.backend.metadata, dict) else {}
         return AgentSystemIdentity(
             product="Villani" if harness == "villani_product" else "Direct coding system",
-            product_version=_version("villani-ops", "0.2.0+source"),
+            product_version=_version("villani-ops", "1.0.0"),
             harness=harness,
             harness_version="founder_thesis_lab_v1",
             agent=self.backend.command_name or "villani-code",
-            agent_version=_version("villani-code", "0.1.0+source"),
+            agent_version=_version("villani-code", "1.0.0"),
             model=self.backend.model,
             provider=self.backend.provider,
             serving_engine=(str(metadata.get("serving_engine")) if metadata.get("serving_engine") else None),
@@ -470,11 +482,11 @@ class ProductArmExecutor:
         )
         identity = AgentSystemIdentity(
             product="Villani",
-            product_version=_version("villani-ops", "0.2.0+source"),
+            product_version=_version("villani-ops", "1.0.0"),
             harness="villani_product",
             harness_version="founder_thesis_lab_v1",
             agent=configured_backend.command_name or "villani-code",
-            agent_version=_version("villani-code", "0.1.0+source"),
+            agent_version=_version("villani-code", "1.0.0"),
             model=str(model) if model else configured_backend.model,
             provider=configured_backend.provider,
             serving_engine=(

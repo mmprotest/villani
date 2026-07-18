@@ -17,6 +17,7 @@ from .lifecycle import doctor, run_foreground_service, start_background, stop_ba
 from .wrapper import wrap_adapter
 from .adapters import ADAPTERS
 from .local_import import LocalRunImporter
+from . import __version__
 
 
 def _add_limits(parser: argparse.ArgumentParser) -> None:
@@ -47,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     enroll.add_argument("--token", required=True)
     enroll.add_argument("--installation-id", required=True)
     enroll.add_argument("--agent-name", default="villani-agentd")
-    enroll.add_argument("--agent-version", default="0.1.0")
+    enroll.add_argument("--agent-version", default=__version__)
     enroll.add_argument("--batch-size", type=int, default=250)
     enroll.add_argument("--concurrency", type=int, default=2)
     subparsers.add_parser("sync-once", help="synchronize pending data once")

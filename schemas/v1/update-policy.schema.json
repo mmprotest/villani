@@ -1,0 +1,41 @@
+{
+  "$id": "https://schemas.villani.local/v1/update-policy.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "enum": [
+        "stable",
+        "beta",
+        "pinned"
+      ]
+    },
+    "checks_enabled": {
+      "type": "boolean"
+    },
+    "feed_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pinned_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "const": "villani.update_policy.v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "channel",
+    "pinned_version",
+    "feed_url",
+    "checks_enabled"
+  ],
+  "title": "Villani update policy v1",
+  "type": "object"
+}

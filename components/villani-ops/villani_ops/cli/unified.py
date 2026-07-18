@@ -180,6 +180,7 @@ from villani_ops.providers import (
 )
 from villani_ops.core.task import Task
 from villani_ops.subprocess_utils import resolve_command_prefix
+from villani_ops.self_service import EntitlementError, require_entitlement
 from villani_ops.execution_environment import (
     CONFIRMATION_THRESHOLD,
     ExecutionEnvironmentConfig,
@@ -1926,6 +1927,11 @@ def agents_qualify(
         identity = registry.inspect(reference)
     except (TypeError, ValueError, ValidationError) as error:
         _usage_error(f"qualification system is invalid: {error}")
+    if len({item.harness.harness_id for item in registry.list()}) > 1:
+        try:
+            require_entitlement("multi_harness_qualification", _home())
+        except EntitlementError as error:
+            _usage_error(str(error))
     store = QualificationStore(_home() / "qualification")
     appended: list[QualificationObservation] = []
     unchanged: list[str] = []
@@ -4603,6 +4609,13 @@ def run_command(
     except ValueError as error:
         _usage_error(str(error))
     selected_delivery = delivery or "approve"
+    try:
+        if selected_delivery == "pull-request":
+            require_entitlement("pull_request_delivery", _home())
+        if mode in {"recommend", "enforce"}:
+            require_entitlement("automatic_routing_escalation", _home())
+    except EntitlementError as error:
+        _usage_error(str(error))
     configure_run_experience(
         configuration,
         delivery_mode=selected_delivery,
@@ -5153,6 +5166,13 @@ def rerun_command(
     repository_value = repo or Path(str(source_task.get("repository_path") or ""))
     repository = _resolve_run_repository(repository_value)
     selected_delivery = delivery or _delivery_mode_from_configuration(configuration)
+    try:
+        if selected_delivery == "pull-request":
+            require_entitlement("pull_request_delivery", _home())
+        if mode in {"recommend", "enforce"}:
+            require_entitlement("automatic_routing_escalation", _home())
+    except EntitlementError as error:
+        _usage_error(str(error))
     selected_approval = approval
     selected_policy = policy_selection or "configured"
     configure_run_experience(

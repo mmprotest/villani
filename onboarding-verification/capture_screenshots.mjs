@@ -88,9 +88,8 @@ try {
     page.getByText(runId, { exact: false }).first(),
     "sample run detail",
   );
-  await page.screenshot({
+  await page.locator("#summary").screenshot({
     path: path.join(output, "04-sample-run.png"),
-    fullPage: true,
   });
 
   await page.goto(
@@ -108,6 +107,13 @@ try {
     path: path.join(output, "05-sample-replay.png"),
     fullPage: true,
   });
+  if (
+    fs
+      .readFileSync(path.join(output, "04-sample-run.png"))
+      .equals(fs.readFileSync(path.join(output, "05-sample-replay.png")))
+  ) {
+    throw new Error("sample run and replay screenshots are identical");
+  }
 } finally {
   await browser.close();
 }

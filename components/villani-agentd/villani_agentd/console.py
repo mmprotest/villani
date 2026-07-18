@@ -7,7 +7,6 @@ merges synchronization state from the local spool.
 
 from __future__ import annotations
 
-import importlib.metadata
 import hashlib
 import json
 import os
@@ -63,8 +62,16 @@ from villani_ops.executables import (
     resolve_installed_executable,
     resolved_executable_prefix,
 )
+from villani_ops.self_service import (
+    EntitlementError,
+    apply_entitlement_execution_policy,
+    load_entitlement,
+    load_update_state,
+    require_entitlement,
+)
 
 from .config import AgentdPaths, SyncConfig
+from . import __version__
 from .platform_process import windows_creation_flags
 from .process import terminate_process_tree
 from .redaction import redact_sensitive_text
@@ -110,12 +117,7 @@ class BridgeCommand:
 
 
 def _package_version() -> str:
-    for package in ("villani", "villani-agentd"):
-        try:
-            return importlib.metadata.version(package)
-        except importlib.metadata.PackageNotFoundError:
-            continue
-    return "development"
+    return __version__
 
 
 def _locate_vfr() -> BridgeCommand | None:
@@ -451,6 +453,11 @@ class ConsoleService:
         except (OSError, ValueError, json.JSONDecodeError) as error:
             models = []
             issues.append(f"Model inventory cannot be read: {error}")
+        entitlement = load_entitlement(self.home_path)
+        update = load_update_state(
+            self.home_path,
+            installed_version=_package_version(),
+        )
         return {
             "schema_version": CONSOLE_BOOTSTRAP_SCHEMA,
             "mode": "connected" if sync else "local",
@@ -487,6 +494,8 @@ class ConsoleService:
             "models": models,
             "active_policy": _text(policy.get("version")),
             "active_policy_preset": configured_policy_preset(configuration),
+            "entitlement": entitlement.model_dump(mode="json"),
+            "update": update.model_dump(mode="json"),
         }
 
     @staticmethod
@@ -625,6 +634,8 @@ class ConsoleService:
         budgets = _mapping(configuration.get("budgets"))
         repositories = self._repository_candidates(configuration)
         presets = policy_preset_rows(configuration)
+        entitlement = load_entitlement(self.home_path)
+        pro = entitlement.tier == "pro"
         return {
             "schema_version": CONSOLE_RUN_OPTIONS_SCHEMA,
             "repositories": repositories,
@@ -661,6 +672,8 @@ class ConsoleService:
                     "id": "pull-request",
                     "label": "Create pull request",
                     "description": "Branch, commit, push, and submit through the configured Git-host adapter.",
+                    "available": pro,
+                    "requires_tier": "pro",
                 },
             ],
             "approval_modes": [
@@ -679,6 +692,12 @@ class ConsoleService:
             "policies": presets,
             "advanced_policies": advanced_policies,
             "routing_modes": ["observe", "recommend", "enforce"],
+            "routing_mode_availability": {
+                "observe": True,
+                "recommend": pro,
+                "enforce": pro,
+            },
+            "entitlement": entitlement.model_dump(mode="json"),
             "defaults": {
                 "delivery_mode": "approve",
                 "approval_mode": "automatic",
@@ -1238,6 +1257,20 @@ class ConsoleService:
             raise ConsoleInputError("task instruction is required")
         if len(task) > 200_000:
             raise ConsoleInputError("task instruction exceeds the safe size limit")
+        delivery_mode = str(body.get("delivery_mode") or "approve")
+        routing_mode = str(body.get("routing_mode") or "observe")
+        try:
+            if delivery_mode == "pull-request":
+                require_entitlement("pull_request_delivery", self.home_path)
+            if routing_mode in {"recommend", "enforce"}:
+                require_entitlement("automatic_routing_escalation", self.home_path)
+        except EntitlementError as error:
+            return {
+                "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
+                "status": "FAILED",
+                "run_id": None,
+                "failure": _product_failure("entitlement_required", reason=str(error)),
+            }
         repository_value = body.get("repository")
         if not isinstance(repository_value, str) or not repository_value:
             return {
@@ -1296,15 +1329,11 @@ class ConsoleService:
         max_wall_time = self._optional_number(body.get("max_wall_time"), "time limit")
         self._configure_experience(
             configuration,
-            delivery_mode=str(body.get("delivery_mode") or "approve"),
+            delivery_mode=delivery_mode,
             approval_mode=str(body.get("approval_mode") or "automatic"),
             policy_preset=str(body.get("policy_preset") or "performance"),
             policy_selection=str(body.get("policy_selection") or "configured"),
-            routing_mode=str(
-                body.get("routing_mode")
-                or _mapping(configuration.get("routing")).get("mode")
-                or "observe"
-            ),
+            routing_mode=routing_mode,
         )
         delivery_configuration = _mapping(configuration.get("delivery"))
         approval_configuration = _mapping(delivery_configuration.get("approval"))
@@ -1414,6 +1443,10 @@ class ConsoleService:
             )
         if len(success_criteria) > 200_000:
             raise ConsoleInputError("success criteria exceed the safe size limit")
+        configuration, _entitlement = apply_entitlement_execution_policy(
+            configuration,
+            self.home_path,
+        )
         requires_file_changes = body.get("requires_file_changes", True)
         if not isinstance(requires_file_changes, bool):
             raise ConsoleInputError("requires_file_changes must be a boolean")

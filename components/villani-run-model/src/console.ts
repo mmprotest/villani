@@ -6,6 +6,7 @@ import type {
   RunDetail,
   RunEvent,
 } from "./types.js";
+import type { EntitlementState, UpdateState } from "./selfService.js";
 
 export type ConsoleMode = "local" | "connected";
 export type ConsoleRecordKind = "run" | "session";
@@ -98,6 +99,8 @@ export interface ConsoleBootstrap {
   models: ConsoleModel[];
   active_policy: string | null;
   active_policy_preset?: string;
+  entitlement: EntitlementState;
+  update: UpdateState;
 }
 
 export interface ConsoleReplayEvent {

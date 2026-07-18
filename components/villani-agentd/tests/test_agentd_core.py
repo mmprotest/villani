@@ -691,6 +691,26 @@ def test_structured_logging_redacts_tokens_and_artifact_content(paths: AgentdPat
     assert "[REDACTED]" in text
 
 
+def test_structured_logging_rotates_to_three_bounded_backups(paths: AgentdPaths) -> None:
+    logger = StructuredLogger(paths.log, max_bytes=1024, retained_backups=3)
+    for index in range(8):
+        logger.emit("info", "bounded", index=index, message="x" * 1000)
+    assert paths.log.is_file()
+    assert paths.log.with_name("agentd.log.1").is_file()
+    assert paths.log.with_name("agentd.log.2").is_file()
+    assert paths.log.with_name("agentd.log.3").is_file()
+    assert not paths.log.with_name("agentd.log.4").exists()
+    assert all(
+        path.stat().st_size <= 2048
+        for path in [
+            paths.log,
+            paths.log.with_name("agentd.log.1"),
+            paths.log.with_name("agentd.log.2"),
+            paths.log.with_name("agentd.log.3"),
+        ]
+    )
+
+
 def test_token_file_is_user_only_on_posix(paths: AgentdPaths) -> None:
     write_token(paths.token, "unguessable")
     assert paths.token.read_text(encoding="utf-8").strip() == "unguessable"

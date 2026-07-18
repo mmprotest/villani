@@ -16,6 +16,8 @@ from villani_agentd.spool_schema import (
 
 from villani_ops.closed_loop.durable_io import write_json_atomic
 
+from . import __version__
+
 SUPPORTED_CONFIG_VERSION = 1
 SUPPORTED_SPOOL_VERSION = CURRENT_SPOOL_SCHEMA_VERSION
 SUPPORTED_PROTOCOL_MAJORS = {1, 2}
@@ -115,7 +117,7 @@ def check_upgrade(home: Path, *, apply: bool = True) -> MigrationReport:
             home / "migration-state.json",
             {
                 "schema_version": "villani.migration_state.v1",
-                "distribution_version": "0.3.0rc1",
+                "distribution_version": __version__,
                 **asdict(report),
             },
         )

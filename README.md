@@ -24,6 +24,20 @@ While releases are distributed as CI artifacts rather than through a package ind
 pipx install ./villani-*.whl
 ```
 
+The canonical end-user release is also a standalone, offline-installable platform ZIP.
+It includes native commands, a package manifest, SBOM, release notes, and checksums and
+does not require Python, Node.js, a source checkout, or sibling `node_modules`. Verify
+`SHA256SUMS`, then run the extracted bootstrap command:
+
+```console
+./villani-installer/villani install --artifact ./villani-1.0.0-linux-x86_64.zip --sha256 DIGEST
+```
+
+Windows uses `villani.exe` for the bootstrap command. See the complete
+[self-service installation and recovery guide](docs/SELF_SERVICE.md) for Windows,
+macOS, Linux, offline installation, PATH setup, updates, rollback, support bundles, and
+entitlements.
+
 ## First run
 
 Start the guided setup from the Git repository you want to use:
@@ -83,6 +97,18 @@ villani doctor --json
 ```
 
 Every failed doctor check includes a concrete recovery command or action.
+
+Self-service software lifecycle commands are user-controlled and never forced:
+
+```console
+villani update status
+villani update check
+villani update preview
+villani update install
+villani update rollback
+villani support preview
+villani cleanup
+```
 
 ## Villani Service
 

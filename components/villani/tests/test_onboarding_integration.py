@@ -100,6 +100,10 @@ def test_recorded_guided_setup_reaches_completed_sample_and_stops_service(
     assert all(item["model_tokens_spent"] == 0 for item in report["doctor"]["backend_connectivity"])
     assert report["service_stopped"] is True
     assert report["dead_letters"] == 0
+    assert report["development_entitlement"]["tier"] == "pro"
+    assert report["development_entitlement"]["issuer"] == "development"
+    assert report["development_entitlement"]["licensing_network_used"] is False
+    assert report["development_entitlement"]["source_data_shared"] is False
     assert report["secret_scan"]["status"] == "passed"
     assert report["secret_scan"]["matches"] == []
     assert report["screenshots"] == []

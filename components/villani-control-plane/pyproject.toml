@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "villani-control-plane"
-version = "0.1.0"
+version = "1.0.0"
 description = "Single-region Villani v2 ingestion and persistence service"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,7 +16,7 @@ dependencies = [
   "pydantic-settings>=2.4,<3",
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.30,<1",
-  "villani-ops>=0.2.0",
+  "villani-ops==1.0.0",
 ]
 
 [project.optional-dependencies]

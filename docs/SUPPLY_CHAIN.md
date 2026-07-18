@@ -13,3 +13,12 @@ is reported as unsupported, never as a clean vulnerability result.
 
 The CI matrix defines Linux, macOS, and Windows package smokes. A local run proves only the current
 operating system; the other jobs must be green in CI before publication.
+
+PT10 standalone archives also pass `scripts/scan-release-artifact.py`. That gate verifies
+safe ZIP paths, exact manifest membership, every digest and size, the CycloneDX inventory,
+and secret patterns across streamed member bytes. Local mode reports an unavailable
+external malware engine as unavailable, never clean. Official Linux certification updates
+ClamAV definitions and requires a successful archive scan; its version and findings are
+retained in `release-artifact-malware-scan.json`. The isolated installed environment is
+audited with `pip-audit`, and each OS retains `dependency-audit.json` plus the platform
+certification beside the archive.

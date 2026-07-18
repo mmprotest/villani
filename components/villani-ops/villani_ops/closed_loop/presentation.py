@@ -31,6 +31,12 @@ FAILURE_CATALOG: dict[str, dict[str, str]] = {
         "missing": "A complete repository and agent connection are not yet available.",
         "next": "Open Settings, finish Setup, then run the task again.",
     },
+    "entitlement_required": {
+        "failed": "The selected action is not enabled by the local entitlement.",
+        "tried": "Villani checked the local entitlement before creating a run or modifying a repository.",
+        "missing": "An active local Villani Pro entitlement for this optional capability is missing.",
+        "next": "Run `villani license status`, then choose an available action or install a valid license.",
+    },
     "no_usable_agent": {
         "failed": "No usable agent system is available.",
         "tried": "Villani checked the configured agent systems before starting work.",

@@ -1,0 +1,94 @@
+{
+  "$id": "https://schemas.villani.local/v1/update-feed.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "releases": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "architecture": {
+                  "type": "string"
+                },
+                "operating_system": {
+                  "enum": [
+                    "windows",
+                    "macos",
+                    "linux"
+                  ]
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "operating_system",
+                "architecture",
+                "url",
+                "sha256"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "channel": {
+            "enum": [
+              "stable",
+              "beta"
+            ]
+          },
+          "maximum_config_version": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minimum_config_version": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "release_notes": {
+            "type": "string"
+          },
+          "released_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "channel",
+          "released_at",
+          "release_notes",
+          "minimum_config_version",
+          "maximum_config_version",
+          "artifacts"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "villani.update_feed.v1"
+    },
+    "source_upload_required": {
+      "const": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "releases",
+    "source_upload_required"
+  ],
+  "title": "Villani update feed v1",
+  "type": "object"
+}

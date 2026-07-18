@@ -1,6 +1,6 @@
 image:
   repository: villani/control-plane
-  tag: 0.1.0
+  tag: 1.0.0
   pullPolicy: IfNotPresent
 replicaCount: 2
 region: local

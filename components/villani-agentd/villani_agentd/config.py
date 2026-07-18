@@ -7,6 +7,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from . import __version__
+
 
 def villani_home() -> Path:
     configured = os.environ.get("VILLANI_HOME")
@@ -91,7 +93,7 @@ class SyncConfig:
     poll_seconds: float = 2.0
     remote_execution_enabled: bool = False
     worker_id: str | None = None
-    worker_version: str = "0.1.0"
+    worker_version: str = __version__
     worker_poll_seconds: float = 2.0
     worker_heartbeat_seconds: float = 30.0
     lease_renewal_seconds: float = 15.0

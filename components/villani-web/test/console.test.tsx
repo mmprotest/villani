@@ -23,8 +23,10 @@ import ConsoleApp, {
   migrateLegacyPath,
   type HistoryFilters,
 } from "../src/ConsoleApp";
+import { defaultBootstrap } from "../src/consoleContext";
 
 const bootstrap = (connected = false): ConsoleBootstrap => ({
+  ...defaultBootstrap,
   schema_version: "villani.console.bootstrap.v1",
   mode: connected ? "connected" : "local",
   data_source: "local-service",
@@ -1335,6 +1337,14 @@ describe("Console routing and migration", () => {
     history.replaceState(null, "", "/console/settings");
     render(<ConsoleApp />);
     await screen.findByRole("heading", { name: "Settings" });
+    expect(screen.getByText("Installed version")).toBeInTheDocument();
+    expect(screen.getByText("0.3.0")).toBeInTheDocument();
+    expect(screen.getByText("FREE")).toBeInTheDocument();
+    expect(screen.getByText("villani update status")).toBeInTheDocument();
+    expect(screen.getByText("villani support preview")).toBeInTheDocument();
+    expect(
+      screen.getByText("villani verification feedback-import"),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("team-navigation")).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("advanced-navigation")).getByRole("link", {
@@ -1514,6 +1524,10 @@ describe("Activity", () => {
     expect(within(table).getAllByText("1.0 min")).toHaveLength(2);
     expect(within(table).getByText("USD 0.1000")).toBeInTheDocument();
     expect(within(table).getByText("Unknown (unknown)")).toBeInTheDocument();
+    expect(within(table).getByRole("link", { name: "Repeat task" })).toHaveAttribute(
+      "href",
+      "/console?repository=repo&task=Duplicate",
+    );
     for (const heading of [
       "Task",
       "Result",
@@ -1843,6 +1857,9 @@ describe("Console run workflow", () => {
     expect(
       within(result).getByRole("link", { name: "View full evidence" }),
     ).toHaveAttribute("href", "/console/runs/run_new/replay");
+    expect(
+      within(result).getByRole("button", { name: "Copy proof summary" }),
+    ).toBeInTheDocument();
     const submissionCall = (fetch as ReturnType<typeof vi.fn>).mock.calls.find(
       ([input, init]) =>
         String(input).endsWith("/v1/console/runs") && init?.method === "POST",

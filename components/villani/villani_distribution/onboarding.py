@@ -466,6 +466,8 @@ def build_configuration(
     *,
     repository: Path | None,
     session_sources: Sequence[SessionSourceDetection] = (),
+    coding_system: str = "villani-code",
+    coding_command: str | None = None,
 ) -> dict[str, Any]:
     if not model.strip():
         raise SetupError("a model must be selected")
@@ -482,6 +484,10 @@ def build_configuration(
             "hard_min_capability": 0,
         }
     )
+    # The single setup-selected coding system may make its first isolated,
+    # verifier-gated attempt while still explicitly UNRATED. This does not
+    # confer qualification or acceptance authority.
+    configuration["capabilities"]["allow_bootstrap_threshold_bypass"] = True
     # Acceptance still requires the existing verifier contract. The selected
     # primary model supplies that review; the user is not asked to understand
     # or configure an internal verifier component.
@@ -517,7 +523,60 @@ def build_configuration(
         backend["command_name"] = command
     if detection.credential_environment_variable:
         backend["api_key_env"] = detection.credential_environment_variable
-    configuration["backends"] = {"default": backend}
+    if coding_system not in {"villani-code", "codex", "claude-code"}:
+        raise SetupError(f"unsupported coding system {coding_system!r}")
+    if coding_system == "villani-code":
+        configuration["backends"] = {"default": backend}
+        configuration["model_management"]["bootstrap_default"] = "default"
+    else:
+        backend["roles"] = ["classification", "review"]
+        provider = "openai" if coding_system == "codex" else "anthropic"
+        coding_backend: dict[str, Any] = {
+            "provider": provider,
+            "model": "default",
+            "billing_mode": "unknown",
+            "currency": "USD",
+            "capability_score_source": "unrated",
+            "capability_score": 0,
+            "roles": ["coding"],
+            "max_parallel": 1,
+            "command_name": coding_command
+            or ("codex" if coding_system == "codex" else "claude"),
+            "metadata": {
+                "capability_status": "unrated",
+                "setup_coding_system": coding_system,
+                "pricing_metadata_source": "unknown",
+            },
+        }
+        if coding_system == "codex" and detection.credential_environment_variable:
+            coding_backend["api_key_env"] = detection.credential_environment_variable
+        configuration["backends"] = {
+            "default": backend,
+            "coding-system": coding_backend,
+        }
+        configuration["model_management"]["bootstrap_default"] = "coding-system"
+        configuration["agent_systems"] = {
+            "schema_version": "villani.agent_system_configuration.v1",
+            "systems": {
+                "coding-system": {
+                    "harness": {
+                        "id": coding_system,
+                        "command": coding_backend["command_name"],
+                    },
+                    "backend": "coding-system",
+                    "production_enabled": True,
+                    "qualification_status": "provisional",
+                    "repository_profile": "generic_repository",
+                    "task_profile": "generic_coding_task",
+                    "verification_policy": "controller_acceptance_evidence_v1",
+                    "tool_protocol": "native_harness_tools",
+                    "prompt_protocol": "native_structured_headless",
+                    "permission_profile": "configured_execution_environment",
+                    "network_policy": "unknown",
+                    "qualification_references": [],
+                }
+            },
+        }
     configuration["setup"] = {
         "schema_version": "villani.setup.v1",
         "configured_at": utc_now(),
@@ -526,6 +585,7 @@ def build_configuration(
         "bootstrap_policy": True,
         "repository": str(repository) if repository else None,
         "session_sources": [item.source_identifier for item in session_sources if item.installed],
+        "coding_system": coding_system,
     }
     configuration, _migration = migrate_agent_system_configuration(configuration)
     validate_configuration(configuration)

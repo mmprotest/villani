@@ -323,6 +323,11 @@ policy:
     )
     local = service.bootstrap()
     assert local["mode"] == "local" and local["workspace"]["connected"] is False
+    assert local["version"] == "1.0.0"
+    assert local["entitlement"]["tier"] == "free"
+    assert local["entitlement"]["evidence_readable"] is True
+    assert local["update"]["policy"]["channel"] == "stable"
+    assert local["update"]["source_uploaded"] is False
     assert local["models"][0]["capability"] == "UNRATED"
     assert "TOP_SECRET_ENV" not in json.dumps(local)
     SyncConfig("https://workspace.invalid", "workspace_1").save(paths.sync_config)
@@ -369,6 +374,25 @@ policy:
         "Custom",
     ]
     assert options["defaults"]["policy_preset"] == "performance"
+    pull_request = next(
+        item for item in options["delivery_modes"] if item["id"] == "pull-request"
+    )
+    assert pull_request["available"] is False
+    assert options["routing_mode_availability"] == {
+        "observe": True,
+        "recommend": False,
+        "enforce": False,
+    }
+    denied = service.start_run(
+        {
+            "repository": str(repository),
+            "task": "Create a pull request.",
+            "delivery_mode": "pull-request",
+        }
+    )
+    assert denied["run_id"] is None
+    assert denied["failure"]["code"] == "entitlement_required"
+    assert "target repository was not modified" in denied["failure"]["patch_status"]
     assert discovery["suggestions"][0]["argv"] == ["npm", "test"]
     assert discovery["suggestions"][0]["authoritative"] is False
     assert discovery["authority"] == "none_until_confirmed_command_execution"

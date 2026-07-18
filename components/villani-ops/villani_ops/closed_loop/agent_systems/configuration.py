@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import importlib.metadata
 import urllib.parse
 from collections.abc import Mapping
@@ -193,6 +194,14 @@ def migrate_agent_system_configuration(
 
 
 def _version(distribution: str, fallback: str) -> str:
+    module_name = {"villani-code": "villani_code"}.get(distribution)
+    if module_name:
+        try:
+            value = getattr(importlib.import_module(module_name), "__version__", None)
+        except ImportError:
+            value = None
+        if isinstance(value, str) and value:
+            return value
     try:
         return importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
@@ -517,7 +526,7 @@ def build_agent_system_identities(
         )
         executable_path, executable_digest = _executable(command, harness_id)
         version = (
-            _version("villani-code", "0.1.0rc1")
+            _version("villani-code", "1.0.0")
             if harness_id == "villani-code"
             else str(
                 readiness.exact_version or harness_config.get("version") or "unknown"

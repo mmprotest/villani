@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "villani-agentd"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local-only Villani telemetry and artifact daemon"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["villani-ops>=0.2.0", "PyYAML>=6"]
+dependencies = ["villani-ops==1.0.0", "PyYAML>=6"]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "ruff>=0.6", "mypy>=1.10"]

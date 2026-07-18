@@ -134,6 +134,7 @@ function ProductResult({
 }) {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const stageIndex = Math.max(STAGES.indexOf(value.current_stage), 0);
   const terminal = value.final_verdict !== null;
 
@@ -232,6 +233,26 @@ function ProductResult({
   const primary = value.available_actions.find(
     (action) => action.id !== "review_evidence",
   );
+  const evidenceHref =
+    value.evidence_links.find((link) => link.artifact === value.proof_package?.artifact)
+      ?.href ?? `/console/runs/${value.run_identity.run_id}/replay`;
+  const copyProofSummary = async () => {
+    const summary = [
+      `Villani proof summary: ${value.final_verdict ?? "unknown"}`,
+      value.change_summary,
+      `Checks: passed=${value.checks_summary.passed ?? "unknown"}, failed=${value.checks_summary.failed ?? "unknown"}, not-run=${value.checks_summary.not_run ?? "unknown"}`,
+      `Requirements: proved=${value.requirement_summary.proved ?? "unknown"}, not-proved=${value.requirement_summary.not_proved ?? "unknown"}`,
+      value.proof_package?.why_villani_trusts_it ??
+        "No proof-package summary was recorded.",
+      `Evidence: ${new URL(evidenceHref, location.origin).toString()}`,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(summary);
+      setCopyStatus("Proof summary copied.");
+    } catch {
+      setCopyStatus("Copy failed. Open the evidence link and copy from your browser.");
+    }
+  };
   return (
     <section className="console-stack run-result" data-testid="run-presentation">
       <ResultVerdict
@@ -300,15 +321,15 @@ function ProductResult({
                 {value.proof_package.unresolved_decision}
               </p>
             )}
-            <a
-              href={
-                value.evidence_links.find(
-                  (link) => link.artifact === value.proof_package?.artifact,
-                )?.href ?? `/console/runs/${value.run_identity.run_id}/replay`
-              }
-            >
-              View full evidence
-            </a>
+            <a href={evidenceHref}>View full evidence</a>
+            <SecondaryAction type="button" onClick={() => void copyProofSummary()}>
+              Copy proof summary
+            </SecondaryAction>
+            {copyStatus && (
+              <p className="v-muted" role="status">
+                {copyStatus}
+              </p>
+            )}
           </div>
         </Panel>
       )}
@@ -369,7 +390,15 @@ function ProductResult({
 
 export function SingleTaskPage({ client }: { client: ConsoleClient }) {
   const environment = useConsoleEnvironment();
-  const initialDraft = useMemo(restoreDraft, []);
+  const initialDraft = useMemo(() => {
+    const saved = restoreDraft();
+    const query = new URLSearchParams(location.search);
+    return {
+      ...saved,
+      repository: query.get("repository") ?? saved.repository,
+      task: query.get("task") ?? saved.task,
+    };
+  }, []);
   const [options, setOptions] = useState<ConsoleRunOptions | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [repository, setRepository] = useState(initialDraft.repository);
@@ -776,8 +805,13 @@ export function SingleTaskPage({ client }: { client: ConsoleClient }) {
                     onChange={(event) => setDeliveryMode(event.target.value)}
                   >
                     {options?.delivery_modes.map((item) => (
-                      <option key={item.id} value={item.id}>
+                      <option
+                        key={item.id}
+                        value={item.id}
+                        disabled={item.available === false}
+                      >
                         {item.label}
+                        {item.available === false ? " (Pro)" : ""}
                       </option>
                     ))}
                   </select>
@@ -851,8 +885,15 @@ export function SingleTaskPage({ client }: { client: ConsoleClient }) {
                     onChange={(event) => setRoutingMode(event.target.value)}
                   >
                     {options?.routing_modes.map((item) => (
-                      <option key={item} value={item}>
+                      <option
+                        key={item}
+                        value={item}
+                        disabled={options.routing_mode_availability?.[item] === false}
+                      >
                         {item}
+                        {options.routing_mode_availability?.[item] === false
+                          ? " (Pro)"
+                          : ""}
                       </option>
                     ))}
                   </select>

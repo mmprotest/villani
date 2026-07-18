@@ -1,0 +1,107 @@
+{
+  "$id": "https://schemas.villani.local/v1/doctor.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "checks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "type": "object"
+          },
+          "evidence_path": {
+            "type": "string"
+          },
+          "identifier": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "recovery_action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repositories_modified": {
+            "const": false
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ]
+          }
+        },
+        "required": [
+          "identifier",
+          "status",
+          "message",
+          "recovery_action",
+          "details",
+          "repositories_modified",
+          "evidence_path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "evidence_path": {
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "healthy": {
+      "type": "boolean"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "repositories_modified": {
+      "const": false
+    },
+    "schema_version": {
+      "const": "villani.doctor.v1"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "failed": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "warnings": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "passed",
+        "warnings",
+        "failed"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "generated_at",
+    "healthy",
+    "ok",
+    "summary",
+    "checks",
+    "repositories_modified",
+    "evidence_path"
+  ],
+  "title": "Villani doctor report v1",
+  "type": "object"
+}

@@ -1,0 +1,77 @@
+{
+  "$id": "https://schemas.villani.local/v1/package-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "architecture": {
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "executable": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "size_bytes": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "size_bytes",
+          "executable"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "operating_system": {
+      "enum": [
+        "windows",
+        "macos",
+        "linux"
+      ]
+    },
+    "release_notes_path": {
+      "type": "string"
+    },
+    "sbom_path": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "villani.package_manifest.v1"
+    },
+    "sibling_node_modules_required": {
+      "const": false
+    },
+    "source_checkout_required": {
+      "const": false
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "version",
+    "operating_system",
+    "architecture",
+    "files",
+    "sbom_path",
+    "release_notes_path",
+    "source_checkout_required",
+    "sibling_node_modules_required"
+  ],
+  "title": "Villani standalone package manifest v1",
+  "type": "object"
+}

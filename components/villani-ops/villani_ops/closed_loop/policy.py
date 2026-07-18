@@ -517,7 +517,38 @@ class BootstrapPolicyEngine:
         )
         return with_latency_penalty(candidate, policy=self.route_policy)
 
-    def _route_constraints(self) -> RouteConstraints:
+    def _setup_bootstrap_route(
+        self,
+        assessments: Mapping[str, QualificationAssessment] | None = None,
+    ) -> str | None:
+        """Return the setup-selected route while it still has no usable evidence.
+
+        Guided setup records an explicit bootstrap policy rather than claiming that
+        its selected system is qualified.  The exception is intentionally narrow:
+        it applies only to the configured bootstrap default, only while that system
+        remains Experimental, and only when no Qualified system is available.
+        """
+
+        setup = self.raw_configuration.get("setup")
+        setup_values = setup if isinstance(setup, Mapping) else {}
+        if setup_values.get("bootstrap_policy") is not True:
+            return None
+        backend_name = default_bootstrap_backend(self.raw_configuration)
+        if not backend_name:
+            return None
+        if assessments:
+            if any(item.state == "qualified" for item in assessments.values()):
+                return None
+            assessment = assessments.get(backend_name)
+            if assessment is None or assessment.state != "experimental":
+                return None
+        identity = self.agent_system_by_backend.get(backend_name)
+        return identity.route_name if identity is not None else backend_name
+
+    def _route_constraints(
+        self,
+        assessments: Mapping[str, QualificationAssessment] | None = None,
+    ) -> RouteConstraints:
         constraints = self.route_policy.constraints
         qualification = self.raw_configuration.get("qualification")
         qualification_values = (
@@ -525,13 +556,17 @@ class BootstrapPolicyEngine:
         )
         manual = qualification_values.get("manual_override")
         manual_values = manual if isinstance(manual, Mapping) else {}
-        forced = str(manual_values.get("route_name") or "") or constraints.forced_system
+        manual_route = str(manual_values.get("route_name") or "") or None
+        setup_bootstrap_route = self._setup_bootstrap_route(assessments)
+        forced = manual_route or constraints.forced_system or setup_bootstrap_route
         return constraints.model_copy(
             update={
                 "forced_system": forced,
                 "allow_experimental_forced": bool(
                     manual_values.get(
-                        "allow_experimental", constraints.allow_experimental_forced
+                        "allow_experimental",
+                        constraints.allow_experimental_forced
+                        or setup_bootstrap_route is not None,
                     )
                 ),
                 "strongest_only": bool(
@@ -586,7 +621,7 @@ class BootstrapPolicyEngine:
             task_profile=first.task_profile,
             candidates=candidates,
             policy=plan_policy,
-            constraints=self._route_constraints(),
+            constraints=self._route_constraints(assessments),
             evidence_cutoff=evidence_cutoff,
             reserves={
                 "budget_before": {
@@ -932,6 +967,7 @@ class BootstrapPolicyEngine:
         manual_values = manual if isinstance(manual, Mapping) else {}
         manual_route = str(manual_values.get("route_name") or "") or None
         allow_experimental = manual_values.get("allow_experimental") is True
+        setup_bootstrap_route = self._setup_bootstrap_route(repository_qualifications)
         alternatives: list[BackendOption] = []
         for backend in sorted(self.backends.values(), key=lambda item: item.name):
             if "coding" not in backend.roles:
@@ -954,6 +990,11 @@ class BootstrapPolicyEngine:
             route_name = identity.route_name if identity is not None else backend.name
             qualification_manual_selected = bool(
                 manual_route is not None and manual_route in {backend.name, route_name}
+            )
+            qualification_bootstrap_selected = bool(
+                manual_route is None
+                and setup_bootstrap_route is not None
+                and setup_bootstrap_route in {backend.name, route_name}
             )
             threshold_met = capability.effective_capability_score >= minimum
             bootstrap_bypass = bool(
@@ -988,6 +1029,10 @@ class BootstrapPolicyEngine:
                         reasons.append(
                             "experimental system requires --allow-experimental"
                         )
+                elif qualification_bootstrap_selected and state == "experimental":
+                    # Guided setup may perform a verifier-gated first attempt while
+                    # still reporting Experimental.  This creates no qualification.
+                    pass
                 elif qualified_names:
                     if backend.name not in qualified_names:
                         reasons.append(
@@ -1092,6 +1137,9 @@ class BootstrapPolicyEngine:
                         ),
                         "qualification_manual_override": bool(
                             qualification_manual_selected
+                        ),
+                        "qualification_bootstrap_override": bool(
+                            qualification_bootstrap_selected
                         ),
                     },
                     cost_source=cost_source,
