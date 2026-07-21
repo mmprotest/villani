@@ -185,6 +185,8 @@ def _cancellable_controller(runner: BlockingAttemptRunner) -> ClosedLoopControll
         monotonic=FakeMonotonic(),
         id_factory=StableIds(),
     )
+
+
 def _approval_controller(_configuration: Any = None, _events: Any = None) -> ClosedLoopController:
     option = backend("fixture")
     return ClosedLoopController(
@@ -374,9 +376,7 @@ policy:
         "Custom",
     ]
     assert options["defaults"]["policy_preset"] == "performance"
-    pull_request = next(
-        item for item in options["delivery_modes"] if item["id"] == "pull-request"
-    )
+    pull_request = next(item for item in options["delivery_modes"] if item["id"] == "pull-request")
     assert pull_request["available"] is False
     assert options["routing_mode_availability"] == {
         "observe": True,
@@ -505,7 +505,29 @@ backends:
     }
     persisted = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
     assert persisted["agent_systems"]["schema_version"] == "villani.agent_system_configuration.v1"
-    assert set(persisted["agent_systems"]["systems"]) == {"existing", "new-model"}
+    assert set(persisted["agent_systems"]["systems"]) == {
+        "api-existing",
+        "api-new-model",
+        "evidence-selector",
+        "existing",
+        "new-model",
+        "villani-code-runner",
+        "villani-verifier",
+    }
+    assert persisted["execution_profiles"]["api"] == {
+        "schema_version": "villani.role_bindings.v1",
+        "profile_id": "api",
+        "bindings": {
+            "classification": "api-existing",
+            "coding": "villani-code-runner",
+            "verification": "villani-verifier",
+            "selection": "evidence-selector",
+        },
+        "migration": {
+            "version": "villani.agent_system_migration.v1",
+            "source": "current_dependency_construction",
+        },
+    }
     assert persisted["backends"]["new-model"]["model"] == "detected-model"
     default = next(item for item in selected["models"] if item["backend_name"] == "new-model")
     assert default["capability_status"] == "BOOTSTRAP"
@@ -516,7 +538,13 @@ backends:
     removed = service.models_remove({"backend_name": "new-model"})
     assert all(item["backend_name"] != "new-model" for item in removed["models"])
     persisted = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
-    assert set(persisted["agent_systems"]["systems"]) == {"existing"}
+    assert set(persisted["agent_systems"]["systems"]) == {
+        "api-existing",
+        "evidence-selector",
+        "existing",
+        "villani-code-runner",
+        "villani-verifier",
+    }
 
 
 def test_console_policy_selection_preview_and_simulation_are_public_and_read_only(
@@ -708,9 +736,7 @@ backends:
         bridge=FakeBridge(),
         controller_builder=lambda _configuration, _events: controller,
     )
-    submission = service.start_run(
-        {"repository": str(repository), "task": "Fix the parser."}
-    )
+    submission = service.start_run({"repository": str(repository), "task": "Fix the parser."})
     deadline = time.monotonic() + 5
     while not controller.requests and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -744,13 +770,9 @@ def test_console_preflight_failures_state_target_safety_and_one_next_action(
 
     repository = _git_repository(tmp_path / "dirty-repo")
     (repository / "uncommitted.txt").write_text("dirty\n", encoding="utf-8")
-    dirty = service.start_run(
-        {"repository": str(repository), "task": "Fix the parser."}
-    )
+    dirty = service.start_run({"repository": str(repository), "task": "Fix the parser."})
     assert dirty["failure"]["code"] == "dirty_repository"
-    assert "target repository was not modified" in dirty["failure"][
-        "patch_status"
-    ].lower()
+    assert "target repository was not modified" in dirty["failure"]["patch_status"].lower()
     assert dirty["failure"]["next_action"]
 
 
@@ -785,9 +807,7 @@ backends:
     )
 
     discovery = service.validation_discovery(str(repository))
-    submission = service.start_run(
-        {"repository": str(repository), "task": "Fix the parser."}
-    )
+    submission = service.start_run({"repository": str(repository), "task": "Fix the parser."})
     deadline = time.monotonic() + 5
     while not controller.requests and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -796,9 +816,7 @@ backends:
     assert submission["status"] == "QUEUED"
     request = controller.requests[0]
     assert request.policy_configuration["repository_validation_commands"] == []
-    assert request.policy_configuration["run_experience"][
-        "repository_validation_optional"
-    ] is True
+    assert request.policy_configuration["run_experience"]["repository_validation_optional"] is True
 
 
 def test_background_agent_failure_has_truthful_product_recovery(console, tmp_path) -> None:
@@ -849,9 +867,7 @@ backends:
     )
 
 
-def test_console_submission_is_idempotent_and_preserves_task_details(
-    console, tmp_path
-) -> None:
+def test_console_submission_is_idempotent_and_preserves_task_details(console, tmp_path) -> None:
     _original, spool, paths = console
     repository = _git_repository(tmp_path / "repo-idempotent")
     (paths.root.parent / "config.yaml").write_text(
@@ -878,9 +894,7 @@ backends:
         "repository": str(repository),
         "task": "  Preserve this line.\r\nAnd this one.  ",
         "reference_text": "Issue REF-42",
-        "attachments": [
-            {"name": "notes.md", "content": "A generic text attachment."}
-        ],
+        "attachments": [{"name": "notes.md", "content": "A generic text attachment."}],
         "validation_argv": ["npm", "test"],
     }
 
@@ -902,9 +916,7 @@ backends:
     assert request.policy_configuration["delivery"]["mode"] == "approve"
 
 
-def test_console_cancellation_preserves_evidence_and_stops_future_work(
-    console, tmp_path
-) -> None:
+def test_console_cancellation_preserves_evidence_and_stops_future_work(console, tmp_path) -> None:
     _original, spool, paths = console
     repository = _git_repository(tmp_path / "repo-cancel")
     (paths.root.parent / "config.yaml").write_text(
@@ -940,20 +952,19 @@ backends:
     assert runner.cancellation_observed.is_set()
     assert product["final_verdict"] == "Cancelled"
     assert product["target_repository"]["modified"] is False
-    assert product["target_repository"]["statement"] == (
-        "The target repository was not modified."
-    )
+    assert product["target_repository"]["statement"] == ("The target repository was not modified.")
     run_directory = paths.root.parent / "runs" / str(submission["run_id"])
     assert (run_directory / "events.jsonl").is_file()
     assert (run_directory / "product-run.json").is_file()
-    assert service.run_events(
-        str(submission["run_id"]), after_sequence=0, wait_seconds=0
-    )["final_verdict"] == "Cancelled"
+    assert (
+        service.run_events(str(submission["run_id"]), after_sequence=0, wait_seconds=0)[
+            "final_verdict"
+        ]
+        == "Cancelled"
+    )
 
 
-def test_console_http_event_subscription_and_cancellation_endpoints(
-    console, tmp_path
-) -> None:
+def test_console_http_event_subscription_and_cancellation_endpoints(console, tmp_path) -> None:
     _original, spool, paths = console
     repository = _git_repository(tmp_path / "repo-http-cancel")
     (paths.root.parent / "config.yaml").write_text(
@@ -1002,9 +1013,7 @@ backends:
         with browser.open(f"{endpoint}/console"):
             pass
         run_id = str(submission["run_id"])
-        with browser.open(
-            f"{endpoint}/v1/console/runs/{run_id}/events?after=0&wait=0"
-        ) as response:
+        with browser.open(f"{endpoint}/v1/console/runs/{run_id}/events?after=0&wait=0") as response:
             observed = json.loads(response.read())
         cancel = urllib.request.Request(
             f"{endpoint}/v1/console/runs/{run_id}/cancel",
@@ -1177,18 +1186,12 @@ def test_packaged_console_references_existing_assets() -> None:
 def test_packaged_console_matches_source_distribution() -> None:
     source = REPOSITORY_ROOT / "components" / "villani-web" / "dist"
     packaged = (
-        REPOSITORY_ROOT
-        / "components"
-        / "villani-agentd"
-        / "villani_agentd"
-        / "console_assets"
+        REPOSITORY_ROOT / "components" / "villani-agentd" / "villani_agentd" / "console_assets"
     )
     manifest = json.loads((packaged / "console-assets.json").read_text(encoding="utf-8"))
 
     source_files = {
-        path.relative_to(source).as_posix()
-        for path in source.rglob("*")
-        if path.is_file()
+        path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_file()
     }
     assert source_files == set(manifest["files"])
     for relative, expected_digest in manifest["files"].items():

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/codex-coder-result.schema.json",
+  "title": "Villani Codex Coder Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "summary",
+    "tests_run",
+    "known_limitations",
+    "files_the_agent_believes_changed"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.codex_coder_result.v1" },
+    "status": { "enum": ["completed", "blocked"] },
+    "summary": { "type": "string" },
+    "tests_run": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "reported_exit_status", "reported_result"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "reported_exit_status": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }]
+          },
+          "reported_result": { "type": "string" }
+        }
+      }
+    },
+    "known_limitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "files_the_agent_believes_changed": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

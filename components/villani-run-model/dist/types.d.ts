@@ -117,6 +117,10 @@ export interface RunDetail extends RunSummary {
     withheld_artifact_categories?: string[];
     agent_system_ids?: string[];
     agent_systems?: import("./agentSystem.js").AgentSystemIdentity[];
+    execution_profile_id?: string | null;
+    role_bindings?: Record<string, string>;
+    agent_invocation_ids?: Record<string, string>;
+    agent_invocations?: import("./agentSystem.js").AgentInvocationIdentity[];
 }
 export interface CanonicalAttemptSnapshot {
     attempt_id: string;
@@ -183,6 +187,10 @@ export interface CanonicalRunSnapshot {
     withheld_artifact_categories: string[] | null;
     agent_system_ids?: string[];
     agent_systems?: import("./agentSystem.js").AgentSystemIdentity[];
+    execution_profile_id?: string | null;
+    role_bindings?: Record<string, string>;
+    agent_invocation_ids?: Record<string, string>;
+    agent_invocations?: import("./agentSystem.js").AgentInvocationIdentity[];
 }
 export interface RunSpan {
     span_id: string;

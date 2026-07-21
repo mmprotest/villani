@@ -1,0 +1,55 @@
+{
+  "schema_version": "villani.cli_invocation.v1",
+  "executable": "python",
+  "executable_identity": {
+    "status": "unresolved",
+    "sha256": null
+  },
+  "arguments": [
+    "fake_cli.py",
+    "--mode",
+    "success"
+  ],
+  "environment": [
+    {
+      "name": "PATH",
+      "provenance": "inherited",
+      "redacted": false
+    },
+    {
+      "name": "PROVIDER_TOKEN",
+      "provenance": "inherited",
+      "redacted": true
+    }
+  ],
+  "role_workspace_identity": {
+    "run_id": "run_fixture_001",
+    "attempt_id": "attempt_001",
+    "role": "coding",
+    "workspace": "isolated_attempt"
+  },
+  "target_repository_writable": false,
+  "cwd": "attempts/attempt_001/worktree",
+  "stdin": {
+    "provided": true,
+    "size_bytes": 128,
+    "artifact_reference": "attempts/attempt_001/prompt.txt",
+    "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "timeout_seconds": 300.0,
+  "graceful_shutdown_seconds": 2.0,
+  "limits": {
+    "maximum_stdout_bytes": 16777216,
+    "maximum_stderr_bytes": 16777216,
+    "maximum_stdout_chunk_bytes": 1048576,
+    "maximum_stderr_chunk_bytes": 1048576,
+    "maximum_event_line_bytes": 1048576,
+    "maximum_tail_bytes": 16384,
+    "read_chunk_bytes": 65536
+  },
+  "event_stream_format": "jsonl",
+  "utf8_policy": "replacement",
+  "final_output_path": "attempts/attempt_001/agent/final-output.json",
+  "require_final_output": true,
+  "started_at": "2026-07-20T10:00:00Z"
+}

@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","session_id":"session-fixture","model":"claude-sonnet-fixture","tools":["Bash","Read","Edit","Write","Glob","Grep"],"mcp_servers":[],"plugins":[],"permissionMode":"acceptEdits","claude_code_version":"2.1.138"}
+{"type":"assistant","uuid":"assistant-1","message":{"content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"python -m pytest -q"}}],"usage":{"input_tokens":40,"output_tokens":5}}}
+{"type":"user","uuid":"user-1","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","is_error":false,"content":"passed"}]}}
+{"type":"assistant","uuid":"assistant-2","message":{"content":[{"type":"tool_use","id":"tool-2","name":"Edit","input":{"file_path":"target.txt"}},{"type":"text","text":"Completed the change."}]}}
+{"type":"user","uuid":"user-2","message":{"content":[{"type":"tool_result","tool_use_id":"tool-2","is_error":false,"content":"updated"}]}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"done","structured_output":{"schema_version":"villani.claude_coder_result.v1","status":"completed","summary":"done","tests_run":[],"known_limitations":[],"files_the_agent_believes_changed":["target.txt"]},"total_cost_usd":0.01,"usage":{"input_tokens":50,"output_tokens":10}}

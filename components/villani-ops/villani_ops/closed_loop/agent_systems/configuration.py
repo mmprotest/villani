@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import importlib.metadata
+import re
 import urllib.parse
 from collections.abc import Mapping
 from pathlib import Path
@@ -34,6 +36,7 @@ from .models import (
     file_digest,
     utc_now,
 )
+from .role_models import ROLE_BINDINGS_SCHEMA_VERSION
 
 
 AGENT_SYSTEM_CONFIGURATION_VERSION = "villani.agent_system_configuration.v1"
@@ -71,6 +74,157 @@ _HARNESS_DEFAULTS: dict[str, dict[str, str]] = {
 }
 
 _PROVIDER_BY_HARNESS = {"codex": "openai", "claude-code": "anthropic"}
+
+_CANONICAL_ROLE_BY_LEGACY_ROLE = {
+    "classification": "classification",
+    "coding": "coding",
+    "review": "verification",
+    "selection": "selection",
+}
+
+
+def _configuration_validation_error(prefix: str, error: Exception) -> ValueError:
+    errors = getattr(error, "errors", None)
+    if callable(errors):
+        issues = errors(include_input=False, include_url=False)
+        if issues:
+            issue = issues[0]
+            location = ".".join(str(part) for part in issue.get("loc", ()))
+            path = ".".join(part for part in (prefix, location) if part)
+            return ValueError(f"{path}: {issue.get('msg', 'invalid value')}")
+    return ValueError(f"{prefix}: {error}")
+
+
+def _safe_generated_id(prefix: str, value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._:-]+", "-", value).strip("-._:").lower()
+    if not slug:
+        slug = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    candidate = f"{prefix}-{slug}"
+    if len(candidate) > 128:
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+        candidate = f"{prefix}-{slug[: 127 - len(prefix) - len(digest) - 2]}-{digest}"
+    return candidate
+
+
+def _generated_mapping_key(
+    systems: Mapping[str, Any],
+    preferred: str,
+    generated: Mapping[str, Any],
+    *,
+    qualifier: str,
+) -> str:
+    """Return a deterministic free key, reusing only an equivalent entry."""
+
+    def equivalent(existing: Any, candidate: Mapping[str, Any]) -> bool:
+        if not isinstance(existing, Mapping):
+            return False
+        left = dict(existing)
+        right = dict(candidate)
+        left.pop("id", None)
+        right.pop("id", None)
+        return left == right
+
+    existing = systems.get(preferred)
+    if existing is None or equivalent(existing, generated):
+        return preferred
+    for ordinal in range(1, 1000):
+        digest = hashlib.sha256(f"{qualifier}:{ordinal}".encode("utf-8")).hexdigest()[
+            :16
+        ]
+        suffix = f"-{digest}"
+        candidate = f"{preferred[: 128 - len(suffix)]}{suffix}"
+        existing = systems.get(candidate)
+        if existing is None or equivalent(existing, generated):
+            return candidate
+    raise ValueError(f"could not allocate a generated agent-system id for {qualifier}")
+
+
+def _generated_role_system_key(
+    systems: Mapping[str, Any],
+    preferred: str,
+    generated: Mapping[str, Any],
+    *,
+    migration_source: str,
+    qualifier: str,
+) -> str:
+    """Reuse a migration-owned identity even when its derived fields changed."""
+
+    owned: list[str] = []
+    for system_id, raw_system in systems.items():
+        if not isinstance(raw_system, Mapping):
+            continue
+        metadata = raw_system.get("metadata")
+        if (
+            raw_system.get("kind") == generated.get("kind")
+            and isinstance(metadata, Mapping)
+            and metadata.get("migration_version") == MIGRATION_VERSION
+            and metadata.get("migration_source") == migration_source
+        ):
+            if generated.get("kind") != "internal_runner" or (
+                raw_system.get("runner") == generated.get("runner")
+                and set(raw_system.get("roles", ())) == set(generated.get("roles", ()))
+            ):
+                owned.append(str(system_id))
+    if owned:
+        return preferred if preferred in owned else min(owned)
+    return _generated_mapping_key(systems, preferred, generated, qualifier=qualifier)
+
+
+def _generated_api_profile(bindings: Mapping[str, str]) -> dict[str, Any]:
+    return {
+        "schema_version": ROLE_BINDINGS_SCHEMA_VERSION,
+        "profile_id": "api",
+        "bindings": dict(bindings),
+        "migration": {
+            "version": MIGRATION_VERSION,
+            "source": "current_dependency_construction",
+        },
+    }
+
+
+def _generated_api_system(name: str, backend: Backend) -> dict[str, Any] | None:
+    roles = {
+        mapped
+        for role in backend.roles
+        if (mapped := _CANONICAL_ROLE_BY_LEGACY_ROLE.get(str(role))) is not None
+    }
+    if not roles:
+        return None
+    system_id = _safe_generated_id("api", name)
+    return {
+        "kind": "api",
+        "id": system_id,
+        "enabled": bool(backend.enabled),
+        "provider": backend.provider,
+        "model": backend.model,
+        "roles": sorted(roles),
+        "existing_backend_reference": name,
+        "timeout_seconds": int(backend.timeout_seconds or 180),
+        "max_parallel": int(backend.max_parallel),
+        "metadata": {
+            "migration_version": MIGRATION_VERSION,
+            "migration_source": f"backends.{name}",
+            "legacy_backend_preserved": True,
+        },
+    }
+
+
+def _generated_internal_system(
+    system_id: str, runner: str, role: str
+) -> dict[str, Any]:
+    return {
+        "kind": "internal_runner",
+        "id": system_id,
+        "enabled": True,
+        "runner": runner,
+        "roles": [role],
+        "timeout_seconds": 180,
+        "max_parallel": 1,
+        "metadata": {
+            "migration_version": MIGRATION_VERSION,
+            "migration_source": "current_dependency_construction",
+        },
+    }
 
 
 def _legacy_entry(name: str, backend: Backend) -> dict[str, Any]:
@@ -124,9 +278,16 @@ def migrate_agent_system_configuration(
             if isinstance(raw_value, Backend):
                 backends[name] = raw_value
             elif isinstance(raw_value, Mapping):
-                backends[name] = Backend.model_validate(
-                    {"name": name, **dict(raw_value)}
-                )
+                try:
+                    backends[name] = Backend.model_validate(
+                        {"name": name, **dict(raw_value)}
+                    )
+                except Exception as error:
+                    raise _configuration_validation_error(
+                        f"backends.{name}", error
+                    ) from error
+            else:
+                raise ValueError(f"backends.{name}: expected a mapping")
 
     existing = migrated.get("agent_systems")
     if existing is None:
@@ -160,15 +321,159 @@ def migrate_agent_system_configuration(
     for name, backend in backends.items():
         if "coding" not in backend.roles:
             continue
-        if name in systems:
-            preserved.append(name)
+        route_name = name
+        generated_route = _legacy_entry(name, backend)
+        existing_route = systems.get(route_name)
+        # An explicitly configured legacy route remains authoritative.  Only
+        # allocate a compatibility key when a neutral role-system happens to
+        # use the legacy backend name as its system id.
+        if not (
+            isinstance(existing_route, Mapping) and existing_route.get("kind") is None
+        ):
+            route_name = _generated_mapping_key(
+                systems,
+                route_name,
+                generated_route,
+                qualifier=f"legacy-coding-route:{name}",
+            )
+        if route_name in systems:
+            preserved.append(route_name)
         else:
-            systems[name] = _legacy_entry(name, backend)
-            added.append(name)
+            systems[route_name] = generated_route
+            added.append(route_name)
+
+    added_role_systems: list[str] = []
+    preserved_role_systems: list[str] = []
+    removed_role_systems: list[str] = []
+    for system_id, raw_system in list(systems.items()):
+        if not isinstance(raw_system, Mapping) or raw_system.get("kind") != "api":
+            continue
+        metadata = raw_system.get("metadata")
+        backend_reference = raw_system.get("existing_backend_reference")
+        if (
+            isinstance(metadata, Mapping)
+            and metadata.get("migration_version") == MIGRATION_VERSION
+            and isinstance(backend_reference, str)
+            and backend_reference not in backends
+        ):
+            del systems[system_id]
+            removed_role_systems.append(str(system_id))
+
+    api_system_by_backend: dict[str, str] = {}
+    for name, backend in sorted(backends.items()):
+        generated = _generated_api_system(name, backend)
+        if generated is None:
+            continue
+        migration_source = f"backends.{name}"
+        system_id = _generated_role_system_key(
+            systems,
+            str(generated["id"]),
+            generated,
+            migration_source=migration_source,
+            qualifier=f"api-backend:{name}",
+        )
+        generated["id"] = system_id
+        api_system_by_backend[name] = system_id
+        existing_system = systems.get(system_id)
+        if existing_system is None:
+            systems[system_id] = generated
+            added_role_systems.append(system_id)
+        elif isinstance(existing_system, Mapping):
+            systems[system_id] = generated
+            preserved_role_systems.append(system_id)
+
+    internal_definitions: list[dict[str, Any]] = []
+    if any("coding" in backend.roles for backend in backends.values()):
+        internal_definitions.append(
+            _generated_internal_system("villani-code-runner", "villani_code", "coding")
+        )
+    if backends:
+        internal_definitions.extend(
+            (
+                _generated_internal_system(
+                    "villani-verifier", "villani_verifier", "verification"
+                ),
+                _generated_internal_system(
+                    "evidence-selector", "evidence_selector", "selection"
+                ),
+            )
+        )
+    internal_system_by_role: dict[str, str] = {}
+    for generated in internal_definitions:
+        role = str(generated["roles"][0])
+        system_id = _generated_role_system_key(
+            systems,
+            str(generated["id"]),
+            generated,
+            migration_source="current_dependency_construction",
+            qualifier=f"internal-runner:{generated['runner']}:{role}",
+        )
+        generated["id"] = system_id
+        internal_system_by_role[role] = system_id
+        existing_system = systems.get(system_id)
+        if existing_system is None:
+            systems[system_id] = generated
+            added_role_systems.append(system_id)
+        elif isinstance(existing_system, Mapping):
+            systems[system_id] = generated
+            preserved_role_systems.append(system_id)
+
+    raw_profiles = migrated.get("execution_profiles")
+    if raw_profiles is None:
+        profiles: dict[str, Any] = {}
+    elif isinstance(raw_profiles, Mapping):
+        profiles = copy.deepcopy(dict(raw_profiles))
+    else:
+        raise ValueError("execution_profiles: expected a mapping keyed by profile id")
+    migrated["execution_profiles"] = profiles
+    generated_profile = False
+    classification_backends = [
+        backend
+        for backend in backends.values()
+        if backend.enabled and "classification" in backend.roles
+    ]
+    coding_available = any(
+        backend.enabled and "coding" in backend.roles for backend in backends.values()
+    )
+    generated_api_bindings: dict[str, str] | None = None
+    if classification_backends and coding_available:
+        classification_backend = min(
+            classification_backends,
+            key=lambda item: (-item.capability_score, item.name),
+        )
+        generated_api_bindings = {
+            "classification": api_system_by_backend[classification_backend.name],
+            "coding": internal_system_by_role["coding"],
+            "verification": internal_system_by_role["verification"],
+            "selection": internal_system_by_role["selection"],
+        }
+
+    raw_api_profile = profiles.get("api")
+    if "api" not in profiles and generated_api_bindings is not None:
+        profiles["api"] = _generated_api_profile(generated_api_bindings)
+        migrated.setdefault("active_execution_profile", "api")
+        generated_profile = True
+    elif isinstance(raw_api_profile, Mapping):
+        profile_migration = raw_api_profile.get("migration")
+        migration_owned_profile = bool(
+            isinstance(profile_migration, Mapping)
+            and profile_migration.get("version") == MIGRATION_VERSION
+            and profile_migration.get("source") == "current_dependency_construction"
+        )
+        if migration_owned_profile:
+            if generated_api_bindings is None:
+                del profiles["api"]
+                if migrated.get("active_execution_profile") == "api":
+                    migrated.pop("active_execution_profile", None)
+            else:
+                profiles["api"] = _generated_api_profile(generated_api_bindings)
+            generated_profile = True
 
     removed: list[str] = []
     for route_name, raw_entry in list(systems.items()):
         if not isinstance(raw_entry, Mapping):
+            continue
+        if raw_entry.get("kind") is not None:
             continue
         migration_value = raw_entry.get("migration")
         backend_name = str(raw_entry.get("backend") or route_name)
@@ -187,6 +492,10 @@ def migrate_agent_system_configuration(
         "added_systems": sorted(added),
         "preserved_systems": sorted(preserved),
         "removed_generated_systems": sorted(removed),
+        "added_role_systems": sorted(added_role_systems),
+        "preserved_role_systems": sorted(set(preserved_role_systems)),
+        "removed_generated_role_systems": sorted(removed_role_systems),
+        "generated_execution_profile": "api" if generated_profile else None,
         "legacy_backends_preserved": True,
         "destructive_changes": False,
     }
@@ -368,6 +677,11 @@ def build_agent_system_identities(
         raw = systems[route_name]
         if not isinstance(raw, Mapping):
             raise ValueError(f"agent system {route_name!r} must be a mapping")
+        # Role systems are the lower-level neutral configuration consumed by
+        # role-specific factories.  Legacy harness routes remain the source of
+        # the richer coding identity until that compatibility path is retired.
+        if raw.get("kind") is not None:
+            continue
         entry = dict(raw)
         backend_name = str(entry.get("backend") or route_name)
         backend = backends.get(backend_name)

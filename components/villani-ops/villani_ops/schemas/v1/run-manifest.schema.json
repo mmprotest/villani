@@ -111,6 +111,18 @@
             { "type": "null" }
           ]
         },
+        "role_bindings": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "agent_invocations": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
         "route_plans": {
           "anyOf": [
             { "type": "string", "minLength": 1 },
@@ -161,6 +173,23 @@
       "type": "array",
       "items": { "type": "string", "pattern": "^asys_[0-9a-f]{64}$" },
       "uniqueItems": true
+    },
+    "execution_profile_id": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "role_bindings": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "agent_invocation_ids": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^ainv_[0-9a-f]{64}$"
+      }
     }
   },
   "$defs": {

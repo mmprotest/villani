@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/agent-system-config.schema.json",
+  "title": "Villani Neutral Agent-System Catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "systems"],
+  "properties": {
+    "schema_version": { "const": "villani.agent_system_config.v1" },
+    "systems": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/agent_system" }
+    }
+  },
+  "$defs": {
+    "role": {
+      "enum": ["classification", "coding", "verification", "selection"]
+    },
+    "common": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "enabled": { "type": "boolean" },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/role" }
+        },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "max_parallel": { "type": "integer", "minimum": 1, "maximum": 32 }
+      }
+    },
+    "api": {
+      "allOf": [
+        { "$ref": "#/$defs/common" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "enabled", "provider", "model", "roles", "existing_backend_reference", "timeout_seconds", "max_parallel", "metadata"],
+          "properties": {
+            "kind": { "const": "api" },
+            "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+            "enabled": { "type": "boolean" },
+            "provider": { "type": "string", "minLength": 1 },
+            "model": { "type": "string", "minLength": 1 },
+            "roles": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/role" } },
+            "existing_backend_reference": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+            "timeout_seconds": { "type": "integer", "minimum": 1 },
+            "max_parallel": { "type": "integer", "minimum": 1, "maximum": 32 },
+            "metadata": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "internal_runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "enabled", "runner", "roles", "timeout_seconds", "max_parallel", "metadata"],
+      "properties": {
+        "kind": { "const": "internal_runner" },
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "enabled": { "type": "boolean" },
+        "runner": { "type": "string", "minLength": 1 },
+        "roles": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/role" } },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "max_parallel": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "metadata": { "type": "object" }
+      }
+    },
+    "cli_agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "enabled", "driver", "executable", "model", "roles", "timeout_seconds", "max_parallel", "instruction_policy", "permission_profile", "environment_policy", "provider_options"],
+      "properties": {
+        "kind": { "const": "cli_agent" },
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "enabled": { "type": "boolean" },
+        "driver": { "enum": ["codex", "claude_code"] },
+        "executable": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "roles": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/role" } },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "max_parallel": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "instruction_policy": { "enum": ["native_project", "villani_controlled"] },
+        "permission_profile": { "type": "string", "minLength": 1 },
+        "environment_policy": { "type": "string", "minLength": 1 },
+        "provider_options": { "type": "object" }
+      }
+    },
+    "agent_system": {
+      "oneOf": [
+        { "$ref": "#/$defs/api" },
+        { "$ref": "#/$defs/internal_runner" },
+        { "$ref": "#/$defs/cli_agent" }
+      ]
+    }
+  }
+}

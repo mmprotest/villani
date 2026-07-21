@@ -1,0 +1,214 @@
+{
+  "milestone": "Villani CLI Agent Mode Milestone 2: Shared CLI Subprocess Runtime",
+  "status": "COMPLETE",
+  "date": "2026-07-21",
+  "scope": {
+    "provider_neutral_runtime": true,
+    "controller_changed": false,
+    "runtime_wired_to_roles": false,
+    "codex_driver_started": false,
+    "claude_code_driver_started": false,
+    "role_adapters_started": false,
+    "milestone_3_started": false
+  },
+  "files": {
+    "added": [
+      "components/villani-ops/villani_ops/closed_loop/cli_runtime/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/cli_runtime/cancellation.py",
+      "components/villani-ops/villani_ops/closed_loop/cli_runtime/environment.py",
+      "components/villani-ops/villani_ops/closed_loop/cli_runtime/models.py",
+      "components/villani-ops/villani_ops/closed_loop/cli_runtime/process_tree.py",
+      "components/villani-ops/villani_ops/closed_loop/cli_runtime/supervisor.py",
+      "components/villani-ops/villani_ops/tests/fixtures/cli_runtime/fake_cli.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_cli_runtime.py",
+      "schemas/v1/cli-invocation.schema.json",
+      "schemas/v1/cli-process-result.schema.json",
+      "schemas/v1/cli-output-tail.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/cli-invocation.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/cli-process-result.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/cli-output-tail.schema.json",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_001/agent/invocation.json",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_001/agent/process-result.json",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_001/agent/output-tail.json",
+      "docs/CLI_AGENT_MODE_M2_COMPLETION_REPORT.md",
+      "docs/CLI_AGENT_MODE_M2_COMPLETION_REPORT.json"
+    ],
+    "changed": [
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "tests/closed_loop/test_protocol_contract.py",
+      "components/villani-run-model/src/agentSystem.ts",
+      "components/villani-run-model/dist/agentSystem.js",
+      "components/villani-run-model/dist/agentSystem.d.ts",
+      "components/villani-run-model/test/agentSystem.test.ts",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "PLANS.md"
+    ],
+    "removed": [],
+    "migrated": []
+  },
+  "schemas": [
+    "villani.cli_invocation.v1",
+    "villani.cli_process_result.v1",
+    "villani.cli_output_tail.v1"
+  ],
+  "public_command_changes": [],
+  "process_strategy": {
+    "common": "asyncio.create_subprocess_exec with separate argv elements, exact cwd/environment, piped-and-closed stdin, concurrent bounded stdout/stderr drains, no shell",
+    "posix": "start_new_session; SIGTERM invocation process group; bounded wait; SIGKILL group; await/reap parent; verify group disappearance",
+    "windows": "CREATE_NEW_PROCESS_GROUP plus CREATE_SUSPENDED; assign kill-on-close Job Object before resuming owned initial thread; CTRL_BREAK grace; TerminateJobObject after expiry; await parent; close job; taskkill tree fallback only on failed job attachment"
+  },
+  "failure_taxonomy": [
+    "executable_not_found",
+    "executable_not_runnable",
+    "spawn_failed",
+    "stdin_failed",
+    "timeout",
+    "cancelled",
+    "nonzero_exit",
+    "process_tree_cleanup_failed",
+    "stdout_limit_exceeded",
+    "stderr_limit_exceeded",
+    "event_line_limit_exceeded",
+    "output_decode_failed",
+    "artifact_write_failed",
+    "malformed_stream",
+    "final_output_missing",
+    "unknown_infrastructure_failure"
+  ],
+  "artifacts": [
+    "invocation.json",
+    "stdout.log",
+    "stderr.log",
+    "process-result.json",
+    "raw-events.jsonl",
+    "output-tail.json"
+  ],
+  "validation": [
+    {
+      "command": "components/villani-ops: python -m pytest -q",
+      "exit_code": 0,
+      "result": "1352 passed, 4 skipped, 116 deselected in 309.11s"
+    },
+    {
+      "command": "pytest -q villani_ops/tests/closed_loop/test_cli_runtime.py",
+      "exit_code": 0,
+      "result": "41 passed, 2 skipped in 8.29s"
+    },
+    {
+      "command": "child-process cleanup test repeated three times",
+      "exit_code": 0,
+      "result": "5 passed in 1.86s; 5 passed in 1.89s; 5 passed in 1.89s; 15/15"
+    },
+    {
+      "command": "existing Villani Code heartbeat test repeated after transient host failure",
+      "exit_code": 0,
+      "result": "1 passed in 1.14s; 1 passed in 1.11s; 1 passed in 1.15s; 3/3"
+    },
+    {
+      "command": "affected cancellation and cleanup selection",
+      "exit_code": 0,
+      "result": "7 passed in 1.99s"
+    },
+    {
+      "command": "components/villani-agentd: python -m pytest -q",
+      "exit_code": 0,
+      "result": "87 passed in 22.62s"
+    },
+    {
+      "command": "root: python -m pytest tests/closed_loop -q",
+      "exit_code": 0,
+      "result": "11 passed, 2 warnings in 49.52s"
+    },
+    {
+      "command": "Villani Ops protocol/schema tests",
+      "exit_code": 0,
+      "result": "23 passed in 1.23s"
+    },
+    {
+      "command": "root protocol contract tests",
+      "exit_code": 0,
+      "result": "2 passed, 1 cache warning in 0.93s"
+    },
+    {
+      "command": "components/villani-run-model: npm test; npm run typecheck; npm run build",
+      "exit_code": 0,
+      "result": "6 test files and 17 tests passed; typecheck and build passed"
+    },
+    {
+      "command": "components/villani-flight-recorder: npm test; npm run typecheck; npm run build; npm run format:check",
+      "exit_code": 0,
+      "result": "21 test files and 118 tests passed; typecheck, build, and format passed"
+    },
+    {
+      "command": "scoped Ruff check and format check",
+      "exit_code": 0,
+      "result": "all checks passed; 10 files already formatted"
+    },
+    {
+      "command": "scoped mypy",
+      "exit_code": 0,
+      "result": "Success: no issues found in 7 source files"
+    },
+    {
+      "command": "Python 3.11 compileall",
+      "exit_code": 0,
+      "result": "PYTHON_3_11_COMPILE=PASS"
+    },
+    {
+      "command": "static shell/provider/controller scan",
+      "exit_code": 0,
+      "result": "SAFE_EXEC_CALLS=2; FORBIDDEN_RUNTIME_MATCHES=0; CONTROLLER_PROVIDER_IMPORT_MATCHES=0"
+    },
+    {
+      "command": "new root/packaged schema SHA-256 pair comparison",
+      "exit_code": 0,
+      "result": "cli-invocation=True; cli-process-result=True; cli-output-tail=True"
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0,
+      "result": "no errors"
+    }
+  ],
+  "red_regression": {
+    "exit_code": 1,
+    "result": "collection failed with ModuleNotFoundError: villani_ops.closed_loop.cli_runtime before implementation"
+  },
+  "development_incidents": [
+    {
+      "command": "post-audit components/villani-ops full pytest attempt",
+      "exit_code": 1,
+      "result": "1351 passed, 4 skipped, 116 deselected, 1 failed in 297.68s; existing OneDrive-hosted Villani Code descendant heartbeat stopped advancing before production timeout"
+    },
+    {
+      "command": "Ruff format check immediately after failure-path audit patch",
+      "exit_code": 1,
+      "result": "Would reformat supervisor.py; Ruff then reformatted 1 file and final lint/format/type checks passed"
+    }
+  ],
+  "platform_evidence": {
+    "proved_locally": [
+      "Windows suspended process creation and Job Object assignment",
+      "Windows child-tree force cleanup",
+      "Windows paths and case-insensitive PATH",
+      "grace-period ordering",
+      "unrelated-process safety",
+      "Python 3.11 syntax compatibility"
+    ],
+    "not_proved_locally": [
+      "Linux/macOS process-group execution",
+      "interactive-console delivery of CTRL_BREAK_EVENT to a signal handler"
+    ]
+  },
+  "remaining_compatibility_risks": [
+    "POSIX runtime branches require Linux/macOS CI execution.",
+    "The hosted Windows process proved CTRL_BREAK request and grace ordering but not interactive-console handler receipt.",
+    "Redaction covers registered secrets and invocation redaction-key values; unidentified repository output remains governed local run evidence.",
+    "A physical artifact-write failure can necessarily leave an incomplete set and is reported as such."
+  ],
+  "confirmation": "Milestone 3 was not started; no Codex or Claude Code driver or role adapter was implemented or launched."
+}

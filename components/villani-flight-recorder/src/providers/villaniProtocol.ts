@@ -76,6 +76,8 @@ export interface VillaniRunArtifactPaths {
   run_summary?: string;
   product_run?: string;
   agent_systems?: string | null;
+  role_bindings?: string | null;
+  agent_invocations?: string | null;
   route_plans?: string | null;
   economics_update?: string | null;
   adaptive_verification?: string | null;
@@ -111,6 +113,216 @@ export interface VillaniRunManifestSnapshot {
   run_wall_clock_duration_ms?: number | null;
   run_wall_clock_duration_accounting_status?: VillaniAccountingStatus;
   agent_system_ids?: string[];
+  execution_profile_id?: string | null;
+  role_bindings?: Record<string, string>;
+  agent_invocation_ids?: Record<string, string>;
+}
+
+export type VillaniAgentRole =
+  "classification" | "coding" | "verification" | "selection";
+
+export type VillaniAgentSystemConfig =
+  | {
+      kind: "api";
+      id: string;
+      enabled: boolean;
+      provider: string;
+      model: string;
+      roles: VillaniAgentRole[];
+      existing_backend_reference: string | null;
+      timeout_seconds: number;
+      max_parallel: number;
+      metadata: Record<string, unknown>;
+    }
+  | {
+      kind: "internal_runner";
+      id: string;
+      enabled: boolean;
+      runner: string;
+      roles: VillaniAgentRole[];
+      timeout_seconds: number;
+      max_parallel: number;
+      metadata: Record<string, unknown>;
+    }
+  | {
+      kind: "cli_agent";
+      id: string;
+      enabled: boolean;
+      driver: "codex" | "claude_code";
+      executable: string;
+      model: string;
+      roles: VillaniAgentRole[];
+      timeout_seconds: number;
+      max_parallel: number;
+      instruction_policy: "native_project" | "villani_controlled";
+      permission_profile: string;
+      environment_policy: string;
+      provider_options: Record<string, unknown>;
+    };
+
+export interface VillaniAgentSystemCatalog {
+  schema_version: "villani.agent_system_config.v1";
+  systems: VillaniAgentSystemConfig[];
+}
+
+export interface VillaniRoleBindings {
+  schema_version: "villani.role_bindings.v1";
+  profile_id: string;
+  bindings: Record<VillaniAgentRole, string>;
+}
+
+export interface VillaniAgentInvocationIdentity {
+  schema_version: "villani.agent_invocation_identity.v1";
+  invocation_id: string;
+  profile_id: string;
+  role: VillaniAgentRole;
+  agent_system_id: string;
+  system_kind: "api" | "internal_runner" | "cli_agent";
+  implementation_id: string;
+  provider: string | null;
+  model: string | null;
+  driver: "codex" | "claude_code" | null;
+  executable: string | null;
+  timeout_seconds: number;
+  max_parallel: number;
+  availability: "ready" | "unavailable";
+  unavailable_reason: string | null;
+  configuration_digest: string;
+  configuration: Record<string, unknown>;
+}
+
+export type VillaniCliFailure =
+  | "executable_not_found"
+  | "executable_not_runnable"
+  | "spawn_failed"
+  | "stdin_failed"
+  | "timeout"
+  | "cancelled"
+  | "nonzero_exit"
+  | "process_tree_cleanup_failed"
+  | "stdout_limit_exceeded"
+  | "stderr_limit_exceeded"
+  | "event_line_limit_exceeded"
+  | "output_decode_failed"
+  | "artifact_write_failed"
+  | "malformed_stream"
+  | "final_output_missing"
+  | "unknown_infrastructure_failure";
+
+export interface VillaniCliOutputLimits {
+  maximum_stdout_bytes: number;
+  maximum_stderr_bytes: number;
+  maximum_stdout_chunk_bytes: number;
+  maximum_stderr_chunk_bytes: number;
+  maximum_event_line_bytes: number;
+  maximum_tail_bytes: number;
+  read_chunk_bytes: number;
+}
+
+export interface VillaniCliInvocation {
+  schema_version: "villani.cli_invocation.v1";
+  executable: string;
+  executable_identity: { status: "unresolved"; sha256: null };
+  arguments: string[];
+  environment: Array<{
+    name: string;
+    provenance: "inherited" | "addition" | "override" | "explicit";
+    redacted: boolean;
+  }>;
+  role_workspace_identity: Record<string, unknown>;
+  target_repository_writable: boolean;
+  cwd: string;
+  stdin: {
+    provided: boolean;
+    size_bytes: number;
+    artifact_reference: string | null;
+    sha256: string | null;
+  };
+  timeout_seconds: number;
+  graceful_shutdown_seconds: number;
+  limits: VillaniCliOutputLimits;
+  event_stream_format: "none" | "jsonl";
+  utf8_policy: "replacement" | "strict";
+  final_output_path: string | null;
+  require_final_output: boolean;
+  started_at: string;
+}
+
+export interface VillaniCliStreamResult {
+  artifact_path: string;
+  total_bytes_observed: number;
+  bytes_persisted: number;
+  limit_exceeded: boolean;
+  largest_read_bytes: number;
+  decode_replacements: boolean;
+  output_after_cancellation: boolean;
+}
+
+export interface VillaniCliProcessResult {
+  schema_version: "villani.cli_process_result.v1";
+  infrastructure_state: "succeeded" | "failed" | "cancelled" | "timed_out";
+  failure: VillaniCliFailure | null;
+  failures: Array<{
+    code: VillaniCliFailure;
+    message: string;
+    stream: "stdout" | "stderr" | "events" | "stdin" | "artifact" | null;
+    configured_limit_bytes: number | null;
+    observed_bytes: number | null;
+  }>;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  pid: number | null;
+  exit_code: number | null;
+  timed_out: boolean;
+  cancelled: boolean;
+  cancellation_origin:
+    | "user"
+    | "controller"
+    | "timeout"
+    | "parent_service_shutdown"
+    | "runtime_failure"
+    | null;
+  termination_reason: string | null;
+  graceful_termination_requested: boolean;
+  graceful_termination_succeeded: boolean;
+  forced_termination: boolean;
+  cleanup_status: "succeeded" | "failed" | "not_required";
+  cleanup_error: string | null;
+  target_repository_writable: boolean;
+  stdin_bytes_delivered: number;
+  stdout: VillaniCliStreamResult;
+  stderr: VillaniCliStreamResult;
+  raw_events: VillaniCliStreamResult;
+  final_output_path: string | null;
+  final_output_present: boolean | null;
+  invocation_artifact: string;
+  output_tail_artifact: string;
+  process_result_artifact: string;
+  artifact_set_complete: boolean;
+}
+
+export interface VillaniCliOutputTail {
+  schema_version: "villani.cli_output_tail.v1";
+  stdout: string;
+  stderr: string;
+  maximum_tail_bytes: number;
+  utf8_policy: "replacement" | "strict";
+  stdout_decode_replacements: boolean;
+  stderr_decode_replacements: boolean;
+}
+
+export interface VillaniCodexCoderResult {
+  schema_version: "villani.codex_coder_result.v1";
+  status: "completed" | "blocked";
+  summary: string;
+  tests_run: Array<{
+    command: string;
+    reported_exit_status: number | null;
+    reported_result: string;
+  }>;
+  known_limitations: string[];
+  files_the_agent_believes_changed: string[];
 }
 
 export interface VillaniRunStateSnapshot {
@@ -595,6 +807,13 @@ export type VillaniProtocolDocument =
   | VillaniValidationCoverage
   | VillaniRunSummary
   | VillaniAgentSystemIdentity
+  | VillaniAgentSystemCatalog
+  | VillaniRoleBindings
+  | VillaniAgentInvocationIdentity
+  | VillaniCliInvocation
+  | VillaniCliProcessResult
+  | VillaniCliOutputTail
+  | VillaniCodexCoderResult
   | VillaniHarnessResult
   | VillaniHarnessConformanceReport
   | VillaniHarnessDiscovery

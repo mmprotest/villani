@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/cli-output-tail.schema.json",
+  "title": "Villani CLI Output Tail",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "stdout",
+    "stderr",
+    "maximum_tail_bytes",
+    "utf8_policy",
+    "stdout_decode_replacements",
+    "stderr_decode_replacements"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.cli_output_tail.v1" },
+    "stdout": { "type": "string" },
+    "stderr": { "type": "string" },
+    "maximum_tail_bytes": { "type": "integer", "minimum": 1 },
+    "utf8_policy": { "enum": ["replacement", "strict"] },
+    "stdout_decode_replacements": { "type": "boolean" },
+    "stderr_decode_replacements": { "type": "boolean" }
+  }
+}

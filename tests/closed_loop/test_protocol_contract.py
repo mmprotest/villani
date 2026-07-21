@@ -36,6 +36,13 @@ def test_shared_protocol_bundle_validates_from_repository_root() -> None:
         VALID_RUN / "verification" / "attempt_002.json",
         VALID_RUN / "selection.json",
         VALID_RUN / "materialization.json",
+        VALID_RUN / "agent-system-config.json",
+        VALID_RUN / "role-bindings.json",
+        VALID_RUN / "agent-invocation-identity.json",
+        VALID_RUN / "attempts" / "attempt_001" / "agent" / "invocation.json",
+        VALID_RUN / "attempts" / "attempt_001" / "agent" / "process-result.json",
+        VALID_RUN / "attempts" / "attempt_001" / "agent" / "output-tail.json",
+        VALID_RUN / "attempts" / "attempt_001" / "agent" / "coder-result.json",
         VALID_RUN
         / "agent-systems"
         / "asys_d605dea1f6503cf9996864423c705228b426ccee3c2e02869084ac9bbbbda575.json",

@@ -1,0 +1,17 @@
+{
+  "schema_version": "villani.agent_system_config.v1",
+  "systems": [
+    {
+      "kind": "api",
+      "id": "fixture-api",
+      "enabled": true,
+      "provider": "openai-compatible",
+      "model": "fixture-model",
+      "roles": ["classification", "coding", "verification", "selection"],
+      "existing_backend_reference": "fixture",
+      "timeout_seconds": 180,
+      "max_parallel": 1,
+      "metadata": {}
+    }
+  ]
+}

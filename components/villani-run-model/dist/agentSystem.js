@@ -1,4 +1,12 @@
 export const AGENT_SYSTEM_SCHEMA_VERSION = "villani.agent_system.v1";
+export const AGENT_SYSTEM_CONFIG_SCHEMA_VERSION = "villani.agent_system_config.v1";
+export const ROLE_BINDINGS_SCHEMA_VERSION = "villani.role_bindings.v1";
+export const AGENT_INVOCATION_IDENTITY_SCHEMA_VERSION = "villani.agent_invocation_identity.v1";
+export const CLI_INVOCATION_SCHEMA_VERSION = "villani.cli_invocation.v1";
+export const CLI_PROCESS_RESULT_SCHEMA_VERSION = "villani.cli_process_result.v1";
+export const CLI_OUTPUT_TAIL_SCHEMA_VERSION = "villani.cli_output_tail.v1";
+export const CODEX_CODER_RESULT_SCHEMA_VERSION = "villani.codex_coder_result.v1";
+export const CLAUDE_CODER_RESULT_SCHEMA_VERSION = "villani.claude_coder_result.v1";
 export const HARNESS_RESULT_SCHEMA_VERSION = "villani.harness_result.v1";
 export const HARNESS_CONFORMANCE_SCHEMA_VERSION = "villani.harness_conformance_report.v1";
 export const HARNESS_DISCOVERY_SCHEMA_VERSION = "villani.harness_discovery.v1";

@@ -4656,3 +4656,150 @@ Remaining limitations, assumptions, and risks:
 Next permitted milestone:
 - PT10 remains `INSUFFICIENT_EVIDENCE` until clean macOS and Linux hosted certification artifacts
   pass the committed matrix. PT11 was not started.
+
+#### 2026-07-20: CLI Agent Mode Milestone 1, neutral agent-system configuration and role binding
+
+Status: `COMPLETE`. Added strict versioned neutral API, internal-runner, and inspection-only CLI
+agent-system configuration; complete classification/coding/verification/selection profiles; a
+role-system registry; four typed role factories; backward-compatible migration; secret-free
+invocation identity; canonical run-bundle recording; Python/TypeScript schema mirrors; and
+read-only `agents`/`profiles` inspection. Public CLI and agentd still construct the same single
+`ClosedLoopController`. Explicit unavailable Codex/Claude CLI profiles fail without API fallback,
+and no external CLI or subprocess driver runtime was launched. Milestone 2 was not started.
+
+Verification:
+- Authoritative Villani Ops: 1,311 passed, 2 skipped, 116 deselected in 370.66 seconds.
+- Distribution: 77 passed in 233.10 seconds. Agentd: 87 passed in 27.06 seconds. Root closed-loop:
+  11 passed with 2 warnings in 63.22 seconds, including the current API-mode end-to-end fixture.
+- Root protocol: 2 passed with 1 cache warning. Run Model: 6 files/17 tests plus build/typecheck.
+  Flight Recorder: 21 files/118 tests plus build/typecheck/format.
+- All 16 changed Python files passed Ruff lint/format. Scoped mypy passed 6 production modules;
+  Python compilation and final `git diff --check` passed.
+- Reports: `docs/CLI_AGENT_MODE_M1_COMPLETION_REPORT.md` and
+  `docs/CLI_AGENT_MODE_M1_COMPLETION_REPORT.json`.
+
+Remaining risks:
+- CLI agent entries remain intentionally unavailable until their future drivers and doctor checks
+  are implemented. Existing legacy PT6 runner modules remain compatible but were not launched.
+- The broad repository mypy baseline remains noisy outside scoped modules. Existing cache and
+  Starlette/httpx warnings did not affect the green acceptance suites.
+
+Next permitted milestone:
+- CLI Agent Mode Milestone 1 is complete. CLI Agent Mode Milestone 2 was not started.
+
+#### 2026-07-21: CLI Agent Mode Milestone 2, shared CLI subprocess runtime
+
+Status: `COMPLETE`. Added one provider-neutral asynchronous CLI subprocess runtime with immutable
+invocation/result contracts, explicit environment policy, bounded concurrent output capture,
+redacted durable artifacts, optional provider-neutral JSONL framing, typed infrastructure failures,
+idempotent cancellation, and complete process-tree cleanup. Windows uses suspended process-group
+creation plus a kill-on-close Job Object before child code runs; POSIX uses an invocation-owned
+session/process group. The existing Milestone 1 registry, role factories, single controller, and
+API/internal behavior remain unchanged and the new runtime is intentionally not wired to a role.
+
+Verification:
+- Authoritative Villani Ops: 1,352 passed, 4 skipped, 116 deselected in 309.11 seconds. The focused
+  runtime suite passed 41 tests with 2 opposite-platform skips in 8.29 seconds.
+- The five-case child-tree cleanup test passed three additional consecutive runs (15/15). Existing
+  cancellation/cleanup coverage passed 7 tests. Agentd passed 87 tests.
+- Root closed-loop/API end-to-end passed 11 tests with 2 warnings. Ops schema/protocol passed 23;
+  root protocol passed 2 with 1 cache warning.
+- Run Model passed 6 files/17 tests plus typecheck/build. Flight Recorder passed 21 files/118 tests
+  plus typecheck/build/format.
+- Scoped Ruff lint/format and mypy passed; Python 3.11 compilation, schema parity, provider/shell
+  static scans, and final `git diff --check` passed.
+- Reports: `docs/CLI_AGENT_MODE_M2_COMPLETION_REPORT.md` and
+  `docs/CLI_AGENT_MODE_M2_COMPLETION_REPORT.json`.
+
+Remaining risks:
+- Windows x86_64 process and descendant cleanup is locally proved. The POSIX implementation and
+  tests are committed, but Linux/macOS process-group behavior remains for hosted CI to prove.
+- The hosted Windows session did not provide an interactive console for proving that the fake's
+  handler received `CTRL_BREAK_EVENT`; graceful wait/order and forced Job Object cleanup are proved.
+- Registered secrets are redacted. Unidentified repository output remains governed evidence, and
+  physical artifact-write failures necessarily report an incomplete artifact set.
+
+Next permitted milestone:
+- CLI Agent Mode Milestone 2 is complete. CLI Agent Mode Milestone 3 was not started.
+
+#### 2026-07-21: CLI Agent Mode Milestone 3, Codex CLI coding adapter vertical slice
+
+Status: `COMPLETE`. Added a Codex `exec` driver and coding-only `AttemptRunner` adapter beneath the
+Milestone 2 provider-neutral runtime. Doctor probes the exact version, `exec --help` capabilities,
+and authentication status without login or credential access. Every coding candidate receives a
+separate isolated Git worktree, process, prompt, event stream, structured agent report, provider
+identity, and Git-derived patch/evidence bundle. Existing classifier, verifier, selector,
+controller, candidate eligibility, and delivery behavior remain in place. No Codex non-coding role
+or Claude Code work was started.
+
+Verification:
+- Authoritative Villani Ops: 1,384 passed, 4 skipped, 117 deselected in 467.96 seconds. The focused
+  M3 suite passed 32 tests with one opt-in real smoke deselected; the post-format M1/M3/protocol
+  selection passed 81 tests with one deselected.
+- M1/M2/M3, unified CLI, and closed-loop compatibility passed 429 tests with 2 platform skips and
+  1 opt-in deselection. Shared runtime passed 41 tests with 2 opposite-platform skips.
+- Codex cancellation/descendant cleanup passed 5/5 repeated runs; output-after-cancellation and
+  graceful-shutdown stress each passed 10/10; the existing Villani Code tree test passed 5/5.
+- Distribution passed 77 tests, agentd passed 87, root non-E2E closed loop passed 8, and the
+  installed public API-mode E2E passed all 3 cases.
+- Run Model passed 6 files/17 tests plus typecheck/build/format. Flight Recorder passed 21
+  files/118 tests plus typecheck/build/format.
+- Full Ops and agentd Ruff checks, changed-file formatting, targeted eight-module mypy with
+  untyped bodies enabled, Python 3.11 compilation, schema parity, no-shell/forbidden-flag scans,
+  and `git diff --check` passed.
+- The fake probe's exact conformance version was `codex-cli 9.9.9-fixture`. No real Codex
+  executable was on PATH; the paid/external smoke skipped with its exact opt-in reason and no model
+  call was made.
+
+Remaining risks:
+- Real Codex version/auth/model behavior remains unproved locally; the committed opt-in smoke must
+  run in an explicitly enabled environment with an installed authenticated CLI.
+- Windows process, path, cancellation, isolation, and target safety are locally proved. POSIX
+  process-group/path behavior awaits Linux/macOS CI.
+- Capability and provider-event format changes fail closed; unknown JSONL objects remain preserved
+  as namespaced raw evidence. The broad repository mypy baseline remains noisy outside the scoped
+  M3 boundary.
+- Reports: `docs/CLI_AGENT_MODE_M3_COMPLETION_REPORT.md` and
+  `docs/CLI_AGENT_MODE_M3_COMPLETION_REPORT.json`.
+
+Next permitted milestone:
+- CLI Agent Mode Milestone 3 is complete. CLI Agent Mode Milestone 4 was not started.
+
+#### 2026-07-21: CLI Agent Mode Milestone 4, Claude Code CLI coding adapter vertical slice
+
+Status: `COMPLETE`. Added a Claude Code print/stream-JSON driver and coding-only `AttemptRunner`
+adapter beneath the Milestone 2 provider-neutral runtime. Doctor probes exact version, help
+capabilities, authentication, and Claude Doctor without login, credential access, billing claims,
+or model invocation. Every Claude candidate receives a distinct isolated Git worktree and process;
+the shared Codex/Claude Git evidence pipeline derives the canonical patch, changed paths, digests,
+and path-safety facts. Existing API/internal coding and the Codex coding adapter remain compatible,
+while classification, verification, selection, eligibility, and delivery stay unchanged.
+
+Verification:
+- Authoritative Villani Ops: 1,417 passed, 4 skipped, 118 deselected. Focused M4 passed 33 tests
+  with one paid/external smoke deselected; Codex/Claude cross-driver coverage passed 65 tests with
+  two paid-smoke deselections.
+- Timeout and cancellation descendant cleanup each passed five consecutive runs (10/10 cases).
+  Villani Code passed 686 tests with 1 skip; agentd passed 87; distribution passed all 77 cases;
+  root closed-loop passed 11 and the marked public API-mode E2E passed all 3 cases.
+- Run Model passed 6 files/17 tests plus typecheck/build/source formatting. Flight Recorder passed
+  21 files/118 tests plus typecheck/build/format. Python protocol passed 23 and root protocol 2.
+- Scoped Ruff, targeted mypy, Python 3.11 compilation, schema byte parity, no-shell/no-resume/
+  no-dangerous-flag scans, controller provider-import scan, and `git diff --check` passed.
+- Fake conformance reported exact Claude Code `2.1.138`. The local bounded real probe also resolved
+  `claude.exe` and reported `2.1.138` with authentication ready, but `claude doctor` was unhealthy,
+  so it correctly remained unavailable. The real model smoke was not opted in and made no call.
+
+Remaining risks:
+- No paid/external Claude coding call was made; real stream/result behavior remains for the explicit
+  opt-in smoke after local Doctor is healthy. Capability and structured-event drift fail closed.
+- Windows process, path, isolation, cancellation, descendant cleanup, and target safety are locally
+  proved. POSIX process-group behavior remains covered by committed shared-runtime tests but awaits
+  Linux/macOS CI on this pass.
+- Provider failure classification uses conservative documented markers; unknown failures remain
+  infrastructure failures. The broad repository mypy baseline remains outside the scoped gate.
+- Reports: `docs/CLI_AGENT_MODE_M4_COMPLETION_REPORT.md` and
+  `docs/CLI_AGENT_MODE_M4_COMPLETION_REPORT.json`.
+
+Next permitted milestone:
+- CLI Agent Mode Milestone 4 is complete. CLI Agent Mode Milestone 5 was not started.

@@ -1,0 +1,9 @@
+{
+  "schema_version": "villani.cli_output_tail.v1",
+  "stdout": "{\"type\":\"result\",\"status\":\"complete\"}\n",
+  "stderr": "",
+  "maximum_tail_bytes": 16384,
+  "utf8_policy": "replacement",
+  "stdout_decode_replacements": false,
+  "stderr_decode_replacements": false
+}

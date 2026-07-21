@@ -1,0 +1,311 @@
+{
+  "schema_version": "villani.milestone_completion_report.v1",
+  "milestone_id": "cli_agent_mode_m1",
+  "milestone_name": "Neutral Agent-System Configuration and Role Binding",
+  "date": "2026-07-20",
+  "status": "COMPLETE",
+  "milestone_2_started": false,
+  "external_cli_launched": false,
+  "subprocess_runtime_started": false,
+  "one_controller_preserved": true,
+  "api_behavior_regressed": false,
+  "files": {
+    "added": [
+      "docs/CLI_AGENT_MODE_M1_COMPLETION_REPORT.md",
+      "docs/CLI_AGENT_MODE_M1_COMPLETION_REPORT.json",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/factories.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/role_models.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/role_registry.py",
+      "components/villani-ops/villani_ops/schemas/v1/agent-system-config.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/role-bindings.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/agent-invocation-identity.schema.json",
+      "components/villani-ops/villani_ops/tests/test_agent_mode_m1.py",
+      "schemas/v1/agent-system-config.schema.json",
+      "schemas/v1/role-bindings.schema.json",
+      "schemas/v1/agent-invocation-identity.schema.json",
+      "integration/fixtures/protocol/v1/valid_run/agent-system-config.json",
+      "integration/fixtures/protocol/v1/valid_run/role-bindings.json",
+      "integration/fixtures/protocol/v1/valid_run/agent-invocation-identity.json"
+    ],
+    "changed": [
+      "PLANS.md",
+      "components/villani-agentd/tests/test_console.py",
+      "components/villani-flight-recorder/dist/providers/villani.js",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/src/providers/villani.ts",
+      "components/villani-flight-recorder/src/providers/villaniProtocol.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/configuration.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/registry.py",
+      "components/villani-ops/villani_ops/closed_loop/controller.py",
+      "components/villani-ops/villani_ops/closed_loop/protocol.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/schemas/v1/run-manifest.schema.json",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-ops/villani_ops/tests/test_pt5_agent_systems.py",
+      "components/villani-run-model/dist/agentSystem.d.ts",
+      "components/villani-run-model/dist/agentSystem.js",
+      "components/villani-run-model/dist/types.d.ts",
+      "components/villani-run-model/src/agentSystem.ts",
+      "components/villani-run-model/src/types.ts",
+      "components/villani-run-model/test/agentSystem.test.ts",
+      "schemas/v1/run-manifest.schema.json",
+      "tests/closed_loop/test_protocol_contract.py"
+    ],
+    "removed": [],
+    "statically_migrated": [],
+    "preserved_unrelated_untracked": [
+      ".venv-founder-evidence-matrix-v1/",
+      ".venv-wedge-experiment-v7/"
+    ]
+  },
+  "construction_paths": {
+    "previous_public": [
+      "villani_distribution.cli:app imports villani_ops.cli.unified:app",
+      "unified.run_command",
+      "unified._execute_new_run",
+      "unified.build_controller",
+      "_ClassifierAdapter",
+      "AgentSystemRegistry.attempt_runner -> AgentSystemAttemptRunner -> legacy harness adapter -> normally VillaniCodeHarnessAdapter -> VillaniCodeAttemptAdapter",
+      "VillaniVerifierAdapter or VerifierCascade or VerificationGraphVerifierAdapter",
+      "EvidenceSelectorAdapter",
+      "typed built-in plugin wrappers",
+      "ClosedLoopController"
+    ],
+    "previous_agentd": [
+      "villani_agentd.console.ConsoleService",
+      "lazy import of villani_ops.cli.unified.build_controller",
+      "same public construction path",
+      "ClosedLoopController"
+    ],
+    "new_shared": [
+      "villani run or ConsoleService",
+      "migrate_agent_system_configuration",
+      "build_agent_system_registry",
+      "RoleSystemRegistry.resolve_profile and require_runnable",
+      "construct existing concrete dependencies",
+      "RoleFactoryDependencies",
+      "build_classifier",
+      "build_attempt_runner",
+      "build_verifier",
+      "build_selector",
+      "typed built-in plugin wrappers",
+      "ClosedLoopController"
+    ],
+    "default_roles": {
+      "classification": "api-<backend-id> -> build_classifier -> existing _ClassifierAdapter bound to the referenced backend",
+      "coding": "villani-code-runner -> build_attempt_runner -> existing AgentSystemAttemptRunner -> Villani Code adapter path",
+      "verification": "villani-verifier -> build_verifier -> existing verifier implementation",
+      "selection": "evidence-selector -> build_selector -> existing EvidenceSelectorAdapter"
+    }
+  },
+  "contracts": [
+    {
+      "schema_version": "villani.agent_system_config.v1",
+      "note": "Repository-compatible lower-level executable-system catalog; villani.agent_system.v1 remains the pre-existing rich coding/harness identity."
+    },
+    {
+      "schema_version": "villani.role_bindings.v1",
+      "note": "Complete canonical role mapping for classification, coding, verification, and selection."
+    },
+    {
+      "schema_version": "villani.agent_invocation_identity.v1",
+      "note": "Secret-free resolved system and implementation identity per role."
+    }
+  ],
+  "migration": {
+    "schema_version": "villani.agent_system_migration.v1",
+    "legacy_backends_preserved": true,
+    "legacy_routes_preserved": true,
+    "legacy_review_maps_to": "verification",
+    "default_behavior_preserved": true,
+    "idempotent": true,
+    "generated_ids_collision_safe": true,
+    "generated_profiles_refreshable": true,
+    "stale_generated_systems_removed": true,
+    "explicit_profiles_silently_rerouted": false,
+    "secret_values_serialized": false,
+    "hand_edit_required": false,
+    "old_run_bundles_readable": true
+  },
+  "public_commands": [
+    "villani agents list",
+    "villani agents inspect <system-id>",
+    "villani profiles list",
+    "villani profiles inspect <profile-id>",
+    "villani run --execution-profile <profile-id>"
+  ],
+  "tests_added": {
+    "primary_file": "components/villani-ops/villani_ops/tests/test_agent_mode_m1.py",
+    "count": 26,
+    "coverage": [
+      "discriminated api/internal_runner/cli_agent parsing",
+      "invalid kind and invalid/duplicate IDs",
+      "unknown, disabled, and role-incompatible bindings",
+      "complete API, CLI-unavailable, and hybrid profiles",
+      "migration, refresh, cleanup, idempotence, and field-level errors",
+      "secret-free invocation identity",
+      "old and new run-bundle compatibility",
+      "all four role-specific factories",
+      "one-controller construction and provider-driver import isolation",
+      "bound API classifier identity",
+      "read-only agents/profiles commands"
+    ]
+  },
+  "commands": [
+    {
+      "phase": "regression_first",
+      "command": "python -m pytest -q villani_ops/tests/test_agent_mode_m1.py",
+      "result": "exit 1; 1 failed in 1.10s; old construction treated codex-classifier as an unknown backend"
+    },
+    {
+      "phase": "final",
+      "command": "python -m pytest -q",
+      "cwd": "components/villani-ops",
+      "result": "exit 0; 1311 passed, 2 skipped, 116 deselected in 370.66s"
+    },
+    {
+      "phase": "final",
+      "command": "python -m pytest -q",
+      "cwd": "components/villani-agentd",
+      "result": "exit 0; 87 passed in 27.06s"
+    },
+    {
+      "phase": "final",
+      "command": "python -m pytest -q",
+      "cwd": "components/villani",
+      "result": "exit 0; 77 passed in 233.10s; clean-install build run outside filesystem sandbox"
+    },
+    {
+      "phase": "final",
+      "command": "python -m pytest tests/closed_loop -q",
+      "cwd": ".",
+      "result": "exit 0; 11 passed, 2 warnings in 63.22s; includes current API-mode end-to-end fixture"
+    },
+    {
+      "phase": "final",
+      "command": "python -m pytest -q tests/closed_loop/test_protocol_contract.py",
+      "cwd": ".",
+      "result": "exit 0; 2 passed, 1 warning in 0.97s"
+    },
+    {
+      "phase": "final",
+      "command": "python -m pytest -q components/villani-ops/villani_ops/tests/test_agent_mode_m1.py",
+      "cwd": ".",
+      "result": "exit 0; 26 passed in 0.86s"
+    },
+    {
+      "phase": "final",
+      "command": "npm run build",
+      "cwd": "components/villani-run-model",
+      "result": "exit 0"
+    },
+    {
+      "phase": "final",
+      "command": "npm test",
+      "cwd": "components/villani-run-model",
+      "result": "exit 0; 6 files and 17 tests passed"
+    },
+    {
+      "phase": "final",
+      "command": "npm run typecheck",
+      "cwd": "components/villani-run-model",
+      "result": "exit 0"
+    },
+    {
+      "phase": "final",
+      "command": "npm test",
+      "cwd": "components/villani-flight-recorder",
+      "result": "exit 0; build passed; 21 files and 118 tests passed"
+    },
+    {
+      "phase": "final",
+      "command": "npm run typecheck",
+      "cwd": "components/villani-flight-recorder",
+      "result": "exit 0"
+    },
+    {
+      "phase": "final",
+      "command": "npm run format:check",
+      "cwd": "components/villani-flight-recorder",
+      "result": "exit 0; all matched files use Prettier style"
+    },
+    {
+      "phase": "final",
+      "command": "prettier --check ../villani-run-model/src/agentSystem.ts ../villani-run-model/src/types.ts ../villani-run-model/test/agentSystem.test.ts",
+      "cwd": "components/villani-flight-recorder",
+      "result": "exit 0; all matched files use Prettier style"
+    },
+    {
+      "phase": "final",
+      "command": "ruff check <16 changed Python files>",
+      "cwd": ".",
+      "result": "exit 0; all checks passed"
+    },
+    {
+      "phase": "final",
+      "command": "ruff format --check <16 changed Python files>",
+      "cwd": ".",
+      "result": "exit 0; 16 files already formatted"
+    },
+    {
+      "phase": "final",
+      "command": "mypy --follow-imports=skip role_models.py role_registry.py factories.py configuration.py",
+      "cwd": "components/villani-ops",
+      "result": "exit 0; no issues in 4 source files"
+    },
+    {
+      "phase": "final",
+      "command": "mypy --follow-imports=skip --ignore-missing-imports controller.py unified.py",
+      "cwd": "components/villani-ops",
+      "result": "exit 0; no issues in 2 source files"
+    },
+    {
+      "phase": "final",
+      "command": "python -m compileall -q <changed Ops agent-system/controller/CLI modules>",
+      "cwd": ".",
+      "result": "exit 0"
+    },
+    {
+      "phase": "final",
+      "command": "git diff --check",
+      "cwd": ".",
+      "result": "exit 0 after report and progress creation"
+    }
+  ],
+  "resolved_intermediate_failures": [
+    "Full Ops exposed one disabled legacy-route shadowing regression: 1307 passed and 1 failed; fixed and full reruns passed.",
+    "Agentd exposed one expected persisted-shape mismatch: 86 passed and 1 failed; compatibility assertion and stale cleanup were added; full rerun passed.",
+    "Distribution initially had 76 passes and one Vite/esbuild filesystem-sandbox denial; targeted elevated rerun passed, then the full 77-test suite passed.",
+    "An early focused command used the wrong protocol-test path and collected no tests; corrected runs passed.",
+    "An early Windows-temp run had 7 passes and 52 permission errors; repository-local TEMP/TMP reruns passed.",
+    "Broad import-graph mypy reported 270 pre-existing errors in 59 files; four new findings were fixed and scoped production checks pass.",
+    "Strict controller/CLI mypy reported only the missing external yaml stub; the scoped check with ignore-missing-imports passed."
+  ],
+  "remaining_failures": [],
+  "assumptions": [
+    "Existing opt-in and deselected test policy is unchanged.",
+    "The existing rich villani.agent_system.v1 contract must remain stable, so the new neutral catalog uses villani.agent_system_config.v1.",
+    "Only migration-owned profiles may be refreshed automatically; explicit profiles fail actionably instead of being rerouted."
+  ],
+  "known_risks": [
+    "CLI systems remain intentionally unavailable until future driver and doctor implementation.",
+    "Legacy PT6 Codex and Claude runner modules remain for compatibility, but neutral CLI systems do not invoke them in Milestone 1.",
+    "Broad repository mypy findings remain outside the scoped changed modules.",
+    "Root tests emit existing Starlette/httpx deprecation and pytest-cache permission warnings."
+  ],
+  "acceptance": {
+    "one_controller": true,
+    "all_roles_resolve_through_registry_and_factories": true,
+    "current_api_behavior_green": true,
+    "cli_systems_configurable_and_inspectable_only": true,
+    "no_secret_values_in_new_or_migrated_identities": true,
+    "old_configurations_readable": true,
+    "old_run_bundles_readable": true,
+    "milestone_2_not_started": true
+  }
+}

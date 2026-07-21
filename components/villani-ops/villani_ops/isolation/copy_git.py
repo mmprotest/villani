@@ -90,6 +90,8 @@ def source_is_git_repo(path: Path) -> bool:
         ["git", "rev-parse", "--is-inside-work-tree"],
         cwd=Path(path),
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         capture_output=True,
     )
     if proc.returncode != 0 or proc.stdout.strip() != "true":
@@ -98,6 +100,8 @@ def source_is_git_repo(path: Path) -> bool:
         ["git", "rev-parse", "--show-toplevel"],
         cwd=Path(path),
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         capture_output=True,
     )
     if root.returncode != 0 or not root.stdout.strip():
@@ -125,6 +129,8 @@ def _effective_core_autocrlf(source: Path) -> str:
         ["git", "config", "--get", "core.autocrlf"],
         cwd=source,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         capture_output=True,
     )
     value = result.stdout.strip().casefold() if result.returncode == 0 else ""
@@ -281,6 +287,8 @@ def copy_worktree(
             ["git", "rev-parse", "--show-toplevel"],
             cwd=source,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             capture_output=True,
         )
         if root_result.returncode != 0 or not root_result.stdout.strip():

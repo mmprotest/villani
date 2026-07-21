@@ -36,6 +36,7 @@ from villani_ops.closed_loop.agent_systems.models import (
     non_secret_configuration,
 )
 from villani_ops.closed_loop.agent_systems.registry import AgentSystemRegistry
+from villani_ops.closed_loop.agent_systems.role_registry import RoleSystemRegistry
 from villani_ops.closed_loop.controller import ClosedLoopController
 from villani_ops.closed_loop.adapters.evidence_selector import EvidenceSelectorAdapter
 from villani_ops.closed_loop.adapters.villani_verifier import VillaniVerifierAdapter
@@ -86,9 +87,7 @@ def _backend(
 def _configuration(backend: Backend) -> dict[str, object]:
     return {
         "backends": {
-            backend.name: backend.model_dump(
-                mode="json", exclude={"name", "api_key"}
-            )
+            backend.name: backend.model_dump(mode="json", exclude={"name", "api_key"})
         },
         "execution_environment": {"provider": "inherit"},
     }
@@ -175,15 +174,11 @@ def test_legacy_configuration_migrates_without_secret_or_identity_instability() 
     second = _backend(api_key="secret-two")
     first_config = {
         **_configuration(first),
-        "backends": {
-            first.name: first.model_dump(mode="json", exclude={"name"})
-        },
+        "backends": {first.name: first.model_dump(mode="json", exclude={"name"})},
     }
     second_config = {
         **_configuration(second),
-        "backends": {
-            second.name: second.model_dump(mode="json", exclude={"name"})
-        },
+        "backends": {second.name: second.model_dump(mode="json", exclude={"name"})},
     }
     migrated, report = migrate_agent_system_configuration(first_config)
     assert migrated["backends"] == first_config["backends"]
@@ -201,9 +196,10 @@ def test_legacy_configuration_migrates_without_secret_or_identity_instability() 
         identity_one.configuration["harness"]["resolved_version"]
         == identity_one.harness.version
     )
-    assert identity_one.configuration["harness_contract"][
-        "backpressure_policy"
-    ] == "bounded_buffer_fail_closed"
+    assert (
+        identity_one.configuration["harness_contract"]["backpressure_policy"]
+        == "bounded_buffer_fail_closed"
+    )
     validate_protocol_document(identity_one.model_dump(mode="json"))
     tampered = identity_one.model_dump(mode="json")
     tampered["configuration"]["route_name"] = "tampered"
@@ -303,7 +299,9 @@ def test_villani_code_uses_complete_lifecycle_and_writes_equivalent_evidence(
         "cleanup",
         "doctor",
     }
-    assert probe["runtime_contract"]["max_stdout_bytes"] == MAXIMUM_HARNESS_MESSAGE_BYTES
+    assert (
+        probe["runtime_contract"]["max_stdout_bytes"] == MAXIMUM_HARNESS_MESSAGE_BYTES
+    )
     assert "villani.harness_adapter.v1" in AGENT_RUNNER_MANIFEST.protocol_versions
     result = runner.run(context)
     assert result.metadata["agent_system_id"] == identity.system_id
@@ -344,6 +342,10 @@ def test_controller_bundle_records_complete_system_identity_and_attempt_link(
         {identity.system_id: adapter},
         migration_report=migration,
     )
+    migrated, _ = migrate_agent_system_configuration(_configuration(backend))
+    role_registry = RoleSystemRegistry(migrated, {backend.name: backend})
+    role_bindings = role_registry.resolve_profile("api")
+    invocation_identities = role_registry.invocation_identities(role_bindings)
     controller = ClosedLoopController(
         classifier=FakeClassifier(),
         policy_engine=FakePolicyEngine(
@@ -359,6 +361,8 @@ def test_controller_bundle_records_complete_system_identity_and_attempt_link(
         now=FixedNow(),
         monotonic=FakeMonotonic(),
         id_factory=StableIds(),
+        role_bindings=role_bindings,
+        agent_invocation_identities=invocation_identities,
     )
     result = controller.run(
         ClosedLoopRunRequest(
@@ -376,30 +380,45 @@ def test_controller_bundle_records_complete_system_identity_and_attempt_link(
         (result.run_directory / "manifest.json").read_text(encoding="utf-8")
     )
     attempt_snapshot = json.loads(
-        (
-            result.run_directory
-            / "attempts"
-            / "attempt_001"
-            / "attempt.json"
-        ).read_text(encoding="utf-8")
-    )
-    identity_path = (
-        result.run_directory / manifest["artifact_paths"]["agent_systems"]
-    )
-    identity_document = json.loads(
-        (result.run_directory / attempt_snapshot["agent_system_identity_path"]).read_text(
+        (result.run_directory / "attempts" / "attempt_001" / "attempt.json").read_text(
             encoding="utf-8"
         )
     )
+    identity_path = result.run_directory / manifest["artifact_paths"]["agent_systems"]
+    identity_document = json.loads(
+        (
+            result.run_directory / attempt_snapshot["agent_system_identity_path"]
+        ).read_text(encoding="utf-8")
+    )
     assert manifest["agent_system_ids"] == [identity.system_id]
+    assert manifest["execution_profile_id"] == "api"
+    assert manifest["role_bindings"]["coding"] == "villani-code-runner"
+    assert set(manifest["agent_invocation_ids"]) == {
+        "classification",
+        "coding",
+        "verification",
+        "selection",
+    }
+    role_bindings_path = (
+        result.run_directory / manifest["artifact_paths"]["role_bindings"]
+    )
+    invocation_index_path = (
+        result.run_directory / manifest["artifact_paths"]["agent_invocations"]
+    )
+    assert (
+        json.loads(role_bindings_path.read_text(encoding="utf-8"))["bindings"]
+        == manifest["role_bindings"]
+    )
+    assert set(
+        json.loads(invocation_index_path.read_text(encoding="utf-8"))["roles"]
+    ) == set(manifest["agent_invocation_ids"])
     assert attempt_snapshot["agent_system_id"] == identity.system_id
     assert identity_document["system_id"] == identity.system_id
-    assert json.loads(identity_path.read_text(encoding="utf-8"))["systems"][0][
-        "system_id"
-    ] == identity.system_id
     assert (
-        result.run_directory / attempt_snapshot["harness_result_path"]
-    ).is_file()
+        json.loads(identity_path.read_text(encoding="utf-8"))["systems"][0]["system_id"]
+        == identity.system_id
+    )
+    assert (result.run_directory / attempt_snapshot["harness_result_path"]).is_file()
 
 
 def test_cancellation_path_safety_event_ordering_and_bounds_fail_closed(
@@ -546,7 +565,10 @@ def test_missing_executable_and_malformed_results_fail_closed(
     )
     report = adapter.doctor()
     assert report.selectable is False
-    assert next(check for check in report.checks if check.name == "executable").status == "fail"
+    assert (
+        next(check for check in report.checks if check.name == "executable").status
+        == "fail"
+    )
     with pytest.raises(ValueError):
         HarnessResult.model_validate(
             {
@@ -557,7 +579,9 @@ def test_missing_executable_and_malformed_results_fail_closed(
         )
 
 
-def test_conformance_report_requires_every_scenario_and_authorizes_only_all_pass() -> None:
+def test_conformance_report_requires_every_scenario_and_authorizes_only_all_pass() -> (
+    None
+):
     identity, _, _ = _identity()
     observations = {
         name: {
@@ -570,9 +594,7 @@ def test_conformance_report_requires_every_scenario_and_authorizes_only_all_pass
     report = build_harness_conformance_report(identity, observations)
     assert report.status == "passed"
     assert report.production_qualification_authorized is True
-    assert {item.check_id for item in report.checks} == set(
-        REQUIRED_CONFORMANCE_CHECKS
-    )
+    assert {item.check_id for item in report.checks} == set(REQUIRED_CONFORMANCE_CHECKS)
     incomplete = build_harness_conformance_report(identity, {})
     assert incomplete.status == "insufficient_evidence"
     assert incomplete.production_qualification_authorized is False
@@ -589,9 +611,7 @@ def test_agents_cli_migrates_lists_inspects_and_doctors_without_secrets(
     config_path = home / "config.yaml"
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     backend = _backend(api_key="cli-secret")
-    config["backends"] = {
-        "code": backend.model_dump(mode="json", exclude={"name"})
-    }
+    config["backends"] = {"code": backend.model_dump(mode="json", exclude={"name"})}
     # Exercise loading a legacy config: the explicit agent_systems key is absent.
     config.pop("agent_systems", None)
     unified._write_config(config_path, config)
@@ -600,9 +620,7 @@ def test_agents_cli_migrates_lists_inspects_and_doctors_without_secrets(
     assert "cli-secret" not in listing.output
     document = json.loads(listing.output)
     system_id = document["systems"][0]["system_id"]
-    inspected = cli.invoke(
-        unified.app, ["agents", "inspect", system_id, "--json"]
-    )
+    inspected = cli.invoke(unified.app, ["agents", "inspect", system_id, "--json"])
     assert inspected.exit_code == 0, inspected.output
     assert json.loads(inspected.output)["schema_version"] == "villani.agent_system.v1"
     doctor = cli.invoke(unified.app, ["agents", "doctor", "code", "--json"])

@@ -89,6 +89,19 @@ from .agent_systems.registry import (
 from .agent_systems.configuration import (
     migrate_agent_system_configuration,
 )
+from .agent_systems.role_models import (
+    AgentInvocationIdentity,
+    AgentRole,
+    AgentSystemCatalog,
+    RoleBindings,
+)
+from .agent_systems.factories import (
+    RoleFactoryDependencies,
+    build_attempt_runner,
+    build_classifier,
+    build_selector,
+    build_verifier,
+)
 from .qualification import (
     GateCReport,
     QualificationAssessment,
@@ -106,6 +119,9 @@ from .qualification import (
 __all__ = [
     "AttemptSnapshot",
     "AgentSystemIdentity",
+    "AgentInvocationIdentity",
+    "AgentRole",
+    "AgentSystemCatalog",
     "AgentSystemRegistry",
     "AgentCapabilityV2",
     "ArtifactDescriptorV2",
@@ -146,6 +162,8 @@ __all__ = [
     "RunStateSnapshot",
     "ResourceV2",
     "RequirementEvidence",
+    "RoleBindings",
+    "RoleFactoryDependencies",
     "RepositoryValidationDecisionInput",
     "SCHEMA_VERSION_TO_PATH",
     "SCHEMA_V2_VERSION_TO_PATH",
@@ -169,7 +187,11 @@ __all__ = [
     "assess_qualification",
     "build_agent_system_registry",
     "build_agent_system_runner",
+    "build_attempt_runner",
+    "build_classifier",
     "build_gate_c_report",
+    "build_selector",
+    "build_verifier",
     "actual_attempt_cost",
     "classify_failure",
     "compute_final_verification_decision",

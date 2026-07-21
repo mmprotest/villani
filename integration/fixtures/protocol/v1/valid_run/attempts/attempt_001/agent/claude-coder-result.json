@@ -1,0 +1,14 @@
+{
+  "schema_version": "villani.claude_coder_result.v1",
+  "status": "completed",
+  "summary": "The fixture Claude Code agent reports completing the coding loop.",
+  "tests_run": [
+    {
+      "command": "python -m pytest -q",
+      "reported_exit_status": 0,
+      "reported_result": "fixture validation passed"
+    }
+  ],
+  "known_limitations": [],
+  "files_the_agent_believes_changed": ["src/example.py"]
+}

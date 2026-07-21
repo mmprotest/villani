@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/role-bindings.schema.json",
+  "title": "Villani Role Bindings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_id", "bindings"],
+  "properties": {
+    "schema_version": { "const": "villani.role_bindings.v1" },
+    "profile_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "coding", "verification", "selection"],
+      "properties": {
+        "classification": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "coding": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "verification": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "selection": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" }
+      }
+    }
+  }
+}

@@ -18,6 +18,7 @@ from villani_ops.materialize import inspect_patch_application
 
 from .event_writer import EventWriter, failure_payload, redact_data, redact_message
 from .event_sink import RunEventSink
+from .agent_systems.models import non_secret_configuration
 from .failure_classification import classify_failure
 from .classification_adjustments import apply_classification_policy
 from .run_summary import persist_run_summary
@@ -285,6 +286,9 @@ class ClosedLoopController:
         event_sink: RunEventSink | None = None,
         qualification_store: QualificationStore | None = None,
         economics_store: EconomicsStore | None = None,
+        classification_backend_name: str | None = None,
+        role_bindings: Any | None = None,
+        agent_invocation_identities: tuple[Any, ...] = (),
     ) -> None:
         self._classifier = classifier
         self._policy_engine = policy_engine
@@ -300,6 +304,7 @@ class ClosedLoopController:
         self._event_sink = event_sink
         self._qualification_store = qualification_store
         self._economics_store = economics_store
+        self._classification_backend_name = classification_backend_name
         manifests: list[Any] = []
         for dependency in (attempt_runner, verifier, selector, materializer):
             manifest = getattr(dependency, "plugin_manifest", None)
@@ -317,6 +322,26 @@ class ClosedLoopController:
         self._agent_system_migration_report = (
             dict(migration) if isinstance(migration, Mapping) else {}
         )
+        if role_bindings is None:
+            self._role_bindings: dict[str, Any] | None = None
+        elif hasattr(role_bindings, "model_dump"):
+            self._role_bindings = role_bindings.model_dump(mode="json")
+        elif isinstance(role_bindings, Mapping):
+            self._role_bindings = dict(role_bindings)
+        else:
+            raise TypeError("role_bindings must be a model or mapping")
+        invocation_documents = tuple(
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item)
+            for item in agent_invocation_identities
+            if hasattr(item, "model_dump") or isinstance(item, Mapping)
+        )
+        for document in invocation_documents:
+            safe, removed = non_secret_configuration(document)
+            if removed or safe != document:
+                raise ValueError(
+                    "agent invocation identities must already be secret-free"
+                )
+        self._agent_invocation_identities = invocation_documents
 
     def _checkpoint(self, boundary: str) -> None:
         if self._failure_injector is not None:
@@ -1916,6 +1941,33 @@ class ClosedLoopController:
             metadata={"lineage": redact_data(_mapping_copy(runtime.request.lineage))},
         )
         runtime.store.write_protocol("task.json", task)
+        if self._role_bindings is not None:
+            runtime.store.write_protocol(
+                "agent-systems/role-bindings.json", self._role_bindings
+            )
+        invocation_index: dict[str, Any] = {}
+        for identity in self._agent_invocation_identities:
+            invocation_id = str(identity.get("invocation_id") or "")
+            role = str(identity.get("role") or "")
+            if not invocation_id or not role:
+                raise RunStoreError(
+                    "agent invocation identity is missing invocation_id or role"
+                )
+            path = f"agent-systems/invocations/{invocation_id}.json"
+            runtime.store.write_protocol(path, identity)
+            invocation_index[role] = {
+                "invocation_id": invocation_id,
+                "agent_system_id": identity.get("agent_system_id"),
+                "path": path,
+            }
+        if invocation_index:
+            runtime.store.write_json(
+                "agent-systems/invocations/index.json",
+                {
+                    "schema_version": "villani.agent_invocation_index.v1",
+                    "roles": invocation_index,
+                },
+            )
         for identity in self._agent_system_identities:
             system_id = str(identity.get("system_id") or "")
             if not system_id:
@@ -2220,6 +2272,20 @@ class ClosedLoopController:
         backends = configured_backends(configuration)
         if not backends:
             return None
+        if self._classification_backend_name is not None:
+            bound = backends.get(self._classification_backend_name)
+            if bound is None:
+                raise ValueError(
+                    "bound classification backend "
+                    f"{self._classification_backend_name!r} is not configured"
+                )
+            if not bound.enabled or "classification" not in bound.roles:
+                raise ValueError(
+                    "bound classification backend "
+                    f"{self._classification_backend_name!r} is not enabled for "
+                    "classification"
+                )
+            return bound
         eligible = [
             backend
             for backend in backends.values()
@@ -3445,6 +3511,17 @@ class ClosedLoopController:
         isolation = runtime.request.policy_configuration.get("isolation")
         settings = isolation if isinstance(isolation, Mapping) else {}
         if bool(settings.get("keep_attempt_worktrees", False)):
+            cleanup_path = (
+                Path(context.attempt_directory) / "repository" / "cleanup.json"
+            )
+            if cleanup_path.parent.is_dir():
+                runtime.store.write_json(
+                    f"attempts/{context.attempt_id}/repository/cleanup.json",
+                    {
+                        "status": "retained_by_policy",
+                        "worktree": str(Path(context.attempt_directory) / "worktree"),
+                    },
+                )
             return
         attempt_dir = Path(context.attempt_directory).absolute()
         worktree = attempt_dir / "worktree"
@@ -3466,6 +3543,12 @@ class ClosedLoopController:
             runtime.store.write_json(
                 f"attempts/{context.attempt_id}/worktree.json", worktree_info
             )
+            cleanup_path = attempt_dir / "repository" / "cleanup.json"
+            if cleanup_path.parent.is_dir():
+                runtime.store.write_json(
+                    f"attempts/{context.attempt_id}/repository/cleanup.json",
+                    {"status": "removed", "worktree": str(worktree)},
+                )
             self._emit_state_event(
                 runtime,
                 "attempt_worktree_removed",
@@ -3473,6 +3556,16 @@ class ClosedLoopController:
                 attempt_id=context.attempt_id,
             )
         except Exception as error:
+            cleanup_path = attempt_dir / "repository" / "cleanup.json"
+            if cleanup_path.parent.is_dir():
+                runtime.store.write_json(
+                    f"attempts/{context.attempt_id}/repository/cleanup.json",
+                    {
+                        "status": "failed",
+                        "worktree": str(worktree),
+                        "error": redact_message(str(error)),
+                    },
+                )
             self._emit_state_event(
                 runtime,
                 "attempt_cleanup_failed",
@@ -3971,8 +4064,7 @@ class ClosedLoopController:
         )
         verifier_cost = normalized.metadata.get("verification_cost")
         verifier_cost_status = str(
-            normalized.metadata.get("verification_cost_accounting_status")
-            or ""
+            normalized.metadata.get("verification_cost_accounting_status") or ""
         )
         if not verifier_cost_status:
             applicable_usage = [
@@ -6184,6 +6276,16 @@ class ClosedLoopController:
                     if (runtime.store.run_directory / "economics-update.json").is_file()
                     else None
                 ),
+                role_bindings=(
+                    "agent-systems/role-bindings.json"
+                    if self._role_bindings is not None
+                    else None
+                ),
+                agent_invocations=(
+                    "agent-systems/invocations/index.json"
+                    if self._agent_invocation_identities
+                    else None
+                ),
                 adaptive_verification=(
                     "verification"
                     if any(
@@ -6277,6 +6379,25 @@ class ClosedLoopController:
             agent_system_ids=[
                 str(item["system_id"]) for item in self._agent_system_identities
             ],
+            execution_profile_id=(
+                str(self._role_bindings.get("profile_id"))
+                if self._role_bindings is not None
+                else None
+            ),
+            role_bindings=(
+                {
+                    str(role): str(system_id)
+                    for role, system_id in self._role_bindings.get(
+                        "bindings", {}
+                    ).items()
+                }
+                if self._role_bindings is not None
+                else {}
+            ),
+            agent_invocation_ids={
+                str(item["role"]): str(item["invocation_id"])
+                for item in self._agent_invocation_identities
+            },
         )
         runtime.store.write_protocol("manifest.json", manifest)
         persist_product_run(runtime.store.run_directory)

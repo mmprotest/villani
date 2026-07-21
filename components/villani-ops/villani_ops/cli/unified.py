@@ -30,6 +30,7 @@ from villani_ops.diagnostics import (
     resolve_doctor_repository,
 )
 from villani_ops.closed_loop import (
+    AgentRole,
     BootstrapPolicyEngine,
     ClosedLoopController,
     ClosedLoopRunRequest,
@@ -41,9 +42,18 @@ from villani_ops.closed_loop import (
 from villani_ops.closed_loop.agent_systems.configuration import (
     migrate_agent_system_configuration,
 )
+from villani_ops.closed_loop.agent_systems.factories import (
+    RoleFactoryDependencies,
+    build_attempt_runner,
+    build_classifier,
+    build_selector,
+    build_verifier,
+)
 from villani_ops.closed_loop.agent_systems.registry import (
     build_agent_system_registry,
 )
+from villani_ops.closed_loop.agent_systems.role_registry import RoleSystemRegistry
+from villani_ops.closed_loop.agent_systems.role_models import CliAgentSystemConfig
 from villani_ops.closed_loop.durable_io import (
     read_jsonl_tolerant,
     write_json_atomic,
@@ -237,6 +247,11 @@ verification_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+profiles_app = typer.Typer(
+    help="List and inspect role-to-system execution profiles.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 app.add_typer(backend_app, name="backend")
 app.add_typer(capability_app, name="capability")
 app.add_typer(evaluate_app, name="evaluate")
@@ -244,6 +259,7 @@ app.add_typer(eval_app, name="eval")
 app.add_typer(policy_app, name="policy")
 app.add_typer(models_app, name="models")
 app.add_typer(agents_app, name="agents")
+app.add_typer(profiles_app, name="profiles")
 app.add_typer(verification_app, name="verification")
 
 
@@ -286,7 +302,9 @@ def _verification_execution_cost(directory: Path) -> MoneyAccounting:
     return MoneyAccounting(
         amount=None,
         currency=None,
-        accounting_status=("not_applicable" if status == "not_applicable" else "unknown"),
+        accounting_status=(
+            "not_applicable" if status == "not_applicable" else "unknown"
+        ),
         source="canonical_run_cost_unavailable",
     )
 
@@ -311,7 +329,9 @@ def _verification_selected_identity(
         _usage_error("agent-system identity path escapes the run bundle")
     identity = _read_json(identity_path) or {}
     if identity.get("system_id") != system_id:
-        _usage_error("the selected attempt's exact agent-system identity is unavailable")
+        _usage_error(
+            "the selected attempt's exact agent-system identity is unavailable"
+        )
     route_name = identity.get("route_name")
     if not isinstance(route_name, str) or not route_name:
         _usage_error("the selected agent-system route identity is unavailable")
@@ -505,7 +525,9 @@ def verification_feedback_import(
         "passive_monitoring": False,
     }
     if json_output:
-        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
     else:
         console.print(
             f"Recorded {human_outcome.outcome}; review time "
@@ -531,7 +553,9 @@ def verification_feedback(
         _usage_error(f"human outcomes are unavailable: {error}")
     document = [item.model_dump(mode="json") for item in outcomes]
     if json_output:
-        typer.echo(json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True))
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
     else:
         if not outcomes:
             console.print("No explicit human outcome has been imported.")
@@ -1738,6 +1762,122 @@ def _agent_system_registry():
         _usage_error(f"agent-system configuration is invalid: {error}")
 
 
+@agents_app.command("add")
+def agents_add(
+    system_id: str = typer.Argument(..., help="New agent-system ID."),
+    driver: str = typer.Option(..., "--driver"),
+    executable: str | None = typer.Option(None, "--executable"),
+    model: str = typer.Option(..., "--model"),
+    roles: list[str] = typer.Option(["coding"], "--roles"),
+    timeout_seconds: int = typer.Option(180, "--timeout-seconds", min=1),
+    max_parallel: int = typer.Option(1, "--max-parallel", min=1, max=32),
+    instruction_policy: str = typer.Option("native_project", "--instruction-policy"),
+    permission_profile: str = typer.Option("workspace_write", "--permission-profile"),
+    environment_policy: str = typer.Option("inherit", "--environment-policy"),
+) -> None:
+    """Configure a CLI coding system without starting it or performing login."""
+
+    if driver not in {"codex", "claude_code"}:
+        _usage_error("--driver must be codex or claude_code for the coding role")
+    normalized_roles = [
+        item.strip() for value in roles for item in value.split(",") if item.strip()
+    ]
+    if set(normalized_roles) != {"coding"}:
+        _usage_error("CLI systems may declare only --roles coding in Agent Mode")
+    resolved_executable = executable or ("codex" if driver == "codex" else "claude")
+    try:
+        system = CliAgentSystemConfig(
+            kind="cli_agent",
+            id=system_id,
+            enabled=True,
+            driver=cast(Literal["codex", "claude_code"], driver),
+            executable=resolved_executable,
+            model=model,
+            roles={AgentRole.CODING},
+            timeout_seconds=timeout_seconds,
+            max_parallel=max_parallel,
+            instruction_policy=instruction_policy,
+            permission_profile=permission_profile,
+            environment_policy=environment_policy,
+            provider_options={},
+        )
+    except ValidationError as error:
+        _usage_error(_validation_message(error))
+    configuration = _load_config()
+    container = configuration.setdefault("agent_systems", {})
+    if not isinstance(container, dict):
+        _usage_error("agent_systems must be a mapping")
+    systems = container.setdefault("systems", {})
+    if not isinstance(systems, dict):
+        _usage_error("agent_systems.systems must be a mapping")
+    if system_id in systems:
+        _usage_error(f"agent system {system_id!r} already exists")
+    systems[system_id] = system.model_dump(mode="json")
+    _write_config(_config_path(), configuration)
+    display_name = "Codex" if driver == "codex" else "Claude Code"
+    console.print(
+        f"Configured {display_name} coding system {system_id!r}. "
+        f"Run `villani agents doctor {system_id}` before selecting its profile."
+    )
+
+
+@profiles_app.command("set-role")
+def profiles_set_role(
+    profile_id: str = typer.Argument(..., help="Execution-profile ID."),
+    role: str = typer.Argument(..., help="Canonical Villani role."),
+    system_id: str = typer.Argument(..., help="Configured agent-system ID."),
+) -> None:
+    """Set one role binding; a new profile starts as a copy of the active profile."""
+
+    try:
+        canonical_role = AgentRole(role)
+    except ValueError:
+        _usage_error(
+            "role must be one of classification, coding, verification, or selection"
+        )
+    configuration = _load_config()
+    systems = configuration.get("agent_systems", {}).get("systems", {})
+    if not isinstance(systems, Mapping) or system_id not in systems:
+        _usage_error(
+            f"unknown agent-system id {system_id!r}; use `villani agents list`"
+        )
+    profiles = configuration.setdefault("execution_profiles", {})
+    if not isinstance(profiles, dict):
+        _usage_error("execution_profiles must be a mapping")
+    raw_profile = profiles.get(profile_id)
+    if raw_profile is None:
+        source_id = str(configuration.get("active_execution_profile") or "api")
+        source = profiles.get(source_id)
+        if not isinstance(source, Mapping):
+            source = next(
+                (value for value in profiles.values() if isinstance(value, Mapping)),
+                None,
+            )
+        if not isinstance(source, Mapping):
+            _usage_error(
+                "cannot create a profile without an existing complete profile to copy"
+            )
+        raw_profile = json.loads(json.dumps(source))
+        if "profile_id" in raw_profile:
+            raw_profile["profile_id"] = profile_id
+        profiles[profile_id] = raw_profile
+    if not isinstance(raw_profile, dict):
+        _usage_error(f"execution_profiles.{profile_id} must be a mapping")
+    bindings = raw_profile.get("bindings") if "bindings" in raw_profile else raw_profile
+    if not isinstance(bindings, dict):
+        _usage_error(f"execution_profiles.{profile_id}.bindings must be a mapping")
+    bindings[canonical_role.value] = system_id
+    try:
+        registry = RoleSystemRegistry(configuration, _load_backends(configuration))
+        registry.resolve_profile(profile_id)
+    except (TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"role binding is invalid: {error}")
+    _write_config(_config_path(), configuration)
+    console.print(
+        f"Bound {profile_id}.{canonical_role.value} to agent system {system_id}."
+    )
+
+
 @agents_app.command("list")
 def agents_list(
     json_output: bool = typer.Option(False, "--json", help="Emit canonical JSON."),
@@ -1748,6 +1888,10 @@ def agents_list(
     document = {
         "schema_version": "villani.agent_system_inventory.v1",
         "systems": [item.model_dump(mode="json") for item in registry.list()],
+        "configured_systems": [
+            registry.role_registry.inspect_system(item.id).model_dump(mode="json")
+            for item in registry.list_configured()
+        ],
         "harnesses": [item.model_dump(mode="json") for item in registry.discoveries],
         "migration": registry.migration_report,
     }
@@ -1769,7 +1913,16 @@ def agents_list(
             f"repair={readiness.repair_action}",
             soft_wrap=True,
         )
-    if not registry.list():
+    for system in registry.list_configured():
+        inspection = registry.role_registry.inspect_system(system.id)
+        console.print(
+            f"{system.id}: kind={system.kind}; "
+            f"roles={','.join(sorted(role.value for role in system.roles))}; "
+            f"status={inspection.status}; ready={'yes' if inspection.runnable else 'no'}; "
+            f"reason={inspection.reason}",
+            soft_wrap=True,
+        )
+    if not registry.list() and not registry.list_configured():
         console.print("No coding agent systems are configured.")
         return
     for identity in registry.list():
@@ -1792,8 +1945,24 @@ def agents_inspect(
 ) -> None:
     """Print one redacted canonical agent-system identity."""
 
+    registry = _agent_system_registry()
     try:
-        identity = _agent_system_registry().inspect(reference)
+        if reference in registry.role_registry.system_by_id:
+            inspection = registry.role_registry.inspect_system(reference)
+            document = redact_data(inspection.model_dump(mode="json"))
+            if json_output:
+                typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
+            else:
+                system = inspection.system
+                console.print(
+                    f"{system.id}: kind={system.kind}; status={inspection.status}; "
+                    f"ready={'yes' if inspection.runnable else 'no'}\n"
+                    f"  roles={','.join(sorted(role.value for role in system.roles))}\n"
+                    f"  reason={inspection.reason}",
+                    soft_wrap=True,
+                )
+            return
+        identity = registry.inspect(reference)
     except ValueError as error:
         _usage_error(str(error))
     document = redact_data(identity.model_dump(mode="json"))
@@ -1808,6 +1977,62 @@ def agents_inspect(
             f"unknown={','.join(identity.unknown_fields) or 'none'}",
             soft_wrap=True,
         )
+
+
+@profiles_app.command("list")
+def profiles_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit canonical JSON."),
+) -> None:
+    """List configured execution profiles without invoking any agent system."""
+
+    profiles = _agent_system_registry().list_profiles()
+    document = {
+        "schema_version": "villani.execution_profile_inventory.v1",
+        "profiles": [item.model_dump(mode="json") for item in profiles],
+    }
+    if json_output:
+        typer.echo(
+            json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
+        )
+        return
+    if not profiles:
+        console.print("No execution profiles are configured.")
+        return
+    for profile in profiles:
+        console.print(
+            f"{profile.profile_id}: status={profile.status}; "
+            f"ready={'yes' if profile.runnable else 'no'}; "
+            f"reason={'; '.join(profile.reasons) or 'all role systems are ready'}",
+            soft_wrap=True,
+        )
+
+
+@profiles_app.command("inspect")
+def profiles_inspect(
+    profile_id: str = typer.Argument(..., help="Configured execution-profile ID."),
+    json_output: bool = typer.Option(True, "--json/--no-json"),
+) -> None:
+    """Inspect resolved role bindings and static availability."""
+
+    registry = _agent_system_registry()
+    if profile_id not in registry.role_registry.raw_profiles:
+        _usage_error(
+            f"unknown execution profile {profile_id!r}; use `villani profiles list`"
+        )
+    profile = registry.profile_status(profile_id)
+    document = redact_data(profile.model_dump(mode="json"))
+    if json_output:
+        typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
+        return
+    console.print(
+        f"{profile.profile_id}: status={profile.status}; "
+        f"ready={'yes' if profile.runnable else 'no'}"
+    )
+    if profile.bindings is not None:
+        for role, system_id in profile.bindings.bindings.items():
+            console.print(f"  {role.value}: {system_id}")
+    for reason in profile.reasons:
+        console.print(f"  unavailable: {reason}")
 
 
 @agents_app.command("doctor")
@@ -3357,21 +3582,27 @@ def build_controller(
     configuration: Mapping[str, Any],
     on_event: Callable[[Any], None] | None = None,
 ) -> ClosedLoopController:
+    """Construct the one canonical controller through role-specific factories."""
+
+    effective_configuration, _migration = migrate_agent_system_configuration(
+        configuration
+    )
     # Discovery is deliberately inert: this parses and digest-validates explicitly
     # configured manifests but does not import or execute any discovered entrypoint.
     from villani_ops.closed_loop.plugins import discover_plugins_from_configuration
 
-    discover_plugins_from_configuration(configuration)
-    """Construct only the canonical controller and its M4/M5 dependencies."""
+    discover_plugins_from_configuration(effective_configuration)
 
-    configured_backends = _load_backends(configuration)
+    configured_backends = _load_backends(effective_configuration)
     qualification_store = QualificationStore()
     try:
         agent_registry = build_agent_system_registry(
-            configuration,
+            effective_configuration,
             configured_backends,
             qualification_store=qualification_store,
         )
+        role_bindings = agent_registry.resolve_profile()
+        agent_registry.require_profile_runnable(role_bindings)
     except (TypeError, ValueError, ValidationError) as error:
         _usage_error(f"agent-system configuration is invalid: {error}")
     selectable_coding_backends = {
@@ -3397,7 +3628,7 @@ def build_controller(
             and identity.harness.harness_id == "villani-code"
         ):
             execution = ExecutionEnvironmentConfig.from_configuration(
-                configuration, backend.execution_environment
+                effective_configuration, backend.execution_environment
             )
             if execution.provider in {"container", "devcontainer"}:
                 continue
@@ -3407,7 +3638,7 @@ def build_controller(
                     f"Villani Code command {command!r} is unavailable; install the "
                     "villani-code package before running `villani run`"
                 )
-    verifier_config = configuration.get("verifier")
+    verifier_config = effective_configuration.get("verifier")
     if not isinstance(verifier_config, Mapping):
         verifier_config = {}
     invocation = str(verifier_config.get("invocation") or "in_process")
@@ -3440,11 +3671,11 @@ def build_controller(
                 )
     capability_snapshot = CapabilityStore().load()
     economics_store = EconomicsStore()
-    configured_route_policy = route_policy_from_configuration(configuration)
+    configured_route_policy = route_policy_from_configuration(effective_configuration)
     active_route_policy = RoutePolicyStore().active_policy(configured_route_policy)
     policy = BootstrapPolicyEngine(
         backends,
-        configuration,
+        effective_configuration,
         capability_snapshot=capability_snapshot,
         qualification_store=qualification_store,
         agent_system_by_backend=agent_registry.by_backend,
@@ -3565,7 +3796,7 @@ def build_controller(
                 policy_value if isinstance(policy_value, Mapping) else {}
             ),
         )
-    graph_value = configuration.get("verification_graph")
+    graph_value = effective_configuration.get("verification_graph")
     signer = None
     if isinstance(graph_value, Mapping):
         from villani_ops.closed_loop.delivery import ProvenanceSigner
@@ -3577,7 +3808,7 @@ def build_controller(
         verifier_impl = VerificationGraphVerifierAdapter(
             VerificationGraph.model_validate(graph_value)
         )
-        provenance = configuration.get("provenance", {})
+        provenance = effective_configuration.get("provenance", {})
         provenance = provenance if isinstance(provenance, Mapping) else {}
         key_env = str(provenance.get("signing_key_env") or "")
         key = os.environ.get(key_env) if key_env else None
@@ -3594,7 +3825,7 @@ def build_controller(
         build_git_host_adapter,
     )
 
-    delivery_configuration = configuration.get("delivery")
+    delivery_configuration = effective_configuration.get("delivery")
     delivery_values = (
         dict(delivery_configuration)
         if isinstance(delivery_configuration, Mapping)
@@ -3602,7 +3833,9 @@ def build_controller(
     )
     provider_name = str(delivery_values.get("provider") or "auto").lower()
     git_provider = (
-        None if provider_name == "auto" else build_git_host_adapter(configuration)
+        None
+        if provider_name == "auto"
+        else build_git_host_adapter(effective_configuration)
     )
 
     materializer_impl = ApprovalGuardedMaterializer(
@@ -3615,17 +3848,47 @@ def build_controller(
 
     from villani_ops.cli.agentd_sink import build_agentd_event_sink
 
+    classifier_impl = _ClassifierAdapter(backends, effective_configuration)
+    attempt_runner_impl = agent_registry.attempt_runner()
+    selector_impl = EvidenceSelectorAdapter()
+    dependencies = RoleFactoryDependencies(
+        api_classifiers={name: classifier_impl for name in configured_backends},
+        api_attempt_runners={name: attempt_runner_impl for name in configured_backends},
+        api_verifiers={name: verifier_impl for name in configured_backends},
+        api_selectors={name: selector_impl for name in configured_backends},
+        internal_classifiers={"task_classifier": classifier_impl},
+        internal_attempt_runners={"villani_code": attempt_runner_impl},
+        internal_verifiers={"villani_verifier": verifier_impl},
+        internal_selectors={"evidence_selector": selector_impl},
+        cli_attempt_runners=agent_registry.cli_attempt_runners(),
+    )
+    classifier = build_classifier(
+        role_bindings, agent_registry.role_registry, dependencies
+    )
+    attempt_runner = build_attempt_runner(
+        role_bindings, agent_registry.role_registry, dependencies
+    )
+    verifier = build_verifier(role_bindings, agent_registry.role_registry, dependencies)
+    selector = build_selector(role_bindings, agent_registry.role_registry, dependencies)
+
     return ClosedLoopController(
-        classifier=_ClassifierAdapter(backends, configuration),
+        classifier=classifier,
         policy_engine=policy,
-        attempt_runner=BuiltinAgentRunnerPlugin(agent_registry.attempt_runner()),
-        verifier=BuiltinVerifierPlugin(verifier_impl),
-        selector=BuiltinSelectorPlugin(EvidenceSelectorAdapter()),
+        attempt_runner=BuiltinAgentRunnerPlugin(attempt_runner),
+        verifier=BuiltinVerifierPlugin(verifier),
+        selector=BuiltinSelectorPlugin(selector),
         materializer=BuiltinMaterializerPlugin(materializer_impl),
         on_event=on_event,
         event_sink=build_agentd_event_sink(),
         qualification_store=qualification_store,
         economics_store=economics_store,
+        classification_backend_name=agent_registry.role_registry.backend_reference(
+            role_bindings, AgentRole.CLASSIFICATION
+        ),
+        role_bindings=role_bindings,
+        agent_invocation_identities=agent_registry.role_registry.invocation_identities(
+            role_bindings
+        ),
     )
 
 
@@ -4546,6 +4809,11 @@ def run_command(
         "--agent-system",
         help="Advanced manual route override by configured route name or system ID.",
     ),
+    execution_profile: str | None = typer.Option(
+        None,
+        "--execution-profile",
+        help="Select a configured role-binding profile; unavailable profiles fail closed.",
+    ),
     allow_experimental: bool = typer.Option(
         False,
         "--allow-experimental",
@@ -4623,6 +4891,19 @@ def run_command(
         policy_selection=policy_selection,
         routing_mode=mode,
     )
+    if execution_profile is not None:
+        configuration["active_execution_profile"] = execution_profile
+        try:
+            profile_configuration, _migration = migrate_agent_system_configuration(
+                configuration
+            )
+            role_registry = RoleSystemRegistry(
+                profile_configuration, _load_backends(profile_configuration)
+            )
+            selected_bindings = role_registry.resolve_profile(execution_profile)
+            role_registry.require_runnable(selected_bindings)
+        except (TypeError, ValueError, ValidationError) as error:
+            _usage_error(f"execution profile is unavailable: {error}")
     economics = configuration.setdefault("economics", {})
     if not isinstance(economics, dict):
         _usage_error("config economics must be a YAML object")

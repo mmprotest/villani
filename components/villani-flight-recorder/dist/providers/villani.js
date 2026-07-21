@@ -458,6 +458,15 @@ export async function parseVillaniRun(runPath, validator = defaultVillaniSchemaV
         if (identity)
             agentSystems.push(identity);
     }
+    const roleBindings = manifest.artifact_paths.role_bindings
+        ? await optionalSnapshot(runDirectory, manifest.artifact_paths.role_bindings, validator)
+        : undefined;
+    const agentInvocations = [];
+    for (const invocationId of Object.values(manifest.agent_invocation_ids ?? {})) {
+        const identity = await optionalSnapshot(runDirectory, `agent-systems/invocations/${invocationId}.json`, validator);
+        if (identity)
+            agentInvocations.push(identity);
+    }
     const data = {
         runDirectory,
         manifest,
@@ -472,6 +481,8 @@ export async function parseVillaniRun(runPath, validator = defaultVillaniSchemaV
         materialization,
         runSummary,
         agentSystems,
+        roleBindings,
+        agentInvocations,
         aggregate: aggregate(manifest, attempts, eventResult.value),
         artifactPaths: {
             manifest: "manifest.json",
@@ -491,6 +502,12 @@ export async function parseVillaniRun(runPath, validator = defaultVillaniSchemaV
             run_summary: manifest.artifact_paths.run_summary ?? "run-summary.json",
             ...(manifest.artifact_paths.agent_systems
                 ? { agent_systems: manifest.artifact_paths.agent_systems }
+                : {}),
+            ...(manifest.artifact_paths.role_bindings
+                ? { role_bindings: manifest.artifact_paths.role_bindings }
+                : {}),
+            ...(manifest.artifact_paths.agent_invocations
+                ? { agent_invocations: manifest.artifact_paths.agent_invocations }
                 : {}),
         },
     };

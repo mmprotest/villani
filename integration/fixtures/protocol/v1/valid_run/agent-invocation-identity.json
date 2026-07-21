@@ -1,0 +1,30 @@
+{
+  "schema_version": "villani.agent_invocation_identity.v1",
+  "invocation_id": "ainv_6b94218d6aece0b7bac45bb4717d1f3cd56a9a78a02cca533fdb599d745ba96a",
+  "profile_id": "api",
+  "role": "classification",
+  "agent_system_id": "fixture-api",
+  "system_kind": "api",
+  "implementation_id": "api_backend:fixture",
+  "provider": "openai-compatible",
+  "model": "fixture-model",
+  "driver": null,
+  "executable": null,
+  "timeout_seconds": 180,
+  "max_parallel": 1,
+  "availability": "ready",
+  "unavailable_reason": null,
+  "configuration_digest": "sha256:ce0949035f4ac1c6824d65f147c9469747672abd028c1559333b882cad68a7a0",
+  "configuration": {
+    "enabled": true,
+    "existing_backend_reference": "fixture",
+    "id": "fixture-api",
+    "kind": "api",
+    "max_parallel": 1,
+    "metadata": {},
+    "model": "fixture-model",
+    "provider": "openai-compatible",
+    "roles": ["classification", "coding", "selection", "verification"],
+    "timeout_seconds": 180
+  }
+}

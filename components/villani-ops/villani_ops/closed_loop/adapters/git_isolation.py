@@ -19,7 +19,14 @@ from ..interfaces import AttemptContext
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True)
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
+        capture_output=True,
+    )
 
 
 def repository_identity(repo: Path) -> dict[str, Any]:

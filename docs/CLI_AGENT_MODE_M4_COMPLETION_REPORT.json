@@ -1,0 +1,290 @@
+{
+  "milestone": "Villani CLI Agent Mode Milestone 4: Claude Code CLI Coding Adapter Vertical Slice",
+  "status": "COMPLETE",
+  "date": "2026-07-21",
+  "scope": {
+    "claude_code_coding_role_implemented": true,
+    "one_controller_preserved": true,
+    "claude_classification_implemented": false,
+    "claude_verification_implemented": false,
+    "claude_selection_implemented": false,
+    "codex_coding_preserved": true,
+    "api_internal_coding_preserved": true,
+    "milestone_5_started": false,
+    "real_claude_model_invoked": false
+  },
+  "construction_paths": {
+    "public": "villani_distribution.cli:main -> villani_ops.cli.unified:app -> villani run -> build_controller -> migrate_agent_system_configuration -> build_agent_system_registry -> RoleSystemRegistry.resolve_profile -> role-specific factories -> one ClosedLoopController",
+    "service": "villani_agentd.console.ConsoleService -> villani_ops.cli.unified.build_controller -> the same registry, factories, and ClosedLoopController",
+    "existing_api_internal": "build_classifier -> _ClassifierAdapter; build_attempt_runner -> AgentSystemRegistry.attempt_runner -> AgentSystemAttemptRunner/VillaniCodeHarnessAdapter -> VillaniCodeAttemptAdapter; build_verifier -> VillaniVerifierAdapter; build_selector -> EvidenceSelectorAdapter",
+    "codex_coding": "build_attempt_runner -> CodexCliAttemptAdapter -> shared cli_coding prepare_candidate/collect_candidate_evidence -> existing verifier/selector/materializer",
+    "claude_coding": "build_agent_system_registry -> ClaudeCodeCliDriver.probe -> ClaudeCodeCliAttemptAdapter -> cli_attempt_runners[system.id] -> RoleFactoryDependencies -> build_attempt_runner -> BuiltinAgentRunnerPlugin -> ClosedLoopController -> isolated worktree -> CliProcessSupervisor -> structured event/final parsing -> shared Git-derived AttemptResult -> existing verifier/selector/materializer"
+  },
+  "probe": {
+    "commands": [
+      "claude --version",
+      "claude --help",
+      "claude auth status",
+      "claude doctor"
+    ],
+    "supported_version_range": ">=2.1.138,<2.2.0",
+    "fixture_exact_version": "2.1.138 (Claude Code fixture)",
+    "local": {
+      "resolved_executable": "C:\\Users\\Simon\\.local\\bin\\claude.exe",
+      "exact_version_output": "2.1.138 (Claude Code)",
+      "parsed_version": "2.1.138",
+      "authentication_ready": true,
+      "authentication_method": "authenticated_unspecified",
+      "doctor_ready": false,
+      "ready": false,
+      "failures": [
+        "mcp_plugin_hook_startup_failure"
+      ],
+      "model_invoked": false
+    },
+    "credential_values_recorded": false,
+    "billing_claim": "not_reported"
+  },
+  "safe_command": [
+    "<resolved-claude-executable>",
+    "<optional-launcher-arguments>",
+    "-p",
+    "--model",
+    "<configured-model>",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--no-session-persistence",
+    "--permission-mode",
+    "acceptEdits",
+    "--tools",
+    "Bash,Read,Edit,Write,Glob,Grep",
+    "--allowedTools",
+    "Bash,Read,Edit,Write,Glob,Grep",
+    "--no-chrome",
+    "--json-schema",
+    "<inline-coder-result-schema>",
+    "--max-turns",
+    "<configured-positive-limit-if-supported>"
+  ],
+  "prompt_delivery": {
+    "transport": "stdin bytes",
+    "stored_in_argv": false,
+    "invocation_metadata": [
+      "governed prompt reference",
+      "sha256 digest",
+      "byte count"
+    ],
+    "large_prompt_test_bytes_minimum": 100000
+  },
+  "instruction_policies": {
+    "native_project": {
+      "default_for_coding": true,
+      "project_user_discovery_permitted": true,
+      "additional_arguments": []
+    },
+    "villani_controlled": {
+      "project_user_discovery_permitted": false,
+      "additional_arguments": [
+        "--bare",
+        "--settings <controlled-settings.json>",
+        "--setting-sources=",
+        "--strict-mcp-config",
+        "--mcp-config <empty-mcp.json>",
+        "--disable-slash-commands"
+      ],
+      "disabled_ambient_features": [
+        "hooks",
+        "plugins",
+        "mcp_servers",
+        "auto_memory",
+        "user_instructions",
+        "project_instructions",
+        "slash_commands",
+        "browser_integration"
+      ]
+    }
+  },
+  "schemas": [
+    "villani.claude_coder_result.v1",
+    "villani.claude_code_coding_prompt.v1",
+    "villani.claude_code_probe.v1",
+    "villani.claude_code_provider_identity.v1",
+    "villani.claude_code_normalized_result.v1"
+  ],
+  "normative_wire_schema": "schemas/v1/claude-coder-result.schema.json",
+  "schema_sha256": "9D929F0F864146E84C58487C950A8EA0C73AC1FF4B7EC202D761FB28AB66910A",
+  "event_mappings": {
+    "system.init": [
+      "session_started"
+    ],
+    "assistant_or_user.usage": [
+      "usage_update"
+    ],
+    "assistant.text": [
+      "agent_message"
+    ],
+    "tool_use.Bash": [
+      "command_started"
+    ],
+    "tool_result.Bash": [
+      "command_completed",
+      "command_failed"
+    ],
+    "tool_use.Read": [
+      "file_read"
+    ],
+    "tool_use.Edit_Write_NotebookEdit": [
+      "file_write_started"
+    ],
+    "tool_result.Edit_Write_NotebookEdit": [
+      "file_write"
+    ],
+    "tool_use.Agent_Task": [
+      "subagent_started"
+    ],
+    "tool_result.Agent_Task": [
+      "subagent_completed"
+    ],
+    "tool_use.other": [
+      "tool_call_started"
+    ],
+    "tool_result.other": [
+      "tool_call_completed"
+    ],
+    "rate_limit_event_or_retry": [
+      "retry"
+    ],
+    "warning": [
+      "warning"
+    ],
+    "error_or_provider_error": [
+      "provider_error"
+    ],
+    "cancelled_or_cancellation": [
+      "cancellation"
+    ],
+    "result.success": [
+      "usage_update",
+      "turn_completed"
+    ],
+    "result.failed": [
+      "usage_update",
+      "provider_error"
+    ],
+    "unknown": [
+      "claude_code.raw_event"
+    ]
+  },
+  "failures": [
+    "claude_not_installed",
+    "claude_not_authenticated",
+    "unsupported_claude_version",
+    "missing_required_structured_output_capability",
+    "model_unavailable",
+    "permission_denied",
+    "tool_denied",
+    "mcp_plugin_hook_startup_failure",
+    "provider_authentication_failure",
+    "provider_rate_limit_or_overload",
+    "invalid_json",
+    "missing_final_result",
+    "json_schema_failure",
+    "process_timeout",
+    "process_cancellation",
+    "process_crash",
+    "coding_completed_with_no_patch",
+    "path_violation",
+    "cleanup_failure"
+  ],
+  "public_commands": [
+    "villani agents add claude-coder --driver claude_code --executable claude --model <model> --roles coding",
+    "villani agents doctor claude-coder",
+    "villani profiles set-role cli coding claude-coder"
+  ],
+  "files": {
+    "added": [
+      "components/villani-ops/villani_ops/closed_loop/claude_code_cli/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/claude_code_cli/attempt.py",
+      "components/villani-ops/villani_ops/closed_loop/claude_code_cli/driver.py",
+      "components/villani-ops/villani_ops/closed_loop/claude_code_cli/events.py",
+      "components/villani-ops/villani_ops/closed_loop/claude_code_cli/models.py",
+      "components/villani-ops/villani_ops/closed_loop/claude_code_cli/prompt.py",
+      "components/villani-ops/villani_ops/closed_loop/cli_coding/__init__.py",
+      "components/villani-ops/villani_ops/closed_loop/cli_coding/evidence.py",
+      "components/villani-ops/villani_ops/tests/fixtures/claude_code_cli/events-success.jsonl",
+      "components/villani-ops/villani_ops/tests/fixtures/claude_code_cli/events-unknown.jsonl",
+      "components/villani-ops/villani_ops/tests/fixtures/claude_code_cli/fake_claude.py",
+      "components/villani-ops/villani_ops/tests/test_agent_mode_m4.py",
+      "components/villani-ops/villani_ops/tests/test_claude_code_cli_coding.py",
+      "schemas/v1/claude-coder-result.schema.json",
+      "components/villani-ops/villani_ops/schemas/v1/claude-coder-result.schema.json",
+      "integration/fixtures/protocol/v1/valid_run/attempts/attempt_001/agent/claude-coder-result.json",
+      "docs/CLI_AGENT_MODE_M4_COMPLETION_REPORT.md",
+      "docs/CLI_AGENT_MODE_M4_COMPLETION_REPORT.json"
+    ],
+    "changed": [
+      "components/villani-ops/villani_ops/cli/unified.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/factories.py",
+      "components/villani-ops/villani_ops/closed_loop/agent_systems/registry.py",
+      "components/villani-ops/villani_ops/closed_loop/codex_cli/attempt.py",
+      "components/villani-ops/villani_ops/closed_loop/schema_validation.py",
+      "components/villani-ops/villani_ops/tests/closed_loop/test_protocol.py",
+      "components/villani-run-model/src/agentSystem.ts",
+      "components/villani-run-model/dist/agentSystem.js",
+      "components/villani-run-model/dist/agentSystem.d.ts",
+      "components/villani-run-model/test/agentSystem.test.ts",
+      "components/villani-flight-recorder/src/providers/villaniSchemaValidation.ts",
+      "components/villani-flight-recorder/dist/providers/villaniSchemaValidation.js",
+      "components/villani-flight-recorder/test/villaniProtocol.test.ts",
+      "PLANS.md"
+    ],
+    "removed": [],
+    "data_migrated": []
+  },
+  "tests": {
+    "initial_regression": "failed as intended with AgentSystemIntegrationUnavailable before implementation; passed after the factory/registry change",
+    "m4_focused_final": "33 passed, 1 deselected in 51.04s",
+    "codex_claude_cross_driver": "65 passed, 2 deselected in 94.86s",
+    "villani_ops_full": "1417 passed, 4 skipped, 118 deselected in 451.84s",
+    "cleanup_repetitions": "timeout and controller cancellation ran together five times; 10/10 cases passed",
+    "python_protocol": "23 passed in 1.19s",
+    "root_protocol": "2 passed with one cache warning",
+    "root_closed_loop": "11 passed, 2 warnings in 54.40s",
+    "api_e2e": "3 passed, 1 deselected, 1 warning in 42.15s",
+    "villani_code": "686 passed, 1 skipped, 27 warnings in 224.58s",
+    "distribution": "all 77 cases passed; 76 in sandbox and the Vite clean-install case on its approved exact rerun",
+    "agentd": "87 passed in 20.67s",
+    "run_model": "6 test files, 17 tests passed; typecheck/build/changed-source formatting passed",
+    "flight_recorder": "21 test files, 118 tests passed; typecheck/build/format passed",
+    "real_smoke": "1 skipped in 0.78s: set VILLANI_ENABLE_REAL_CLAUDE_TESTS=1 to enable the paid/external real Claude Code smoke test"
+  },
+  "validation": {
+    "ruff_changed_python": "passed",
+    "mypy_targeted": "three groups covering 10 production modules passed",
+    "python_3_11_compile": "passed",
+    "shell_resume_dangerous_scan": "0 production matches",
+    "controller_provider_import_scan": "0 matches",
+    "schema_pair_byte_identical": true,
+    "schema_fixture_validation": "passed",
+    "git_diff_check": "passed"
+  },
+  "isolation_proof": {
+    "separate_worktrees_for_parallel_candidates": true,
+    "separate_processes_for_parallel_candidates": true,
+    "separate_nonpersistent_sessions": true,
+    "target_repository_identity_unchanged": true,
+    "partial_patches_preserved_on_failure": true,
+    "git_is_canonical_patch_source": true,
+    "provider_neutral_candidate_keys_equal": true,
+    "windows_descendant_cleanup_repetitions": 5
+  },
+  "remaining_risks": [
+    "No paid/external Claude coding call was made because the opt-in flag was absent and the local Doctor was unhealthy; real stream/result behavior remains unproved locally.",
+    "Windows process, path, cancellation, isolation, descendant cleanup, and target safety are locally proved; POSIX shared-runtime behavior awaits Linux/macOS CI on this pass.",
+    "A future Claude help or structured-stream change will fail closed and require a capability/parser update; unknown valid objects remain preserved.",
+    "Provider failure classification uses conservative markers; unknown failures remain infrastructure failures.",
+    "Broad repository mypy remains noisy outside the targeted Milestone 4 modules."
+  ],
+  "confirmation": "Only Claude Code coding was implemented. Claude classification, verification, and selection were not implemented; Codex coding and API/internal coding remain compatible; Milestone 5 was not started."
+}

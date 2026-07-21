@@ -25,6 +25,18 @@ from .agent_systems.models import (
     HarnessDiscovery,
     HarnessResult,
 )
+from .agent_systems.role_models import (
+    AgentInvocationIdentity,
+    AgentSystemCatalog,
+    RoleBindings,
+)
+from .cli_runtime.models import (
+    CliInvocationRecord,
+    CliOutputTail,
+    CliProcessResult,
+)
+from .codex_cli.models import CodexCoderResult
+from .claude_code_cli.models import ClaudeCoderResult
 from .qualification.models import (
     GateCReport,
     QualificationInvalidation,
@@ -96,6 +108,15 @@ SCHEMA_VERSION_TO_PATH: dict[str, Path] = {
     "villani.human_review.v1": SCHEMA_ROOT / "human-review.schema.json",
     "villani.evaluation_report.v1": SCHEMA_ROOT / "evaluation-report.schema.json",
     "villani.agent_system.v1": SCHEMA_ROOT / "agent-system.schema.json",
+    "villani.agent_system_config.v1": SCHEMA_ROOT / "agent-system-config.schema.json",
+    "villani.role_bindings.v1": SCHEMA_ROOT / "role-bindings.schema.json",
+    "villani.agent_invocation_identity.v1": SCHEMA_ROOT
+    / "agent-invocation-identity.schema.json",
+    "villani.cli_invocation.v1": SCHEMA_ROOT / "cli-invocation.schema.json",
+    "villani.cli_process_result.v1": SCHEMA_ROOT / "cli-process-result.schema.json",
+    "villani.cli_output_tail.v1": SCHEMA_ROOT / "cli-output-tail.schema.json",
+    "villani.codex_coder_result.v1": SCHEMA_ROOT / "codex-coder-result.schema.json",
+    "villani.claude_coder_result.v1": SCHEMA_ROOT / "claude-coder-result.schema.json",
     "villani.harness_result.v1": SCHEMA_ROOT / "harness-result.schema.json",
     "villani.harness_conformance_report.v1": SCHEMA_ROOT
     / "harness-conformance-report.schema.json",
@@ -124,8 +145,7 @@ SCHEMA_VERSION_TO_PATH: dict[str, Path] = {
     / "binary-verification-decision.schema.json",
     "villani.review_package.v1": SCHEMA_ROOT / "review-package.schema.json",
     "villani.human_outcome.v1": SCHEMA_ROOT / "human-outcome.schema.json",
-    "villani.supervision_metrics.v1": SCHEMA_ROOT
-    / "supervision-metrics.schema.json",
+    "villani.supervision_metrics.v1": SCHEMA_ROOT / "supervision-metrics.schema.json",
     "villani.gate_d.v1": SCHEMA_ROOT / "gate-d.schema.json",
 }
 SCHEMA_V2_VERSION_TO_PATH: dict[str, Path] = {
@@ -157,6 +177,14 @@ ALL_PROTOCOL_MODELS: dict[str, type[BaseModel]] = {
     "villani.human_review.v1": HumanReview,
     "villani.evaluation_report.v1": EvaluationReport,
     "villani.agent_system.v1": AgentSystemIdentity,
+    "villani.agent_system_config.v1": AgentSystemCatalog,
+    "villani.role_bindings.v1": RoleBindings,
+    "villani.agent_invocation_identity.v1": AgentInvocationIdentity,
+    "villani.cli_invocation.v1": CliInvocationRecord,
+    "villani.cli_process_result.v1": CliProcessResult,
+    "villani.cli_output_tail.v1": CliOutputTail,
+    "villani.codex_coder_result.v1": CodexCoderResult,
+    "villani.claude_coder_result.v1": ClaudeCoderResult,
     "villani.harness_result.v1": HarnessResult,
     "villani.harness_conformance_report.v1": HarnessConformanceReport,
     "villani.harness_discovery.v1": HarnessDiscovery,
@@ -537,6 +565,9 @@ def parse_protocol_document(
     | EvaluationTrial
     | HumanReview
     | EvaluationReport
+    | CliInvocationRecord
+    | CliProcessResult
+    | CliOutputTail
     | QualificationObservation
     | QualificationInvalidation
     | QualificationSnapshot
@@ -569,6 +600,9 @@ def parse_protocol_document(
         | EvaluationTrial
         | HumanReview
         | EvaluationReport
+        | CliInvocationRecord
+        | CliProcessResult
+        | CliOutputTail
         | QualificationObservation
         | QualificationInvalidation
         | QualificationSnapshot

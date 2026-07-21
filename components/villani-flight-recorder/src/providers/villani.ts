@@ -5,6 +5,7 @@ import { isTestCommand } from "../normalize/events.js";
 import type { FlightEvent, FlightEventType, ParsedSession } from "./types.js";
 import type {
   VillaniAccountingStatus,
+  VillaniAgentInvocationIdentity,
   VillaniAgentSystemIdentity,
   VillaniAttemptSnapshot,
   VillaniClassificationSnapshot,
@@ -14,6 +15,7 @@ import type {
   VillaniRunManifestSnapshot,
   VillaniRunSummary,
   VillaniRunStateSnapshot,
+  VillaniRoleBindings,
   VillaniSelectionSnapshot,
   VillaniStageUsage,
   VillaniTaskSnapshot,
@@ -75,6 +77,8 @@ export interface VillaniRunData {
   materialization?: VillaniMaterializationSnapshot;
   runSummary?: VillaniRunSummary;
   agentSystems?: VillaniAgentSystemIdentity[];
+  roleBindings?: VillaniRoleBindings;
+  agentInvocations?: VillaniAgentInvocationIdentity[];
   aggregate?: VillaniAggregateData;
   artifactPaths: Record<string, string>;
   corruptReason?: string;
@@ -694,6 +698,24 @@ export async function parseVillaniRun(
     );
     if (identity) agentSystems.push(identity);
   }
+  const roleBindings = manifest.artifact_paths.role_bindings
+    ? await optionalSnapshot<VillaniRoleBindings>(
+        runDirectory,
+        manifest.artifact_paths.role_bindings,
+        validator,
+      )
+    : undefined;
+  const agentInvocations: VillaniAgentInvocationIdentity[] = [];
+  for (const invocationId of Object.values(
+    manifest.agent_invocation_ids ?? {},
+  )) {
+    const identity = await optionalSnapshot<VillaniAgentInvocationIdentity>(
+      runDirectory,
+      `agent-systems/invocations/${invocationId}.json`,
+      validator,
+    );
+    if (identity) agentInvocations.push(identity);
+  }
 
   const data: VillaniRunData = {
     runDirectory,
@@ -709,6 +731,8 @@ export async function parseVillaniRun(
     materialization,
     runSummary,
     agentSystems,
+    roleBindings,
+    agentInvocations,
     aggregate: aggregate(manifest, attempts, eventResult.value),
     artifactPaths: {
       manifest: "manifest.json",
@@ -728,6 +752,12 @@ export async function parseVillaniRun(
       run_summary: manifest.artifact_paths.run_summary ?? "run-summary.json",
       ...(manifest.artifact_paths.agent_systems
         ? { agent_systems: manifest.artifact_paths.agent_systems }
+        : {}),
+      ...(manifest.artifact_paths.role_bindings
+        ? { role_bindings: manifest.artifact_paths.role_bindings }
+        : {}),
+      ...(manifest.artifact_paths.agent_invocations
+        ? { agent_invocations: manifest.artifact_paths.agent_invocations }
         : {}),
     },
   };

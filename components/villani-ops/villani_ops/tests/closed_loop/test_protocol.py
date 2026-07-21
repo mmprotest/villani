@@ -55,6 +55,14 @@ VALID_SNAPSHOT_PATHS = (
     VALID_RUN / "human-review.json",
     VALID_RUN / "evaluation-report.json",
     *sorted((VALID_RUN / "agent-systems").glob("asys_*.json")),
+    VALID_RUN / "agent-system-config.json",
+    VALID_RUN / "role-bindings.json",
+    VALID_RUN / "agent-invocation-identity.json",
+    VALID_RUN / "attempts" / "attempt_001" / "agent" / "invocation.json",
+    VALID_RUN / "attempts" / "attempt_001" / "agent" / "process-result.json",
+    VALID_RUN / "attempts" / "attempt_001" / "agent" / "output-tail.json",
+    VALID_RUN / "attempts" / "attempt_001" / "agent" / "coder-result.json",
+    VALID_RUN / "attempts" / "attempt_001" / "agent" / "claude-coder-result.json",
     VALID_RUN / "attempts" / "attempt_001" / "harness-result.json",
     VALID_RUN / "attempts" / "attempt_002" / "harness-result.json",
     VALID_RUN / "harness-conformance.json",
@@ -86,8 +94,8 @@ def _load_json(path: Path) -> dict[str, object]:
 
 
 def test_all_versioned_root_schemas_are_valid_and_mapped() -> None:
-    assert len(SCHEMA_VERSION_TO_PATH) == 39
-    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 39
+    assert len(SCHEMA_VERSION_TO_PATH) == 47
+    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 47
     for schema_path in SCHEMA_VERSION_TO_PATH.values():
         assert schema_path.is_file()
         schema = _load_json(schema_path)

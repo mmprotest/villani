@@ -155,6 +155,8 @@ class RunArtifactPaths(StrictProtocolModel):
     run_summary: str = Field(default="run-summary.json", min_length=1)
     product_run: str = Field(default="product-run.json", min_length=1)
     agent_systems: str | None = Field(default=None, min_length=1)
+    role_bindings: str | None = Field(default=None, min_length=1)
+    agent_invocations: str | None = Field(default=None, min_length=1)
     route_plans: str | None = Field(default=None, min_length=1)
     economics_update: str | None = Field(default=None, min_length=1)
     adaptive_verification: str | None = Field(default=None, min_length=1)
@@ -189,6 +191,9 @@ class RunManifestSnapshot(StrictProtocolModel):
     run_wall_clock_duration_ms: int | None = Field(default=None, ge=0)
     run_wall_clock_duration_accounting_status: AccountingStatus = "unknown"
     agent_system_ids: list[str] = Field(default_factory=list)
+    execution_profile_id: str | None = Field(default=None, min_length=1)
+    role_bindings: dict[str, str] = Field(default_factory=dict)
+    agent_invocation_ids: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_accounting(self) -> RunManifestSnapshot:
@@ -377,7 +382,7 @@ class AttemptSnapshot(StrictProtocolModel):
     error: FailureDetail | None
     metadata: dict[str, Any]
     agent_system_id: str | None = Field(
-        default=None, pattern=r"^asys_[0-9a-f]{64}$"
+        default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     )
     agent_system_identity_path: str | None = Field(default=None, min_length=1)
     harness_result_path: str | None = Field(default=None, min_length=1)

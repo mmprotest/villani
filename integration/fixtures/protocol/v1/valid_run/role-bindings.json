@@ -1,0 +1,10 @@
+{
+  "schema_version": "villani.role_bindings.v1",
+  "profile_id": "api",
+  "bindings": {
+    "classification": "fixture-api",
+    "coding": "fixture-api",
+    "verification": "fixture-api",
+    "selection": "fixture-api"
+  }
+}

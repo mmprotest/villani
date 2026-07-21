@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/cli-process-result.schema.json",
+  "title": "Villani CLI Process Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "infrastructure_state",
+    "failure",
+    "failures",
+    "started_at",
+    "completed_at",
+    "duration_ms",
+    "pid",
+    "exit_code",
+    "timed_out",
+    "cancelled",
+    "cancellation_origin",
+    "termination_reason",
+    "graceful_termination_requested",
+    "graceful_termination_succeeded",
+    "forced_termination",
+    "cleanup_status",
+    "cleanup_error",
+    "target_repository_writable",
+    "stdin_bytes_delivered",
+    "stdout",
+    "stderr",
+    "raw_events",
+    "final_output_path",
+    "final_output_present",
+    "invocation_artifact",
+    "output_tail_artifact",
+    "process_result_artifact",
+    "artifact_set_complete"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.cli_process_result.v1" },
+    "infrastructure_state": {
+      "enum": ["succeeded", "failed", "cancelled", "timed_out"]
+    },
+    "failure": {
+      "anyOf": [{ "$ref": "#/$defs/failureCode" }, { "type": "null" }]
+    },
+    "failures": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/failureDetail" }
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "pid": {
+      "anyOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "null" }
+      ]
+    },
+    "exit_code": {
+      "anyOf": [{ "type": "integer" }, { "type": "null" }]
+    },
+    "timed_out": { "type": "boolean" },
+    "cancelled": { "type": "boolean" },
+    "cancellation_origin": {
+      "anyOf": [
+        {
+          "enum": [
+            "user",
+            "controller",
+            "timeout",
+            "parent_service_shutdown",
+            "runtime_failure"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "termination_reason": {
+      "anyOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "graceful_termination_requested": { "type": "boolean" },
+    "graceful_termination_succeeded": { "type": "boolean" },
+    "forced_termination": { "type": "boolean" },
+    "cleanup_status": { "enum": ["succeeded", "failed", "not_required"] },
+    "cleanup_error": {
+      "anyOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "target_repository_writable": { "type": "boolean" },
+    "stdin_bytes_delivered": { "type": "integer", "minimum": 0 },
+    "stdout": { "$ref": "#/$defs/streamResult" },
+    "stderr": { "$ref": "#/$defs/streamResult" },
+    "raw_events": { "$ref": "#/$defs/streamResult" },
+    "final_output_path": {
+      "anyOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "final_output_present": {
+      "anyOf": [{ "type": "boolean" }, { "type": "null" }]
+    },
+    "invocation_artifact": { "type": "string", "minLength": 1 },
+    "output_tail_artifact": { "type": "string", "minLength": 1 },
+    "process_result_artifact": { "type": "string", "minLength": 1 },
+    "artifact_set_complete": { "type": "boolean" }
+  },
+  "$defs": {
+    "failureCode": {
+      "enum": [
+        "executable_not_found",
+        "executable_not_runnable",
+        "spawn_failed",
+        "stdin_failed",
+        "timeout",
+        "cancelled",
+        "nonzero_exit",
+        "process_tree_cleanup_failed",
+        "stdout_limit_exceeded",
+        "stderr_limit_exceeded",
+        "event_line_limit_exceeded",
+        "output_decode_failed",
+        "artifact_write_failed",
+        "malformed_stream",
+        "final_output_missing",
+        "unknown_infrastructure_failure"
+      ]
+    },
+    "failureDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "stream",
+        "configured_limit_bytes",
+        "observed_bytes"
+      ],
+      "properties": {
+        "code": { "$ref": "#/$defs/failureCode" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "stream": {
+          "anyOf": [
+            { "enum": ["stdout", "stderr", "events", "stdin", "artifact"] },
+            { "type": "null" }
+          ]
+        },
+        "configured_limit_bytes": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "observed_bytes": {
+          "anyOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "streamResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_path",
+        "total_bytes_observed",
+        "bytes_persisted",
+        "limit_exceeded",
+        "largest_read_bytes",
+        "decode_replacements",
+        "output_after_cancellation"
+      ],
+      "properties": {
+        "artifact_path": { "type": "string", "minLength": 1 },
+        "total_bytes_observed": { "type": "integer", "minimum": 0 },
+        "bytes_persisted": { "type": "integer", "minimum": 0 },
+        "limit_exceeded": { "type": "boolean" },
+        "largest_read_bytes": { "type": "integer", "minimum": 0 },
+        "decode_replacements": { "type": "boolean" },
+        "output_after_cancellation": { "type": "boolean" }
+      }
+    }
+  }
+}

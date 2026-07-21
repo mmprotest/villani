@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/agent-invocation-identity.schema.json",
+  "title": "Villani Agent Invocation Identity v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "invocation_id", "profile_id", "role", "agent_system_id", "system_kind", "implementation_id", "provider", "model", "driver", "executable", "timeout_seconds", "max_parallel", "availability", "unavailable_reason", "configuration_digest", "configuration"],
+  "properties": {
+    "schema_version": { "const": "villani.agent_invocation_identity.v1" },
+    "invocation_id": { "type": "string", "pattern": "^ainv_[0-9a-f]{64}$" },
+    "profile_id": { "type": "string", "minLength": 1 },
+    "role": { "enum": ["classification", "coding", "verification", "selection"] },
+    "agent_system_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "system_kind": { "enum": ["api", "internal_runner", "cli_agent"] },
+    "implementation_id": { "type": "string", "minLength": 1 },
+    "provider": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+    "model": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+    "driver": { "anyOf": [{ "enum": ["codex", "claude_code"] }, { "type": "null" }] },
+    "executable": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+    "timeout_seconds": { "type": "integer", "minimum": 1 },
+    "max_parallel": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "availability": { "enum": ["ready", "unavailable"] },
+    "unavailable_reason": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+    "configuration_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "configuration": { "type": "object" }
+  }
+}

@@ -70,12 +70,42 @@ class GitPatchCaptureResult(BaseModel):
 
 
 def _run(args, cwd: Path):
-    return subprocess.run(args, cwd=cwd, text=True, capture_output=True)
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
+        capture_output=True,
+    )
 
 
 def _run_bytes(args, cwd: Path):
     """Capture binary Git output without universal-newline translation."""
     return subprocess.run(args, cwd=cwd, capture_output=True)
+
+
+def _porcelain_paths(data: bytes) -> list[str]:
+    """Decode `git status --porcelain=v1 -z` without quoted path ambiguity."""
+
+    fields = data.split(b"\0")
+    paths: list[str] = []
+    index = 0
+    while index < len(fields):
+        field = fields[index]
+        index += 1
+        if not field:
+            continue
+        status = field[:2].decode("ascii", errors="replace")
+        raw_path = field[3:] if len(field) > 3 else b""
+        if raw_path:
+            paths.append(raw_path.decode("utf-8", errors="surrogateescape"))
+        if ("R" in status or "C" in status) and index < len(fields):
+            original = fields[index]
+            index += 1
+            if original:
+                paths.append(original.decode("utf-8", errors="surrogateescape"))
+    return list(dict.fromkeys(paths))
 
 
 def _is_excluded(path: str, patterns: list[str] | None = None) -> bool:
@@ -198,7 +228,9 @@ def ensure_git_baseline(
     def checked(*args: str) -> subprocess.CompletedProcess:
         completed = _run(["git", *args], worktree_path)
         if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "unknown Git error").strip()
+            detail = (
+                completed.stderr or completed.stdout or "unknown Git error"
+            ).strip()
             raise RuntimeError(f"git {' '.join(args)} failed: {detail}")
         return completed
 
@@ -278,7 +310,16 @@ def capture_git_patch(
     try:
         clean_runner_artifacts_from_worktree(worktree_path)
         clean_untracked_scratch_artifacts(worktree_path)
-        status = _run(["git", "status", "--porcelain"], worktree_path)
+        status = _run_bytes(
+            [
+                "git",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ],
+            worktree_path,
+        )
         if status.returncode != 0:
             return GitPatchCaptureResult(
                 patch_path=None,
@@ -288,25 +329,36 @@ def capture_git_patch(
                 modified_files=[],
                 renamed_files=[],
                 has_changes=False,
-                failure_reason=status.stderr.strip(),
+                failure_reason=(status.stderr or b"")
+                .decode("utf-8", errors="replace")
+                .strip(),
             )
         # Stage non-excluded paths explicitly so untracked files are included and internals are never staged.
-        candidates = []
-        for line in status.stdout.splitlines():
-            rel = line[3:] if len(line) > 3 else ""
-            if " -> " in rel:
-                rel = rel.split(" -> ", 1)[-1]
-            if rel and not _is_excluded(rel, excludes):
-                candidates.append(rel)
+        candidates = [
+            path
+            for path in _porcelain_paths(status.stdout or b"")
+            if not _is_excluded(path, excludes)
+        ]
         _run(["git", "reset", "--"], worktree_path)
         if candidates:
-            _run(["git", "add", "-A", "--", *candidates], worktree_path)
+            staged = _run(["git", "add", "-A", "--", *candidates], worktree_path)
+            if staged.returncode != 0:
+                raise RuntimeError(
+                    "git add failed while capturing candidate evidence: "
+                    + (staged.stderr or staged.stdout or "unknown Git error").strip()
+                )
         diff = _run_bytes(
             ["git", "diff", "--cached", "--binary", "--full-index"],
             worktree_path,
         )
-        ns = _run(["git", "diff", "--cached", "--name-status"], worktree_path)
-        stat = _run(["git", "diff", "--cached", "--stat"], worktree_path)
+        ns = _run(
+            ["git", "-c", "core.quotepath=false", "diff", "--cached", "--name-status"],
+            worktree_path,
+        )
+        stat = _run(
+            ["git", "-c", "core.quotepath=false", "diff", "--cached", "--stat"],
+            worktree_path,
+        )
         _run(["git", "reset", "--"], worktree_path)
         patch_bytes = diff.stdout or b""
         patch_path.write_bytes(patch_bytes)
