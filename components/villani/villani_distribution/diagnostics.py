@@ -23,6 +23,16 @@ from villani_ops.diagnostics import (
     resolve_doctor_repository,
 )
 from villani_ops.closed_loop.agent_systems.discovery import discover_agent_harnesses
+from villani_ops.closed_loop.agent_systems.management import (
+    DoctorStatus,
+    diagnose_registry,
+    write_management_evidence,
+)
+from villani_ops.closed_loop.agent_systems.registry import build_agent_system_registry
+from villani_ops.closed_loop.agent_systems.role_models import (
+    AgentRole,
+    CliAgentSystemConfig,
+)
 from villani_ops.closed_loop.durable_io import write_json_atomic
 from villani_ops.self_service import PackageManifest, load_entitlement
 from pydantic import ValidationError
@@ -77,9 +87,7 @@ class DiagnosticReport:
                 "warnings": sum(item.status == "warn" for item in self.checks),
                 "failed": sum(item.status == "fail" for item in self.checks),
             },
-            "checks": [
-                item.as_dict(evidence_path=self.evidence_path) for item in self.checks
-            ],
+            "checks": [item.as_dict(evidence_path=self.evidence_path) for item in self.checks],
             "repositories_modified": False,
             "evidence_path": self.evidence_path,
         }
@@ -92,9 +100,7 @@ class DiagnosticReport:
             "warnings": sum(item.status == "warn" for item in self.checks),
             "failed": sum(item.status == "fail" for item in self.checks),
         }
-        value["checks"] = [
-            item.as_dict(evidence_path=self.evidence_path) for item in self.checks
-        ]
+        value["checks"] = [item.as_dict(evidence_path=self.evidence_path) for item in self.checks]
         value["repositories_modified"] = False
         value["evidence_path"] = self.evidence_path
         return value
@@ -274,9 +280,21 @@ def _configuration_checks(
 
 
 def _backend_checks(
-    backends: Mapping[str, Any], reports: list[dict[str, Any]]
+    backends: Mapping[str, Any],
+    reports: list[dict[str, Any]],
+    *,
+    role_systems_configured: bool = False,
 ) -> list[DiagnosticCheck]:
     if not backends:
+        if role_systems_configured:
+            return [
+                DiagnosticCheck(
+                    "configured_backends",
+                    "pass",
+                    "The active execution profile uses configured CLI agent systems.",
+                    details={"backend_count": 0, "profile_driven": True},
+                )
+            ]
         return [
             DiagnosticCheck(
                 "configured_backends",
@@ -619,9 +637,7 @@ def _managed_installation_check(home: Path) -> DiagnosticCheck:
             {"manifest": str(manifest_path)},
         )
     try:
-        manifest = PackageManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
-        )
+        manifest = PackageManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
         for item in manifest.files:
             relative = Path(item.path)
             path = (root / relative).resolve()
@@ -651,7 +667,9 @@ def _managed_installation_check(home: Path) -> DiagnosticCheck:
     )
 
 
-def _harness_checks() -> list[DiagnosticCheck]:
+def _harness_checks(
+    required_harness_ids: frozenset[str] = frozenset({"villani-code"}),
+) -> list[DiagnosticCheck]:
     checks: list[DiagnosticCheck] = []
     try:
         discoveries = discover_agent_harnesses()
@@ -666,7 +684,7 @@ def _harness_checks() -> list[DiagnosticCheck]:
         ]
     for discovery in discoveries:
         readiness = discovery.readiness
-        required = discovery.harness_id == "villani-code"
+        required = discovery.harness_id in required_harness_ids
         identifier = discovery.harness_id
         checks.append(
             DiagnosticCheck(
@@ -820,6 +838,54 @@ def run_doctor(
         saved=saved_repository,
         cwd=cwd or Path.cwd(),
     )
+    role_systems_configured = False
+    cli_coding_active = False
+    role_diagnostic_document = None
+    if isinstance(configuration, Mapping):
+        role_evidence_path = home / "diagnostics" / "agent-systems" / "doctor-latest.json"
+        try:
+            role_registry = build_agent_system_registry(configuration, backends)
+            role_bindings = role_registry.resolve_profile()
+            bound_systems = {
+                role: role_registry.inspect_configured(role_bindings.system_id_for(role))
+                for role in AgentRole
+            }
+            role_systems_configured = any(
+                isinstance(system, CliAgentSystemConfig) for system in bound_systems.values()
+            )
+            cli_coding_active = isinstance(bound_systems[AgentRole.CODING], CliAgentSystemConfig)
+            role_diagnostic_document = diagnose_registry(
+                role_registry,
+                evidence_path=str(role_evidence_path),
+            )
+            write_management_evidence(role_evidence_path, role_diagnostic_document)
+            for diagnostic in role_diagnostic_document.systems:
+                checks.append(
+                    DiagnosticCheck(
+                        f"agent_system:{diagnostic.system_id}",
+                        "pass" if diagnostic.status == DoctorStatus.READY else "fail",
+                        (
+                            f"{diagnostic.display_name} is ready for "
+                            f"{len(diagnostic.configured_roles)} configured role(s)."
+                            if diagnostic.status == DoctorStatus.READY
+                            else f"{diagnostic.display_name} is {diagnostic.status.value}."
+                        ),
+                        None
+                        if diagnostic.status == DoctorStatus.READY
+                        else f"Run: {diagnostic.exact_next_action}",
+                        diagnostic.model_dump(mode="json"),
+                    )
+                )
+        except (OSError, TypeError, ValueError, ValidationError) as error:
+            checks.append(
+                DiagnosticCheck(
+                    "agent_system_profile",
+                    "fail",
+                    f"The active execution profile cannot be diagnosed: {error}",
+                    "Run: villani profiles inspect api, then activate a ready profile",
+                    {"repositories_modified": False},
+                )
+            )
     try:
         status = service_status(env)
     except (OSError, ServiceError) as error:
@@ -975,9 +1041,18 @@ def run_doctor(
                 "Repair the configuration, then run: villani doctor",
             )
         )
-    checks.extend(_backend_checks(backends, core["backend_connectivity"]))
-    checks.extend(_adapter_checks(core.get("adapters", [])))
-    checks.extend(_harness_checks())
+    checks.extend(
+        _backend_checks(
+            backends,
+            core["backend_connectivity"],
+            role_systems_configured=role_systems_configured,
+        )
+    )
+    if not cli_coding_active:
+        checks.extend(_adapter_checks(core.get("adapters", [])))
+    checks.extend(
+        _harness_checks(frozenset() if cli_coding_active else frozenset({"villani-code"}))
+    )
     capabilities = core.get("required_capabilities", {})
     recovery_by_capability = {
         "disk": "Free at least 100 MiB, then run: villani doctor",
@@ -985,7 +1060,9 @@ def run_doctor(
         "coding_adapter": "Reinstall Villani Code, then run: villani doctor",
     }
     for capability, recovery in recovery_by_capability.items():
-        if capabilities.get(capability) is False:
+        if capabilities.get(capability) is False and not (
+            capability == "coding_adapter" and cli_coding_active
+        ):
             checks.append(
                 DiagnosticCheck(
                     f"required_capability:{capability}",
@@ -1065,9 +1142,12 @@ def run_doctor(
     checks.append(_stale_runs_check(home))
     healthy = not any(item.status == "fail" for item in checks)
     core["repository_source"] = repository_source
-    report = DiagnosticReport(
-        utc_now(), healthy, tuple(checks), core, str(evidence_path)
+    core["agent_systems"] = (
+        role_diagnostic_document.model_dump(mode="json")
+        if role_diagnostic_document is not None
+        else None
     )
+    report = DiagnosticReport(utc_now(), healthy, tuple(checks), core, str(evidence_path))
     try:
         write_json_atomic(evidence_path, report.as_dict())
     except OSError:

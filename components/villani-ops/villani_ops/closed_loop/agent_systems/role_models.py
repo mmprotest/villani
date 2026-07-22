@@ -49,6 +49,25 @@ class AgentRole(str, Enum):
 
 
 REQUIRED_AGENT_ROLES = frozenset(AgentRole)
+ROLE_LABELS: Final[dict[AgentRole, str]] = {
+    AgentRole.CLASSIFICATION: "Understand task",
+    AgentRole.CODING: "Write code",
+    AgentRole.VERIFICATION: "Verify result",
+    AgentRole.SELECTION: "Choose candidate",
+}
+
+
+class CliRolePolicy(StrictRoleModel):
+    """Safe role-specific policy for one configured CLI installation/model.
+
+    The flat fields on :class:`CliAgentSystemConfig` remain the v1 compatibility
+    defaults.  This optional map lets one user-facing agent system fill several
+    roles while each invocation still receives the policy required by that role.
+    """
+
+    instruction_policy: Literal["native_project", "villani_controlled"]
+    permission_profile: str = Field(min_length=1)
+    environment_policy: str = Field(min_length=1)
 
 
 def _reject_secret_configuration(value: BaseModel) -> None:
@@ -107,12 +126,54 @@ class CliAgentSystemConfig(StrictRoleModel):
     instruction_policy: Literal["native_project", "villani_controlled"]
     permission_profile: str = Field(min_length=1)
     environment_policy: str = Field(min_length=1)
+    role_policies: dict[AgentRole, CliRolePolicy] = Field(default_factory=dict)
     provider_options: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def reject_secrets(self) -> "CliAgentSystemConfig":
         _reject_secret_configuration(self)
         return self
+
+    def policy_for_role(self, role: AgentRole) -> CliRolePolicy:
+        """Resolve an invocation policy without weakening read-only roles."""
+
+        configured = self.role_policies.get(role)
+        if configured is not None:
+            return configured
+        if len(self.roles) > 1:
+            if role == AgentRole.CODING:
+                return CliRolePolicy(
+                    instruction_policy=self.instruction_policy,
+                    permission_profile="workspace_write",
+                    environment_policy=self.environment_policy,
+                )
+            return CliRolePolicy(
+                instruction_policy="villani_controlled",
+                permission_profile="read_only",
+                environment_policy="minimal",
+            )
+        return CliRolePolicy(
+            instruction_policy=self.instruction_policy,
+            permission_profile=self.permission_profile,
+            environment_policy=self.environment_policy,
+        )
+
+    def for_role(self, role: AgentRole) -> "CliAgentSystemConfig":
+        """Return the single-role driver view used for one independent process."""
+
+        if role not in self.roles:
+            raise ValueError(
+                f"agent system {self.id!r} does not declare role {role.value!r}"
+            )
+        policy = self.policy_for_role(role)
+        return self.model_copy(
+            update={
+                "roles": {role},
+                "instruction_policy": policy.instruction_policy,
+                "permission_profile": policy.permission_profile,
+                "environment_policy": policy.environment_policy,
+            }
+        )
 
 
 AgentSystemConfig = Annotated[
@@ -231,6 +292,8 @@ class AgentSystemInspection(StrictRoleModel):
 
 class ExecutionProfileInspection(StrictRoleModel):
     profile_id: str
+    profile_type: Literal["api", "cli", "hybrid", "custom"] = "custom"
+    active: bool = False
     status: Literal["ready", "unavailable", "invalid"]
     runnable: bool
     bindings: RoleBindings | None = None
@@ -252,9 +315,11 @@ __all__ = [
     "AgentSystemInspection",
     "ApiAgentSystemConfig",
     "CliAgentSystemConfig",
+    "CliRolePolicy",
     "ExecutionProfileInspection",
     "InternalRunnerSystemConfig",
     "REQUIRED_AGENT_ROLES",
+    "ROLE_LABELS",
     "ROLE_BINDINGS_SCHEMA_VERSION",
     "RoleBindings",
     "parse_agent_system",

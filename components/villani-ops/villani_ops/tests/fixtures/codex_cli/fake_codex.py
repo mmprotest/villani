@@ -18,6 +18,8 @@ Usage: codex exec [OPTIONS] [PROMPT]
   --output-schema <FILE>
   --output-last-message <FILE>
   --ask-for-approval <untrusted|on-request|never>
+  --config <key=value>
+  --strict-config
   --ignore-user-config
   --ignore-rules
   -  Read prompt from stdin

@@ -36,6 +36,7 @@
     "cost": { "$ref": "#/$defs/cost" },
     "duration": { "$ref": "#/$defs/duration" },
     "agent_system": { "$ref": "#/$defs/agent_system" },
+    "role_executions": { "type": "array", "items": { "$ref": "#/$defs/role_execution" } },
     "escalation_summary": { "$ref": "#/$defs/escalation" },
     "available_actions": { "type": "array", "items": { "$ref": "#/$defs/action" } },
     "evidence_links": { "type": "array", "items": { "$ref": "#/$defs/evidence_link" } },
@@ -120,6 +121,46 @@
         "name": { "type": "string" },
         "backend": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
         "model": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }
+      }
+    },
+    "role_execution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "label", "agent_system_id", "system_name", "driver", "model", "invocation_count", "status", "evidence_artifact"],
+      "properties": {
+        "role": { "enum": ["classification", "coding", "verification", "selection"] },
+        "label": { "enum": ["Understand task", "Write code", "Verify result", "Choose candidate"] },
+        "agent_system_id": { "type": "string", "minLength": 1 },
+        "system_name": { "type": "string", "minLength": 1 },
+        "driver": { "type": "string", "minLength": 1 },
+        "model": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "invocation_count": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["recorded", "succeeded", "infrastructure_failure", "not_invoked"] },
+        "evidence_artifact": { "type": "string", "minLength": 1 },
+        "infrastructure_failure": {
+          "anyOf": [
+            { "$ref": "#/$defs/role_infrastructure_failure" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "role_infrastructure_failure": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "stage", "role", "agent_system_id", "safe_error_summary",
+        "target_repository_modified", "partial_patch_preserved",
+        "automatic_fallback_performed", "exact_repair_action", "evidence_path"
+      ],
+      "properties": {
+        "stage": { "enum": ["classification", "coding", "verification", "selection"] },
+        "role": { "enum": ["classification", "coding", "verification", "selection"] },
+        "agent_system_id": { "type": "string", "minLength": 1 },
+        "safe_error_summary": { "type": "string", "minLength": 1 },
+        "target_repository_modified": { "type": "boolean" },
+        "partial_patch_preserved": { "type": "boolean" },
+        "automatic_fallback_performed": { "type": "boolean" },
+        "exact_repair_action": { "type": "string", "minLength": 1 },
+        "evidence_path": { "type": "string", "minLength": 1 }
       }
     },
     "escalation": {

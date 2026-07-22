@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/role-invocation-evidence.schema.json",
+  "title": "Villani role invocation evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "invocation_id", "role", "agent_system_id", "driver",
+    "executable_path_digest", "safe_display_path", "cli_version",
+    "configured_model", "resolved_model", "instruction_policy",
+    "permission_policy", "started_at", "completed_at", "duration_ms",
+    "exit_code", "infrastructure_state", "usage", "cost", "artifact_links",
+    "restricted_process_artifact"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.role_invocation_evidence.v1" },
+    "invocation_id": { "type": "string", "pattern": "^rinv_[0-9a-f]{64}$" },
+    "role": { "enum": ["classification", "coding", "verification", "selection"] },
+    "agent_system_id": { "type": "string", "minLength": 1 },
+    "driver": { "enum": ["codex", "claude_code"] },
+    "executable_path_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "safe_display_path": { "type": "string", "minLength": 1 },
+    "cli_version": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+    "configured_model": { "type": "string", "minLength": 1 },
+    "resolved_model": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+    "instruction_policy": { "type": "string", "minLength": 1 },
+    "permission_policy": { "type": "string", "minLength": 1 },
+    "started_at": { "type": "string", "minLength": 1 },
+    "completed_at": { "type": "string", "minLength": 1 },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "exit_code": { "anyOf": [{ "type": "integer" }, { "type": "null" }] },
+    "infrastructure_state": { "enum": ["succeeded", "failed", "cancelled", "timed_out"] },
+    "usage": { "$ref": "#/$defs/usage" },
+    "cost": { "$ref": "#/$defs/cost" },
+    "artifact_links": {
+      "type": "array", "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "restricted_process_artifact": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "usage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens", "accounting_status"],
+      "properties": {
+        "input_tokens": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "output_tokens": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "accounting_status": { "enum": ["complete", "unknown"] }
+      }
+    },
+    "cost": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "currency", "accounting_status", "source"],
+      "properties": {
+        "value": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+        "currency": { "anyOf": [{ "type": "string", "pattern": "^[A-Za-z]{3}$" }, { "type": "null" }] },
+        "accounting_status": { "enum": ["complete", "unknown"] },
+        "source": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    }
+  }
+}

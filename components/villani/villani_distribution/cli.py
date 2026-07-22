@@ -14,7 +14,14 @@ import typer
 
 from villani_ops.cli.unified import app
 from villani_ops.closed_loop.agent_systems.discovery import discover_agent_harnesses
+from villani_ops.closed_loop.agent_systems.management import (
+    DoctorStatus,
+    detect_cli_agent_systems,
+    validate_cli_model,
+    write_management_evidence,
+)
 from villani_ops.closed_loop.agent_systems.registry import build_agent_system_registry
+from villani_ops.closed_loop.agent_systems.role_models import CliAgentSystemConfig
 from villani_ops.diagnostics import RepositoryDiagnosticError
 from villani_ops.self_service.entitlements import (
     EntitlementError,
@@ -33,6 +40,7 @@ from .diagnostics import (
 from .onboarding import (
     ProviderDetection,
     SetupError,
+    build_cli_configuration,
     build_configuration,
     create_sample_repository,
     detect_providers,
@@ -179,9 +187,7 @@ def update_check_command(
     if json_output:
         typer.echo(json.dumps(value, sort_keys=True))
         return
-    typer.echo(
-        f"Villani {state.available_version} is {state.status}. No update was installed."
-    )
+    typer.echo(f"Villani {state.available_version} is {state.status}. No update was installed.")
     if state.release_notes:
         typer.echo(state.release_notes)
 
@@ -219,8 +225,7 @@ def update_preview_command(
     typer.echo("Repositories modified: no")
     typer.echo("Source uploaded: no")
     typer.echo(
-        "Migrations: "
-        + ("; ".join(migration.actions) if migration.actions else "none required")
+        "Migrations: " + ("; ".join(migration.actions) if migration.actions else "none required")
     )
 
 
@@ -241,9 +246,7 @@ def _install_update(
                 raise UpdateError("offline artifact installation requires --sha256")
             if not artifact.expanduser().is_file():
                 raise UpdateError(f"artifact does not exist: {artifact}")
-            state = manager.install_artifact(
-                str(artifact.expanduser().resolve()), sha256.lower()
-            )
+            state = manager.install_artifact(str(artifact.expanduser().resolve()), sha256.lower())
     except UpdateError as error:
         _self_service_error(error)
     value = state.model_dump(mode="json")
@@ -389,7 +392,9 @@ def support_preview_command(
         return
     typer.echo("Support bundle preview (no archive created)")
     for item in manifest.items:
-        typer.echo(f"- {'include' if item.included else 'exclude'}: {item.logical_name} — {item.reason}")
+        typer.echo(
+            f"- {'include' if item.included else 'exclude'}: {item.logical_name} — {item.reason}"
+        )
     typer.echo("Upload: never automatic")
 
 
@@ -625,6 +630,188 @@ def _open_console(*, launch_browser: bool = True) -> str:
     return status.console_url
 
 
+def _setup_cli_execution(
+    *,
+    home: Path,
+    config_path: Path,
+    repository: Path | None,
+    mode: str,
+    codex_model: str | None,
+    claude_model: str | None,
+    understand_system: str | None,
+    write_system: str | None,
+    verify_system: str | None,
+    choose_system: str | None,
+    assume_defaults: bool,
+    start: bool | None,
+    automatic: bool | None,
+    open_console: bool | None,
+    sample: bool | None,
+) -> None:
+    evidence_path = home / "diagnostics" / "agent-systems" / "setup-detect.json"
+    detected = detect_cli_agent_systems(evidence_path=str(evidence_path))
+    write_management_evidence(evidence_path, detected)
+    typer.echo("Detected CLI agent systems:")
+    for item in detected.systems:
+        typer.echo(
+            f"- {item.display_name}: {item.status.value}; "
+            f"version={item.exact_version or 'not detected'}; "
+            f"auth={item.authentication_status}; next={item.exact_next_action}"
+        )
+
+    by_driver = {item.driver: item for item in detected.systems}
+    selected_models = {
+        "codex": (codex_model or "").strip(),
+        "claude_code": (claude_model or "").strip(),
+    }
+    if not any(selected_models.values()) and not assume_defaults:
+        ready = [item for item in detected.systems if item.status == DoctorStatus.READY]
+        if not ready:
+            raise SetupError(
+                "no ready CLI was detected; run the exact repair action above, then rerun setup"
+            )
+        for item in ready:
+            if typer.confirm(f"Configure {item.display_name}", default=True):
+                selected_models[item.driver] = typer.prompt(
+                    f"Model string for {item.display_name}"
+                ).strip()
+    if not any(selected_models.values()):
+        raise SetupError(
+            "CLI setup needs --codex-model or --claude-model; model names are never guessed"
+        )
+    for driver, selected_model in selected_models.items():
+        if not selected_model:
+            continue
+        diagnostic = by_driver[driver]
+        if diagnostic.status != DoctorStatus.READY:
+            raise SetupError(
+                f"{diagnostic.display_name} is not ready: {diagnostic.what_failed or diagnostic.status.value}. "
+                f"Run: {diagnostic.exact_next_action}"
+            )
+
+    explicit = (understand_system, write_system, verify_system, choose_system)
+    role_assignments = None
+    if mode == "custom" or any(value is not None for value in explicit):
+        if not all(isinstance(value, str) and value.strip() for value in explicit):
+            raise SetupError(
+                "custom setup requires --understand-system, --write-system, "
+                "--verify-system, and --choose-system"
+            )
+        role_assignments = {
+            "classification": str(understand_system),
+            "coding": str(write_system),
+            "verification": str(verify_system),
+            "selection": str(choose_system),
+        }
+    profile_id = "custom" if mode == "custom" else "cli"
+    configuration = build_cli_configuration(
+        repository=repository,
+        codex_model=selected_models["codex"] or None,
+        claude_model=selected_models["claude_code"] or None,
+        role_assignments=role_assignments,
+        profile_id=profile_id,
+    )
+    configured_backends = validate_configuration(configuration)
+    configured_registry = build_agent_system_registry(configuration, configured_backends)
+    bindings = configured_registry.resolve_profile(profile_id)
+    configured_registry.require_profile_runnable(bindings)
+    model_validations = []
+    for system in configured_registry.list_configured():
+        if not isinstance(system, CliAgentSystemConfig):
+            continue
+        validation = validate_cli_model(
+            system,
+            evidence_root=home / "diagnostics" / "agent-systems" / "model-probes",
+        )
+        model_validations.append(validation)
+        typer.echo(
+            f"- {system.id} model probe: {validation.status}; evidence={validation.evidence_path}"
+        )
+        if validation.status != "PASS":
+            raise SetupError(
+                f"model {system.model!r} was not proved available for {system.id}: "
+                f"{validation.reason}. Run: {validation.exact_next_action}"
+            )
+    write_result = write_configuration_atomic(config_path, configuration)
+    typer.echo(f"Active execution profile: {profile_id}")
+    for role, system_id in bindings.bindings.items():
+        labels = {
+            "classification": "Understand task",
+            "coding": "Write code",
+            "verification": "Verify result",
+            "selection": "Choose candidate",
+        }
+        typer.echo(f"- {labels[role.value]}: {system_id}")
+    typer.echo(f"Configuration saved atomically: {write_result.path}")
+
+    before_service = service_status()
+    should_start = _optional_approval(
+        start,
+        assume_defaults=assume_defaults,
+        prompt="Start Villani Service now",
+        default=True,
+    )
+    service_result = before_service
+    if should_start:
+        automatic_start = _optional_approval(
+            automatic,
+            assume_defaults=assume_defaults,
+            prompt="Start Villani Service automatically when you sign in",
+            default=False,
+        )
+        service_result = start_service(automatic_start=automatic_start)
+        typer.echo("Villani Service is running.")
+    should_open = _optional_approval(
+        open_console,
+        assume_defaults=assume_defaults,
+        prompt="Open Villani Console now",
+        default=False if assume_defaults else True,
+    )
+    console_url = _open_console() if should_open else None
+    if console_url:
+        typer.echo(f"Villani Console: {console_url}")
+    should_sample = _optional_approval(
+        sample,
+        assume_defaults=assume_defaults,
+        prompt="Create and run a safe sample task in a disposable repository",
+        default=False,
+    )
+    sample_result = create_sample_repository() if should_sample else None
+    sample_exit_code = run_sample_task(sample_result) if sample_result else None
+    if sample_result:
+        typer.echo(f"Sample repository: {sample_result.path}")
+        typer.echo(
+            "Sample task completed successfully."
+            if sample_exit_code == 0
+            else f"Sample task failed with exit code {sample_exit_code}."
+        )
+    write_setup_record(
+        home / "setup-record.json",
+        {
+            "schema_version": "villani.setup_record.v1",
+            "repository": str(repository) if repository else None,
+            "execution_mode": mode,
+            "active_execution_profile": profile_id,
+            "role_bindings": {
+                role.value: system_id for role, system_id in bindings.bindings.items()
+            },
+            "agent_systems": [
+                item.model_dump(mode="json") for item in configured_registry.list_configured()
+            ],
+            "detection_evidence": str(evidence_path),
+            "model_validations": [item.model_dump(mode="json") for item in model_validations],
+            "configuration": write_result.as_dict(),
+            "service": service_result.as_dict(),
+            "console_url": console_url,
+            "sample": sample_result.as_dict() if sample_result else None,
+            "sample_exit_code": sample_exit_code,
+        },
+    )
+    typer.echo("Setup complete. Run `villani doctor` at any time.")
+    if sample_exit_code not in {None, 0}:
+        raise typer.Exit(1)
+
+
 @app.command("setup")
 def setup_command(
     reset: bool = typer.Option(
@@ -637,6 +824,29 @@ def setup_command(
         None, "--endpoint", help="Also inspect this OpenAI-compatible endpoint."
     ),
     model: str | None = typer.Option(None, "--model", help="Select a detected model by name."),
+    execution_mode: str = typer.Option(
+        "api",
+        "--execution-mode",
+        help="Simple setup mode: api, cli, or custom.",
+    ),
+    codex_model: str | None = typer.Option(
+        None, "--codex-model", help="Configured Codex CLI model string."
+    ),
+    claude_model: str | None = typer.Option(
+        None, "--claude-model", help="Configured Claude Code model string."
+    ),
+    understand_system: str | None = typer.Option(
+        None, "--understand-system", help="Custom agent-system ID for Understand task."
+    ),
+    write_system: str | None = typer.Option(
+        None, "--write-system", help="Custom agent-system ID for Write code."
+    ),
+    verify_system: str | None = typer.Option(
+        None, "--verify-system", help="Custom agent-system ID for Verify result."
+    ),
+    choose_system: str | None = typer.Option(
+        None, "--choose-system", help="Custom agent-system ID for Choose candidate."
+    ),
     coding_system: str = typer.Option(
         "auto",
         "--coding-system",
@@ -686,11 +896,35 @@ def setup_command(
             typer.echo("Configuration was not changed.")
             return
 
+    selected_execution_mode = execution_mode.strip().lower()
+    if selected_execution_mode not in {"api", "cli", "custom"}:
+        raise SetupError("--execution-mode must be api, cli, or custom")
+
     repository = detect_repository()
     if repository:
         typer.echo(f"Repository detected: {repository}")
     else:
         typer.echo("No Git repository detected in the current directory.")
+
+    if selected_execution_mode in {"cli", "custom"}:
+        _setup_cli_execution(
+            home=home,
+            config_path=config_path,
+            repository=repository,
+            mode=selected_execution_mode,
+            codex_model=codex_model,
+            claude_model=claude_model,
+            understand_system=understand_system,
+            write_system=write_system,
+            verify_system=verify_system,
+            choose_system=choose_system,
+            assume_defaults=assume_defaults,
+            start=start,
+            automatic=automatic,
+            open_console=open_console,
+            sample=sample,
+        )
+        return
 
     typer.echo("Detecting supported model providers on this computer...")
     detections = detect_providers(explicit_endpoint=endpoint)

@@ -1,0 +1,36 @@
+{
+  "schema_version": "villani.cli_agent_mode_conformance_matrix.v1",
+  "generated_from": "release-verification/run_cli_agent_gate.py",
+  "status_values": ["PASS", "FAIL", "NOT_APPLICABLE", "NOT_RUN"],
+  "columns": [
+    "configured",
+    "executable_present",
+    "auth_ready",
+    "version_supported",
+    "structured_output",
+    "permissions",
+    "cancellation",
+    "artifact_completeness",
+    "normalized_events",
+    "isolation",
+    "role_contract",
+    "fake_conformance",
+    "real_smoke_status",
+    "production_enabled"
+  ],
+  "rows": [
+    {"id": "api_classification", "role": "classification", "system": "api"},
+    {"id": "api_coding", "role": "coding", "system": "api"},
+    {"id": "api_verification", "role": "verification", "system": "api"},
+    {"id": "api_selection", "role": "selection", "system": "api"},
+    {"id": "codex_classification", "role": "classification", "system": "codex"},
+    {"id": "codex_coding", "role": "coding", "system": "codex"},
+    {"id": "codex_verification", "role": "verification", "system": "codex"},
+    {"id": "codex_selection", "role": "selection", "system": "codex"},
+    {"id": "claude_classification", "role": "classification", "system": "claude"},
+    {"id": "claude_coding", "role": "coding", "system": "claude"},
+    {"id": "claude_verification", "role": "verification", "system": "claude"},
+    {"id": "claude_selection", "role": "selection", "system": "claude"},
+    {"id": "deterministic_selection", "role": "selection", "system": "deterministic"}
+  ]
+}

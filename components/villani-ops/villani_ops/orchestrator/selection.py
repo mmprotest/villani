@@ -753,6 +753,12 @@ def _evidence_rank_key(row: dict[str, Any]) -> tuple[Any, ...]:
     return _evidence_rank_components(row)
 
 
+def evidence_rank_signature(row: dict[str, Any]) -> tuple[Any, ...]:
+    """Return only deterministic evidence dimensions, excluding candidate ID."""
+
+    return _evidence_rank_components(row)
+
+
 def rank_candidates_by_evidence(candidates: list[Any]) -> list[dict[str, Any]]:
     rows = build_candidate_evidence_matrix(candidates)
     rows = sorted(rows, key=lambda r: r["candidate_id"])

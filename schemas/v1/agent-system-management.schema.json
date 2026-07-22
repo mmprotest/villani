@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/agent-system-management.schema.json",
+  "title": "Villani agent-system management evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "generated_at", "systems", "repositories_modified",
+    "secrets_read", "login_started", "provider_configuration_modified"
+  ],
+  "properties": {
+    "schema_version": { "const": "villani.agent_system_management.v1" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "systems": {
+      "type": "array",
+      "items": { "$ref": "agent-system-diagnostic.schema.json" }
+    },
+    "repositories_modified": { "const": false },
+    "secrets_read": { "const": false },
+    "login_started": { "const": false },
+    "provider_configuration_modified": { "const": false }
+  }
+}

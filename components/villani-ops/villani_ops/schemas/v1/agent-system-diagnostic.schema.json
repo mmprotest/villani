@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/agent-system-diagnostic.schema.json",
+  "title": "Villani agent-system diagnostic",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "system_id", "display_name", "driver", "configured", "status", "configured_executable", "resolved_path", "safe_display_path", "resolved_path_digest", "exact_version", "authentication_ready", "authentication_status", "supported_roles", "configured_roles", "configured_model", "instruction_policy", "permission_policy", "conformance_status", "last_doctor_time", "affected_roles", "what_failed", "repository_modified", "exact_next_action", "evidence_path", "role_results"],
+  "properties": {
+    "schema_version": { "const": "villani.agent_system_diagnostic.v1" },
+    "system_id": { "type": "string", "minLength": 1 }, "display_name": { "type": "string", "minLength": 1 }, "driver": { "enum": ["codex", "claude_code"] }, "configured": { "type": "boolean" }, "status": { "$ref": "#/$defs/status" }, "configured_executable": { "type": "string", "minLength": 1 }, "resolved_path": { "$ref": "#/$defs/nullable_string" }, "safe_display_path": { "$ref": "#/$defs/nullable_string" }, "resolved_path_digest": { "anyOf": [{ "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, { "type": "null" }] }, "exact_version": { "$ref": "#/$defs/nullable_string" }, "authentication_ready": { "type": "boolean" }, "authentication_status": { "enum": ["ready", "not_ready", "unknown"] }, "supported_roles": { "$ref": "#/$defs/roles" }, "configured_roles": { "$ref": "#/$defs/roles" }, "configured_model": { "$ref": "#/$defs/nullable_string" }, "instruction_policy": { "type": "string" }, "permission_policy": { "type": "string" }, "conformance_status": { "enum": ["passed", "action_required", "unsupported", "error"] }, "last_doctor_time": { "type": "string", "format": "date-time" }, "affected_roles": { "$ref": "#/$defs/roles" }, "what_failed": { "$ref": "#/$defs/nullable_string" }, "repository_modified": { "const": false }, "exact_next_action": { "type": "string", "minLength": 1 }, "evidence_path": { "type": "string", "minLength": 1 }, "role_results": { "type": "array", "items": { "$ref": "#/$defs/role_result" } }
+  },
+  "$defs": {
+    "status": { "enum": ["READY", "ACTION_REQUIRED", "UNSUPPORTED", "ERROR"] }, "role": { "enum": ["classification", "coding", "verification", "selection"] }, "roles": { "type": "array", "items": { "$ref": "#/$defs/role" }, "uniqueItems": true }, "nullable_string": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+    "check": { "type": "object", "additionalProperties": false, "required": ["check_id", "status", "message", "evidence"], "properties": { "check_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "status": { "enum": ["PASS", "FAIL", "UNSUPPORTED"] }, "message": { "type": "string", "minLength": 1 }, "evidence": { "type": "object" } } },
+    "role_result": { "type": "object", "additionalProperties": false, "required": ["role", "label", "status", "supported", "checks", "failure"], "properties": { "role": { "$ref": "#/$defs/role" }, "label": { "enum": ["Understand task", "Write code", "Verify result", "Choose candidate"] }, "status": { "$ref": "#/$defs/status" }, "supported": { "type": "boolean" }, "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } }, "failure": { "$ref": "#/$defs/nullable_string" } } }
+  }
+}

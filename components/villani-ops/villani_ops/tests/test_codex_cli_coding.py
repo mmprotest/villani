@@ -911,11 +911,16 @@ def test_real_codex_coding_smoke_is_explicitly_opt_in(tmp_path: Path) -> None:
         pytest.skip(
             "real Codex smoke prerequisite missing: `codex` executable was not found"
         )
+    model = os.environ.get("VILLANI_REAL_CODEX_MODEL")
+    if not model:
+        pytest.skip(
+            "set VILLANI_REAL_CODEX_MODEL to an installed Codex model string"
+        )
     system = _system(
         executable=executable,
         timeout_seconds=120,
         provider_options={"launcher_arguments": [], "graceful_shutdown_seconds": 3},
-    )
+    ).model_copy(update={"model": model})
     driver = CodexCliDriver(system)
     probe = driver.probe()
     if not probe.authentication_ready:

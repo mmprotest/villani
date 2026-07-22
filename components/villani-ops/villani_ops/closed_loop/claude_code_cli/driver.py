@@ -26,6 +26,7 @@ from villani_ops.closed_loop.cli_runtime import (
     CliOutputLimits,
     CliProcessResult,
     CliProcessSupervisor,
+    minimal_cli_environment_values,
 )
 
 from .events import ParsedClaudeEvents
@@ -37,6 +38,7 @@ _VERSION = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)")
 _MINIMUM_VERSION = (2, 1, 138)
 _MAXIMUM_VERSION = (2, 2, 0)
 _ALLOWED_TOOLS = ("Bash", "Read", "Edit", "Write", "Glob", "Grep")
+_VERIFIER_ALLOWED_TOOLS = ("Read", "Glob", "Grep")
 _CONTROLLED_DISABLED_FEATURES = (
     "hooks",
     "plugins",
@@ -205,10 +207,7 @@ class ClaudeCodeCliDriver:
             )
         additions: dict[str, str] = {}
         if mode == "minimal":
-            path_name = "Path" if os.name == "nt" and "Path" in os.environ else "PATH"
-            additions[path_name] = os.environ.get(path_name, os.environ.get("PATH", ""))
-            if os.name == "nt" and os.environ.get("SystemRoot"):
-                additions["SystemRoot"] = os.environ["SystemRoot"]
+            additions.update(minimal_cli_environment_values())
         return CliEnvironmentPolicy(
             mode=mode,
             additions=additions,
@@ -338,6 +337,8 @@ class ClaudeCodeCliDriver:
             "model_selection": "--model" in help_text,
             "permission_mode": "--permission-mode" in help_text
             and "acceptedits" in lowered_help,
+            "read_only_permission_mode": "--permission-mode" in help_text
+            and "plan" in lowered_help,
             "tools": "--tools" in help_text,
             "allowed_tools": bool(allowed_tools_flag),
             "verbose": "--verbose" in help_text,
@@ -385,7 +386,7 @@ class ClaudeCodeCliDriver:
             failure = (
                 ClaudeFailure.MISSING_STRUCTURED_OUTPUT_CAPABILITY
                 if any(name in {"stream_json", "structured_output"} for name in missing)
-                else ClaudeFailure.UNSUPPORTED_VERSION
+                else ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY
             )
             fail(
                 failure,
@@ -409,16 +410,42 @@ class ClaudeCodeCliDriver:
                 ClaudeFailure.AMBIENT_STARTUP_FAILURE,
                 "`claude doctor` reported an unhealthy installation or configuration; resolve its diagnostics before running Villani.",
             )
-        if self.system.roles != {AgentRole.CODING}:
+        if self.system.roles not in tuple({role} for role in AgentRole):
             fail(
-                ClaudeFailure.UNSUPPORTED_VERSION,
-                "Milestone 4 supports Claude Code CLI only when the system declares the coding role and no non-coding roles.",
+                ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
+                "Claude Code CLI systems must declare exactly one supported role.",
             )
-        if self.system.permission_profile not in {"workspace_write", "workspace-write"}:
+        if self.system.roles == {
+            AgentRole.CODING
+        } and self.system.permission_profile not in {
+            "workspace_write",
+            "workspace-write",
+        }:
             fail(
                 ClaudeFailure.PERMISSION_DENIED,
                 "Claude coding requires permission_profile='workspace_write'; broader or read-only profiles are unsupported.",
             )
+        if self.system.roles and AgentRole.CODING not in self.system.roles:
+            if not capabilities.get("read_only_permission_mode", False):
+                fail(
+                    ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
+                    "Claude Code read-only roles require the plan permission mode.",
+                )
+            if self.system.permission_profile not in {"read_only", "read-only"}:
+                fail(
+                    ClaudeFailure.PERMISSION_DENIED,
+                    "Claude Code read-only roles require permission_profile='read_only'.",
+                )
+            if self.system.instruction_policy != "villani_controlled":
+                fail(
+                    ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
+                    "Claude Code read-only roles require instruction_policy='villani_controlled'.",
+                )
+            if self.system.environment_policy != "minimal":
+                fail(
+                    ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
+                    "Claude Code read-only roles require environment_policy='minimal' so sessions and ambient identity cannot cross role boundaries.",
+                )
 
         return ClaudeProbeResult(
             system_id=self.system.id,
@@ -574,9 +601,13 @@ class ClaudeCodeCliDriver:
                 "run_id": run_id,
                 "attempt_id": attempt_id,
                 "agent_system_id": self.system.id,
+                "driver": "claude_code",
+                "configured_model": self.system.model,
+                "cli_version": probe.exact_version_output,
                 "worktree": str(Path(worktree).resolve()),
                 "baseline_sha256": baseline_sha256,
                 "instruction_policy": self.system.instruction_policy,
+                "permission_policy": self.system.permission_profile,
                 "project_user_discovery_permitted": (
                     self.system.instruction_policy == "native_project"
                 ),
@@ -588,6 +619,244 @@ class ClaudeCodeCliDriver:
             event_stream_format="jsonl",
             utf8_policy="strict",
             require_final_output=False,
+        )
+
+    def _build_read_only_role_invocation(
+        self,
+        *,
+        role: AgentRole,
+        probe: ClaudeProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        role_invocation_id: str,
+        controlled_settings_path: Path,
+        controlled_mcp_path: Path,
+    ) -> CliInvocation:
+        """Build one no-session process for a read-only Villani role."""
+
+        if role == AgentRole.CODING or self.system.roles != {role}:
+            raise ClaudeCodeDriverUnavailable(
+                f"Claude Code {role.value} invocation requires a {role.value}-only system"
+            )
+        if not probe.ready or probe.resolved_executable is None:
+            detail = "; ".join(probe.messages) or "Claude Code doctor did not pass"
+            raise ClaudeCodeDriverUnavailable(detail)
+        if self.system.environment_policy != "minimal":
+            raise ClaudeCodeDriverUnavailable(
+                f"Claude Code {role.value} requires environment_policy='minimal'"
+            )
+        schema = json.loads(Path(output_schema_path).read_text(encoding="utf-8"))
+        schema_argument = json.dumps(
+            schema, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        allowed_tools = (
+            ",".join(_VERIFIER_ALLOWED_TOOLS) if role == AgentRole.VERIFICATION else ""
+        )
+        allowed_flag = probe.resolved_flags.get("allowed_tools")
+        if not allowed_flag:
+            raise ClaudeCodeDriverUnavailable(
+                "Claude Code doctor did not resolve the allowed-tools flag"
+            )
+        arguments: list[str] = [
+            *self.launcher_arguments,
+            "-p",
+            "--model",
+            self.system.model,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--no-session-persistence",
+            "--permission-mode",
+            "plan",
+            "--tools",
+            allowed_tools,
+            allowed_flag,
+            allowed_tools,
+            "--no-chrome",
+            "--json-schema",
+            schema_argument,
+            "--bare",
+            "--settings",
+            str(Path(controlled_settings_path).resolve()),
+            "--setting-sources=",
+            "--strict-mcp-config",
+            "--mcp-config",
+            str(Path(controlled_mcp_path).resolve()),
+            "--disable-slash-commands",
+        ]
+        if probe.capabilities.get("max_turns", False):
+            arguments.extend(
+                [
+                    "--max-turns",
+                    str(
+                        self.integer_option(
+                            self.system.provider_options, "max_turns", 20
+                        )
+                    ),
+                ]
+            )
+        environment = self._environment()
+        options = self.system.provider_options
+        limits = CliOutputLimits(
+            maximum_stdout_bytes=self.integer_option(
+                options, "maximum_stdout_bytes", 16 * 1024 * 1024
+            ),
+            maximum_stderr_bytes=self.integer_option(
+                options, "maximum_stderr_bytes", 16 * 1024 * 1024
+            ),
+            maximum_stdout_chunk_bytes=self.integer_option(
+                options, "maximum_stdout_chunk_bytes", 1024 * 1024
+            ),
+            maximum_stderr_chunk_bytes=self.integer_option(
+                options, "maximum_stderr_chunk_bytes", 1024 * 1024
+            ),
+            maximum_event_line_bytes=self.integer_option(
+                options, "maximum_event_line_bytes", 1024 * 1024
+            ),
+            maximum_tail_bytes=self.integer_option(
+                options, "maximum_tail_bytes", 16 * 1024
+            ),
+        )
+        return CliInvocation(
+            executable=Path(probe.resolved_executable),
+            arguments=tuple(arguments),
+            cwd=Path(workspace).resolve(),
+            stdin_bytes=prompt_bytes,
+            environment=environment.values,
+            environment_redaction_keys=environment.redaction_keys,
+            environment_metadata=environment.metadata,
+            timeout_seconds=float(self.system.timeout_seconds),
+            graceful_shutdown_seconds=float(
+                options.get("graceful_shutdown_seconds", 3.0)
+            ),
+            stdout_path=artifact_directory / "stdout.log",
+            stderr_path=artifact_directory / "stderr.log",
+            raw_event_path=artifact_directory / "raw-events.jsonl",
+            invocation_path=artifact_directory / "invocation.json",
+            process_result_path=artifact_directory / "process-result.json",
+            output_tail_path=artifact_directory / "output-tail.json",
+            output_limits=limits,
+            role_workspace_identity={
+                "role": role.value,
+                "role_invocation_id": role_invocation_id,
+                "agent_system_id": self.system.id,
+                "driver": "claude_code",
+                "configured_model": self.system.model,
+                "cli_version": probe.exact_version_output,
+                "verification_id": (
+                    role_invocation_id if role == AgentRole.VERIFICATION else None
+                ),
+                "cwd": str(Path(workspace).resolve()),
+                "writable_roots": (
+                    [
+                        str((Path(workspace) / "output").resolve()),
+                        str((Path(workspace) / "agent").resolve()),
+                    ]
+                    if role == AgentRole.VERIFICATION
+                    else []
+                ),
+                "agent_writable_roots": [],
+                "target_repository_writable": False,
+                "candidate_worktree_writable": False,
+                "instruction_policy": "villani_controlled",
+                "permission_policy": self.system.permission_profile,
+                "project_user_discovery_permitted": False,
+                "disabled_ambient_features": list(_CONTROLLED_DISABLED_FEATURES),
+            },
+            target_repository_writable=False,
+            prompt_artifact_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            event_stream_format="jsonl",
+            utf8_policy="strict",
+            require_final_output=False,
+        )
+
+    def build_verifier_invocation(
+        self,
+        *,
+        probe: ClaudeProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        verification_id: str,
+        controlled_settings_path: Path,
+        controlled_mcp_path: Path,
+    ) -> CliInvocation:
+        return self._build_read_only_role_invocation(
+            role=AgentRole.VERIFICATION,
+            probe=probe,
+            workspace=workspace,
+            artifact_directory=artifact_directory,
+            prompt_bytes=prompt_bytes,
+            prompt_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            output_schema_path=output_schema_path,
+            role_invocation_id=verification_id,
+            controlled_settings_path=controlled_settings_path,
+            controlled_mcp_path=controlled_mcp_path,
+        )
+
+    def build_classifier_invocation(
+        self,
+        *,
+        probe: ClaudeProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        classification_id: str,
+        controlled_settings_path: Path,
+        controlled_mcp_path: Path,
+    ) -> CliInvocation:
+        return self._build_read_only_role_invocation(
+            role=AgentRole.CLASSIFICATION,
+            probe=probe,
+            workspace=workspace,
+            artifact_directory=artifact_directory,
+            prompt_bytes=prompt_bytes,
+            prompt_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            output_schema_path=output_schema_path,
+            role_invocation_id=classification_id,
+            controlled_settings_path=controlled_settings_path,
+            controlled_mcp_path=controlled_mcp_path,
+        )
+
+    def build_selector_invocation(
+        self,
+        *,
+        probe: ClaudeProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        selection_id: str,
+        controlled_settings_path: Path,
+        controlled_mcp_path: Path,
+    ) -> CliInvocation:
+        return self._build_read_only_role_invocation(
+            role=AgentRole.SELECTION,
+            probe=probe,
+            workspace=workspace,
+            artifact_directory=artifact_directory,
+            prompt_bytes=prompt_bytes,
+            prompt_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            output_schema_path=output_schema_path,
+            role_invocation_id=selection_id,
+            controlled_settings_path=controlled_settings_path,
+            controlled_mcp_path=controlled_mcp_path,
         )
 
     @staticmethod

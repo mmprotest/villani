@@ -16,6 +16,16 @@
     "role": {
       "enum": ["classification", "coding", "verification", "selection"]
     },
+    "cli_role_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instruction_policy", "permission_profile", "environment_policy"],
+      "properties": {
+        "instruction_policy": { "enum": ["native_project", "villani_controlled"] },
+        "permission_profile": { "type": "string", "minLength": 1 },
+        "environment_policy": { "type": "string", "minLength": 1 }
+      }
+    },
     "common": {
       "type": "object",
       "properties": {
@@ -71,7 +81,7 @@
     "cli_agent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "id", "enabled", "driver", "executable", "model", "roles", "timeout_seconds", "max_parallel", "instruction_policy", "permission_profile", "environment_policy", "provider_options"],
+      "required": ["kind", "id", "enabled", "driver", "executable", "model", "roles", "timeout_seconds", "max_parallel", "instruction_policy", "permission_profile", "environment_policy", "role_policies", "provider_options"],
       "properties": {
         "kind": { "const": "cli_agent" },
         "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
@@ -85,6 +95,16 @@
         "instruction_policy": { "enum": ["native_project", "villani_controlled"] },
         "permission_profile": { "type": "string", "minLength": 1 },
         "environment_policy": { "type": "string", "minLength": 1 },
+        "role_policies": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "classification": { "$ref": "#/$defs/cli_role_policy" },
+            "coding": { "$ref": "#/$defs/cli_role_policy" },
+            "verification": { "$ref": "#/$defs/cli_role_policy" },
+            "selection": { "$ref": "#/$defs/cli_role_policy" }
+          }
+        },
         "provider_options": { "type": "object" }
       }
     },

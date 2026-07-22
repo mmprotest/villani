@@ -36,7 +36,10 @@ class RoleFactoryDependencies:
     internal_attempt_runners: Mapping[str, AttemptRunner] = field(default_factory=dict)
     internal_verifiers: Mapping[str, Verifier] = field(default_factory=dict)
     internal_selectors: Mapping[str, Selector] = field(default_factory=dict)
+    cli_classifiers: Mapping[str, Classifier] = field(default_factory=dict)
     cli_attempt_runners: Mapping[str, AttemptRunner] = field(default_factory=dict)
+    cli_verifiers: Mapping[str, Verifier] = field(default_factory=dict)
+    cli_selectors: Mapping[str, Selector] = field(default_factory=dict)
 
 
 def _implementation(
@@ -59,7 +62,7 @@ def _implementation(
             f"agent system {system_id!r} is disabled for role {role.value!r}"
         )
     if isinstance(system, CliAgentSystemConfig):
-        if role == AgentRole.CODING and system.driver in {"codex", "claude_code"}:
+        if system.driver in {"codex", "claude_code"}:
             implementation = (cli or {}).get(system.id)
             if implementation is not None:
                 return implementation
@@ -106,6 +109,7 @@ def build_classifier(
             registry,
             api=dependencies.api_classifiers,
             internal=dependencies.internal_classifiers,
+            cli=dependencies.cli_classifiers,
         ),
     )
 
@@ -141,6 +145,7 @@ def build_verifier(
             registry,
             api=dependencies.api_verifiers,
             internal=dependencies.internal_verifiers,
+            cli=dependencies.cli_verifiers,
         ),
     )
 
@@ -158,6 +163,7 @@ def build_selector(
             registry,
             api=dependencies.api_selectors,
             internal=dependencies.internal_selectors,
+            cli=dependencies.cli_selectors,
         ),
     )
 

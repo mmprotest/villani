@@ -212,6 +212,10 @@ class ClassificationContext:
     policy_configuration: Mapping[str, Any]
     classification_backend_name: str | None = None
     classification_backend_model: str | None = None
+    run_directory: Path | None = None
+    cancellation_event: Any | None = field(
+        default=None, repr=False, compare=False, metadata={"plugin_exclude": True}
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,6 +305,9 @@ class SelectionContext:
     success_criteria: str
     policy_configuration: Mapping[str, Any]
     run_directory: Path
+    cancellation_event: Any | None = field(
+        default=None, repr=False, compare=False, metadata={"plugin_exclude": True}
+    )
 
 
 @dataclass(frozen=True, slots=True)

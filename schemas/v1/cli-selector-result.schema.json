@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/cli-selector-result.schema.json",
+  "title": "Villani CLI selector result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["selected_candidate_id", "ranking", "reason"],
+  "properties": {
+    "selected_candidate_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "ranking": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 128}
+    },
+    "reason": {"type": "string", "minLength": 1, "maxLength": 800}
+  }
+}

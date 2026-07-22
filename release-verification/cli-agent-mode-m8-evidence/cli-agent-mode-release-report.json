@@ -1,0 +1,1490 @@
+{
+  "certification_reason": "All deterministic certification passed; optional real-provider evidence is incomplete.",
+  "certification_status": "PARTIAL",
+  "failures": [],
+  "finished_at": "2026-07-22T08:22:41.399319Z",
+  "phases": [
+    {
+      "phase": "optional_real_cli_smoke",
+      "reason": "optional real-provider smoke was not explicitly enabled",
+      "status": "NOT_RUN"
+    },
+    {
+      "cases": [],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-c",
+        "from villani_ops.closed_loop.agent_systems.role_models import AgentRole; from villani_ops.closed_loop.agent_systems.configuration import migrate_agent_system_configuration; c={'backends':{'api-main':{'provider':'openai-compatible','model':'m','roles':['classification','coding','review','selection']}}}; assert len(AgentRole) == 4; assert migrate_agent_system_configuration(c)[0]['active_execution_profile'] == 'api'"
+      ],
+      "counts": {},
+      "cwd": "<source-root>",
+      "duration_seconds": 0.828,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.015,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 0,
+      "ephemeral_test_files": 0,
+      "exit_code": 0,
+      "junit": null,
+      "log": "logs/packaged_artifact_probe.log",
+      "phase": "packaged_artifact_probe",
+      "repetition": null,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 60
+    },
+    {
+      "cases": [
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m7",
+          "name": "test_existing_api_migration_is_default_and_idempotent",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_api_factories_remain_compatible_and_cli_factories_use_same_ports",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_api_verifier_factory_remains_compatible",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_hybrid_profile_still_constructs_existing_api_coder_when_selected",
+          "status": "PASS",
+          "time_seconds": 0.0
+        }
+      ],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "villani_ops/tests/test_cli_agent_mode_m7.py::test_existing_api_migration_is_default_and_idempotent",
+        "villani_ops/tests/test_cli_classification_selection.py::test_api_factories_remain_compatible_and_cli_factories_use_same_ports",
+        "villani_ops/tests/test_cli_verification.py::test_api_verifier_factory_remains_compatible",
+        "villani_ops/tests/test_codex_cli_coding.py::test_hybrid_profile_still_constructs_existing_api_coder_when_selected",
+        "--junitxml",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\junit\\schema_migration_and_api_regression.xml",
+        "--basetemp",
+        "<source-root>\\.m8g\\2a40a79c\\85b9593038"
+      ],
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 4
+      },
+      "cwd": "<source-root>\\components\\villani-ops",
+      "duration_seconds": 1.297,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.0,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 0,
+      "ephemeral_test_files": 0,
+      "exit_code": 0,
+      "junit": "junit/schema_migration_and_api_regression.xml",
+      "log": "logs/schema_migration_and_api_regression.log",
+      "phase": "schema_migration_and_api_regression",
+      "repetition": null,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 180
+    },
+    {
+      "cases": [
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_successful_attempt_records_git_patch_and_complete_evidence",
+          "status": "PASS",
+          "time_seconds": 1.274
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_successful_patch_records_canonical_artifacts_and_events",
+          "status": "PASS",
+          "time_seconds": 1.268
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_codex_verifier_decision_one",
+          "status": "PASS",
+          "time_seconds": 1.428
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_claude_verifier_decision_one",
+          "status": "PASS",
+          "time_seconds": 1.414
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_codex_verifier_decision_zero",
+          "status": "PASS",
+          "time_seconds": 1.405
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_claude_verifier_decision_zero",
+          "status": "PASS",
+          "time_seconds": 1.428
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_no_patch_is_non_infrastructure_coding_outcome",
+          "status": "PASS",
+          "time_seconds": 1.151
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_no_patch_is_coding_outcome_not_infrastructure",
+          "status": "PASS",
+          "time_seconds": 1.166
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_one_eligible_candidate_skips_cli_and_preserves_patch_identity",
+          "status": "PASS",
+          "time_seconds": 0.015
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_rejected_candidate_is_excluded_before_selector",
+          "status": "PASS",
+          "time_seconds": 0.015
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_selector_two_tied_eligible_candidates_and_blind_packet[codex]",
+          "status": "PASS",
+          "time_seconds": 0.165
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_selector_two_tied_eligible_candidates_and_blind_packet[claude]",
+          "status": "PASS",
+          "time_seconds": 0.168
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_classifier_failures_use_explicit_conservative_fallback[malformed-malformed_output]",
+          "status": "PASS",
+          "time_seconds": 0.203
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_classifier_failures_use_explicit_conservative_fallback[wrong_type-schema_failure]",
+          "status": "PASS",
+          "time_seconds": 0.193
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_classifier_failures_use_explicit_conservative_fallback[direct_provider_selection-schema_failure]",
+          "status": "PASS",
+          "time_seconds": 0.192
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_classifier_failures_use_explicit_conservative_fallback[missing_final-missing_final_result]",
+          "status": "PASS",
+          "time_seconds": 0.194
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_classifier_failures_use_explicit_conservative_fallback[permission_failure-permission_failure]",
+          "status": "PASS",
+          "time_seconds": 0.186
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_cli_classifier_failures_use_explicit_conservative_fallback[process_crash-process_crash]",
+          "status": "PASS",
+          "time_seconds": 0.187
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_timeout_preserves_partial_patch_and_terminates_tree",
+          "status": "PASS",
+          "time_seconds": 2.149
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_timeout_preserves_partial_patch_and_cleans_process_tree",
+          "status": "PASS",
+          "time_seconds": 2.202
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_timeout_is_distinct_and_fails_closed",
+          "status": "PASS",
+          "time_seconds": 2.578
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_selector_timeout_uses_deterministic_fallback",
+          "status": "PASS",
+          "time_seconds": 1.115
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_probe_reports_actionable_readiness_failures[VILLANI_FAKE_CODEX_AUTH-codex_not_authenticated]",
+          "status": "PASS",
+          "time_seconds": 0.272
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_probe_reports_actionable_readiness_failures[VILLANI_FAKE_CODEX_UNSUPPORTED-unsupported_required_flag]",
+          "status": "PASS",
+          "time_seconds": 0.267
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_probe_readiness_failures_are_actionable[VILLANI_FAKE_CLAUDE_AUTH-missing-claude_not_authenticated]",
+          "status": "PASS",
+          "time_seconds": 0.364
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_probe_readiness_failures_are_actionable[VILLANI_FAKE_CLAUDE_UNSUPPORTED-1-missing_required_structured_output_capability]",
+          "status": "PASS",
+          "time_seconds": 0.366
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_probe_readiness_failures_are_actionable[VILLANI_FAKE_CLAUDE_DOCTOR-failed-mcp_plugin_hook_startup_failure]",
+          "status": "PASS",
+          "time_seconds": 0.861
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_auth_missing_is_reported_without_spawning",
+          "status": "PASS",
+          "time_seconds": 1.732
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_provider_and_output_failures_are_distinguished[malformed-malformed_jsonl]",
+          "status": "PASS",
+          "time_seconds": 3.177
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_provider_and_output_failures_are_distinguished[missing_final-missing_final_structured_output]",
+          "status": "PASS",
+          "time_seconds": 1.189
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_provider_and_output_failures_are_distinguished[invalid_final-structured_output_schema_failure]",
+          "status": "PASS",
+          "time_seconds": 1.191
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_provider_and_output_failures_are_distinguished[model_unavailable-model_unavailable]",
+          "status": "PASS",
+          "time_seconds": 1.164
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_provider_and_output_failures_are_distinguished[permission_failure-permission_sandbox_failure]",
+          "status": "PASS",
+          "time_seconds": 1.143
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_provider_and_output_failures_are_distinguished[provider_auth_failure-provider_authentication_failure]",
+          "status": "PASS",
+          "time_seconds": 1.148
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_provider_and_output_failures_are_distinguished[rate_limit-provider_rate_limit_or_overload]",
+          "status": "PASS",
+          "time_seconds": 1.159
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[malformed-invalid_json]",
+          "status": "PASS",
+          "time_seconds": 3.19
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[missing_final-missing_final_result]",
+          "status": "PASS",
+          "time_seconds": 1.2
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[invalid_schema-json_schema_failure]",
+          "status": "PASS",
+          "time_seconds": 1.216
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[model_unavailable-model_unavailable]",
+          "status": "PASS",
+          "time_seconds": 1.152
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[permission_denial-permission_denied]",
+          "status": "PASS",
+          "time_seconds": 1.155
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[tool_denial-tool_denied]",
+          "status": "PASS",
+          "time_seconds": 1.144
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[startup_failure-mcp_plugin_hook_startup_failure]",
+          "status": "PASS",
+          "time_seconds": 1.161
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[provider_auth_failure-provider_authentication_failure]",
+          "status": "PASS",
+          "time_seconds": 1.164
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_provider_stream_and_permission_failures_are_distinct[rate_limit-provider_rate_limit_or_overload]",
+          "status": "PASS",
+          "time_seconds": 1.204
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_permission_failure_is_distinct_from_missing_output",
+          "status": "PASS",
+          "time_seconds": 1.585
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_attempted_edit_is_blocked[codex]",
+          "status": "PASS",
+          "time_seconds": 1.481
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_attempted_edit_is_blocked[claude]",
+          "status": "PASS",
+          "time_seconds": 1.486
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_unsupported_read_only_capability_is_reported",
+          "status": "PASS",
+          "time_seconds": 1.563
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m7",
+          "name": "test_doctor_is_actionable_for_auth_and_unsupported_versions[auth_missing-ACTION_REQUIRED-codex login]",
+          "status": "PASS",
+          "time_seconds": 0.002
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m7",
+          "name": "test_doctor_is_actionable_for_auth_and_unsupported_versions[unsupported-UNSUPPORTED-npm install -g @openai/codex@latest]",
+          "status": "PASS",
+          "time_seconds": 0.002
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_malformed_event_fixture_fails_with_line_and_column",
+          "status": "PASS",
+          "time_seconds": 0.002
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_malformed_stream_reports_exact_line_and_column",
+          "status": "PASS",
+          "time_seconds": 0.002
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_malformed_jsonl_is_provider_neutral_malformed_stream",
+          "status": "PASS",
+          "time_seconds": 0.121
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_final_output_requirement_is_provider_neutral",
+          "status": "PASS",
+          "time_seconds": 0.196
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_missing_final_result_is_infrastructure_failure",
+          "status": "PASS",
+          "time_seconds": 1.466
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_nonzero_exit_preserves_partial_git_patch",
+          "status": "PASS",
+          "time_seconds": 1.269
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_nonzero_exit_preserves_partial_git_patch",
+          "status": "PASS",
+          "time_seconds": 1.283
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_partial_output_is_preserved_after_crash",
+          "status": "PASS",
+          "time_seconds": 0.099
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_controller_cancellation_is_distinct_and_cleans_child_process",
+          "status": "PASS",
+          "time_seconds": 1.295
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+          "status": "PASS",
+          "time_seconds": 1.274
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_cancellation_is_distinct_and_fails_closed",
+          "status": "PASS",
+          "time_seconds": 1.395
+        },
+        {
+          "classname": "villani_ops.tests.test_milestone5_delivery",
+          "name": "test_restart_while_awaiting_approval_does_not_duplicate_work_or_cost",
+          "status": "PASS",
+          "time_seconds": 0.473
+        },
+        {
+          "classname": "villani_ops.tests.test_milestone5_delivery",
+          "name": "test_target_branch_change_is_detected_before_delivery",
+          "status": "PASS",
+          "time_seconds": 0.393
+        },
+        {
+          "classname": "villani_ops.tests.test_milestone5_delivery",
+          "name": "test_dirty_worktree_fails_before_branch_delivery_and_preserves_patch",
+          "status": "PASS",
+          "time_seconds": 0.339
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_spaces_non_ascii_isolation_and_target_safety",
+          "status": "PASS",
+          "time_seconds": 1.296
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_large_prompt_and_non_ascii_path_use_stdin_and_preserve_target",
+          "status": "PASS",
+          "time_seconds": 1.305
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_arguments_spaces_non_ascii_and_exact_cwd_are_preserved",
+          "status": "PASS",
+          "time_seconds": 0.113
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_large_stdout_and_stderr_are_drained_concurrently",
+          "status": "PASS",
+          "time_seconds": 0.117
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_total_and_chunk_output_limits_are_failures[stdout-stdout_limit_exceeded]",
+          "status": "PASS",
+          "time_seconds": 0.137
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_total_and_chunk_output_limits_are_failures[stderr-stderr_limit_exceeded]",
+          "status": "PASS",
+          "time_seconds": 0.121
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_oversized_jsonl_line_is_classified_and_bounded",
+          "status": "PASS",
+          "time_seconds": 0.14
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_forbidden_villani_path_is_rejected_and_excluded_from_patch",
+          "status": "PASS",
+          "time_seconds": 1.401
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_verifier_invocation_has_no_target_repository_access[codex]",
+          "status": "PASS",
+          "time_seconds": 1.438
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_verifier_invocation_has_no_target_repository_access[claude]",
+          "status": "PASS",
+          "time_seconds": 1.484
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_role_manifest_has_exact_digests_and_no_identity_fields",
+          "status": "PASS",
+          "time_seconds": 0.212
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[0]",
+          "status": "PASS",
+          "time_seconds": 0.218
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[1]",
+          "status": "PASS",
+          "time_seconds": 0.233
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[2]",
+          "status": "PASS",
+          "time_seconds": 0.229
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[3]",
+          "status": "PASS",
+          "time_seconds": 0.25
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[4]",
+          "status": "PASS",
+          "time_seconds": 0.231
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_process_tree_cleanup_does_not_target_unrelated_process",
+          "status": "PASS",
+          "time_seconds": 0.278
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m7",
+          "name": "test_role_invocation_evidence_is_safe_strict_and_preserves_unknown_cost",
+          "status": "PASS",
+          "time_seconds": 0.014
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_official_format_fixture_maps_command_and_usage_events",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_official_stream_fixture_maps_command_edit_result_and_usage",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_unknown_event_is_preserved_as_namespaced_raw_event",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_unknown_stream_event_is_preserved_namespaced",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_parallel_candidates_use_separate_processes_workspaces_and_sessions",
+          "status": "PASS",
+          "time_seconds": 1.43
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_parallel_candidates_have_distinct_workspaces_processes_and_sessions",
+          "status": "PASS",
+          "time_seconds": 1.471
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m8",
+          "name": "test_five_sequential_role_processes_have_unique_processes_sessions_and_workspaces",
+          "status": "PASS",
+          "time_seconds": 4.404
+        }
+      ],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "villani_ops/tests/test_codex_cli_coding.py::test_successful_attempt_records_git_patch_and_complete_evidence",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_successful_patch_records_canonical_artifacts_and_events",
+        "villani_ops/tests/test_cli_verification.py::test_codex_verifier_decision_one",
+        "villani_ops/tests/test_cli_verification.py::test_claude_verifier_decision_one",
+        "villani_ops/tests/test_cli_verification.py::test_codex_verifier_decision_zero",
+        "villani_ops/tests/test_cli_verification.py::test_claude_verifier_decision_zero",
+        "villani_ops/tests/test_codex_cli_coding.py::test_no_patch_is_non_infrastructure_coding_outcome",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_no_patch_is_coding_outcome_not_infrastructure",
+        "villani_ops/tests/test_cli_classification_selection.py::test_one_eligible_candidate_skips_cli_and_preserves_patch_identity",
+        "villani_ops/tests/test_cli_classification_selection.py::test_rejected_candidate_is_excluded_before_selector",
+        "villani_ops/tests/test_cli_classification_selection.py::test_cli_selector_two_tied_eligible_candidates_and_blind_packet",
+        "villani_ops/tests/test_cli_classification_selection.py::test_cli_classifier_failures_use_explicit_conservative_fallback",
+        "villani_ops/tests/test_codex_cli_coding.py::test_timeout_preserves_partial_patch_and_terminates_tree",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_timeout_preserves_partial_patch_and_cleans_process_tree",
+        "villani_ops/tests/test_cli_verification.py::test_timeout_is_distinct_and_fails_closed",
+        "villani_ops/tests/test_cli_classification_selection.py::test_selector_timeout_uses_deterministic_fallback",
+        "villani_ops/tests/test_codex_cli_coding.py::test_probe_reports_actionable_readiness_failures",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_probe_readiness_failures_are_actionable",
+        "villani_ops/tests/test_cli_verification.py::test_auth_missing_is_reported_without_spawning",
+        "villani_ops/tests/test_codex_cli_coding.py::test_provider_and_output_failures_are_distinguished",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_provider_stream_and_permission_failures_are_distinct",
+        "villani_ops/tests/test_cli_verification.py::test_permission_failure_is_distinct_from_missing_output",
+        "villani_ops/tests/test_cli_verification.py::test_attempted_edit_is_blocked",
+        "villani_ops/tests/test_cli_verification.py::test_unsupported_read_only_capability_is_reported",
+        "villani_ops/tests/test_cli_agent_mode_m7.py::test_doctor_is_actionable_for_auth_and_unsupported_versions",
+        "villani_ops/tests/test_codex_cli_coding.py::test_malformed_event_fixture_fails_with_line_and_column",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_malformed_stream_reports_exact_line_and_column",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_malformed_jsonl_is_provider_neutral_malformed_stream",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_final_output_requirement_is_provider_neutral",
+        "villani_ops/tests/test_cli_verification.py::test_missing_final_result_is_infrastructure_failure",
+        "villani_ops/tests/test_codex_cli_coding.py::test_nonzero_exit_preserves_partial_git_patch",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_nonzero_exit_preserves_partial_git_patch",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_partial_output_is_preserved_after_crash",
+        "villani_ops/tests/test_codex_cli_coding.py::test_controller_cancellation_is_distinct_and_cleans_child_process",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+        "villani_ops/tests/test_cli_verification.py::test_cancellation_is_distinct_and_fails_closed",
+        "villani_ops/tests/test_milestone5_delivery.py::test_restart_while_awaiting_approval_does_not_duplicate_work_or_cost",
+        "villani_ops/tests/test_milestone5_delivery.py::test_target_branch_change_is_detected_before_delivery",
+        "villani_ops/tests/test_milestone5_delivery.py::test_dirty_worktree_fails_before_branch_delivery_and_preserves_patch",
+        "villani_ops/tests/test_codex_cli_coding.py::test_spaces_non_ascii_isolation_and_target_safety",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_large_prompt_and_non_ascii_path_use_stdin_and_preserve_target",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_arguments_spaces_non_ascii_and_exact_cwd_are_preserved",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_large_stdout_and_stderr_are_drained_concurrently",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_total_and_chunk_output_limits_are_failures",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_oversized_jsonl_line_is_classified_and_bounded",
+        "villani_ops/tests/test_codex_cli_coding.py::test_forbidden_villani_path_is_rejected_and_excluded_from_patch",
+        "villani_ops/tests/test_cli_verification.py::test_verifier_invocation_has_no_target_repository_access",
+        "villani_ops/tests/test_cli_classification_selection.py::test_role_manifest_has_exact_digests_and_no_identity_fields",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_child_process_tree_is_cleaned_repeatedly",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_process_tree_cleanup_does_not_target_unrelated_process",
+        "villani_ops/tests/test_cli_agent_mode_m7.py::test_role_invocation_evidence_is_safe_strict_and_preserves_unknown_cost",
+        "villani_ops/tests/test_codex_cli_coding.py::test_official_format_fixture_maps_command_and_usage_events",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_official_stream_fixture_maps_command_edit_result_and_usage",
+        "villani_ops/tests/test_codex_cli_coding.py::test_unknown_event_is_preserved_as_namespaced_raw_event",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_unknown_stream_event_is_preserved_namespaced",
+        "villani_ops/tests/test_codex_cli_coding.py::test_parallel_candidates_use_separate_processes_workspaces_and_sessions",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_parallel_candidates_have_distinct_workspaces_processes_and_sessions",
+        "villani_ops/tests/test_cli_agent_mode_m8.py::test_five_sequential_role_processes_have_unique_processes_sessions_and_workspaces",
+        "--junitxml",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\junit\\fake_cli_end_to_end_scenarios.xml",
+        "--basetemp",
+        "<source-root>\\.m8g\\2a40a79c\\ebe30d3ff5"
+      ],
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 89
+      },
+      "cwd": "<source-root>\\components\\villani-ops",
+      "duration_seconds": 81.782,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.875,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 9934611,
+      "ephemeral_test_files": 5355,
+      "exit_code": 0,
+      "junit": "junit/fake_cli_end_to_end_scenarios.xml",
+      "log": "logs/fake_cli_end_to_end_scenarios.log",
+      "phase": "fake_cli_end_to_end_scenarios",
+      "repetition": null,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 600
+    },
+    {
+      "cases": [
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_all_coder_verifier_combinations_use_independent_sessions[codex-coder-to-claude-verifier]",
+          "status": "PASS",
+          "time_seconds": 1.459
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_all_coder_verifier_combinations_use_independent_sessions[claude-coder-to-codex-verifier]",
+          "status": "PASS",
+          "time_seconds": 1.445
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_all_coder_verifier_combinations_use_independent_sessions[codex-coder-to-codex-verifier]",
+          "status": "PASS",
+          "time_seconds": 1.465
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_all_coder_verifier_combinations_use_independent_sessions[claude-coder-to-claude-verifier]",
+          "status": "PASS",
+          "time_seconds": 1.467
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[all-api-role_kinds0]",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[all-codex-role_kinds1]",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[all-claude-role_kinds2]",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[codex-coder-claude-verifier-selector-role_kinds3]",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[claude-coder-codex-verifier-selector-role_kinds4]",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[api-classifier-cli-coder-verifier-role_kinds5]",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[cli-classifier-api-coder-verifier-role_kinds6]",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_declared_profile_combinations_resolve_through_existing_role_ports[deterministic-selector-role_kinds7]",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_classification_selection",
+          "name": "test_same_vendor_role_bindings_have_distinct_invocation_identities",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m8",
+          "name": "test_five_sequential_role_processes_have_unique_processes_sessions_and_workspaces",
+          "status": "PASS",
+          "time_seconds": 4.396
+        }
+      ],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "villani_ops/tests/test_cli_verification.py::test_all_coder_verifier_combinations_use_independent_sessions",
+        "villani_ops/tests/test_cli_classification_selection.py::test_declared_profile_combinations_resolve_through_existing_role_ports",
+        "villani_ops/tests/test_cli_classification_selection.py::test_same_vendor_role_bindings_have_distinct_invocation_identities",
+        "villani_ops/tests/test_cli_agent_mode_m8.py::test_five_sequential_role_processes_have_unique_processes_sessions_and_workspaces",
+        "--junitxml",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\junit\\mixed_profile_end_to_end.xml",
+        "--basetemp",
+        "<source-root>\\.m8g\\2a40a79c\\120eeb5b7d"
+      ],
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 14
+      },
+      "cwd": "<source-root>\\components\\villani-ops",
+      "duration_seconds": 11.703,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.125,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 718716,
+      "ephemeral_test_files": 728,
+      "exit_code": 0,
+      "junit": "junit/mixed_profile_end_to_end.xml",
+      "log": "logs/mixed_profile_end_to_end.log",
+      "phase": "mixed_profile_end_to_end",
+      "repetition": null,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 240
+    },
+    {
+      "cases": [
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[0]",
+          "status": "PASS",
+          "time_seconds": 0.239
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[1]",
+          "status": "PASS",
+          "time_seconds": 0.229
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[2]",
+          "status": "PASS",
+          "time_seconds": 0.216
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[3]",
+          "status": "PASS",
+          "time_seconds": 0.216
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[4]",
+          "status": "PASS",
+          "time_seconds": 0.217
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_controller_cancellation_is_distinct_and_cleans_child_process",
+          "status": "PASS",
+          "time_seconds": 1.315
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+          "status": "PASS",
+          "time_seconds": 1.3
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_cancellation_is_distinct_and_fails_closed",
+          "status": "PASS",
+          "time_seconds": 1.567
+        }
+      ],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_child_process_tree_is_cleaned_repeatedly",
+        "villani_ops/tests/test_codex_cli_coding.py::test_controller_cancellation_is_distinct_and_cleans_child_process",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+        "villani_ops/tests/test_cli_verification.py::test_cancellation_is_distinct_and_fails_closed",
+        "--junitxml",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\junit\\cancellation_and_cleanup-1.xml",
+        "--basetemp",
+        "<source-root>\\.m8g\\2a40a79c\\46502fc553"
+      ],
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "cwd": "<source-root>\\components\\villani-ops",
+      "duration_seconds": 6.703,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.063,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 349258,
+      "ephemeral_test_files": 337,
+      "exit_code": 0,
+      "junit": "junit/cancellation_and_cleanup-1.xml",
+      "log": "logs/cancellation_and_cleanup-1.log",
+      "phase": "cancellation_and_cleanup",
+      "repetition": 1,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 120
+    },
+    {
+      "cases": [
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[0]",
+          "status": "PASS",
+          "time_seconds": 0.231
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[1]",
+          "status": "PASS",
+          "time_seconds": 0.229
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[2]",
+          "status": "PASS",
+          "time_seconds": 0.232
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[3]",
+          "status": "PASS",
+          "time_seconds": 0.216
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[4]",
+          "status": "PASS",
+          "time_seconds": 0.217
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_controller_cancellation_is_distinct_and_cleans_child_process",
+          "status": "PASS",
+          "time_seconds": 1.297
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+          "status": "PASS",
+          "time_seconds": 1.298
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_cancellation_is_distinct_and_fails_closed",
+          "status": "PASS",
+          "time_seconds": 1.427
+        }
+      ],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_child_process_tree_is_cleaned_repeatedly",
+        "villani_ops/tests/test_codex_cli_coding.py::test_controller_cancellation_is_distinct_and_cleans_child_process",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+        "villani_ops/tests/test_cli_verification.py::test_cancellation_is_distinct_and_fails_closed",
+        "--junitxml",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\junit\\cancellation_and_cleanup-2.xml",
+        "--basetemp",
+        "<source-root>\\.m8g\\2a40a79c\\2f710c84b2"
+      ],
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "cwd": "<source-root>\\components\\villani-ops",
+      "duration_seconds": 6.515,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.046,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 349249,
+      "ephemeral_test_files": 337,
+      "exit_code": 0,
+      "junit": "junit/cancellation_and_cleanup-2.xml",
+      "log": "logs/cancellation_and_cleanup-2.log",
+      "phase": "cancellation_and_cleanup",
+      "repetition": 2,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 120
+    },
+    {
+      "cases": [
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[0]",
+          "status": "PASS",
+          "time_seconds": 0.22
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[1]",
+          "status": "PASS",
+          "time_seconds": 0.214
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[2]",
+          "status": "PASS",
+          "time_seconds": 0.216
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[3]",
+          "status": "PASS",
+          "time_seconds": 0.217
+        },
+        {
+          "classname": "villani_ops.tests.closed_loop.test_cli_runtime",
+          "name": "test_child_process_tree_is_cleaned_repeatedly[4]",
+          "status": "PASS",
+          "time_seconds": 0.217
+        },
+        {
+          "classname": "villani_ops.tests.test_codex_cli_coding",
+          "name": "test_controller_cancellation_is_distinct_and_cleans_child_process",
+          "status": "PASS",
+          "time_seconds": 1.302
+        },
+        {
+          "classname": "villani_ops.tests.test_claude_code_cli_coding",
+          "name": "test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+          "status": "PASS",
+          "time_seconds": 1.284
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_cancellation_is_distinct_and_fails_closed",
+          "status": "PASS",
+          "time_seconds": 1.426
+        }
+      ],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "villani_ops/tests/closed_loop/test_cli_runtime.py::test_child_process_tree_is_cleaned_repeatedly",
+        "villani_ops/tests/test_codex_cli_coding.py::test_controller_cancellation_is_distinct_and_cleans_child_process",
+        "villani_ops/tests/test_claude_code_cli_coding.py::test_controller_cancellation_cleans_descendant_and_preserves_partial_patch",
+        "villani_ops/tests/test_cli_verification.py::test_cancellation_is_distinct_and_fails_closed",
+        "--junitxml",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\junit\\cancellation_and_cleanup-3.xml",
+        "--basetemp",
+        "<source-root>\\.m8g\\2a40a79c\\c57b4f721d"
+      ],
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "cwd": "<source-root>\\components\\villani-ops",
+      "duration_seconds": 6.485,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.047,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 349250,
+      "ephemeral_test_files": 337,
+      "exit_code": 0,
+      "junit": "junit/cancellation_and_cleanup-3.xml",
+      "log": "logs/cancellation_and_cleanup-3.log",
+      "phase": "cancellation_and_cleanup",
+      "repetition": 3,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 120
+    },
+    {
+      "cases": [
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m8",
+          "name": "test_verifier_blindness_canary_is_absent_from_workspace_and_prompt",
+          "status": "PASS",
+          "time_seconds": 1.492
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m8",
+          "name": "test_infrastructure_failed_candidate_never_enters_selector_packet",
+          "status": "PASS",
+          "time_seconds": 0.165
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m8",
+          "name": "test_failure_projection_contains_every_required_public_fact",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m8",
+          "name": "test_release_inputs_have_no_quota_or_new_provider_surface",
+          "status": "PASS",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m8",
+          "name": "test_release_commands_are_bounded_consent_gated_and_never_use_a_shell",
+          "status": "PASS",
+          "time_seconds": 0.0
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_verification",
+          "name": "test_binary_user_projection_is_exact_for_both_decisions",
+          "status": "PASS",
+          "time_seconds": 2.878
+        },
+        {
+          "classname": "villani_ops.tests.test_cli_agent_mode_m7",
+          "name": "test_role_invocation_evidence_is_safe_strict_and_preserves_unknown_cost",
+          "status": "PASS",
+          "time_seconds": 0.019
+        }
+      ],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "villani_ops/tests/test_cli_agent_mode_m8.py::test_verifier_blindness_canary_is_absent_from_workspace_and_prompt",
+        "villani_ops/tests/test_cli_agent_mode_m8.py::test_infrastructure_failed_candidate_never_enters_selector_packet",
+        "villani_ops/tests/test_cli_agent_mode_m8.py::test_failure_projection_contains_every_required_public_fact",
+        "villani_ops/tests/test_cli_agent_mode_m8.py::test_release_inputs_have_no_quota_or_new_provider_surface",
+        "villani_ops/tests/test_cli_agent_mode_m8.py::test_release_commands_are_bounded_consent_gated_and_never_use_a_shell",
+        "villani_ops/tests/test_cli_verification.py::test_binary_user_projection_is_exact_for_both_decisions",
+        "villani_ops/tests/test_cli_agent_mode_m7.py::test_role_invocation_evidence_is_safe_strict_and_preserves_unknown_cost",
+        "--junitxml",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\junit\\blindness_secret_and_projection.xml",
+        "--basetemp",
+        "<source-root>\\.m8g\\2a40a79c\\95392b28e8"
+      ],
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "cwd": "<source-root>\\components\\villani-ops",
+      "duration_seconds": 5.953,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.063,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 326762,
+      "ephemeral_test_files": 324,
+      "exit_code": 0,
+      "junit": "junit/blindness_secret_and_projection.xml",
+      "log": "logs/blindness_secret_and_projection.log",
+      "phase": "blindness_secret_and_projection",
+      "repetition": null,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 240
+    },
+    {
+      "cases": [],
+      "command": [
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "<source-root>\\release-verification\\run_cli_agent_smoke.py",
+        "--detect-only",
+        "--python",
+        "<source-root>\\.venv\\Scripts\\python.exe",
+        "--source-root",
+        "<source-root>",
+        "--artifacts",
+        "<source-root>\\release-verification\\cli-agent-mode-m8-evidence\\real-provider-detection"
+      ],
+      "counts": {},
+      "cwd": "<source-root>",
+      "duration_seconds": 8.656,
+      "environment_names": [],
+      "ephemeral_cleanup_error": null,
+      "ephemeral_cleanup_seconds": 0.0,
+      "ephemeral_cleanup_status": "PASS",
+      "ephemeral_test_bytes": 0,
+      "ephemeral_test_files": 0,
+      "exit_code": 0,
+      "junit": null,
+      "log": "logs/real_provider_detection.log",
+      "phase": "real_provider_detection",
+      "repetition": null,
+      "status": "PASS",
+      "timed_out": false,
+      "timeout_seconds": 60
+    }
+  ],
+  "real_provider_smoke_optional": true,
+  "real_provider_smoke_requested": false,
+  "real_provider_smoke_status": "NOT_RUN",
+  "reports": {
+    "command_report": "exact-test-command-report.json",
+    "evidence_index": "release-evidence-index.json",
+    "matrix": "cli-agent-mode-conformance-matrix.json",
+    "resource_bounds": "resource-bounds.json",
+    "secret_scan": "secret-scan.json"
+  },
+  "required_deterministic_evidence_complete": true,
+  "scenario_results": [
+    {
+      "id": 1,
+      "maximum_test_seconds": 1.428,
+      "missing_test_nodes": [],
+      "name": "successful_candidate_and_verifier_pass",
+      "status": "PASS",
+      "test_case_count": 4
+    },
+    {
+      "id": 2,
+      "maximum_test_seconds": 1.428,
+      "missing_test_nodes": [],
+      "name": "successful_candidate_and_verifier_reject",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 3,
+      "maximum_test_seconds": 1.166,
+      "missing_test_nodes": [],
+      "name": "no_patch",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 4,
+      "maximum_test_seconds": 0.015,
+      "missing_test_nodes": [],
+      "name": "two_candidates_one_eligible",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 5,
+      "maximum_test_seconds": 0.168,
+      "missing_test_nodes": [],
+      "name": "two_eligible_candidates_requiring_selector",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 6,
+      "maximum_test_seconds": 0.203,
+      "missing_test_nodes": [],
+      "name": "malformed_classifier_output_with_fallback",
+      "status": "PASS",
+      "test_case_count": 6
+    },
+    {
+      "id": 7,
+      "maximum_test_seconds": 2.202,
+      "missing_test_nodes": [],
+      "name": "coder_timeout",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 8,
+      "maximum_test_seconds": 2.578,
+      "missing_test_nodes": [],
+      "name": "verifier_timeout",
+      "status": "PASS",
+      "test_case_count": 1
+    },
+    {
+      "id": 9,
+      "maximum_test_seconds": 1.115,
+      "missing_test_nodes": [],
+      "name": "selector_timeout",
+      "status": "PASS",
+      "test_case_count": 1
+    },
+    {
+      "id": 10,
+      "maximum_test_seconds": 1.732,
+      "missing_test_nodes": [],
+      "name": "provider_auth_failure",
+      "status": "PASS",
+      "test_case_count": 6
+    },
+    {
+      "id": 11,
+      "maximum_test_seconds": 3.19,
+      "missing_test_nodes": [],
+      "name": "provider_rate_limit_or_overload",
+      "status": "PASS",
+      "test_case_count": 16
+    },
+    {
+      "id": 12,
+      "maximum_test_seconds": 1.585,
+      "missing_test_nodes": [],
+      "name": "permission_denial",
+      "status": "PASS",
+      "test_case_count": 3
+    },
+    {
+      "id": 13,
+      "maximum_test_seconds": 1.563,
+      "missing_test_nodes": [],
+      "name": "unsupported_version",
+      "status": "PASS",
+      "test_case_count": 3
+    },
+    {
+      "id": 14,
+      "maximum_test_seconds": 0.121,
+      "missing_test_nodes": [],
+      "name": "malformed_event_stream",
+      "status": "PASS",
+      "test_case_count": 3
+    },
+    {
+      "id": 15,
+      "maximum_test_seconds": 1.466,
+      "missing_test_nodes": [],
+      "name": "missing_final_output",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 16,
+      "maximum_test_seconds": 1.283,
+      "missing_test_nodes": [],
+      "name": "partial_patch_on_crash",
+      "status": "PASS",
+      "test_case_count": 5
+    },
+    {
+      "id": 17,
+      "maximum_test_seconds": 1.295,
+      "missing_test_nodes": [],
+      "name": "cancellation_during_command",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 18,
+      "maximum_test_seconds": 1.395,
+      "missing_test_nodes": [],
+      "name": "cancellation_during_verification",
+      "status": "PASS",
+      "test_case_count": 1
+    },
+    {
+      "id": 19,
+      "maximum_test_seconds": 0.473,
+      "missing_test_nodes": [],
+      "name": "service_restart_during_active_run_where_supported",
+      "status": "PASS",
+      "test_case_count": 1
+    },
+    {
+      "id": 20,
+      "maximum_test_seconds": 0.393,
+      "missing_test_nodes": [],
+      "name": "target_repository_drift_before_delivery",
+      "status": "PASS",
+      "test_case_count": 1
+    },
+    {
+      "id": 21,
+      "maximum_test_seconds": 0.339,
+      "missing_test_nodes": [],
+      "name": "dirty_target_repository",
+      "status": "PASS",
+      "test_case_count": 1
+    },
+    {
+      "id": 22,
+      "maximum_test_seconds": 1.305,
+      "missing_test_nodes": [],
+      "name": "non_ascii_and_spaced_paths",
+      "status": "PASS",
+      "test_case_count": 3
+    },
+    {
+      "id": 23,
+      "maximum_test_seconds": 0.14,
+      "missing_test_nodes": [],
+      "name": "large_stdout_and_stderr",
+      "status": "PASS",
+      "test_case_count": 4
+    },
+    {
+      "id": 24,
+      "maximum_test_seconds": 1.484,
+      "missing_test_nodes": [],
+      "name": "attempted_outside_worktree_mutation",
+      "status": "PASS",
+      "test_case_count": 4
+    },
+    {
+      "id": 25,
+      "maximum_test_seconds": 0.278,
+      "missing_test_nodes": [],
+      "name": "child_process_escape_attempt",
+      "status": "PASS",
+      "test_case_count": 6
+    },
+    {
+      "id": 26,
+      "maximum_test_seconds": 0.014,
+      "missing_test_nodes": [],
+      "name": "unknown_cost_and_usage",
+      "status": "PASS",
+      "test_case_count": 1
+    },
+    {
+      "id": 27,
+      "maximum_test_seconds": 0.001,
+      "missing_test_nodes": [],
+      "name": "known_usage_when_provider_fixture_supplies_it",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 28,
+      "maximum_test_seconds": 0.0,
+      "missing_test_nodes": [],
+      "name": "raw_unknown_provider_event",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 29,
+      "maximum_test_seconds": 1.471,
+      "missing_test_nodes": [],
+      "name": "two_parallel_candidates",
+      "status": "PASS",
+      "test_case_count": 2
+    },
+    {
+      "id": 30,
+      "maximum_test_seconds": 4.404,
+      "missing_test_nodes": [],
+      "name": "five_sequential_role_processes_without_session_sharing",
+      "status": "PASS",
+      "test_case_count": 1
+    }
+  ],
+  "schema_version": "villani.cli_agent_mode_release_gate.v1",
+  "started_at": "2026-07-22T08:20:31.385317Z",
+  "status": "passed"
+}

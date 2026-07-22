@@ -137,6 +137,17 @@ function ProductResult({
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const stageIndex = Math.max(STAGES.indexOf(value.current_stage), 0);
   const terminal = value.final_verdict !== null;
+  const roleRows = (value.role_executions ?? [])
+    .filter((item) => item.role === "coding" || item.role === "verification")
+    .map((item): readonly [string, string] => [
+      item.role === "coding" ? "Coding" : "Verification",
+      `${item.system_name}${item.model ? `, ${item.model}` : ""}${
+        item.status === "infrastructure_failure" ? " — infrastructure failure" : ""
+      }`,
+    ]);
+  const roleFailures = (value.role_executions ?? []).flatMap((item) =>
+    item.infrastructure_failure ? [item.infrastructure_failure] : [],
+  );
 
   const runAction = async (action: ProductRunAction) => {
     if (action.method === "GET") {
@@ -200,6 +211,7 @@ function ProductResult({
                     accountingStatus={value.cost.accounting_status}
                   />,
                 ],
+                ...roleRows,
               ]}
             />
             {cancel && (
@@ -349,6 +361,12 @@ function ProductResult({
           <DurationDisplay milliseconds={value.duration.value_ms} />
         </div>
       </Panel>
+      {!!roleRows.length && (
+        <Panel>
+          <PanelHeader title="ROLE SYSTEMS" />
+          <KeyValueGrid items={roleRows} />
+        </Panel>
+      )}
       {primary && (
         <PrimaryAction
           type="button"
@@ -364,6 +382,35 @@ function ProductResult({
         </p>
       )}
       <EvidenceDisclosure summary="Evidence">
+        {roleFailures.map((failure) => (
+          <section
+            className="console-stack"
+            key={`${failure.role}-${failure.evidence_path}`}
+            aria-label={`${failure.role} infrastructure failure`}
+          >
+            <strong>{failure.role} infrastructure failure</strong>
+            <p>{failure.safe_error_summary}</p>
+            <KeyValueGrid
+              items={[
+                ["Agent system", failure.agent_system_id],
+                [
+                  "Target repository modified",
+                  failure.target_repository_modified ? "yes" : "no",
+                ],
+                [
+                  "Partial patch preserved",
+                  failure.partial_patch_preserved ? "yes" : "no",
+                ],
+                [
+                  "Automatic fallback",
+                  failure.automatic_fallback_performed ? "yes" : "no",
+                ],
+                ["Repair action", failure.exact_repair_action],
+                ["Evidence", failure.evidence_path],
+              ]}
+            />
+          </section>
+        ))}
         <ul className="console-list">
           {value.evidence_links.map((link) => (
             <li key={link.href}>
@@ -417,6 +464,7 @@ export function SingleTaskPage({ client }: { client: ConsoleClient }) {
   const [policyPreset, setPolicyPreset] = useState("performance");
   const [policySelection, setPolicySelection] = useState("configured");
   const [routingMode, setRoutingMode] = useState("observe");
+  const [executionProfile, setExecutionProfile] = useState("");
   const [maxCost, setMaxCost] = useState("");
   const [maxWallTime, setMaxWallTime] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("3");
@@ -437,6 +485,7 @@ export function SingleTaskPage({ client }: { client: ConsoleClient }) {
     successCriteria,
     referenceText,
     manualValidation,
+    executionProfile,
   });
   const previousFingerprint = useRef(draftFingerprint);
 
@@ -454,6 +503,7 @@ export function SingleTaskPage({ client }: { client: ConsoleClient }) {
           value.defaults.max_cost === null ? "" : String(value.defaults.max_cost),
         );
         setMaxAttempts(String(value.defaults.max_attempts));
+        setExecutionProfile(value.defaults.execution_profile ?? "");
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted)
@@ -575,6 +625,7 @@ export function SingleTaskPage({ client }: { client: ConsoleClient }) {
         policy_preset: policyPreset,
         policy_selection: policySelection,
         routing_mode: routingMode,
+        execution_profile: executionProfile || undefined,
         max_cost: maxCost || undefined,
         max_wall_time: maxWallTime || undefined,
         max_attempts: maxAttempts,
@@ -862,6 +913,20 @@ export function SingleTaskPage({ client }: { client: ConsoleClient }) {
                     value={maxAttempts}
                     onChange={(event) => setMaxAttempts(event.target.value)}
                   />
+                </label>
+                <label className="v-field">
+                  <span className="v-field__label">Execution profile (Advanced)</span>
+                  <select
+                    className="v-select"
+                    value={executionProfile}
+                    onChange={(event) => setExecutionProfile(event.target.value)}
+                  >
+                    {(options?.execution_profiles ?? []).map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.label} ({profile.profile_type})
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="v-field">
                   <span className="v-field__label">Advanced policy source</span>

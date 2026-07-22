@@ -23,6 +23,7 @@ from .failure_classification import classify_failure
 from .classification_adjustments import apply_classification_policy
 from .run_summary import persist_run_summary
 from .product_run import persist_product_run
+from .invocation_evidence import collect_role_invocations
 from .interfaces import (
     AttemptContext,
     AttemptResult,
@@ -2137,6 +2138,8 @@ class ClosedLoopController:
                     if runtime.classification_backend is not None
                     else None
                 ),
+                run_directory=runtime.store.run_directory,
+                cancellation_event=runtime.request.cancellation_event,
             )
             returned = self._classifier.classify(runtime.request.task, context)
             if not isinstance(returned, Classification):
@@ -5370,6 +5373,7 @@ class ClosedLoopController:
                 runtime.request.policy_configuration
             ),
             run_directory=runtime.store.run_directory,
+            cancellation_event=runtime.request.cancellation_event,
         )
         self._emit_state_event(
             runtime,
@@ -6210,6 +6214,20 @@ class ClosedLoopController:
         return totals, "unknown"
 
     def _persist_manifest(self, runtime: _Runtime) -> None:
+        role_invocation_index = collect_role_invocations(
+            runtime.store.run_directory,
+            self._agent_invocation_identities,
+        )
+        for invocation in role_invocation_index.invocations:
+            runtime.store.write_json(
+                f"agent-systems/role-invocations/{invocation.invocation_id}.json",
+                invocation.model_dump(mode="json"),
+            )
+        if role_invocation_index.invocations:
+            runtime.store.write_json(
+                "agent-systems/role-invocations/index.json",
+                role_invocation_index.model_dump(mode="json"),
+            )
         stage_metrics = self._stage_metrics(runtime)
         total = stage_metrics["total"]
         coding = stage_metrics["coding"]
@@ -6284,6 +6302,11 @@ class ClosedLoopController:
                 agent_invocations=(
                     "agent-systems/invocations/index.json"
                     if self._agent_invocation_identities
+                    else None
+                ),
+                role_invocations=(
+                    "agent-systems/role-invocations/index.json"
+                    if role_invocation_index.invocations
                     else None
                 ),
                 adaptive_verification=(

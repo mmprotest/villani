@@ -1,9 +1,7 @@
-export type ProductRunStage = "Understanding" | "Working" | "Checking" | "Ready";
+export type ProductRunStage =
+  "Understanding" | "Working" | "Checking" | "Ready";
 export type ProductRunVerdict =
-  | "Ready to apply"
-  | "Needs review"
-  | "Could not prove"
-  | "Cancelled";
+  "Ready to apply" | "Needs review" | "Could not prove" | "Cancelled";
 
 export interface ProductRunStageTransition {
   sequence: number;
@@ -39,6 +37,30 @@ export interface ProductRunAction {
   href: string;
 }
 
+export interface ProductRoleExecution {
+  role: "classification" | "coding" | "verification" | "selection";
+  label:
+    "Understand task" | "Write code" | "Verify result" | "Choose candidate";
+  agent_system_id: string;
+  system_name: string;
+  driver: string;
+  model: string | null;
+  invocation_count: number;
+  status: "recorded" | "succeeded" | "infrastructure_failure" | "not_invoked";
+  evidence_artifact: string;
+  infrastructure_failure?: {
+    stage: "classification" | "coding" | "verification" | "selection";
+    role: "classification" | "coding" | "verification" | "selection";
+    agent_system_id: string;
+    safe_error_summary: string;
+    target_repository_modified: boolean;
+    partial_patch_preserved: boolean;
+    automatic_fallback_performed: boolean;
+    exact_repair_action: string;
+    evidence_path: string;
+  } | null;
+}
+
 export interface ProductRun {
   schema_version: "villani.product_run.v1";
   run_identity: { run_id: string; trace_id: string | null };
@@ -66,6 +88,7 @@ export interface ProductRun {
     accounting_status: "complete" | "partial" | "unknown" | "not_applicable";
   };
   agent_system: { name: string; backend: string | null; model: string | null };
+  role_executions?: ProductRoleExecution[];
   escalation_summary: {
     attempts: number;
     retries: number;

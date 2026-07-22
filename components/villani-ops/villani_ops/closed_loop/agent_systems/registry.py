@@ -16,6 +16,9 @@ from villani_ops.closed_loop.claude_code_cli.attempt import (
     ClaudeCodeCliAttemptAdapter,
 )
 from villani_ops.closed_loop.claude_code_cli.driver import ClaudeCodeCliDriver
+from villani_ops.closed_loop.cli_verification.adapter import CliVerifierAdapter
+from villani_ops.closed_loop.cli_classification.adapter import CliClassifierAdapter
+from villani_ops.closed_loop.cli_selection.adapter import CliSelectorAdapter
 from villani_ops.runners.claude_code import ClaudeCodeRunner
 from villani_ops.runners.codex_app_server import CodexAppServerRunner
 from villani_ops.runners.base import Runner
@@ -63,100 +66,90 @@ class AgentSystemRegistry:
         self.backends = dict(backends)
         base_role_registry = RoleSystemRegistry(migrated, backends)
         cli_inspections: dict[str, AgentSystemInspection] = {}
+        self._cli_classifiers: dict[str, Any] = {}
         self._cli_attempt_runners: dict[str, Any] = {}
-        self._codex_drivers: dict[str, CodexCliDriver] = {}
-        self._codex_probes = {}
-        self._claude_drivers: dict[str, ClaudeCodeCliDriver] = {}
-        self._claude_probes = {}
+        self._cli_verifiers: dict[str, Any] = {}
+        self._cli_selectors: dict[str, Any] = {}
+        self._codex_drivers: dict[tuple[str, AgentRole], CodexCliDriver] = {}
+        self._codex_probes: dict[tuple[str, AgentRole], Any] = {}
+        self._claude_drivers: dict[tuple[str, AgentRole], ClaudeCodeCliDriver] = {}
+        self._claude_probes: dict[tuple[str, AgentRole], Any] = {}
+        self._cli_role_errors: dict[tuple[str, AgentRole], str] = {}
         for system in base_role_registry.list_configured():
             if not isinstance(system, CliAgentSystemConfig) or not system.enabled:
                 continue
-            if system.roles != {AgentRole.CODING}:
-                cli_inspections[system.id] = AgentSystemInspection(
-                    system=system,
-                    status="configured",
-                    runnable=False,
-                    reason=(
-                        f"Agent Mode supports {system.driver} CLI only for a "
-                        "coding-only system; CLI classification, verification, and "
-                        "selection remain unavailable."
-                    ),
-                )
-                continue
-            if system.driver == "codex":
+            role_reasons: list[str] = []
+            exact_versions: set[str] = set()
+            for role in sorted(system.roles, key=lambda item: item.value):
+                role_system = system.for_role(role)
+                key = (system.id, role)
                 try:
-                    codex_driver = CodexCliDriver(system)
-                    codex_probe = codex_driver.probe()
+                    driver: Any
+                    probe: Any
+                    if system.driver == "codex":
+                        driver = CodexCliDriver(role_system)
+                        probe = driver.probe()
+                        self._codex_drivers[key] = driver
+                        self._codex_probes[key] = probe
+                    else:
+                        driver = ClaudeCodeCliDriver(role_system)
+                        probe = driver.probe()
+                        self._claude_drivers[key] = driver
+                        self._claude_probes[key] = probe
                 except (OSError, TypeError, ValueError) as error:
-                    cli_inspections[system.id] = AgentSystemInspection(
-                        system=system,
-                        status="unavailable",
-                        runnable=False,
-                        reason=f"Codex driver configuration failed: {error}",
+                    label = "Codex" if system.driver == "codex" else "Claude Code"
+                    reason = (
+                        f"{label} {role.value} driver configuration failed: {error}"
+                    )
+                    self._cli_role_errors[key] = reason
+                    role_reasons.append(reason)
+                    continue
+                if probe.exact_version_output:
+                    exact_versions.add(str(probe.exact_version_output))
+                if not probe.ready:
+                    role_reasons.append(
+                        f"{role.value}: "
+                        + ("; ".join(probe.messages) or "CLI doctor failed.")
                     )
                     continue
-                self._codex_drivers[system.id] = codex_driver
-                self._codex_probes[system.id] = codex_probe
-                if codex_probe.ready:
-                    cli_inspections[system.id] = AgentSystemInspection(
-                        system=system,
-                        status="ready",
-                        runnable=True,
-                        reason=(
-                            "Codex coding driver passed doctor with "
-                            f"{codex_probe.exact_version_output}."
-                        ),
+                if role == AgentRole.CODING:
+                    adapter = (
+                        CodexCliAttemptAdapter(driver, probe=probe)
+                        if isinstance(driver, CodexCliDriver)
+                        else ClaudeCodeCliAttemptAdapter(driver, probe=probe)
                     )
-                    self._cli_attempt_runners[system.id] = CodexCliAttemptAdapter(
-                        codex_driver, probe=codex_probe
+                    self._cli_attempt_runners[system.id] = adapter
+                elif role == AgentRole.VERIFICATION:
+                    self._cli_verifiers[system.id] = CliVerifierAdapter(
+                        driver, probe=probe
                     )
-                else:
-                    cli_inspections[system.id] = AgentSystemInspection(
-                        system=system,
-                        status="unavailable",
-                        runnable=False,
-                        reason=(
-                            "; ".join(codex_probe.messages) or "Codex doctor failed."
-                        ),
-                    )
-                continue
-            if system.driver == "claude_code":
-                try:
-                    claude_driver = ClaudeCodeCliDriver(system)
-                    claude_probe = claude_driver.probe()
-                except (OSError, TypeError, ValueError) as error:
-                    cli_inspections[system.id] = AgentSystemInspection(
-                        system=system,
-                        status="unavailable",
-                        runnable=False,
-                        reason=f"Claude Code driver configuration failed: {error}",
-                    )
-                    continue
-                self._claude_drivers[system.id] = claude_driver
-                self._claude_probes[system.id] = claude_probe
-                if claude_probe.ready:
-                    cli_inspections[system.id] = AgentSystemInspection(
-                        system=system,
-                        status="ready",
-                        runnable=True,
-                        reason=(
-                            "Claude Code coding driver passed doctor with "
-                            f"{claude_probe.exact_version_output}."
-                        ),
-                    )
-                    self._cli_attempt_runners[system.id] = ClaudeCodeCliAttemptAdapter(
-                        claude_driver, probe=claude_probe
+                elif role == AgentRole.CLASSIFICATION:
+                    self._cli_classifiers[system.id] = CliClassifierAdapter(
+                        driver, probe=probe
                     )
                 else:
-                    cli_inspections[system.id] = AgentSystemInspection(
-                        system=system,
-                        status="unavailable",
-                        runnable=False,
-                        reason=(
-                            "; ".join(claude_probe.messages)
-                            or "Claude Code doctor failed."
-                        ),
+                    self._cli_selectors[system.id] = CliSelectorAdapter(
+                        driver, probe=probe
                     )
+            display_name = "Codex" if system.driver == "codex" else "Claude Code"
+            cli_inspections[system.id] = AgentSystemInspection(
+                system=system,
+                status="unavailable" if role_reasons else "ready",
+                runnable=not role_reasons,
+                reason=(
+                    "; ".join(role_reasons)
+                    if role_reasons
+                    else (
+                        f"{display_name} passed role-specific doctor for "
+                        f"{', '.join(sorted(role.value for role in system.roles))}"
+                        + (
+                            f" with {', '.join(sorted(exact_versions))}."
+                            if exact_versions
+                            else "."
+                        )
+                    )
+                ),
+            )
         self.role_registry = RoleSystemRegistry(
             migrated, backends, cli_inspections=cli_inspections
         )
@@ -360,12 +353,38 @@ class AgentSystemRegistry:
     def _configured_doctor(self, system_id: str) -> AgentSystemDoctorReport:
         system = self.role_registry.inspect_configured(system_id)
         inspection = self.role_registry.inspect_system(system_id)
-        probe = self._codex_probes.get(system_id)
+        primary_role = min(system.roles, key=lambda item: item.value)
+        role_system = (
+            system.for_role(primary_role)
+            if isinstance(system, CliAgentSystemConfig)
+            else system
+        )
+        probe = self._codex_probes.get((system_id, primary_role))
         if (
-            isinstance(system, CliAgentSystemConfig)
-            and system.driver == "codex"
+            isinstance(role_system, CliAgentSystemConfig)
+            and role_system.driver == "codex"
             and probe is not None
         ):
+            codex_required_capabilities = [
+                "exec",
+                "jsonl_output",
+                "model_selection",
+                "workspace_selection",
+                "sandbox_selection",
+                "schema_output",
+                "last_message_output",
+                "ephemeral",
+                "noninteractive_approval",
+            ]
+            if primary_role != AgentRole.CODING:
+                codex_required_capabilities.extend(
+                    [
+                        "read_only_sandbox",
+                        "strict_config",
+                        "config_override",
+                        "scoped_permission_profiles",
+                    ]
+                )
             checks = [
                 DoctorCheck(
                     name="executable",
@@ -373,7 +392,7 @@ class AgentSystemRegistry:
                     message=(
                         f"Resolved executable: {probe.resolved_executable}"
                         if probe.resolved_executable
-                        else f"Executable {system.executable!r} was not found."
+                        else f"Executable {role_system.executable!r} was not found."
                     ),
                     evidence={"resolved_executable": probe.resolved_executable},
                 ),
@@ -384,17 +403,7 @@ class AgentSystemRegistry:
                         if probe.exact_version_output
                         and all(
                             probe.capabilities.get(name, False)
-                            for name in (
-                                "exec",
-                                "jsonl_output",
-                                "model_selection",
-                                "workspace_selection",
-                                "sandbox_selection",
-                                "schema_output",
-                                "last_message_output",
-                                "ephemeral",
-                                "noninteractive_approval",
-                            )
+                            for name in codex_required_capabilities
                         )
                         else "fail"
                     ),
@@ -423,13 +432,13 @@ class AgentSystemRegistry:
                     },
                 ),
                 DoctorCheck(
-                    name="coding_scope",
+                    name="role_scope",
                     status="pass" if inspection.runnable else "fail",
                     message=inspection.reason,
                     evidence={
                         "roles": sorted(role.value for role in system.roles),
-                        "permission_profile": system.permission_profile,
-                        "instruction_policy": system.instruction_policy,
+                        "permission_profile": role_system.permission_profile,
+                        "instruction_policy": role_system.instruction_policy,
                     },
                 ),
             ]
@@ -439,10 +448,10 @@ class AgentSystemRegistry:
                 selectable=inspection.runnable,
                 checks=checks,
             )
-        claude_probe = self._claude_probes.get(system_id)
+        claude_probe = self._claude_probes.get((system_id, primary_role))
         if (
-            isinstance(system, CliAgentSystemConfig)
-            and system.driver == "claude_code"
+            isinstance(role_system, CliAgentSystemConfig)
+            and role_system.driver == "claude_code"
             and claude_probe is not None
         ):
             required = {
@@ -458,7 +467,7 @@ class AgentSystemRegistry:
                 "no_chrome",
                 "stdin_prompt",
             }
-            if system.instruction_policy == "villani_controlled":
+            if role_system.instruction_policy == "villani_controlled":
                 required.update(
                     {
                         "bare",
@@ -469,6 +478,8 @@ class AgentSystemRegistry:
                         "disable_slash_commands",
                     }
                 )
+            if primary_role != AgentRole.CODING:
+                required.add("read_only_permission_mode")
             capabilities_ready = bool(
                 claude_probe.exact_version_output
                 and all(claude_probe.capabilities.get(name, False) for name in required)
@@ -480,7 +491,7 @@ class AgentSystemRegistry:
                     message=(
                         f"Resolved executable: {claude_probe.resolved_executable}"
                         if claude_probe.resolved_executable
-                        else f"Executable {system.executable!r} was not found."
+                        else f"Executable {role_system.executable!r} was not found."
                     ),
                     evidence={"resolved_executable": claude_probe.resolved_executable},
                 ),
@@ -525,13 +536,13 @@ class AgentSystemRegistry:
                     evidence={"ready": claude_probe.doctor_ready},
                 ),
                 DoctorCheck(
-                    name="coding_scope",
+                    name="role_scope",
                     status="pass" if inspection.runnable else "fail",
                     message=inspection.reason,
                     evidence={
                         "roles": sorted(role.value for role in system.roles),
-                        "permission_profile": system.permission_profile,
-                        "instruction_policy": system.instruction_policy,
+                        "permission_profile": role_system.permission_profile,
+                        "instruction_policy": role_system.instruction_policy,
                         "no_session_persistence": True,
                     },
                 ),
@@ -558,6 +569,25 @@ class AgentSystemRegistry:
 
     def cli_attempt_runners(self):
         return dict(self._cli_attempt_runners)
+
+    def cli_classifiers(self):
+        return dict(self._cli_classifiers)
+
+    def cli_verifiers(self):
+        return dict(self._cli_verifiers)
+
+    def cli_selectors(self):
+        return dict(self._cli_selectors)
+
+    def cli_role_probe(self, system_id: str, role: AgentRole) -> Any | None:
+        system = self.role_registry.inspect_configured(system_id)
+        if not isinstance(system, CliAgentSystemConfig):
+            return None
+        probes = self._codex_probes if system.driver == "codex" else self._claude_probes
+        return probes.get((system_id, role))
+
+    def cli_role_error(self, system_id: str, role: AgentRole) -> str | None:
+        return self._cli_role_errors.get((system_id, role))
 
     def attempt_runner(self) -> AgentSystemAttemptRunner:
         return AgentSystemAttemptRunner(

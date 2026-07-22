@@ -1,0 +1,117 @@
+{
+  "artifact_count": 22,
+  "artifacts": [
+    {
+      "bytes": 8788,
+      "path": "cli-agent-mode-conformance-matrix.json",
+      "sha256": "sha256:c6cfc1c1b8964b4ae021e9d89077e69f9cbf034c0b2f97eb351cf73adca5f202"
+    },
+    {
+      "bytes": 61313,
+      "path": "cli-agent-mode-release-report.json",
+      "sha256": "sha256:5ff0ca1e67f240d19584b5dce97fccff2d801d7c6e24d9e84caec051010f2d1a"
+    },
+    {
+      "bytes": 54454,
+      "path": "exact-test-command-report.json",
+      "sha256": "sha256:707aeab1238cf46d828f826c0346340ff6a9b02c630888ccdda547ca2370f4e3"
+    },
+    {
+      "bytes": 1294,
+      "path": "junit/blindness_secret_and_projection.xml",
+      "sha256": "sha256:e022e081af0e07948622e07f45f91ab5bb4165ba3d61bc1aa6f4686702fe6356"
+    },
+    {
+      "bytes": 1397,
+      "path": "junit/cancellation_and_cleanup-1.xml",
+      "sha256": "sha256:1074dbf8912d6a4c922689594348c364dc34e8fbc785d3871497fdb9c524c6b4"
+    },
+    {
+      "bytes": 1397,
+      "path": "junit/cancellation_and_cleanup-2.xml",
+      "sha256": "sha256:a706d6fbb8364be307edabb80038e1f078021cb2a34270070b3ccf29e27f72f1"
+    },
+    {
+      "bytes": 1397,
+      "path": "junit/cancellation_and_cleanup-3.xml",
+      "sha256": "sha256:809386fbb2093b3ef4fc085b5924c18c6b903dfaa85329acf1c8540fdead739d"
+    },
+    {
+      "bytes": 14380,
+      "path": "junit/fake_cli_end_to_end_scenarios.xml",
+      "sha256": "sha256:121a5ba273cae75056b091bc2490458a9cba02f69e1855513836fa0d2eacc563"
+    },
+    {
+      "bytes": 2929,
+      "path": "junit/mixed_profile_end_to_end.xml",
+      "sha256": "sha256:b18b78a91ea6163c8c94f8d72780b6b15ca171a938ad9b97b000c2ce41ff1483"
+    },
+    {
+      "bytes": 839,
+      "path": "junit/schema_migration_and_api_regression.xml",
+      "sha256": "sha256:95e9c706f9d2ce51452ebec2f03873a4930672986067fc24f08cdd9303760707"
+    },
+    {
+      "bytes": 100,
+      "path": "logs/blindness_secret_and_projection.log",
+      "sha256": "sha256:a7cd759f431cf59636e724e3e854e8479c7a488234fbfba8c7cd73f64f25b69f"
+    },
+    {
+      "bytes": 100,
+      "path": "logs/cancellation_and_cleanup-1.log",
+      "sha256": "sha256:73548eb4ea59eed3269761c8fea41e1094a4b1f52fa9b37d679c2f3b55320c24"
+    },
+    {
+      "bytes": 100,
+      "path": "logs/cancellation_and_cleanup-2.log",
+      "sha256": "sha256:fb23f93fc54acca250e279722c26448f11e9a7149e51a784c5eef76ad10abd41"
+    },
+    {
+      "bytes": 100,
+      "path": "logs/cancellation_and_cleanup-3.log",
+      "sha256": "sha256:f1be293f941ad753cf640b68c7e4f456c5d5ed512c0e788a13ddc8b5582d7a2c"
+    },
+    {
+      "bytes": 193,
+      "path": "logs/fake_cli_end_to_end_scenarios.log",
+      "sha256": "sha256:2771aeafac402befd76068888ef40d4d3b03fb82bee7764eea0d188f19fbd69c"
+    },
+    {
+      "bytes": 102,
+      "path": "logs/mixed_profile_end_to_end.log",
+      "sha256": "sha256:03c72ce4207634333ddbd595bcbad62084ef89acbfeeaab2470bb9871edd3642"
+    },
+    {
+      "bytes": 0,
+      "path": "logs/packaged_artifact_probe.log",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 123,
+      "path": "logs/real_provider_detection.log",
+      "sha256": "sha256:3f4150215be45473fa3442354ce12a48b7870ede206e2a863c5cc4e241866081"
+    },
+    {
+      "bytes": 100,
+      "path": "logs/schema_migration_and_api_regression.log",
+      "sha256": "sha256:1c225c42d3b98dc584512d3d90fc6f973561313f2a72d5e60e501d615e305a80"
+    },
+    {
+      "bytes": 2796,
+      "path": "real-provider-detection/real-cli-smoke-report.json",
+      "sha256": "sha256:74fae1194813fc0d67a0c303df1bdb350bfeb4e15182b4cf5a08c742138e489c"
+    },
+    {
+      "bytes": 1377,
+      "path": "resource-bounds.json",
+      "sha256": "sha256:9e2779bca9b624099ba4f44878808b9d73886671d8de8ff5bef4a76a656ac484"
+    },
+    {
+      "bytes": 423,
+      "path": "secret-scan.json",
+      "sha256": "sha256:ab3ad3e1d465dfb590f8f009e21da062ae91b588600baf0d5d68cd79691e4d83"
+    }
+  ],
+  "generated_at": "2026-07-22T08:22:41.429824Z",
+  "schema_version": "villani.cli_agent_release_evidence_index.v1"
+}

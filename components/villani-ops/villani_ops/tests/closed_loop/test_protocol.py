@@ -58,6 +58,8 @@ VALID_SNAPSHOT_PATHS = (
     VALID_RUN / "agent-system-config.json",
     VALID_RUN / "role-bindings.json",
     VALID_RUN / "agent-invocation-identity.json",
+    VALID_RUN / "role-invocation-evidence.json",
+    VALID_RUN / "role-invocation-index.json",
     VALID_RUN / "attempts" / "attempt_001" / "agent" / "invocation.json",
     VALID_RUN / "attempts" / "attempt_001" / "agent" / "process-result.json",
     VALID_RUN / "attempts" / "attempt_001" / "agent" / "output-tail.json",
@@ -94,8 +96,8 @@ def _load_json(path: Path) -> dict[str, object]:
 
 
 def test_all_versioned_root_schemas_are_valid_and_mapped() -> None:
-    assert len(SCHEMA_VERSION_TO_PATH) == 47
-    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 47
+    assert len(SCHEMA_VERSION_TO_PATH) == 49
+    assert len(set(SCHEMA_VERSION_TO_PATH.values())) == 49
     for schema_path in SCHEMA_VERSION_TO_PATH.values():
         assert schema_path.is_file()
         schema = _load_json(schema_path)

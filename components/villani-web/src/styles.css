@@ -960,6 +960,30 @@ code {
 .agent-system {
   max-width: 1120px;
 }
+.agent-role-badges,
+.profile-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-role-badge {
+  padding: 4px 9px;
+  border: 1px solid var(--v-border-subtle);
+  border-radius: 999px;
+  background: var(--v-bg-elevated);
+  color: var(--v-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+.profile-role-binding {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.4fr) minmax(240px, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.profile-role-binding > span {
+  font-weight: 650;
+}
 .settings-page {
   max-width: 1280px;
 }
@@ -1022,6 +1046,9 @@ code {
     grid-column: auto;
   }
   .settings-advanced {
+    grid-template-columns: 1fr;
+  }
+  .profile-role-binding {
     grid-template-columns: 1fr;
   }
 }

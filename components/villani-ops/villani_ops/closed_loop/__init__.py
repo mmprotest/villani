@@ -7,6 +7,8 @@ from .adapters import (
     VillaniVerifierAdapter,
 )
 from .controller import ClosedLoopController
+from .cli_classification import CliClassifierAdapter
+from .cli_selection import CliSelectorAdapter
 from .costs import CostBreakdown, actual_attempt_cost, estimate_attempt_cost
 from .durable_io import append_jsonl_durable, read_jsonl_tolerant, write_json_atomic
 from .interfaces import ClosedLoopRunRequest, ClosedLoopRunResult
@@ -133,6 +135,8 @@ __all__ = [
     "BootstrapPolicyEngine",
     "CostBreakdown",
     "CandidateEligibility",
+    "CliClassifierAdapter",
+    "CliSelectorAdapter",
     "EventEnvelope",
     "EvidenceSelectorAdapter",
     "FailureCategory",

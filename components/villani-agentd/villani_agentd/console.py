@@ -25,6 +25,24 @@ import yaml
 from villani_ops.closed_loop.agent_systems.configuration import (
     migrate_agent_system_configuration,
 )
+from villani_ops.closed_loop.agent_systems.management import (
+    DoctorStatus,
+    detect_cli_agent_systems,
+    diagnose_registry,
+    write_management_evidence,
+)
+from villani_ops.closed_loop.agent_systems.registry import build_agent_system_registry
+from villani_ops.closed_loop.agent_systems.role_models import (
+    ROLE_LABELS,
+    AgentRole,
+    ApiAgentSystemConfig,
+    CliAgentSystemConfig,
+    InternalRunnerSystemConfig,
+)
+from villani_ops.closed_loop.agent_systems.role_registry import (
+    RoleBindingConfigurationError,
+    RoleSystemRegistry,
+)
 from villani_ops.closed_loop.capabilities.store import CapabilityStore
 from villani_ops.closed_loop.interfaces import ClosedLoopRunRequest
 from villani_ops.closed_loop.product_run import build_product_run
@@ -85,6 +103,7 @@ CONSOLE_RUN_OPTIONS_SCHEMA = "villani.console.run_options.v1"
 CONSOLE_RUN_SUBMISSION_SCHEMA = "villani.console.run_submission.v1"
 CONSOLE_MODELS_SCHEMA = "villani.console.models.v1"
 CONSOLE_POLICIES_SCHEMA = "villani.console.policies.v1"
+CONSOLE_AGENT_SYSTEMS_SCHEMA = "villani.console.agent_systems.v1"
 SUPPORTED_CONFIG_VERSION = 1
 _MAX_VFR_OUTPUT = 16 * 1024 * 1024
 _CONFIG_HEADER = """# Villani local-first configuration.
@@ -296,10 +315,22 @@ def _configuration(home: Path) -> tuple[dict[str, Any], list[str], int | None]:
             ],
             raw_version,
         )
-    backends = loaded.get("backends")
-    if not isinstance(backends, Mapping) or not backends:
-        return loaded, ["No coding backend is configured. Run: villani setup"], raw_version
-    return loaded, [], raw_version
+    try:
+        migrated, _migration = migrate_agent_system_configuration(loaded)
+    except ValueError:
+        return loaded, ["Agent-system configuration is invalid. Run: villani doctor"], raw_version
+    backends = migrated.get("backends")
+    if isinstance(backends, Mapping) and backends:
+        return migrated, [], raw_version
+    try:
+        RoleSystemRegistry(migrated, {}).resolve_profile()
+    except RoleBindingConfigurationError:
+        return (
+            migrated,
+            ["No coding backend or complete execution profile is configured. Run: villani setup"],
+            raw_version,
+        )
+    return migrated, [], raw_version
 
 
 def _model_state_with_setup_detection(home: Path) -> dict[str, Any]:
@@ -634,6 +665,24 @@ class ConsoleService:
         budgets = _mapping(configuration.get("budgets"))
         repositories = self._repository_candidates(configuration)
         presets = policy_preset_rows(configuration)
+        try:
+            role_registry = RoleSystemRegistry(configuration, configured_backends(configuration))
+            execution_profiles = [
+                {
+                    "id": profile.profile_id,
+                    "label": profile.profile_id.replace("-", " ").title(),
+                    "profile_type": profile.profile_type,
+                    "active": profile.active,
+                    "bindings": (
+                        profile.bindings.model_dump(mode="json")["bindings"]
+                        if profile.bindings is not None
+                        else None
+                    ),
+                }
+                for profile in role_registry.list_profiles()
+            ]
+        except (TypeError, ValueError):
+            execution_profiles = []
         entitlement = load_entitlement(self.home_path)
         pro = entitlement.tier == "pro"
         return {
@@ -691,6 +740,7 @@ class ConsoleService:
             "policy_presets": presets,
             "policies": presets,
             "advanced_policies": advanced_policies,
+            "execution_profiles": execution_profiles,
             "routing_modes": ["observe", "recommend", "enforce"],
             "routing_mode_availability": {
                 "observe": True,
@@ -709,6 +759,7 @@ class ConsoleService:
                 "max_wall_time": None,
                 "verification_required": True,
                 "mode": "performance",
+                "execution_profile": str(configuration.get("active_execution_profile") or "api"),
             },
             "setup_issues": issues,
         }
@@ -729,6 +780,304 @@ class ConsoleService:
             migrated,
             header=_CONFIG_HEADER,
         )
+
+    def _agent_system_evidence_path(self, action: str) -> tuple[Path, str]:
+        relative = Path("diagnostics") / "agent-systems" / f"console-{action}.json"
+        return self.home_path / relative, relative.as_posix()
+
+    @staticmethod
+    def _diagnostic_row(
+        diagnostic: Any,
+        *,
+        kind: str = "cli_agent",
+    ) -> dict[str, Any]:
+        value = diagnostic.model_dump(mode="json")
+        value.update(
+            {
+                "id": value["system_id"],
+                "kind": kind,
+                "ready": value["status"] == DoctorStatus.READY.value,
+                "model": value.get("configured_model"),
+                "role_badges": [
+                    {"id": role, "label": ROLE_LABELS[AgentRole(role)]}
+                    for role in value.get("configured_roles", [])
+                ],
+            }
+        )
+        return value
+
+    def _agent_system_document(
+        self,
+        configuration: Mapping[str, Any],
+        *,
+        reference: str | None = None,
+        action: str = "inspect-latest",
+    ) -> dict[str, Any]:
+        backends = configured_backends(configuration)
+        try:
+            registry = build_agent_system_registry(configuration, backends)
+            referenced_system = (
+                registry.inspect_configured(reference) if reference is not None else None
+            )
+            evidence_file, evidence_reference = self._agent_system_evidence_path(action)
+            cli_document = diagnose_registry(
+                registry,
+                evidence_path=evidence_reference,
+                reference=(
+                    reference if isinstance(referenced_system, CliAgentSystemConfig) else None
+                ),
+            )
+            write_management_evidence(evidence_file, cli_document)
+        except (OSError, TypeError, ValueError) as error:
+            raise ConsoleDataError(f"Agent-system inspection failed: {error}") from error
+
+        cli_by_id = {item.system_id: item for item in cli_document.systems}
+        rows: list[dict[str, Any]] = []
+        for system in registry.list_configured():
+            if reference is not None and system.id != reference:
+                continue
+            if isinstance(system, CliAgentSystemConfig):
+                diagnostic = cli_by_id.get(system.id)
+                if diagnostic is None:
+                    continue
+                rows.append(self._diagnostic_row(diagnostic))
+                continue
+            inspection = registry.role_registry.inspect_system(system.id)
+            if isinstance(system, ApiAgentSystemConfig):
+                display_name = "API agent"
+                model = system.model
+                driver = "api"
+                instruction_policy = "controller_managed"
+                permission_policy = "configured_api_policy"
+            elif isinstance(system, InternalRunnerSystemConfig):
+                display_name = "Villani internal runner"
+                model = None
+                driver = "internal"
+                instruction_policy = "controller_managed"
+                permission_policy = "configured_execution_environment"
+            else:  # pragma: no cover - discriminated union guards this
+                continue
+            rows.append(
+                {
+                    "system_id": system.id,
+                    "id": system.id,
+                    "display_name": display_name,
+                    "kind": system.kind,
+                    "driver": driver,
+                    "configured": True,
+                    "status": "READY" if inspection.runnable else "ACTION_REQUIRED",
+                    "ready": inspection.runnable,
+                    "configured_executable": None,
+                    "resolved_path": None,
+                    "safe_display_path": None,
+                    "resolved_path_digest": None,
+                    "exact_version": None,
+                    "authentication_ready": None,
+                    "authentication_status": "configured",
+                    "supported_roles": sorted(role.value for role in system.roles),
+                    "configured_roles": sorted(role.value for role in system.roles),
+                    "configured_model": model,
+                    "model": model,
+                    "instruction_policy": instruction_policy,
+                    "permission_policy": permission_policy,
+                    "conformance_status": "passed" if inspection.runnable else "action_required",
+                    "last_doctor_time": None,
+                    "affected_roles": []
+                    if inspection.runnable
+                    else sorted(role.value for role in system.roles),
+                    "what_failed": None if inspection.runnable else inspection.reason,
+                    "repository_modified": False,
+                    "exact_next_action": ("villani doctor"),
+                    "evidence_path": None,
+                    "role_results": [],
+                    "role_badges": [
+                        {"id": role.value, "label": ROLE_LABELS[role]}
+                        for role in AgentRole
+                        if role in system.roles
+                    ],
+                }
+            )
+
+        profiles = []
+        for profile in registry.list_profiles():
+            dumped = profile.model_dump(mode="json")
+            binding_map = _mapping(_mapping(dumped.get("bindings")).get("bindings"))
+            dumped["role_bindings"] = [
+                {
+                    "role": role.value,
+                    "label": ROLE_LABELS[role],
+                    "agent_system_id": binding_map.get(role.value),
+                }
+                for role in AgentRole
+            ]
+            profiles.append(dumped)
+        return {
+            "schema_version": CONSOLE_AGENT_SYSTEMS_SCHEMA,
+            "agent_systems": rows,
+            "profiles": profiles,
+            "active_profile": str(configuration.get("active_execution_profile") or "api"),
+            "role_labels": {role.value: label for role, label in ROLE_LABELS.items()},
+            "setup_issues": [],
+        }
+
+    def agent_systems(self) -> dict[str, Any]:
+        configuration, issues, _schema_version = _configuration(self.home_path)
+        if not configuration:
+            return {
+                "schema_version": CONSOLE_AGENT_SYSTEMS_SCHEMA,
+                "agent_systems": [],
+                "profiles": [],
+                "active_profile": None,
+                "role_labels": {role.value: label for role, label in ROLE_LABELS.items()},
+                "setup_issues": issues,
+            }
+        document = self._agent_system_document(configuration)
+        document["setup_issues"] = issues
+        return document
+
+    def agent_systems_detect(self) -> dict[str, Any]:
+        configuration, issues, _schema_version = _configuration(self.home_path)
+        evidence_file, evidence_reference = self._agent_system_evidence_path("detection-latest")
+        try:
+            document = detect_cli_agent_systems(
+                configuration or None,
+                backends=configured_backends(configuration),
+                evidence_path=evidence_reference,
+            )
+            write_management_evidence(evidence_file, document)
+        except (OSError, TypeError, ValueError) as error:
+            raise ConsoleDataError(f"Agent-system detection failed: {error}") from error
+        return {
+            "schema_version": CONSOLE_AGENT_SYSTEMS_SCHEMA,
+            "agent_systems": [self._diagnostic_row(item) for item in document.systems],
+            "profiles": [],
+            "active_profile": configuration.get("active_execution_profile"),
+            "role_labels": {role.value: label for role, label in ROLE_LABELS.items()},
+            "setup_issues": issues,
+        }
+
+    def agent_system_doctor(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        system_id = body.get("agent_system_id")
+        if not isinstance(system_id, str) or not system_id:
+            raise ConsoleInputError("agent_system_id is required")
+        configuration = self._configuration_for_mutation()
+        return self._agent_system_document(
+            configuration,
+            reference=system_id,
+            action=f"doctor-{hashlib.sha256(system_id.encode('utf-8')).hexdigest()[:16]}",
+        )
+
+    def profile_activate(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        profile_id = body.get("profile_id")
+        if not isinstance(profile_id, str) or not profile_id:
+            raise ConsoleInputError("profile_id is required")
+        try:
+            with self._configuration_lock:
+                configuration = self._configuration_for_mutation()
+                registry = build_agent_system_registry(
+                    configuration, configured_backends(configuration)
+                )
+                bindings = registry.resolve_profile(profile_id)
+                registry.require_profile_runnable(bindings)
+                configuration["active_execution_profile"] = profile_id
+                self._write_configuration(configuration)
+        except (OSError, TypeError, ValueError) as error:
+            raise ConsoleInputError(
+                f"Execution profile {profile_id!r} is unavailable: {error}"
+            ) from error
+        return self.agent_systems()
+
+    def profile_set_role(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        profile_id = body.get("profile_id")
+        role_value = body.get("role")
+        system_id = body.get("agent_system_id")
+        if not isinstance(profile_id, str) or not profile_id:
+            raise ConsoleInputError("profile_id is required")
+        if not isinstance(system_id, str) or not system_id:
+            raise ConsoleInputError("agent_system_id is required")
+        try:
+            role = AgentRole(role_value)
+        except (TypeError, ValueError) as error:
+            raise ConsoleInputError("role is invalid") from error
+        try:
+            with self._configuration_lock:
+                configuration = self._configuration_for_mutation()
+                static_registry = RoleSystemRegistry(
+                    configuration, configured_backends(configuration)
+                )
+                system = static_registry.inspect_configured(system_id)
+                if role not in system.roles:
+                    raise ValueError(
+                        f"agent system {system_id!r} does not support {ROLE_LABELS[role]}"
+                    )
+                profiles = configuration.get("execution_profiles")
+                if not isinstance(profiles, Mapping) or profile_id not in profiles:
+                    raise ValueError(f"unknown execution profile {profile_id!r}")
+                updated_profiles = dict(profiles)
+                raw_profile = updated_profiles[profile_id]
+                if not isinstance(raw_profile, Mapping):
+                    raise ValueError(f"execution profile {profile_id!r} is malformed")
+                updated_profile = dict(raw_profile)
+                bindings = _mapping(updated_profile.get("bindings"))
+                bindings[role.value] = system_id
+                updated_profile["bindings"] = bindings
+                updated_profiles[profile_id] = updated_profile
+                configuration["execution_profiles"] = updated_profiles
+                RoleSystemRegistry(
+                    configuration, configured_backends(configuration)
+                ).resolve_profile(profile_id)
+                self._write_configuration(configuration)
+        except (OSError, TypeError, ValueError) as error:
+            raise ConsoleInputError(f"Role assignment is invalid: {error}") from error
+        return self.agent_systems()
+
+    def settings(self) -> dict[str, Any]:
+        bootstrap = self.bootstrap()
+        agent_systems = self.agent_systems()
+        configuration, _issues, _schema_version = _configuration(self.home_path)
+        configured_timeouts = []
+        try:
+            static_registry = RoleSystemRegistry(configuration, configured_backends(configuration))
+            configured_timeouts = [
+                {
+                    "agent_system_id": system.id,
+                    "timeout_seconds": system.timeout_seconds,
+                }
+                for system in static_registry.list_configured()
+            ]
+        except (TypeError, ValueError):
+            pass
+        return {
+            "schema_version": "villani.console.settings.v1",
+            "setup": bootstrap["setup"],
+            "service": bootstrap["service"],
+            "storage": bootstrap["storage"],
+            "privacy": {"secrets_exposed": False, "local_first": True},
+            "synchronization": bootstrap["synchronization"],
+            "workspace": bootstrap["workspace"],
+            "version": bootstrap["version"],
+            "entitlement": bootstrap["entitlement"],
+            "update": bootstrap["update"],
+            "active_execution_profile": agent_systems["active_profile"],
+            "execution_profiles": agent_systems["profiles"],
+            "role_bindings": next(
+                (
+                    profile.get("role_bindings", [])
+                    for profile in agent_systems["profiles"]
+                    if profile.get("active")
+                ),
+                [],
+            ),
+            "instruction_policy": "Role-specific and Villani-controlled",
+            "advanced_process_timeouts": configured_timeouts,
+            "commands": {
+                "doctor": "villani doctor",
+                "detect_agents": "villani agents detect",
+                "update_status": "villani update status",
+                "support_preview": "villani support preview",
+                "license_status": "villani license status",
+            },
+        }
 
     def models(self, *, refresh_capabilities: bool = False) -> dict[str, Any]:
         configuration, issues, _schema_version = _configuration(self.home_path)
@@ -1303,6 +1652,29 @@ class ConsoleService:
                 "run_id": None,
                 "failure": _product_failure("incomplete_setup"),
             }
+        profile_value = body.get("execution_profile")
+        if profile_value is not None and (not isinstance(profile_value, str) or not profile_value):
+            raise ConsoleInputError("execution_profile is invalid")
+        selected_profile = str(
+            profile_value or configuration.get("active_execution_profile") or "api"
+        )
+        try:
+            role_registry = build_agent_system_registry(
+                configuration, configured_backends(configuration)
+            )
+            resolved_bindings = role_registry.resolve_profile(selected_profile)
+            role_registry.require_profile_runnable(resolved_bindings)
+        except (OSError, TypeError, ValueError) as error:
+            return {
+                "schema_version": CONSOLE_RUN_SUBMISSION_SCHEMA,
+                "status": "FAILED",
+                "run_id": None,
+                "failure": _product_failure(
+                    "no_usable_agent",
+                    reason=(f"Execution profile {selected_profile!r} is unavailable: {error}"),
+                ),
+            }
+        configuration["active_execution_profile"] = selected_profile
         try:
             commands, discovery = self._validation_selection(body, repository)
         except (ConsoleInputError, OSError, ValueError):
@@ -1472,6 +1844,7 @@ class ConsoleService:
             "success_criteria": success_criteria,
             "repository": str(repository),
             "validation": [item["display_command"] for item in commands],
+            "execution_profile": selected_profile,
             "error": None,
             "failure": None,
             "terminal_state": None,

@@ -4803,3 +4803,255 @@ Remaining risks:
 
 Next permitted milestone:
 - CLI Agent Mode Milestone 4 is complete. CLI Agent Mode Milestone 5 was not started.
+
+#### 2026-07-21: CLI Agent Mode Milestone 5, independent CLI verifier
+
+Status: `COMPLETE`. Added one provider-neutral `CliVerifierAdapter` implementing the existing
+verifier port for Codex CLI and Claude Code CLI. Every candidate verification receives a fresh
+role workspace and process independent of the coder worktree and session. The workspace contains
+only the verbatim task and success criteria, an immutable clean baseline representation, candidate
+patch and changed-file manifest, authoritative validation evidence, permitted debug artifacts, a
+versioned neutral prompt/schema, and a digest manifest. Provider/model identity, coder transcript
+and session, cost, timing, rank/order, competitors, selector output, expected patches, and hidden
+solutions are excluded and machine checked. Existing deterministic acceptance gates remain
+authoritative; every CLI infrastructure failure fails closed. Classification and selection were
+not changed.
+
+Architectural decisions:
+- Codex verification is ephemeral and uses a Villani-defined scoped read-only permission profile,
+  strict controlled config, disabled command network/web search, JSONL, and schema-constrained final
+  output. Codex versions before scoped permission profiles are unsupported rather than falling back
+  to legacy broad-read `--sandbox read-only` behavior.
+- Claude verification uses non-interactive print/stream JSON, no session persistence, plan mode,
+  only `Read`, `Glob`, and `Grep`, controlled empty settings/MCP configuration, and no Bash, Edit,
+  Write, plugins, hooks, auto-memory, ambient project instructions, Chrome, or slash commands.
+- The controller receives the same normalized `Verification` contract for API, Codex, and Claude.
+  Semantic `1` is only one evidence source and cannot bypass repository validation, deterministic
+  gates, infrastructure state, or delivery rules. Semantic `0` remains selection-ineligible.
+- Restricted technical artifacts retain process/session independence proof; public metadata exposes
+  only booleans and the exact binary `{decision, reason}` projection.
+
+Verification:
+- Authoritative Villani Ops: 1,468 passed, 4 skipped, 120 deselected in 363.89 seconds. Focused CLI
+  verifier suite: 51 passed, 2 opt-in real smokes deselected in 64.55 seconds.
+- Codex coding compatibility: 31 passed, 1 real smoke deselected in 27.68 seconds. Earlier final
+  Claude coding compatibility: 32 passed, 1 real smoke deselected. All four coder/verifier
+  combinations passed, including both same-provider independent-session cases.
+- Root closed-loop integration: 11 passed with 2 known warnings in 40.82 seconds. Scoped Ruff and
+  `git diff --check` passed; root/package verifier schemas were byte-identical.
+- Real Codex and Claude verifier model smokes were not opted in; both remained deselected and no
+  external model call was made.
+
+Remaining risks and assumptions:
+- Real authenticated CLI behavior remains unproved locally. Codex must expose scoped permission
+  profiles (0.138.0+) and all required controlled-output flags; Claude must expose the complete
+  read-only/non-ambient capability set. Missing capabilities, authentication, permissions, output,
+  or schema conformance remain acceptance-ineligible infrastructure failures.
+- Windows process/workspace/input-integrity enforcement is locally covered with fake CLIs. POSIX
+  filesystem and process-group enforcement remains covered by committed tests but awaits hosted
+  Linux/macOS execution. The two root warnings are an existing Starlette/httpx deprecation and a
+  pytest-cache ACL warning.
+
+Next permitted milestone:
+- CLI Agent Mode Milestone 5 is complete. CLI classification and candidate selection remain on the
+  existing API/internal paths. CLI Agent Mode Milestone 6 was not started.
+
+#### 2026-07-22: CLI Agent Mode Milestone 6, CLI classifier and candidate selector
+
+Status: `COMPLETE`. Added provider-neutral `CliClassifierAdapter` and `CliSelectorAdapter`
+implementations of the existing classifier and selector ports for Codex CLI and Claude Code CLI.
+Each invocation receives a fresh Villani-controlled role workspace, process, and session. The
+classifier receives only pre-execution task, criteria, conservative repository metadata, and
+explicit risk/policy metadata; its strict raw result is passed through the existing deterministic
+task-shape adjustments into the canonical effective classification. The selector runs only when
+two or more acceptance-eligible candidates remain and deterministic evidence has no unique winner;
+zero/one-candidate and unambiguous deterministic cases never launch it. Existing API classifier,
+API selector, and deterministic selector behavior remains compatible.
+
+Architectural decisions:
+- Both roles use versioned provider-neutral prompts and strict root/package schemas. Codex uses an
+  ephemeral scoped read-only permission profile, JSONL, schema output, controlled configuration,
+  and no resume. Claude uses print/stream JSON, plan mode, empty tools for classification and
+  selection, no session persistence, and controlled empty settings/MCP/plugin/hook/memory state.
+- Selector packets contain every acceptance-eligible candidate and no rejected candidate. Actual
+  attempt IDs are replaced with random opaque IDs, packets are ordered only by those random IDs,
+  and the real mapping is written to a private technical artifact only after process exit. Provider,
+  model, driver, cost, route rank, attempt order, token count, coder transcript, and hidden expected
+  patch fields are excluded and machine tested.
+- CLI/schema/process failures produce explicit classifier fallback metadata or explicit selector
+  deterministic-fallback metadata. They never silently become semantic success. CLI role binding
+  itself is the configured semantic-selection policy; the existing deterministic selector remains
+  available as an independent profile choice. The controller contains no provider conditional.
+- Doctor proves each declared role's safe capabilities before a profile is runnable. User model
+  strings remain configuration data; no model alias or prestige recommendation was hardcoded.
+
+Verification:
+- Authoritative Villani Ops: 1,522 passed, 4 skipped, 122 deselected in 383.08 seconds.
+- Focused classifier/selector suite: 54 passed, 2 opt-in real smokes deselected in 12.10 seconds.
+  Combined M1-M6 driver, verifier, registry, factory, and unified-CLI compatibility: 233 passed,
+  6 deselected in 139.72 seconds.
+- Ops protocol/schema contracts: 39 passed. Root closed-loop integration: 11 passed with the two
+  existing Starlette/httpx and pytest-cache ACL warnings.
+- Villani Code: 686 passed, 1 skipped with 27 existing Typer deprecation warnings. Flight Recorder:
+  21 files/118 tests passed, and typecheck, build, and format checking passed.
+- All eight requested profile families passed: all API, all Codex CLI, all Claude CLI, both
+  cross-vendor coder/verifier/selector directions, API-classifier hybrid, CLI-classifier hybrid,
+  and deterministic-selector profiles. Same-vendor role identities and all four CLI
+  classifier/selector vendor pairings were distinct and non-resuming.
+- Scoped Ruff lint/format, scoped mypy, Python compilation, schema byte parity, provider-import and
+  dangerous/resume-flag scans, and `git diff --check` passed. The real Codex and Claude role smokes
+  were not opted in (2 skipped); no external model call was made.
+
+Remaining risks and assumptions:
+- Real authenticated classifier/selector calls remain unproved locally. Codex must expose scoped
+  permission profiles and all controlled structured-output flags; Claude must expose the complete
+  no-tool/non-ambient structured-output capability set. Doctor fails the profile before a run when
+  any required capability, authentication state, or supported version is missing.
+- Repository inventory is conservatively bounded, and oversized selector patches are represented
+  by their digest/line/file summary rather than copied in full. Schema, manifest, process, mutation,
+  cancellation, timeout, and output failures remain explicit infrastructure states or fallbacks.
+- Windows process/workspace behavior is locally proved; POSIX confinement and process-group behavior
+  remain covered by committed tests and await hosted Linux/macOS execution for this pass.
+
+Next permitted milestone:
+- CLI Agent Mode Milestone 6 is complete. Product setup/UI integration and CLI Agent Mode Milestone
+  7 were not started.
+
+#### 2026-07-22: CLI Agent Mode Milestone 7, execution profiles, setup, doctor, and run observability
+
+Status: `COMPLETE`. Extended the existing public setup, CLI, Agentd API, and Console surfaces with
+the user-facing Agent system, Role, and Execution profile concepts. Users can detect Codex CLI and
+Claude Code, inspect redacted readiness, configure an explicit model without YAML, bind one complete
+system per role, activate API/CLI/hybrid/custom profiles, override a profile for one run only through
+Advanced, and inspect compact role execution identity with technical details under Evidence. Every
+run snapshots the exact resolved role bindings before candidate work; an unavailable or incomplete
+profile fails closed without a silent fallback. No controller role port or deterministic acceptance,
+verification, selection, or materialization rule was replaced.
+
+Changed surface:
+- `components/villani-ops/villani_ops/closed_loop/agent_systems/{configuration,management,registry,
+  role_models,role_registry}.py`, `cli/unified.py`, and the Codex/Claude role drivers add bounded
+  detection, exact role-aware doctor results, explicit model validation, role policies, profile
+  activation, and safe command compatibility.
+- `components/villani-ops/villani_ops/closed_loop/{controller,invocation_evidence,product_run,
+  protocol,schema_validation}.py`, root/package v1 schemas, and protocol fixtures add a strict,
+  provider-neutral role-invocation index and presentation projection with unknown accounting kept as
+  `null` plus status. Restricted process artifacts retain private process identity.
+- `components/villani-agentd/villani_agentd/{console,server}.py`, the public distribution
+  `villani_distribution/{cli,diagnostics,onboarding}.py`, and their M7 tests add management APIs,
+  simple setup modes, settings/profile resolution, exact preflight, and idempotent migration.
+- `components/villani-web/src/{ProductPages,SingleTaskPage,consoleApi,styles}.*`, Console unit/E2E
+  sources, built assets, and `components/villani-run-model/{src,dist}` add accessible role binding,
+  advanced overrides, infrastructure-failure presentation, compact role identity, and Evidence
+  links while preserving legacy Agent details.
+- `artifacts/cli-agent-mode-m7/**` contains the CLI transcript, doctor matrix, migration behavior,
+  schema-valid run-evidence example, validation results, and the genuine screenshot-availability
+  record. This entry is the only Milestone 7 change to `PLANS.md`.
+
+Architectural decisions:
+- Profiles are configuration conveniences over the existing typed role ports, not another
+  controller. Migration uses `setdefault(active_execution_profile, "api")`; existing backends,
+  secrets/references, explicit profile choices, and old run/route readers are preserved. Repeating
+  migration yields the same effective configuration and reports no destructive change.
+- Detection and doctor use bounded argv-based probes only. They do not start login, update an
+  executable, read credential files, inspect subscription quota, guess usage, or mutate a repository.
+  Setup validates the exact user model string through one disposable schema-constrained read-only
+  classification invocation with no target/candidate access or session reuse.
+- Doctor returns `READY`, `ACTION_REQUIRED`, `UNSUPPORTED`, or `ERROR` per affected role, plus what
+  failed, `repository_modified: false`, one exact action, and an evidence path. JSON retains the
+  Milestone 1-6 `reports[].checks/selectable` contract and adds rich role-aware `systems` data.
+- Canonical invocation evidence records role, opaque invocation ID, agent-system/driver, safe path
+  plus digest, exact CLI/configured and authoritative resolved model, policies, timing,
+  infrastructure state, authoritative usage/cost or explicit unknown accounting, and artifact
+  links. Public evidence excludes process IDs and chain-of-thought; each adapter still launches a
+  distinct ephemeral process/session.
+- No quota field, quota API, usage-reset tracking, billing control, automatic account switching,
+  provider-config mutation, or release-hardening expansion was added.
+
+Verification:
+- Villani Ops: 1,535 passed, 4 skipped, 122 deselected in 411.99 seconds. The five initial
+  compatibility findings (two missing valid protocol fixtures and three legacy doctor projections)
+  passed an 18-test targeted rerun before the authoritative full rerun passed.
+- Villani Code: 686 passed, 1 skipped with 27 existing Typer deprecation warnings. Villani Agentd:
+  92 passed. Public Villani distribution: 79 passed, including the elevated clean-install Console
+  build that cannot run inside the managed esbuild filesystem sandbox.
+- Focused M7 suites: Ops 13 passed; Agentd 5 passed; public setup 2 passed. Root closed-loop
+  integration: 11 passed with the existing Starlette/httpx deprecation and pytest-cache ACL warnings.
+- Villani Run Model: 6 files/17 tests passed; typecheck and build passed. Villani Web: 4 files/29
+  tests passed; typecheck, 61-module production build, format check, and three-file packaged asset
+  parity passed. Flight Recorder: 21 files/118 tests passed; typecheck, build, and format check passed.
+- M7-scoped Ruff passed. Scoped mypy passed for six Ops, two Agentd, and three public-distribution
+  source files. Root/package schema parity, schema-valid evidence fixtures, environment/secret
+  redaction, no-quota scans, and `git diff --check` passed.
+
+Evidence limitations and risks:
+- The in-app browser backend exposed no browser instance, so genuine screenshots could not be
+  captured. The production bundle, DOM, keyboard/accessibility behavior, API schema parity, and
+  packaged assets passed automated checks; no synthetic or unrelated-browser screenshot was used.
+- Real authenticated Codex and Claude smoke tests remained opt-in and were not run. Fake CLIs prove
+  deterministic setup, model invocation, doctor, profile, process/session independence, failure,
+  and observability behavior; installed-version/authentication behavior still depends on each local
+  CLI satisfying doctor.
+- Windows path-with-spaces behavior is covered. One intentionally verbose temporary test path hit
+  the Windows path-length boundary during an intermediate targeted rerun; the same test passed under
+  the final short governed temp root and no production repository path was modified. ACL-protected
+  pytest debris was moved intact and recoverably out of the worktree to
+  `C:\\tmp\\villani-m7-test-temp-20260722`; governed Milestone 7 evidence remains in the repository.
+
+Next permitted milestone:
+- CLI Agent Mode Milestone 7 is complete. Subscription quota management, usage-reset tracking,
+  billing controls, automatic account switching, release-hardening expansion, and Milestone 8 were
+  not started.
+
+#### 2026-07-22: CLI Agent Mode Milestone 8, end-to-end hardening and release gate
+
+Status: `NOT RELEASE-CERTIFIED`. The hardening implementation and every available deterministic
+CLI Agent Mode check passed, but the mandatory in-app-browser inventory was empty. Playwright and
+the complete packaged release gate could not be run through the required browser channel, so this
+entry deliberately does not claim `COMPLETE`, `PASS`, or overall `PARTIAL`. The dedicated CLI Agent
+Mode phase reports `PARTIAL` only because its 30-scenario deterministic evidence is complete and
+the separately optional real-provider smoke was not consented to.
+
+Hardening delivered:
+- Added a fail-closed named CLI Agent Mode gate, 30-scenario fake Codex/Claude manifest, exact
+  13-row/14-column conformance matrix, three repeated cancellation/cleanup passes, resource bounds,
+  security/home-path scan, exact command report, and digest evidence index. Phase temp paths are
+  short hashed governed roots independent of durable evidence location; read-only Git objects are
+  cleaned safely, and any cleanup failure fails the gate.
+- Added the explicit `run_cli_agent_smoke.py` consent contract plus no-model-call detection mode,
+  disposable-repository enforcement, bounded probes, exact provider skip reasons, configured-model
+  requirements, safe path/log redaction, and retained evidence. No external model call was made.
+- Added strict infrastructure-failure artifacts and public projection for stage/role, system, safe
+  summary, target mutation, partial patch, fallback, exact repair action, and evidence path. This
+  remains distinct from semantic rejection and cannot authorize acceptance.
+- Added dynamic verifier blindness canaries, selector infrastructure-failure exclusion, five-role
+  process/session independence, static no-shell/consent/bounds checks, and UI evidence assertions.
+  Rebuilt Run Model and packaged Console artifacts, and documented API/CLI/hybrid behavior,
+  authentication, isolation, supported versions, troubleshooting, and real smoke.
+
+Verification:
+- Dedicated gate: 30/30 scenarios; 138 tests; zero failures/errors/skips; deterministic evidence
+  complete; secret scan PASS across seven sensitive-data/path classes; all ephemeral roots cleaned;
+  maximum cancellation test 6.703 seconds and cleanup 0.875 seconds. Durable evidence is under
+  `release-verification/cli-agent-mode-m8-evidence/`.
+- Villani Ops: 1,542 passed, 4 skipped, 122 deselected. Villani Code: 686 passed, 1 skipped with 27
+  existing warnings. Agentd: 92 passed. Distribution/setup/Doctor: 79 passed. Root closed-loop: 11
+  passed with 2 existing warnings. Focused CLI role integration: 219 passed, 6 deselected.
+- Run Model: 6 files/17 tests. Villani Web: 4 files/29 tests. Flight Recorder: 21 files/118 tests.
+  Villani UI: 4 tests. Required typechecks, builds, formatting, packaged-asset parity, Ruff, scoped
+  mypy, Python compile, and `git diff --check` passed.
+
+Remaining limitations:
+- In-app browser discovery returned `[]`; Playwright and the full packaged release gate remain
+  mandatory missing evidence. This is an environment limitation, not counted as a pass.
+- Codex was not installed. Claude Code 2.1.138 and provider-owned auth were detected, but its bounded
+  Doctor probe timed out and required capability readiness remained incomplete. Real-provider smoke
+  was not consented to, so neither CLI is production-enabled in the certification matrix.
+- The broad legacy Ops mypy graph still reports 283 unrelated errors in 54 files; the Milestone 8
+  changed-file type boundary passed. Existing Typer, Starlette/httpx, pytest-cache, and LF/CRLF
+  warnings remain disclosed. Transient `.m8b` pytest debris was moved intact and recoverably to
+  `C:\tmp\villani-m8-test-temp-20260722`; governed release evidence remains in the repository.
+
+No subscription quota management, usage-reset tracking, billing control, automatic account
+switching, new provider, new role, team feature, routing optimization, benchmark-specific behavior,
+or later product expansion was started.

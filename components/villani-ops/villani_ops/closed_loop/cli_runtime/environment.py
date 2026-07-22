@@ -21,6 +21,55 @@ def _validated_mapping(values: Mapping[str, str]) -> dict[str, str]:
     return result
 
 
+def minimal_cli_environment_values(
+    current_environment: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return only OS/bootstrap paths needed by persisted-login CLI processes.
+
+    Provider credentials, model hints, session identifiers, hooks, and arbitrary
+    parent-process variables are intentionally excluded.
+    """
+
+    ambient = _validated_mapping(
+        os.environ if current_environment is None else current_environment
+    )
+    names = (
+        (
+            "PATH",
+            "Path",
+            "PATHEXT",
+            "SystemRoot",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "PROGRAMDATA",
+        )
+        if os.name == "nt"
+        else (
+            "PATH",
+            "HOME",
+            "TMPDIR",
+            "LANG",
+            "LC_ALL",
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+        )
+    )
+    allowed = {name.casefold() if os.name == "nt" else name for name in names}
+    return {
+        name: value
+        for name, value in ambient.items()
+        if (name.casefold() if os.name == "nt" else name) in allowed
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedCliEnvironment:
     values: Mapping[str, str]
@@ -116,4 +165,8 @@ class CliEnvironmentPolicy:
         )
 
 
-__all__ = ["CliEnvironmentPolicy", "ResolvedCliEnvironment"]
+__all__ = [
+    "CliEnvironmentPolicy",
+    "ResolvedCliEnvironment",
+    "minimal_cli_environment_values",
+]

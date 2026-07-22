@@ -59,6 +59,13 @@ export interface ConsoleRunOptions {
   policies: RunChoice[];
   policy_presets: PolicyPreset[];
   advanced_policies: RunChoice[];
+  execution_profiles: {
+    id: string;
+    label: string;
+    profile_type: "api" | "cli" | "hybrid" | "custom";
+    active: boolean;
+    bindings: Record<AgentRoleId, string> | null;
+  }[];
   routing_modes: string[];
   routing_mode_availability?: Record<string, boolean>;
   entitlement: ConsoleBootstrap["entitlement"];
@@ -68,11 +75,101 @@ export interface ConsoleRunOptions {
     policy_preset: string;
     policy_selection: string;
     routing_mode: string;
+    execution_profile: string;
     max_attempts: number;
     max_cost: number | null;
     max_wall_time: number | null;
   };
   setup_issues: string[];
+}
+
+export type AgentRoleId = "classification" | "coding" | "verification" | "selection";
+
+export interface ConsoleRoleBadge {
+  id: AgentRoleId;
+  label: string;
+}
+
+export interface ConsoleRoleDoctorResult {
+  role: AgentRoleId;
+  label: string;
+  status: "READY" | "ACTION_REQUIRED" | "UNSUPPORTED" | "ERROR";
+  supported: boolean;
+  failure: string | null;
+  checks: {
+    check_id: string;
+    status: "PASS" | "FAIL" | "UNSUPPORTED";
+    message: string;
+    evidence: Record<string, unknown>;
+  }[];
+}
+
+export interface ConsoleConfiguredAgentSystem {
+  id: string;
+  system_id: string;
+  display_name: string;
+  kind: "api" | "internal_runner" | "cli_agent";
+  driver: string;
+  configured: boolean;
+  status: "READY" | "ACTION_REQUIRED" | "UNSUPPORTED" | "ERROR";
+  ready: boolean;
+  configured_executable: string | null;
+  safe_display_path: string | null;
+  resolved_path_digest: string | null;
+  exact_version: string | null;
+  authentication_ready: boolean | null;
+  authentication_status: string;
+  supported_roles: AgentRoleId[];
+  configured_roles: AgentRoleId[];
+  configured_model: string | null;
+  model: string | null;
+  instruction_policy: string;
+  permission_policy: string;
+  conformance_status: string;
+  last_doctor_time: string | null;
+  affected_roles: AgentRoleId[];
+  what_failed: string | null;
+  repository_modified: false;
+  exact_next_action: string;
+  evidence_path: string | null;
+  role_results: ConsoleRoleDoctorResult[];
+  role_badges: ConsoleRoleBadge[];
+}
+
+export interface ConsoleExecutionProfile {
+  profile_id: string;
+  profile_type: "api" | "cli" | "hybrid" | "custom";
+  active: boolean;
+  status: "ready" | "unavailable" | "invalid";
+  runnable: boolean;
+  reasons: string[];
+  role_bindings: {
+    role: AgentRoleId;
+    label: string;
+    agent_system_id: string | null;
+  }[];
+}
+
+export interface ConsoleAgentSystemsDocument {
+  schema_version: "villani.console.agent_systems.v1";
+  agent_systems: ConsoleConfiguredAgentSystem[];
+  profiles: ConsoleExecutionProfile[];
+  active_profile: string | null;
+  role_labels: Record<AgentRoleId, string>;
+  setup_issues: string[];
+}
+
+export interface ConsoleSettingsDocument {
+  schema_version: "villani.console.settings.v1";
+  active_execution_profile: string | null;
+  execution_profiles: ConsoleExecutionProfile[];
+  role_bindings: ConsoleExecutionProfile["role_bindings"];
+  instruction_policy: string;
+  advanced_process_timeouts: {
+    agent_system_id: string;
+    timeout_seconds: number;
+  }[];
+  [key: string]: unknown;
 }
 
 export interface PolicyPreset extends RunChoice {
@@ -548,6 +645,51 @@ export class ConsoleClient {
     return this.get<ConsoleModelInventory>("/v1/console/models", signal);
   }
 
+  agentSystems(signal?: AbortSignal) {
+    return this.get<ConsoleAgentSystemsDocument>("/v1/console/agent-systems", signal);
+  }
+
+  detectAgentSystems(signal?: AbortSignal) {
+    return this.post<ConsoleAgentSystemsDocument>(
+      "/v1/console/agent-systems:detect",
+      {},
+      signal,
+    );
+  }
+
+  doctorAgentSystem(agentSystemId: string, signal?: AbortSignal) {
+    return this.post<ConsoleAgentSystemsDocument>(
+      "/v1/console/agent-systems:doctor",
+      { agent_system_id: agentSystemId },
+      signal,
+    );
+  }
+
+  activateProfile(profileId: string, signal?: AbortSignal) {
+    return this.post<ConsoleAgentSystemsDocument>(
+      "/v1/console/profiles:activate",
+      { profile_id: profileId },
+      signal,
+    );
+  }
+
+  setProfileRole(
+    profileId: string,
+    role: AgentRoleId,
+    agentSystemId: string,
+    signal?: AbortSignal,
+  ) {
+    return this.post<ConsoleAgentSystemsDocument>(
+      "/v1/console/profiles:set-role",
+      {
+        profile_id: profileId,
+        role,
+        agent_system_id: agentSystemId,
+      },
+      signal,
+    );
+  }
+
   detectModels(signal?: AbortSignal) {
     return this.post<ConsoleModelInventory>("/v1/console/models:detect", {}, signal);
   }
@@ -694,7 +836,7 @@ export class ConsoleClient {
   }
 
   settings(signal?: AbortSignal) {
-    return this.get<Record<string, unknown>>("/v1/console/settings", signal);
+    return this.get<ConsoleSettingsDocument>("/v1/console/settings", signal);
   }
 
   workspace(surface: string, signal?: AbortSignal) {

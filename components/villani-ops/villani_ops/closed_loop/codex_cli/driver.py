@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -24,6 +25,7 @@ from villani_ops.closed_loop.cli_runtime import (
     CliOutputLimits,
     CliProcessResult,
     CliProcessSupervisor,
+    minimal_cli_environment_values,
 )
 
 from .models import (
@@ -34,6 +36,40 @@ from .models import (
 
 
 _T = TypeVar("_T")
+
+_SCOPED_PERMISSION_PROFILE_MINIMUM_VERSION = (0, 138, 0)
+_VERIFIER_PERMISSION_PROFILE = "villani_verifier_read_only"
+
+
+def _semantic_version(value: str | None) -> tuple[int, int, int] | None:
+    if not value:
+        return None
+    match = re.search(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)", value)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def _verifier_permission_overrides() -> tuple[str, ...]:
+    """Return a closed read boundary for model-generated verifier commands.
+
+    Legacy ``--sandbox read-only`` blocks writes but permits broad filesystem
+    inspection. Codex permission profiles (0.138+) let Villani grant only the
+    runtime minimum plus the verification workspace. Passing ``--sandbox``
+    would make Codex ignore this profile, so the custom profile is the
+    read-only sandbox policy for verifier invocations.
+    """
+
+    return (
+        f'default_permissions="{_VERIFIER_PERMISSION_PROFILE}"',
+        (
+            f"permissions.{_VERIFIER_PERMISSION_PROFILE}.filesystem="
+            '{":minimal"="read",":workspace_roots"={"."="read"}}'
+        ),
+        f"permissions.{_VERIFIER_PERMISSION_PROFILE}.network.enabled=false",
+        'web_search="disabled"',
+        "allow_login_shell=false",
+    )
 
 
 class CodexDriverUnavailable(RuntimeError):
@@ -136,10 +172,7 @@ class CodexCliDriver:
             )
         additions: dict[str, str] = {}
         if mode == "minimal":
-            path_name = "Path" if os.name == "nt" and "Path" in os.environ else "PATH"
-            additions[path_name] = os.environ.get(path_name, os.environ.get("PATH", ""))
-            if os.name == "nt" and os.environ.get("SystemRoot"):
-                additions["SystemRoot"] = os.environ["SystemRoot"]
+            additions.update(minimal_cli_environment_values())
         return CliEnvironmentPolicy(
             mode=mode,
             additions=additions,
@@ -228,6 +261,7 @@ class CodexCliDriver:
             )
 
         exact_version = (version_stdout or version_stderr).strip() or None
+        parsed_version = _semantic_version(exact_version)
         if version_result.infrastructure_state != "succeeded" or not exact_version:
             fail(
                 CodexFailure.UNSUPPORTED_VERSION,
@@ -241,6 +275,7 @@ class CodexCliDriver:
             "workspace_selection": "--cd" in help_text or "-c," in help_text,
             "sandbox_selection": "--sandbox" in help_text
             and "workspace-write" in help_text,
+            "read_only_sandbox": "--sandbox" in help_text and "read-only" in help_text,
             "schema_output": "--output-schema" in help_text,
             "last_message_output": "--output-last-message" in help_text,
             "ephemeral": "--ephemeral" in help_text,
@@ -248,6 +283,14 @@ class CodexCliDriver:
             and "never" in help_text,
             "ignore_user_config": "--ignore-user-config" in help_text,
             "ignore_project_rules": "--ignore-rules" in help_text,
+            "strict_config": "--strict-config" in help_text,
+            "config_override": "--config" in help_text or "-c," in help_text,
+            "scoped_permission_profiles": (
+                parsed_version is not None
+                and parsed_version >= _SCOPED_PERMISSION_PROFILE_MINIMUM_VERSION
+                and ("--config" in help_text or "-c," in help_text)
+                and "--strict-config" in help_text
+            ),
         }
         required = {
             "exec",
@@ -299,16 +342,42 @@ class CodexCliDriver:
                 "`codex login status` did not report an active login; authenticate with Codex CLI before running Villani.",
             )
 
-        if self.system.roles != {AgentRole.CODING}:
+        if self.system.roles not in tuple({role} for role in AgentRole):
             fail(
                 CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
-                "Milestone 3 supports Codex CLI only when the system declares the coding role and no non-coding roles.",
+                "Codex CLI systems must declare exactly one supported role.",
             )
-        if self.system.permission_profile not in {"workspace_write", "workspace-write"}:
+        if self.system.roles == {
+            AgentRole.CODING
+        } and self.system.permission_profile not in {
+            "workspace_write",
+            "workspace-write",
+        }:
             fail(
                 CodexFailure.PERMISSION_SANDBOX_FAILURE,
                 "Codex coding requires permission_profile='workspace_write'; broader or read-only profiles are unsupported.",
             )
+        if self.system.roles and AgentRole.CODING not in self.system.roles:
+            if not capabilities.get("scoped_permission_profiles", False):
+                fail(
+                    CodexFailure.UNSUPPORTED_VERSION,
+                    "Codex read-only roles require scoped permission profiles (Codex 0.138.0 or later with --config and --strict-config) so reads are confined to the role workspace.",
+                )
+            if self.system.permission_profile not in {"read_only", "read-only"}:
+                fail(
+                    CodexFailure.PERMISSION_SANDBOX_FAILURE,
+                    "Codex read-only roles require permission_profile='read_only'.",
+                )
+            if self.system.instruction_policy != "villani_controlled":
+                fail(
+                    CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
+                    "Codex read-only roles require instruction_policy='villani_controlled'.",
+                )
+            if self.system.environment_policy != "minimal":
+                fail(
+                    CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
+                    "Codex read-only roles require environment_policy='minimal' so sessions and ambient identity cannot cross role boundaries.",
+                )
 
         return CodexProbeResult(
             system_id=self.system.id,
@@ -421,9 +490,13 @@ class CodexCliDriver:
                 "run_id": run_id,
                 "attempt_id": attempt_id,
                 "agent_system_id": self.system.id,
+                "driver": "codex",
+                "configured_model": self.system.model,
+                "cli_version": probe.exact_version_output,
                 "worktree": str(Path(worktree).resolve()),
                 "baseline_sha256": baseline_sha256,
                 "instruction_policy": self.system.instruction_policy,
+                "permission_policy": self.system.permission_profile,
             },
             target_repository_writable=False,
             prompt_artifact_reference=prompt_reference,
@@ -432,6 +505,217 @@ class CodexCliDriver:
             utf8_policy="strict",
             final_output_path=final_output_path,
             require_final_output=True,
+        )
+
+    def _build_read_only_role_invocation(
+        self,
+        *,
+        role: AgentRole,
+        probe: CodexProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        final_output_path: Path,
+        role_invocation_id: str,
+    ) -> CliInvocation:
+        """Build one ephemeral process with reads confined to its role workspace."""
+
+        if role == AgentRole.CODING or self.system.roles != {role}:
+            raise CodexDriverUnavailable(
+                f"Codex {role.value} invocation requires a {role.value}-only system"
+            )
+        if not probe.ready or probe.resolved_executable is None:
+            detail = "; ".join(probe.messages) or "Codex doctor did not pass"
+            raise CodexDriverUnavailable(detail)
+        if self.system.environment_policy != "minimal":
+            raise CodexDriverUnavailable(
+                f"Codex {role.value} requires environment_policy='minimal'"
+            )
+        arguments: list[str] = [
+            *self.launcher_arguments,
+            "exec",
+            "--ephemeral",
+            "--json",
+            "--model",
+            self.system.model,
+            "--cd",
+            str(Path(workspace).resolve()),
+            "--output-schema",
+            str(Path(output_schema_path).resolve()),
+            "--output-last-message",
+            str(Path(final_output_path).resolve()),
+            "--ask-for-approval",
+            "never",
+            "--strict-config",
+            "--ignore-user-config",
+            "--ignore-rules",
+        ]
+        for override in _verifier_permission_overrides():
+            arguments.extend(("--config", override))
+        arguments.append("-")
+        environment = self._environment()
+        options = self.system.provider_options
+        limits = CliOutputLimits(
+            maximum_stdout_bytes=self.integer_option(
+                options, "maximum_stdout_bytes", 16 * 1024 * 1024
+            ),
+            maximum_stderr_bytes=self.integer_option(
+                options, "maximum_stderr_bytes", 16 * 1024 * 1024
+            ),
+            maximum_stdout_chunk_bytes=self.integer_option(
+                options, "maximum_stdout_chunk_bytes", 1024 * 1024
+            ),
+            maximum_stderr_chunk_bytes=self.integer_option(
+                options, "maximum_stderr_chunk_bytes", 1024 * 1024
+            ),
+            maximum_event_line_bytes=self.integer_option(
+                options, "maximum_event_line_bytes", 1024 * 1024
+            ),
+            maximum_tail_bytes=self.integer_option(
+                options, "maximum_tail_bytes", 16 * 1024
+            ),
+        )
+        return CliInvocation(
+            executable=Path(probe.resolved_executable),
+            arguments=tuple(arguments),
+            cwd=Path(workspace).resolve(),
+            stdin_bytes=prompt_bytes,
+            environment=environment.values,
+            environment_redaction_keys=environment.redaction_keys,
+            environment_metadata=environment.metadata,
+            timeout_seconds=float(self.system.timeout_seconds),
+            graceful_shutdown_seconds=float(
+                options.get("graceful_shutdown_seconds", 3.0)
+            ),
+            stdout_path=artifact_directory / "stdout.log",
+            stderr_path=artifact_directory / "stderr.log",
+            raw_event_path=artifact_directory / "raw-events.jsonl",
+            invocation_path=artifact_directory / "invocation.json",
+            process_result_path=artifact_directory / "process-result.json",
+            output_tail_path=artifact_directory / "output-tail.json",
+            output_limits=limits,
+            role_workspace_identity={
+                "role": role.value,
+                "role_invocation_id": role_invocation_id,
+                "agent_system_id": self.system.id,
+                "driver": "codex",
+                "configured_model": self.system.model,
+                "cli_version": probe.exact_version_output,
+                "verification_id": (
+                    role_invocation_id if role == AgentRole.VERIFICATION else None
+                ),
+                "cwd": str(Path(workspace).resolve()),
+                "writable_roots": (
+                    [
+                        str((Path(workspace) / "output").resolve()),
+                        str((Path(workspace) / "agent").resolve()),
+                    ]
+                    if role == AgentRole.VERIFICATION
+                    else []
+                ),
+                "agent_writable_roots": [],
+                "controller_owned_output_roots": [
+                    str((Path(workspace) / "output").resolve()),
+                    str((Path(workspace) / "agent").resolve()),
+                ],
+                "target_repository_writable": False,
+                "candidate_worktree_writable": False,
+                "instruction_policy": "villani_controlled",
+                "filesystem_read_roots": [
+                    ":minimal",
+                    str(Path(workspace).resolve()),
+                ],
+                "permission_policy": _VERIFIER_PERMISSION_PROFILE,
+                "network_access": False,
+            },
+            target_repository_writable=False,
+            prompt_artifact_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            event_stream_format="jsonl",
+            utf8_policy="strict",
+            final_output_path=final_output_path,
+            require_final_output=True,
+        )
+
+    def build_verifier_invocation(
+        self,
+        *,
+        probe: CodexProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        final_output_path: Path,
+        verification_id: str,
+    ) -> CliInvocation:
+        return self._build_read_only_role_invocation(
+            role=AgentRole.VERIFICATION,
+            probe=probe,
+            workspace=workspace,
+            artifact_directory=artifact_directory,
+            prompt_bytes=prompt_bytes,
+            prompt_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            output_schema_path=output_schema_path,
+            final_output_path=final_output_path,
+            role_invocation_id=verification_id,
+        )
+
+    def build_classifier_invocation(
+        self,
+        *,
+        probe: CodexProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        final_output_path: Path,
+        classification_id: str,
+    ) -> CliInvocation:
+        return self._build_read_only_role_invocation(
+            role=AgentRole.CLASSIFICATION,
+            probe=probe,
+            workspace=workspace,
+            artifact_directory=artifact_directory,
+            prompt_bytes=prompt_bytes,
+            prompt_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            output_schema_path=output_schema_path,
+            final_output_path=final_output_path,
+            role_invocation_id=classification_id,
+        )
+
+    def build_selector_invocation(
+        self,
+        *,
+        probe: CodexProbeResult,
+        workspace: Path,
+        artifact_directory: Path,
+        prompt_bytes: bytes,
+        prompt_reference: str,
+        prompt_sha256: str,
+        output_schema_path: Path,
+        final_output_path: Path,
+        selection_id: str,
+    ) -> CliInvocation:
+        return self._build_read_only_role_invocation(
+            role=AgentRole.SELECTION,
+            probe=probe,
+            workspace=workspace,
+            artifact_directory=artifact_directory,
+            prompt_bytes=prompt_bytes,
+            prompt_reference=prompt_reference,
+            prompt_sha256=prompt_sha256,
+            output_schema_path=output_schema_path,
+            final_output_path=final_output_path,
+            role_invocation_id=selection_id,
         )
 
     @staticmethod

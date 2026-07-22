@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://villani.dev/schemas/v1/role-invocation-index.schema.json",
+  "title": "Villani role invocation index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "invocations", "roles"],
+  "properties": {
+    "schema_version": { "const": "villani.role_invocation_index.v1" },
+    "invocations": {
+      "type": "array",
+      "items": { "$ref": "role-invocation-evidence.schema.json" }
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "coding", "verification", "selection"],
+      "properties": {
+        "classification": { "$ref": "#/$defs/invocation_ids" },
+        "coding": { "$ref": "#/$defs/invocation_ids" },
+        "verification": { "$ref": "#/$defs/invocation_ids" },
+        "selection": { "$ref": "#/$defs/invocation_ids" }
+      }
+    }
+  },
+  "$defs": {
+    "invocation_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^rinv_[0-9a-f]{64}$" },
+      "uniqueItems": true
+    }
+  }
+}

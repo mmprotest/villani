@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import BaseModel, ValidationError
+from referencing import Registry, Resource
 
 from .durable_io import read_jsonl_tolerant
 from .protocol import PROTOCOL_MODEL_BY_VERSION, EventEnvelope, ProtocolDocument
@@ -19,6 +20,7 @@ from .verification_evidence import VerificationEvidenceMatrix
 from .validation_coverage import ValidationCoverageReport
 from .run_summary import RunSummary
 from .product_run import ProductRun
+from .invocation_evidence import RoleInvocationEvidence, RoleInvocationIndex
 from .agent_systems.models import (
     AgentSystemIdentity,
     HarnessConformanceReport,
@@ -112,6 +114,10 @@ SCHEMA_VERSION_TO_PATH: dict[str, Path] = {
     "villani.role_bindings.v1": SCHEMA_ROOT / "role-bindings.schema.json",
     "villani.agent_invocation_identity.v1": SCHEMA_ROOT
     / "agent-invocation-identity.schema.json",
+    "villani.role_invocation_evidence.v1": SCHEMA_ROOT
+    / "role-invocation-evidence.schema.json",
+    "villani.role_invocation_index.v1": SCHEMA_ROOT
+    / "role-invocation-index.schema.json",
     "villani.cli_invocation.v1": SCHEMA_ROOT / "cli-invocation.schema.json",
     "villani.cli_process_result.v1": SCHEMA_ROOT / "cli-process-result.schema.json",
     "villani.cli_output_tail.v1": SCHEMA_ROOT / "cli-output-tail.schema.json",
@@ -180,6 +186,8 @@ ALL_PROTOCOL_MODELS: dict[str, type[BaseModel]] = {
     "villani.agent_system_config.v1": AgentSystemCatalog,
     "villani.role_bindings.v1": RoleBindings,
     "villani.agent_invocation_identity.v1": AgentInvocationIdentity,
+    "villani.role_invocation_evidence.v1": RoleInvocationEvidence,
+    "villani.role_invocation_index.v1": RoleInvocationIndex,
     "villani.cli_invocation.v1": CliInvocationRecord,
     "villani.cli_process_result.v1": CliProcessResult,
     "villani.cli_output_tail.v1": CliOutputTail,
@@ -231,11 +239,26 @@ class ProtocolValidationError(ValueError):
 
 
 @lru_cache(maxsize=None)
+def _schema_registry() -> Registry:
+    resources: list[tuple[str, Resource[Any]]] = []
+    for path in set(ALL_SCHEMA_VERSION_TO_PATH.values()):
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        schema_id = schema.get("$id") if isinstance(schema, Mapping) else None
+        if isinstance(schema_id, str) and schema_id:
+            resources.append((schema_id, Resource.from_contents(schema)))
+    return Registry().with_resources(resources)
+
+
+@lru_cache(maxsize=None)
 def _validator(schema_version: str) -> Draft202012Validator:
     schema_path = ALL_SCHEMA_VERSION_TO_PATH[schema_version]
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, format_checker=FormatChecker())
+    return Draft202012Validator(
+        schema,
+        format_checker=FormatChecker(),
+        registry=_schema_registry(),
+    )
 
 
 def _accounting_issues(

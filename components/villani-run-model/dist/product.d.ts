@@ -24,6 +24,28 @@ export interface ProductRunAction {
     method: "GET" | "POST";
     href: string;
 }
+export interface ProductRoleExecution {
+    role: "classification" | "coding" | "verification" | "selection";
+    label: "Understand task" | "Write code" | "Verify result" | "Choose candidate";
+    agent_system_id: string;
+    system_name: string;
+    driver: string;
+    model: string | null;
+    invocation_count: number;
+    status: "recorded" | "succeeded" | "infrastructure_failure" | "not_invoked";
+    evidence_artifact: string;
+    infrastructure_failure?: {
+        stage: "classification" | "coding" | "verification" | "selection";
+        role: "classification" | "coding" | "verification" | "selection";
+        agent_system_id: string;
+        safe_error_summary: string;
+        target_repository_modified: boolean;
+        partial_patch_preserved: boolean;
+        automatic_fallback_performed: boolean;
+        exact_repair_action: string;
+        evidence_path: string;
+    } | null;
+}
 export interface ProductRun {
     schema_version: "villani.product_run.v1";
     run_identity: {
@@ -58,6 +80,7 @@ export interface ProductRun {
         backend: string | null;
         model: string | null;
     };
+    role_executions?: ProductRoleExecution[];
     escalation_summary: {
         attempts: number;
         retries: number;

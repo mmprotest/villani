@@ -21,7 +21,84 @@ const entry = {
   deep_link: "/console/sessions/session_1",
 };
 
+const roleBindings = [
+  { role: "classification", label: "Understand task", agent_system_id: "codex-cli" },
+  { role: "coding", label: "Write code", agent_system_id: "codex-cli" },
+  { role: "verification", label: "Verify result", agent_system_id: "claude-cli" },
+  { role: "selection", label: "Choose candidate", agent_system_id: "claude-cli" },
+];
+
+function agentSystemsFixture() {
+  const system = (
+    id: string,
+    displayName: string,
+    driver: string,
+    model: string,
+    version: string,
+  ) => ({
+    id,
+    system_id: id,
+    display_name: displayName,
+    kind: "cli_agent",
+    driver,
+    configured: true,
+    status: "READY",
+    ready: true,
+    configured_executable: driver === "codex" ? "codex" : "claude",
+    safe_display_path: `C:/tools/${driver}.exe`,
+    resolved_path_digest: `sha256:${(driver === "codex" ? "1" : "2").repeat(64)}`,
+    exact_version: version,
+    authentication_ready: true,
+    authentication_status: "ready",
+    supported_roles: ["classification", "coding", "verification", "selection"],
+    configured_roles: ["classification", "coding", "verification", "selection"],
+    configured_model: model,
+    model,
+    instruction_policy: "native_project",
+    permission_policy: "role-specific",
+    conformance_status: "passed",
+    last_doctor_time: "2026-07-22T12:00:00Z",
+    affected_roles: [],
+    what_failed: null,
+    repository_modified: false,
+    exact_next_action: `villani agents doctor ${id}`,
+    evidence_path: `diagnostics/agent-systems/${id}.json`,
+    role_results: [],
+    role_badges: roleBindings.map(({ role, label }) => ({ id: role, label })),
+  });
+  return {
+    schema_version: "villani.console.agent_systems.v1",
+    agent_systems: [
+      system("codex-cli", "Codex CLI", "codex", "codex-user-model", "codex 1.2.3"),
+      system(
+        "claude-cli",
+        "Claude Code",
+        "claude_code",
+        "claude-user-model",
+        "Claude Code 2.3.4",
+      ),
+    ],
+    profiles: [
+      {
+        profile_id: "hybrid",
+        profile_type: "hybrid",
+        active: true,
+        status: "ready",
+        runnable: true,
+        reasons: [],
+        role_bindings: roleBindings,
+      },
+    ],
+    active_profile: "hybrid",
+    role_labels: Object.fromEntries(
+      roleBindings.map(({ role, label }) => [role, label]),
+    ),
+    setup_issues: [],
+  };
+}
+
 async function mockConsole(page: Page, connected = false) {
+  const agentSystems = agentSystemsFixture();
   await page.route("**/v1/console/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/v1/console/bootstrap")
@@ -111,6 +188,20 @@ async function mockConsole(page: Page, connected = false) {
           advanced_policies: [
             { id: "configured", label: "Configured", description: "Configured" },
           ],
+          execution_profiles: [
+            {
+              id: "hybrid",
+              label: "Hybrid",
+              profile_type: "hybrid",
+              active: true,
+              bindings: Object.fromEntries(
+                roleBindings.map(({ role, agent_system_id }) => [
+                  role,
+                  agent_system_id,
+                ]),
+              ),
+            },
+          ],
           routing_modes: ["observe"],
           defaults: {
             delivery_mode: "suggest",
@@ -118,6 +209,7 @@ async function mockConsole(page: Page, connected = false) {
             policy_preset: "balanced",
             policy_selection: "configured",
             routing_mode: "observe",
+            execution_profile: "hybrid",
             max_attempts: 3,
             max_cost: null,
             max_wall_time: null,
@@ -125,6 +217,14 @@ async function mockConsole(page: Page, connected = false) {
           setup_issues: [],
         },
       });
+    if (
+      path === "/v1/console/agent-systems" ||
+      path === "/v1/console/agent-systems:detect" ||
+      path === "/v1/console/agent-systems:doctor" ||
+      path === "/v1/console/profiles:activate" ||
+      path === "/v1/console/profiles:set-role"
+    )
+      return route.fulfill({ json: agentSystems });
     if (path === "/v1/console/validation:discover")
       return route.fulfill({
         json: {
@@ -205,6 +305,11 @@ async function mockConsole(page: Page, connected = false) {
         json: {
           schema_version: "villani.console.settings.v1",
           privacy: { secrets_exposed: false, local_first: true },
+          active_execution_profile: "hybrid",
+          execution_profiles: agentSystems.profiles,
+          role_bindings: roleBindings,
+          instruction_policy: "Role-specific and Villani-controlled",
+          advanced_process_timeouts: [],
         },
       });
     if (path === "/v1/console/home")
@@ -350,6 +455,58 @@ test("every local main route uses one Console shell", async ({ page }) => {
   await expect(navigation.getByRole("link")).toHaveCount(4);
   for (const name of ["New task", "Activity", "Agents", "Settings"])
     await expect(navigation.getByRole("link", { name })).toBeVisible();
+});
+
+test("M7 Agents shows role-ready CLI systems and actionable doctor evidence", async ({
+  page,
+}) => {
+  await mockConsole(page);
+  await page.goto("/console/agents");
+  await expect(page.getByRole("heading", { name: "Agents", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Codex CLI" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claude Code" })).toBeVisible();
+  await expect(page.getByText("codex-user-model")).toBeVisible();
+  await expect(page.getByText("claude-user-model")).toBeVisible();
+  await expect(page.getByText("Understand task").first()).toBeVisible();
+  await expect(page.getByText("Write code").first()).toBeVisible();
+  await expect(page.getByText("Verify result").first()).toBeVisible();
+  await expect(page.getByText("Choose candidate").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run doctor" })).toHaveCount(2);
+  await expect(page.getByText(/quota/i)).toHaveCount(0);
+});
+
+test("M7 Settings supports keyboard-accessible profile role binding", async ({
+  page,
+}) => {
+  await mockConsole(page);
+  await page.goto("/console/settings");
+  await expect(page.getByRole("heading", { name: "Execution profile" })).toBeVisible();
+  const verification = page.getByLabel("Verify result agent system");
+  await verification.focus();
+  await expect(verification).toBeFocused();
+  const request = page.waitForRequest(
+    (value) =>
+      value.url().endsWith("/v1/console/profiles:set-role") &&
+      value.method() === "POST",
+  );
+  await verification.selectOption("codex-cli");
+  expect((await request).postDataJSON()).toEqual({
+    profile_id: "hybrid",
+    role: "verification",
+    agent_system_id: "codex-cli",
+  });
+});
+
+test("M7 one-run profile override remains inside optional task details", async ({
+  page,
+}) => {
+  await mockConsole(page);
+  await page.goto("/console");
+  const profile = page.getByLabel("Execution profile (Advanced)");
+  await expect(profile).toBeHidden();
+  await page.getByText("Details (optional)").click();
+  await expect(profile).toBeVisible();
+  await expect(profile).toHaveValue("hybrid");
 });
 
 test("advanced deep routes remain reachable without entering default navigation", async ({

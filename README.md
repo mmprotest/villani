@@ -98,6 +98,11 @@ villani doctor --json
 
 Every failed doctor check includes a concrete recovery command or action.
 
+Codex CLI and Claude Code can also be configured per role without editing YAML. See
+[CLI Agent Mode](docs/CLI_AGENT_MODE.md) for API, CLI, and hybrid profiles, provider-owned
+authentication, isolation, independent verification, supported versions, troubleshooting, and the
+opt-in real-provider smoke command. Villani does not manage subscription quota or switch accounts.
+
 Self-service software lifecycle commands are user-controlled and never forced:
 
 ```console
@@ -242,4 +247,4 @@ python release-verification/run_release_gate.py --mode local
 It builds release packages in isolation, installs only the built Villani artifacts into a clean
 environment, runs the timestamped installed-user onboarding gate with screenshots and a secret scan,
 applies PostgreSQL migrations, executes all connected scenarios, reconciles canonical data across
-packaged consumers, and runs browser tests.
+packaged consumers, runs the named CLI Agent Mode conformance phase, and runs browser tests.

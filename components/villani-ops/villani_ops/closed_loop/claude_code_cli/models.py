@@ -22,6 +22,7 @@ class ClaudeFailure(str, Enum):
     NOT_INSTALLED = "claude_not_installed"
     NOT_AUTHENTICATED = "claude_not_authenticated"
     UNSUPPORTED_VERSION = "unsupported_claude_version"
+    UNSUPPORTED_REQUIRED_CAPABILITY = "unsupported_required_capability"
     MISSING_STRUCTURED_OUTPUT_CAPABILITY = (
         "missing_required_structured_output_capability"
     )

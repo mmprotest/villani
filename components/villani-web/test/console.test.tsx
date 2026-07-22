@@ -23,6 +23,10 @@ import ConsoleApp, {
   migrateLegacyPath,
   type HistoryFilters,
 } from "../src/ConsoleApp";
+import type {
+  ConsoleAgentSystemsDocument,
+  ConsoleConfiguredAgentSystem,
+} from "../src/consoleApi";
 import { defaultBootstrap } from "../src/consoleContext";
 
 const bootstrap = (connected = false): ConsoleBootstrap => ({
@@ -78,6 +82,131 @@ const bootstrap = (connected = false): ConsoleBootstrap => ({
   ],
   active_policy: "bootstrap_v1",
 });
+
+const roleLabels = {
+  classification: "Understand task",
+  coding: "Write code",
+  verification: "Verify result",
+  selection: "Choose candidate",
+} as const;
+
+const roleBindings = Object.entries(roleLabels).map(([role, label]) => ({
+  role: role as keyof typeof roleLabels,
+  label,
+  agent_system_id: "default",
+}));
+
+const configuredAgentSystems: ConsoleAgentSystemsDocument = {
+  schema_version: "villani.console.agent_systems.v1",
+  active_profile: "api",
+  role_labels: roleLabels,
+  setup_issues: [],
+  profiles: [
+    {
+      profile_id: "api",
+      profile_type: "api",
+      active: true,
+      status: "ready",
+      runnable: true,
+      reasons: [],
+      role_bindings: roleBindings,
+    },
+  ],
+  agent_systems: [
+    {
+      id: "default",
+      system_id: "default",
+      display_name: "Villani API",
+      kind: "api",
+      driver: "api",
+      configured: true,
+      status: "READY",
+      ready: true,
+      configured_executable: null,
+      safe_display_path: null,
+      resolved_path_digest: null,
+      exact_version: null,
+      authentication_ready: true,
+      authentication_status: "ready",
+      supported_roles: Object.keys(roleLabels) as (keyof typeof roleLabels)[],
+      configured_roles: Object.keys(roleLabels) as (keyof typeof roleLabels)[],
+      configured_model: "local-model",
+      model: "local-model",
+      instruction_policy: "api_managed",
+      permission_policy: "controller_managed",
+      conformance_status: "passed",
+      last_doctor_time: null,
+      affected_roles: [],
+      what_failed: null,
+      repository_modified: false,
+      exact_next_action: "villani doctor",
+      evidence_path: null,
+      role_results: [],
+      role_badges: Object.entries(roleLabels).map(([id, label]) => ({
+        id: id as keyof typeof roleLabels,
+        label,
+      })),
+    },
+  ],
+};
+
+function cliAgentSystem(
+  id: string,
+  displayName: string,
+  driver: "codex" | "claude_code",
+  model: string,
+): ConsoleConfiguredAgentSystem {
+  return {
+    ...configuredAgentSystems.agent_systems[0],
+    id,
+    system_id: id,
+    display_name: displayName,
+    kind: "cli_agent",
+    driver,
+    configured_executable: driver === "codex" ? "codex" : "claude",
+    safe_display_path: `<home>/bin/${driver === "codex" ? "codex" : "claude"}`,
+    resolved_path_digest: `sha256:${"a".repeat(64)}`,
+    exact_version: driver === "codex" ? "codex-cli 0.138.0" : "2.1.138",
+    configured_model: model,
+    model,
+    instruction_policy: "villani_controlled",
+    permission_policy: "read_only",
+    last_doctor_time: "2026-07-22T00:00:00Z",
+    exact_next_action: `villani agents doctor ${id}`,
+    evidence_path: `diagnostics/agent-systems/${id}.json`,
+  };
+}
+
+const cliAgentSystems: ConsoleAgentSystemsDocument = {
+  ...configuredAgentSystems,
+  active_profile: "cli",
+  agent_systems: [
+    cliAgentSystem("codex-cli", "Codex CLI", "codex", "codex-user-model"),
+    cliAgentSystem(
+      "claude-code-cli",
+      "Claude Code",
+      "claude_code",
+      "claude-user-model",
+    ),
+  ],
+  profiles: [
+    {
+      profile_id: "cli",
+      profile_type: "cli",
+      active: true,
+      status: "ready",
+      runnable: true,
+      reasons: [],
+      role_bindings: roleBindings.map((binding) => ({
+        ...binding,
+        agent_system_id:
+          binding.role === "verification" || binding.role === "selection"
+            ? "claude-code-cli"
+            : "codex-cli",
+      })),
+    },
+  ],
+};
 
 const unknownCapability: AgentSystemCapabilityAssessment = {
   state: "unknown",
@@ -532,6 +661,52 @@ function productRun(
       backend: "default",
       model: "local-model",
     },
+    role_executions: [
+      {
+        role: "classification",
+        label: "Understand task",
+        agent_system_id: "codex-cli",
+        system_name: "Codex CLI",
+        driver: "codex",
+        model: "codex-user-model",
+        invocation_count: 1,
+        status: "succeeded",
+        evidence_artifact: "role-invocations/classification.json",
+      },
+      {
+        role: "coding",
+        label: "Write code",
+        agent_system_id: "codex-cli",
+        system_name: "Codex CLI",
+        driver: "codex",
+        model: "codex-user-model",
+        invocation_count: 1,
+        status: "succeeded",
+        evidence_artifact: "role-invocations/coding.json",
+      },
+      {
+        role: "verification",
+        label: "Verify result",
+        agent_system_id: "claude-code-cli",
+        system_name: "Claude Code",
+        driver: "claude_code",
+        model: "claude-user-model",
+        invocation_count: 1,
+        status: "succeeded",
+        evidence_artifact: "role-invocations/verification.json",
+      },
+      {
+        role: "selection",
+        label: "Choose candidate",
+        agent_system_id: "claude-code-cli",
+        system_name: "Claude Code",
+        driver: "claude_code",
+        model: "claude-user-model",
+        invocation_count: 0,
+        status: "not_invoked",
+        evidence_artifact: "role-invocations/selection.json",
+      },
+    ],
     escalation_summary: {
       attempts: 1,
       retries: 0,
@@ -588,9 +763,11 @@ function mockConsole(
     eventProduct?: ProductRun;
     cancelProduct?: ProductRun;
     agentQualification?: QualificationAssessment | null;
+    agentSystems?: ConsoleAgentSystemsDocument;
   } = {},
 ) {
   const environment = options.environment ?? bootstrap(connected);
+  const agentSystemsDocument = options.agentSystems ?? configuredAgentSystems;
   let approvalResolved = false;
   vi.stubGlobal(
     "fetch",
@@ -701,13 +878,27 @@ function mockConsole(
               description: "Configured",
             },
           ],
+          execution_profiles: agentSystemsDocument.profiles.map((profile) => ({
+            id: profile.profile_id,
+            label: profile.profile_id.toUpperCase(),
+            profile_type: profile.profile_type,
+            active: profile.active,
+            bindings: Object.fromEntries(
+              profile.role_bindings.map((binding) => [
+                binding.role,
+                binding.agent_system_id,
+              ]),
+            ),
+          })),
           routing_modes: ["observe", "recommend", "enforce"],
+          entitlement: environment.entitlement,
           defaults: {
             delivery_mode: "suggest",
             approval_mode: "automatic",
             policy_preset: "performance",
             policy_selection: "configured",
             routing_mode: "observe",
+            execution_profile: agentSystemsDocument.active_profile ?? "api",
             max_attempts: 3,
             max_cost: null,
             max_wall_time: null,
@@ -1132,6 +1323,15 @@ function mockConsole(
           model_tokens_used: 0,
         });
       if (
+        url.includes("/v1/console/agent-systems:detect") ||
+        url.includes("/v1/console/agent-systems:doctor") ||
+        url.includes("/v1/console/profiles:activate") ||
+        url.includes("/v1/console/profiles:set-role")
+      )
+        return response(agentSystemsDocument);
+      if (url.includes("/v1/console/agent-systems"))
+        return response(agentSystemsDocument);
+      if (
         url.includes("/v1/console/models:detect") ||
         url.includes("/v1/console/models:add") ||
         url.includes("/v1/console/models:remove") ||
@@ -1190,6 +1390,16 @@ function mockConsole(
       if (url.includes("/v1/console/settings"))
         return response({
           schema_version: "villani.console.settings.v1",
+          active_execution_profile: agentSystemsDocument.active_profile,
+          execution_profiles: agentSystemsDocument.profiles,
+          role_bindings:
+            agentSystemsDocument.profiles.find((profile) => profile.active)
+              ?.role_bindings ?? [],
+          instruction_policy:
+            agentSystemsDocument.agent_systems[0]?.instruction_policy ?? "api_managed",
+          advanced_process_timeouts: agentSystemsDocument.agent_systems.map(
+            (system) => ({ agent_system_id: system.id, timeout_seconds: 180 }),
+          ),
           setup: environment.setup,
           service: environment.service,
           storage: environment.storage,
@@ -1505,6 +1715,70 @@ describe("PT1 shell, setup, and accessibility", () => {
     expect(screen.queryByText("SELECTABLE")).not.toBeInTheDocument();
     expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
   });
+
+  it("presents CLI systems with role badges, model identity, and exact doctor action", async () => {
+    mockConsole(false, false, { agentSystems: cliAgentSystems });
+    history.replaceState(null, "", "/console/agents");
+    render(<ConsoleApp />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Codex CLI" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Claude Code" })).toBeInTheDocument();
+    for (const label of Object.values(roleLabels))
+      expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("codex-user-model").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("claude-user-model").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("villani agents doctor codex-cli")).toBeInTheDocument();
+    expect(document.body.textContent?.toLowerCase()).not.toContain("quota");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Run doctor" })[0]);
+    await waitFor(() =>
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/console/agent-systems:doctor"),
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
+  it("keeps role binding controls keyboard-focusable and persists the selected system", async () => {
+    mockConsole(false, false, { agentSystems: cliAgentSystems });
+    history.replaceState(null, "", "/console/settings");
+    render(<ConsoleApp />);
+
+    await screen.findByRole("heading", { name: "Settings" });
+    const classification = await screen.findByLabelText("Understand task agent system");
+    classification.focus();
+    expect(classification).toHaveFocus();
+    fireEvent.keyDown(classification, { key: "ArrowDown" });
+    fireEvent.change(classification, { target: { value: "claude-code-cli" } });
+
+    await waitFor(() =>
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/console/profiles:set-role"),
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"agent_system_id":"claude-code-cli"'),
+        }),
+      ),
+    );
+    expect(document.body.textContent?.toLowerCase()).not.toContain("quota");
+  });
+
+  it("uses the active profile by default and keeps one-run override under Details", async () => {
+    mockConsole(false, false, { agentSystems: cliAgentSystems });
+    history.replaceState(null, "", "/console");
+    render(<ConsoleApp />);
+
+    await screen.findByRole("heading", {
+      name: "What would you like Villani to change?",
+    });
+    const profile = await screen.findByLabelText("Execution profile (Advanced)");
+    expect(profile).toHaveValue("cli");
+    expect(profile.closest("details")).not.toHaveAttribute("open");
+    profile.focus();
+    expect(profile).toHaveFocus();
+  });
 });
 
 describe("Activity", () => {
@@ -1803,6 +2077,70 @@ describe("Console run workflow", () => {
       expect(within(result).queryByRole("button", { name: action })).toBeNull();
     expect(
       within(result).getByRole("button", { name: "Start again" }),
+    ).toBeInTheDocument();
+  });
+
+  it("distinguishes role infrastructure failure and preserves unknown accounting", async () => {
+    const failedVerification: ProductRun = {
+      ...productRun(),
+      final_verdict: "Could not prove",
+      verdict_reason: "The verifier process failed before a semantic decision.",
+      stage_sentence: "Verification infrastructure failed.",
+      cost: { value: null, currency: null, accounting_status: "unknown" },
+      role_executions: productRun().role_executions?.map((item) =>
+        item.role === "verification"
+          ? {
+              ...item,
+              status: "infrastructure_failure" as const,
+              infrastructure_failure: {
+                schema_version: "villani.cli-infrastructure-failure.v1",
+                stage: "verification",
+                role: "verification",
+                agent_system_id: "claude-code-cli",
+                safe_error_summary:
+                  "Verifier output did not satisfy the result schema.",
+                target_repository_modified: false,
+                partial_patch_preserved: false,
+                automatic_fallback_performed: false,
+                exact_repair_action: "Run villani agents doctor claude-code-cli.",
+                evidence_path:
+                  "role-invocations/verification/agent/infrastructure-failure.json",
+              },
+            }
+          : item,
+      ),
+    };
+    mockConsole(false, false, { statusProduct: failedVerification });
+    history.replaceState(null, "", "/console?run=run_new");
+    render(<ConsoleApp />);
+
+    const result = await screen.findByTestId("run-presentation");
+    expect(
+      within(result).getAllByText("Codex CLI, codex-user-model").length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      within(result).getAllByText(
+        "Claude Code, claude-user-model — infrastructure failure",
+      ).length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      within(result).getByRole("heading", { name: "ROLE SYSTEMS" }),
+    ).toBeInTheDocument();
+    expect(within(result).getAllByText("Unknown (unknown)").length).toBeGreaterThan(0);
+
+    fireEvent.click(within(result).getByText("Evidence", { selector: "summary" }));
+    expect(
+      within(result).getByText("Verifier output did not satisfy the result schema."),
+    ).toBeInTheDocument();
+    expect(within(result).getByText("Target repository modified")).toBeInTheDocument();
+    expect(within(result).getAllByText("no").length).toBeGreaterThanOrEqual(3);
+    expect(
+      within(result).getByText("Run villani agents doctor claude-code-cli."),
+    ).toBeInTheDocument();
+    expect(
+      within(result).getByText(
+        "role-invocations/verification/agent/infrastructure-failure.json",
+      ),
     ).toBeInTheDocument();
   });
 

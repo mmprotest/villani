@@ -28,6 +28,7 @@
     "run_summary": "run-summary.json",
     "product_run": "product-run.json",
     "agent_systems": "agent-systems/index.json",
+    "role_invocations": "role-invocation-index.json",
     "adaptive_verification": "verification",
     "human_outcomes": "human-outcome.json",
     "supervision_metrics": "supervision-metrics.json"

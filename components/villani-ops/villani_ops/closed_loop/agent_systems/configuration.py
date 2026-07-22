@@ -469,6 +469,12 @@ def migrate_agent_system_configuration(
                 profiles["api"] = _generated_api_profile(generated_api_bindings)
             generated_profile = True
 
+    if "api" in profiles:
+        # The historical default was the API/internal path.  Persisting the
+        # otherwise implicit default makes the migration observable and is
+        # idempotent; no backend, credential reference, or secret is moved.
+        migrated.setdefault("active_execution_profile", "api")
+
     removed: list[str] = []
     for route_name, raw_entry in list(systems.items()):
         if not isinstance(raw_entry, Mapping):

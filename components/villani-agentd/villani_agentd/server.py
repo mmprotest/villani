@@ -233,6 +233,18 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         if path == "/v1/console/models:default" and self.command == "POST":
             self._send(HTTPStatus.OK, service.models_default(body or {}))
             return True
+        if path == "/v1/console/agent-systems:detect" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.agent_systems_detect())
+            return True
+        if path == "/v1/console/agent-systems:doctor" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.agent_system_doctor(body or {}))
+            return True
+        if path == "/v1/console/profiles:activate" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.profile_activate(body or {}))
+            return True
+        if path == "/v1/console/profiles:set-role" and self.command == "POST":
+            self._send(HTTPStatus.OK, service.profile_set_role(body or {}))
+            return True
         if path == "/v1/console/policies:select" and self.command == "POST":
             self._send(HTTPStatus.OK, service.policy_select(body or {}))
             return True
@@ -338,32 +350,14 @@ class AgentdRequestHandler(BaseHTTPRequestHandler):
         if path == "/v1/console/models":
             self._send(HTTPStatus.OK, service.models())
             return True
+        if path == "/v1/console/agent-systems":
+            self._send(HTTPStatus.OK, service.agent_systems())
+            return True
         if path == "/v1/console/policies":
             self._send(HTTPStatus.OK, service.policies())
             return True
         if path == "/v1/console/settings":
-            bootstrap = service.bootstrap()
-            self._send(
-                HTTPStatus.OK,
-                {
-                    "schema_version": "villani.console.settings.v1",
-                    "setup": bootstrap["setup"],
-                    "service": bootstrap["service"],
-                    "storage": bootstrap["storage"],
-                    "privacy": {"secrets_exposed": False, "local_first": True},
-                    "synchronization": bootstrap["synchronization"],
-                    "workspace": bootstrap["workspace"],
-                    "version": bootstrap["version"],
-                    "entitlement": bootstrap["entitlement"],
-                    "update": bootstrap["update"],
-                    "commands": {
-                        "doctor": "villani doctor",
-                        "update_status": "villani update status",
-                        "support_preview": "villani support preview",
-                        "license_status": "villani license status",
-                    },
-                },
-            )
+            self._send(HTTPStatus.OK, service.settings())
             return True
         if path == "/v1/console/service":
             self._send(HTTPStatus.OK, service.bootstrap()["service"])

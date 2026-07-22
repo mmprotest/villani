@@ -123,6 +123,12 @@
             { "type": "null" }
           ]
         },
+        "role_invocations": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
         "route_plans": {
           "anyOf": [
             { "type": "string", "minLength": 1 },

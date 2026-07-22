@@ -942,6 +942,11 @@ def test_real_claude_code_smoke_is_explicitly_opt_in(tmp_path: Path) -> None:
         pytest.skip(
             "real Claude Code smoke prerequisite missing: `claude` executable was not found"
         )
+    model = os.environ.get("VILLANI_REAL_CLAUDE_MODEL")
+    if not model:
+        pytest.skip(
+            "set VILLANI_REAL_CLAUDE_MODEL to an installed Claude Code model string"
+        )
     system = _system(
         executable=executable,
         timeout_seconds=120,
@@ -950,9 +955,7 @@ def test_real_claude_code_smoke_is_explicitly_opt_in(tmp_path: Path) -> None:
             "graceful_shutdown_seconds": 3,
             "max_turns": 8,
         },
-    ).model_copy(
-        update={"model": os.environ.get("VILLANI_REAL_CLAUDE_MODEL", "sonnet")}
-    )
+    ).model_copy(update={"model": model})
     driver = ClaudeCodeCliDriver(system)
     probe = driver.probe()
     if not probe.authentication_ready:

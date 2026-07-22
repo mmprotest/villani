@@ -157,6 +157,7 @@ class RunArtifactPaths(StrictProtocolModel):
     agent_systems: str | None = Field(default=None, min_length=1)
     role_bindings: str | None = Field(default=None, min_length=1)
     agent_invocations: str | None = Field(default=None, min_length=1)
+    role_invocations: str | None = Field(default=None, min_length=1)
     route_plans: str | None = Field(default=None, min_length=1)
     economics_update: str | None = Field(default=None, min_length=1)
     adaptive_verification: str | None = Field(default=None, min_length=1)

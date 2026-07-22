@@ -1,0 +1,37 @@
+{
+  "schema_version": "villani.cli_agent_mode_m8_baseline.v1",
+  "captured_at": "2026-07-22T17:00:47+10:00",
+  "repository_head": "80cdab397b8d48ee937a2ae81c00d3359cd178c8",
+  "source_edited_before_baseline": false,
+  "status": "AVAILABLE_DETERMINISTIC_SUITES_GREEN_WITH_ENVIRONMENT_LIMITATION",
+  "release_certified": false,
+  "results": [
+    {"id": "villani_ops", "status": "passed", "passed": 1535, "skipped": 4, "deselected": 122},
+    {"id": "villani_code", "status": "passed", "passed": 686, "skipped": 1, "warnings": 27},
+    {"id": "villani_agentd", "status": "passed", "passed": 92},
+    {"id": "villani_distribution", "status": "passed", "passed": 79},
+    {"id": "closed_loop", "status": "passed", "passed": 11, "warnings": 2},
+    {"id": "run_model", "status": "passed", "test_files": 6, "passed": 17, "typecheck": "passed", "build": "passed"},
+    {"id": "villani_web", "status": "passed", "test_files": 4, "passed": 29, "typecheck": "passed", "build": "passed", "format": "passed", "built_modules": 61},
+    {"id": "flight_recorder", "status": "passed", "test_files": 21, "passed": 118, "typecheck": "passed", "build": "passed", "format": "passed"},
+    {"id": "villani_ui", "status": "passed", "passed": 4, "build": "passed"},
+    {"id": "console_asset_parity", "status": "passed", "files_verified": 3},
+    {"id": "playwright", "status": "not_run", "classification": "environment_limitation", "reason": "in-app browser inventory was empty"}
+  ],
+  "failure_classification": {
+    "introduced_by_cli_agent_mode": [],
+    "exposed_by_cli_agent_mode": [],
+    "unrelated_pre_existing": [
+      "27 Typer deprecation warnings",
+      "Starlette/httpx deprecation warning",
+      "pytest cache ACL warning",
+      "LF-to-CRLF notices with clean diff check"
+    ],
+    "environment_limitation": [
+      "in-app browser inventory empty; Playwright not run",
+      "initial nested basetemp parent absent; corrected rerun passed",
+      "Vite/esbuild requires bounded execution outside managed filesystem sandbox"
+    ]
+  },
+  "real_provider_calls_made": false
+}

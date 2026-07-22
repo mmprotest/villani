@@ -52,8 +52,18 @@ from villani_ops.closed_loop.agent_systems.factories import (
 from villani_ops.closed_loop.agent_systems.registry import (
     build_agent_system_registry,
 )
+from villani_ops.closed_loop.agent_systems.management import (
+    DoctorStatus,
+    detect_cli_agent_systems,
+    diagnose_registry,
+    write_management_evidence,
+)
 from villani_ops.closed_loop.agent_systems.role_registry import RoleSystemRegistry
-from villani_ops.closed_loop.agent_systems.role_models import CliAgentSystemConfig
+from villani_ops.closed_loop.agent_systems.role_models import (
+    ROLE_LABELS,
+    CliAgentSystemConfig,
+    CliRolePolicy,
+)
 from villani_ops.closed_loop.durable_io import (
     read_jsonl_tolerant,
     write_json_atomic,
@@ -1762,6 +1772,49 @@ def _agent_system_registry():
         _usage_error(f"agent-system configuration is invalid: {error}")
 
 
+@agents_app.command("detect")
+def agents_detect(
+    json_output: bool = typer.Option(False, "--json", help="Emit canonical JSON."),
+) -> None:
+    """Detect supported CLI installations without login or provider mutation."""
+
+    configuration: Mapping[str, Any] | None = None
+    backends: Mapping[str, Any] = {}
+    if _config_path().is_file():
+        configuration = _load_config()
+        backends = _load_backends(configuration)
+    evidence = _home() / "diagnostics" / "agent-systems" / "detect-latest.json"
+    try:
+        document = detect_cli_agent_systems(
+            configuration,
+            backends=backends,
+            evidence_path=str(evidence),
+        )
+        write_management_evidence(evidence, document)
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"agent-system detection failed: {error}")
+    value = document.model_dump(mode="json")
+    if json_output:
+        typer.echo(json.dumps(redact_data(value), ensure_ascii=False, sort_keys=True))
+        return
+    for system in document.systems:
+        roles = (
+            ", ".join(ROLE_LABELS[role] for role in system.supported_roles) or "none"
+        )
+        console.print(
+            f"{system.display_name}: {system.status.value}; "
+            f"path={system.resolved_path or 'not found'}; "
+            f"version={system.exact_version or 'unknown'}; "
+            f"authentication={system.authentication_status}; "
+            f"roles={roles}; model={system.configured_model or 'not configured'}; "
+            f"instruction_policy={system.instruction_policy}; "
+            f"conformance={system.conformance_status}",
+            soft_wrap=True,
+        )
+        console.print(f"  Next: {system.exact_next_action}")
+        console.print(f"  Evidence: {system.evidence_path}")
+
+
 @agents_app.command("add")
 def agents_add(
     system_id: str = typer.Argument(..., help="New agent-system ID."),
@@ -1771,19 +1824,46 @@ def agents_add(
     roles: list[str] = typer.Option(["coding"], "--roles"),
     timeout_seconds: int = typer.Option(180, "--timeout-seconds", min=1),
     max_parallel: int = typer.Option(1, "--max-parallel", min=1, max=32),
-    instruction_policy: str = typer.Option("native_project", "--instruction-policy"),
-    permission_profile: str = typer.Option("workspace_write", "--permission-profile"),
-    environment_policy: str = typer.Option("inherit", "--environment-policy"),
+    instruction_policy: str | None = typer.Option(None, "--instruction-policy"),
+    permission_profile: str | None = typer.Option(None, "--permission-profile"),
+    environment_policy: str | None = typer.Option(None, "--environment-policy"),
 ) -> None:
-    """Configure a CLI coding system without starting it or performing login."""
+    """Configure one CLI/model as an agent system for one or more roles."""
 
     if driver not in {"codex", "claude_code"}:
-        _usage_error("--driver must be codex or claude_code for the coding role")
+        _usage_error("--driver must be codex or claude_code")
     normalized_roles = [
         item.strip() for value in roles for item in value.split(",") if item.strip()
     ]
-    if set(normalized_roles) != {"coding"}:
-        _usage_error("CLI systems may declare only --roles coding in Agent Mode")
+    if "all" in normalized_roles:
+        normalized_roles = [role.value for role in AgentRole]
+    normalized_role_set = set(normalized_roles)
+    supported_roles = {"classification", "coding", "verification", "selection"}
+    if not normalized_role_set or not normalized_role_set <= supported_roles:
+        _usage_error(
+            "--roles must contain classification, coding, verification, selection, or all"
+        )
+    configured_roles = {AgentRole(item) for item in normalized_role_set}
+    primary_role = (
+        AgentRole.CODING
+        if AgentRole.CODING in configured_roles
+        else min(configured_roles, key=lambda item: item.value)
+    )
+    effective_instruction_policy = cast(
+        Literal["native_project", "villani_controlled"],
+        instruction_policy
+        or (
+            "native_project"
+            if primary_role == AgentRole.CODING
+            else "villani_controlled"
+        ),
+    )
+    effective_permission_profile = permission_profile or (
+        "workspace_write" if primary_role == AgentRole.CODING else "read_only"
+    )
+    effective_environment_policy = environment_policy or (
+        "inherit" if primary_role == AgentRole.CODING else "minimal"
+    )
     resolved_executable = executable or ("codex" if driver == "codex" else "claude")
     try:
         system = CliAgentSystemConfig(
@@ -1793,12 +1873,32 @@ def agents_add(
             driver=cast(Literal["codex", "claude_code"], driver),
             executable=resolved_executable,
             model=model,
-            roles={AgentRole.CODING},
+            roles=configured_roles,
             timeout_seconds=timeout_seconds,
             max_parallel=max_parallel,
-            instruction_policy=instruction_policy,
-            permission_profile=permission_profile,
-            environment_policy=environment_policy,
+            instruction_policy=effective_instruction_policy,
+            permission_profile=effective_permission_profile,
+            environment_policy=effective_environment_policy,
+            role_policies={
+                role: CliRolePolicy(
+                    instruction_policy=(
+                        effective_instruction_policy
+                        if role == AgentRole.CODING
+                        else "villani_controlled"
+                    ),
+                    permission_profile=(
+                        effective_permission_profile
+                        if role == AgentRole.CODING
+                        else "read_only"
+                    ),
+                    environment_policy=(
+                        effective_environment_policy
+                        if role == AgentRole.CODING
+                        else "minimal"
+                    ),
+                )
+                for role in configured_roles
+            },
             provider_options={},
         )
     except ValidationError as error:
@@ -1816,7 +1916,8 @@ def agents_add(
     _write_config(_config_path(), configuration)
     display_name = "Codex" if driver == "codex" else "Claude Code"
     console.print(
-        f"Configured {display_name} coding system {system_id!r}. "
+        f"Configured {display_name} system {system_id!r} for "
+        f"{', '.join(ROLE_LABELS[role] for role in sorted(configured_roles, key=lambda item: item.value))}. "
         f"Run `villani agents doctor {system_id}` before selecting its profile."
     )
 
@@ -1860,6 +1961,10 @@ def profiles_set_role(
         raw_profile = json.loads(json.dumps(source))
         if "profile_id" in raw_profile:
             raw_profile["profile_id"] = profile_id
+        raw_profile.pop("migration", None)
+        raw_profile["profile_type"] = (
+            profile_id if profile_id in {"cli", "hybrid", "custom"} else "custom"
+        )
         profiles[profile_id] = raw_profile
     if not isinstance(raw_profile, dict):
         _usage_error(f"execution_profiles.{profile_id} must be a mapping")
@@ -1867,6 +1972,23 @@ def profiles_set_role(
     if not isinstance(bindings, dict):
         _usage_error(f"execution_profiles.{profile_id}.bindings must be a mapping")
     bindings[canonical_role.value] = system_id
+    bound_kinds = []
+    for bound_id in bindings.values():
+        raw_system = (
+            systems.get(str(bound_id)) if isinstance(systems, Mapping) else None
+        )
+        if isinstance(raw_system, Mapping):
+            bound_kinds.append(str(raw_system.get("kind") or "legacy"))
+    if len(bound_kinds) == len(AgentRole) and all(
+        kind == "cli_agent" for kind in bound_kinds
+    ):
+        raw_profile["profile_type"] = "cli"
+    elif "cli_agent" in bound_kinds:
+        raw_profile["profile_type"] = "hybrid"
+    elif profile_id == "api":
+        raw_profile["profile_type"] = "api"
+    else:
+        raw_profile["profile_type"] = "custom"
     try:
         registry = RoleSystemRegistry(configuration, _load_backends(configuration))
         registry.resolve_profile(profile_id)
@@ -1874,8 +1996,52 @@ def profiles_set_role(
         _usage_error(f"role binding is invalid: {error}")
     _write_config(_config_path(), configuration)
     console.print(
-        f"Bound {profile_id}.{canonical_role.value} to agent system {system_id}."
+        f"Bound {profile_id} · {ROLE_LABELS[canonical_role]} to agent system {system_id}."
     )
+
+
+@profiles_app.command("activate")
+def profiles_activate(
+    profile_id: str = typer.Argument(..., help="Execution-profile ID."),
+    json_output: bool = typer.Option(False, "--json", help="Emit canonical JSON."),
+) -> None:
+    """Activate one complete ready profile; never fall back to another profile."""
+
+    configuration = _load_config()
+    try:
+        registry = build_agent_system_registry(
+            configuration, _load_backends(configuration)
+        )
+        if profile_id not in registry.role_registry.raw_profiles:
+            _usage_error(
+                f"unknown execution profile {profile_id!r}; use `villani profiles list`"
+            )
+        profile = registry.profile_status(profile_id)
+        if not profile.runnable:
+            _usage_error(
+                f"execution profile {profile_id!r} is unavailable: "
+                + ("; ".join(profile.reasons) or "doctor did not prove readiness")
+            )
+        if profile.bindings is None:
+            _usage_error(
+                f"execution profile {profile_id!r} has no resolved role bindings"
+            )
+        configuration["active_execution_profile"] = profile_id
+        _write_config(_config_path(), configuration)
+    except (OSError, TypeError, ValueError, ValidationError) as error:
+        _usage_error(f"cannot activate execution profile: {error}")
+    value = {
+        "schema_version": "villani.execution_profile_activation.v1",
+        "active_execution_profile": profile_id,
+        "profile": profile.model_dump(mode="json"),
+        "fallback_used": False,
+    }
+    if json_output:
+        typer.echo(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    else:
+        console.print(f"Active execution profile: {profile_id}")
+        for role, bound_system in profile.bindings.bindings.items():
+            console.print(f"  {ROLE_LABELS[role]}: {bound_system}")
 
 
 @agents_app.command("list")
@@ -1885,6 +2051,8 @@ def agents_list(
     """List complete systems; disabled systems remain visible but unselectable."""
 
     registry = _agent_system_registry()
+    diagnostic_path = _home() / "diagnostics" / "agent-systems" / "doctor-latest.json"
+    role_diagnostics = diagnose_registry(registry, evidence_path=str(diagnostic_path))
     document = {
         "schema_version": "villani.agent_system_inventory.v1",
         "systems": [item.model_dump(mode="json") for item in registry.list()],
@@ -1893,6 +2061,9 @@ def agents_list(
             for item in registry.list_configured()
         ],
         "harnesses": [item.model_dump(mode="json") for item in registry.discoveries],
+        "role_diagnostics": [
+            item.model_dump(mode="json") for item in role_diagnostics.systems
+        ],
         "migration": registry.migration_report,
     }
     if json_output:
@@ -1915,11 +2086,21 @@ def agents_list(
         )
     for system in registry.list_configured():
         inspection = registry.role_registry.inspect_system(system.id)
+        diagnostic = next(
+            (item for item in role_diagnostics.systems if item.system_id == system.id),
+            None,
+        )
         console.print(
             f"{system.id}: kind={system.kind}; "
-            f"roles={','.join(sorted(role.value for role in system.roles))}; "
+            f"roles={','.join(ROLE_LABELS[role] for role in sorted(system.roles, key=lambda item: item.value))}; "
             f"status={inspection.status}; ready={'yes' if inspection.runnable else 'no'}; "
-            f"reason={inspection.reason}",
+            + (
+                f"version={diagnostic.exact_version or 'unknown'}; "
+                f"model={diagnostic.configured_model}; next={diagnostic.exact_next_action}; "
+                if diagnostic is not None
+                else ""
+            )
+            + f"reason={inspection.reason}",
             soft_wrap=True,
         )
     if not registry.list() and not registry.list_configured():
@@ -1948,8 +2129,33 @@ def agents_inspect(
     registry = _agent_system_registry()
     try:
         if reference in registry.role_registry.system_by_id:
-            inspection = registry.role_registry.inspect_system(reference)
-            document = redact_data(inspection.model_dump(mode="json"))
+            # Preserve the static configuration projection for compatibility.
+            # Dynamic readiness belongs to the nested role-aware diagnostic and
+            # to execution-profile preflight.
+            inspection = RoleSystemRegistry(
+                registry.role_registry.configuration,
+                registry.role_registry.backends,
+            ).inspect_system(reference)
+            diagnostic = None
+            if isinstance(inspection.system, CliAgentSystemConfig):
+                diagnostic_document = diagnose_registry(
+                    registry,
+                    evidence_path=str(
+                        _home() / "diagnostics" / "agent-systems" / "doctor-latest.json"
+                    ),
+                    reference=reference,
+                )
+                diagnostic = diagnostic_document.systems[0]
+            document = redact_data(
+                {
+                    **inspection.model_dump(mode="json"),
+                    "diagnostic": (
+                        diagnostic.model_dump(mode="json")
+                        if diagnostic is not None
+                        else None
+                    ),
+                }
+            )
             if json_output:
                 typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
             else:
@@ -1957,8 +2163,15 @@ def agents_inspect(
                 console.print(
                     f"{system.id}: kind={system.kind}; status={inspection.status}; "
                     f"ready={'yes' if inspection.runnable else 'no'}\n"
-                    f"  roles={','.join(sorted(role.value for role in system.roles))}\n"
-                    f"  reason={inspection.reason}",
+                    f"  roles={','.join(ROLE_LABELS[role] for role in sorted(system.roles, key=lambda item: item.value))}\n"
+                    + (
+                        f"  version={diagnostic.exact_version or 'unknown'}; "
+                        f"model={diagnostic.configured_model}; "
+                        f"doctor={diagnostic.status.value}\n"
+                        if diagnostic is not None
+                        else ""
+                    )
+                    + f"  reason={inspection.reason}",
                     soft_wrap=True,
                 )
             return
@@ -1983,7 +2196,7 @@ def agents_inspect(
 def profiles_list(
     json_output: bool = typer.Option(False, "--json", help="Emit canonical JSON."),
 ) -> None:
-    """List configured execution profiles without invoking any agent system."""
+    """List configured execution profiles with current bounded readiness."""
 
     profiles = _agent_system_registry().list_profiles()
     document = {
@@ -2000,7 +2213,8 @@ def profiles_list(
         return
     for profile in profiles:
         console.print(
-            f"{profile.profile_id}: status={profile.status}; "
+            f"{profile.profile_id}: type={profile.profile_type}; "
+            f"active={'yes' if profile.active else 'no'}; status={profile.status}; "
             f"ready={'yes' if profile.runnable else 'no'}; "
             f"reason={'; '.join(profile.reasons) or 'all role systems are ready'}",
             soft_wrap=True,
@@ -2025,12 +2239,13 @@ def profiles_inspect(
         typer.echo(json.dumps(document, ensure_ascii=False, sort_keys=True))
         return
     console.print(
-        f"{profile.profile_id}: status={profile.status}; "
+        f"{profile.profile_id}: type={profile.profile_type}; "
+        f"active={'yes' if profile.active else 'no'}; status={profile.status}; "
         f"ready={'yes' if profile.runnable else 'no'}"
     )
     if profile.bindings is not None:
         for role, system_id in profile.bindings.bindings.items():
-            console.print(f"  {role.value}: {system_id}")
+            console.print(f"  {ROLE_LABELS[role]} ({role.value}): {system_id}")
     for reason in profile.reasons:
         console.print(f"  unavailable: {reason}")
 
@@ -2040,28 +2255,96 @@ def agents_doctor(
     reference: str | None = typer.Argument(None, help="Optional route name or ID."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Probe harness availability and protocol compatibility without model use."""
+    """Run actionable role-specific checks without login or repository mutation."""
 
+    registry = _agent_system_registry()
+    evidence = _home() / "diagnostics" / "agent-systems" / "doctor-latest.json"
     try:
-        reports = _agent_system_registry().doctor(reference)
+        configured = (
+            registry.role_registry.system_by_id.get(reference)
+            if reference is not None
+            else None
+        )
+        include_cli = reference is None or isinstance(configured, CliAgentSystemConfig)
+        cli_document = (
+            diagnose_registry(
+                registry,
+                evidence_path=str(evidence),
+                reference=reference
+                if isinstance(configured, CliAgentSystemConfig)
+                else None,
+            )
+            if include_cli
+            else None
+        )
+        if cli_document is not None:
+            write_management_evidence(evidence, cli_document)
+        all_legacy_reports = tuple(registry.doctor(reference))
+        cli_system_ids = {
+            system.id
+            for system in registry.list_configured()
+            if isinstance(system, CliAgentSystemConfig)
+        }
+        human_legacy_reports = tuple(
+            report
+            for report in all_legacy_reports
+            if cli_document is None or report.system_id not in cli_system_ids
+        )
     except ValueError as error:
         _usage_error(str(error))
     document = {
-        "schema_version": "villani.agent_system_doctor_collection.v1",
-        "reports": [item.model_dump(mode="json") for item in reports],
+        "schema_version": "villani.agent_system_doctor_collection.v2",
+        # `reports` is the Milestone 1-6 compatibility contract. Rich,
+        # role-aware diagnostics are additive under `systems`.
+        "reports": [item.model_dump(mode="json") for item in all_legacy_reports],
+        "systems": (
+            [
+                {
+                    **item.model_dump(mode="json"),
+                    "selectable": item.status == DoctorStatus.READY,
+                }
+                for item in cli_document.systems
+            ]
+            if cli_document is not None
+            else []
+        ),
+        "legacy_reports": [item.model_dump(mode="json") for item in all_legacy_reports],
+        "repositories_modified": False,
+        "evidence_path": str(evidence),
     }
     if json_output:
         typer.echo(
             json.dumps(redact_data(document), ensure_ascii=False, sort_keys=True)
         )
     else:
-        for report in reports:
+        for report in cli_document.systems if cli_document is not None else ():
             console.print(
-                f"{report.system_id}: {'selectable' if report.selectable else 'not selectable'}"
+                f"{report.system_id}: {report.status.value}; "
+                f"roles={', '.join(ROLE_LABELS[role] for role in report.configured_roles)}"
+            )
+            if report.what_failed:
+                console.print(f"  Failed: {report.what_failed}")
+            console.print(
+                "  Affected roles: "
+                + (
+                    ", ".join(ROLE_LABELS[role] for role in report.affected_roles)
+                    or "none"
+                )
+            )
+            console.print("  Repository modified: no")
+            console.print(f"  Next: {report.exact_next_action}")
+            console.print(f"  Evidence: {report.evidence_path}")
+        for report in human_legacy_reports:
+            console.print(
+                f"{report.system_id}: {'READY' if report.selectable else 'ACTION_REQUIRED'}"
             )
             for check in report.checks:
                 console.print(f"- {check.name}: {check.status} - {check.message}")
-    if reports and any(not item.selectable for item in reports):
+    cli_failed = bool(
+        cli_document
+        and any(item.status != DoctorStatus.READY for item in cli_document.systems)
+    )
+    if cli_failed or any(not item.selectable for item in all_legacy_reports):
         raise typer.Exit(1)
 
 
@@ -3578,6 +3861,71 @@ class _ClassifierAdapter:
         )
 
 
+def _profile_policy_backends(
+    configured: Mapping[str, Backend],
+    registry: Any,
+    bindings: Any,
+) -> dict[str, Backend]:
+    """Project explicit CLI bindings into the existing deterministic policy.
+
+    The placeholder is not an API route and is never invoked.  It gives the
+    unchanged policy state machine a stable coding option while the role
+    factory supplies the independently-probed CLI adapter.
+    """
+
+    projected = dict(configured)
+    coding_system = registry.role_registry.inspect_configured(
+        bindings.system_id_for(AgentRole.CODING)
+    )
+    classification_system = registry.role_registry.inspect_configured(
+        bindings.system_id_for(AgentRole.CLASSIFICATION)
+    )
+    if isinstance(coding_system, CliAgentSystemConfig):
+        projected = {
+            name: (
+                backend.model_copy(
+                    update={
+                        "roles": [role for role in backend.roles if role != "coding"]
+                    }
+                )
+                if "coding" in backend.roles
+                else backend
+            )
+            for name, backend in projected.items()
+        }
+    cli_roles: dict[str, tuple[CliAgentSystemConfig, set[str]]] = {}
+    for role, system, backend_role in (
+        (AgentRole.CLASSIFICATION, classification_system, "classification"),
+        (AgentRole.CODING, coding_system, "coding"),
+    ):
+        if not isinstance(system, CliAgentSystemConfig):
+            continue
+        key = f"role-system-{system.id}"
+        existing = cli_roles.get(key)
+        roles = set(existing[1]) if existing else set()
+        roles.add(backend_role)
+        cli_roles[key] = (system, roles)
+    for name, (system, roles) in cli_roles.items():
+        projected[name] = Backend(
+            name=name,
+            provider="local",
+            base_url="http://127.0.0.1:1/villani-role-adapter",
+            model=system.model,
+            billing_mode="unknown",
+            capability_score_source="configured_cli_profile",
+            capability_score=100,
+            roles=sorted(roles),
+            max_parallel=system.max_parallel,
+            timeout_seconds=system.timeout_seconds,
+            metadata={
+                "agent_system_id": system.id,
+                "policy_placeholder": True,
+                "accounting_status": "unknown",
+            },
+        )
+    return projected
+
+
 def build_controller(
     configuration: Mapping[str, Any],
     on_event: Callable[[Any], None] | None = None,
@@ -3620,6 +3968,7 @@ def build_controller(
         )
         for name, backend in configured_backends.items()
     }
+    backends = _profile_policy_backends(backends, agent_registry, role_bindings)
     _validate_run_backends(backends)
     for backend_name, identity in agent_registry.by_backend.items():
         backend = configured_backends[backend_name]
@@ -3860,7 +4209,10 @@ def build_controller(
         internal_attempt_runners={"villani_code": attempt_runner_impl},
         internal_verifiers={"villani_verifier": verifier_impl},
         internal_selectors={"evidence_selector": selector_impl},
+        cli_classifiers=agent_registry.cli_classifiers(),
         cli_attempt_runners=agent_registry.cli_attempt_runners(),
+        cli_verifiers=agent_registry.cli_verifiers(),
+        cli_selectors=agent_registry.cli_selectors(),
     )
     classifier = build_classifier(
         role_bindings, agent_registry.role_registry, dependencies
@@ -4897,11 +5249,11 @@ def run_command(
             profile_configuration, _migration = migrate_agent_system_configuration(
                 configuration
             )
-            role_registry = RoleSystemRegistry(
+            role_registry = build_agent_system_registry(
                 profile_configuration, _load_backends(profile_configuration)
             )
             selected_bindings = role_registry.resolve_profile(execution_profile)
-            role_registry.require_runnable(selected_bindings)
+            role_registry.require_profile_runnable(selected_bindings)
         except (TypeError, ValueError, ValidationError) as error:
             _usage_error(f"execution profile is unavailable: {error}")
     economics = configuration.setdefault("economics", {})

@@ -1,0 +1,245 @@
+{
+  "schema_version": "villani.cli_agent_mode_m8_test_report.v1",
+  "captured_at": "2026-07-22T18:23:46+10:00",
+  "repository_head": "80cdab397b8d48ee937a2ae81c00d3359cd178c8",
+  "overall_release_status": "FAIL",
+  "overall_reason": "All available deterministic CLI Agent Mode and regression checks passed, but mandatory in-app-browser Playwright evidence was unavailable. The opt-in real-provider suite was not consented to.",
+  "authoritative_commands": [
+    {
+      "id": "villani_ops_full",
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp ..\\..\\.m8b\\final-ops-full",
+      "status": "PASS",
+      "result": "1542 passed, 4 skipped, 122 deselected",
+      "duration_seconds": 422.20
+    },
+    {
+      "id": "villani_code_full",
+      "cwd": "components/villani-code",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp ..\\..\\.m8b\\final-code-full",
+      "status": "PASS",
+      "result": "686 passed, 1 skipped, 27 existing Typer deprecation warnings",
+      "duration_seconds": 237.38
+    },
+    {
+      "id": "villani_agentd_full",
+      "cwd": "components/villani-agentd",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp ..\\..\\.m8b\\final-agentd",
+      "status": "PASS",
+      "result": "92 passed",
+      "duration_seconds": 19.18
+    },
+    {
+      "id": "villani_distribution_full",
+      "cwd": "components/villani",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q --basetemp ..\\..\\.m8b\\final-distribution",
+      "status": "PASS",
+      "result": "79 passed",
+      "duration_seconds": 198.94
+    },
+    {
+      "id": "closed_loop_integration",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe -m pytest tests\\closed_loop -q --basetemp .m8b\\final-closed-loop",
+      "status": "PASS",
+      "result": "11 passed, 2 existing warnings",
+      "duration_seconds": 45.37
+    },
+    {
+      "id": "cli_role_integration",
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops/tests/test_codex_cli_coding.py villani_ops/tests/test_claude_code_cli_coding.py villani_ops/tests/test_cli_verification.py villani_ops/tests/test_cli_classification_selection.py villani_ops/tests/test_cli_agent_mode_m7.py villani_ops/tests/test_cli_agent_mode_m8.py villani_ops/tests/closed_loop/test_product_run.py villani_ops/tests/closed_loop/test_protocol.py --basetemp ..\\..\\.m8b\\ops-integration",
+      "status": "PASS",
+      "result": "219 passed, 6 deselected",
+      "duration_seconds": 146.37
+    },
+    {
+      "id": "m8_focused_final",
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m pytest -q villani_ops/tests/test_cli_agent_mode_m8.py --basetemp ..\\..\\.m8b\\focused-m8-final",
+      "status": "PASS",
+      "result": "8 passed",
+      "duration_seconds": 6.84
+    },
+    {
+      "id": "run_model_tests",
+      "cwd": "components/villani-run-model",
+      "command": "npm test",
+      "status": "PASS",
+      "result": "6 files, 17 tests passed"
+    },
+    {
+      "id": "run_model_typecheck",
+      "cwd": "components/villani-run-model",
+      "command": "npm run typecheck",
+      "status": "PASS",
+      "result": "no type errors"
+    },
+    {
+      "id": "run_model_build",
+      "cwd": "components/villani-run-model",
+      "command": "npm run build",
+      "status": "PASS",
+      "result": "TypeScript build completed"
+    },
+    {
+      "id": "web_tests",
+      "cwd": "components/villani-web",
+      "command": "npm test",
+      "status": "PASS",
+      "result": "4 files, 29 tests passed"
+    },
+    {
+      "id": "web_typecheck",
+      "cwd": "components/villani-web",
+      "command": "npm run typecheck",
+      "status": "PASS",
+      "result": "application and Node type checks passed"
+    },
+    {
+      "id": "web_build",
+      "cwd": "components/villani-web",
+      "command": "npm run build",
+      "status": "PASS",
+      "result": "61 modules transformed; production assets built"
+    },
+    {
+      "id": "web_format",
+      "cwd": "components/villani-web",
+      "command": "npm run format:check",
+      "status": "PASS",
+      "result": "all files matched Prettier"
+    },
+    {
+      "id": "flight_tests",
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm test",
+      "status": "PASS",
+      "result": "21 files, 118 tests passed"
+    },
+    {
+      "id": "flight_typecheck_build_format",
+      "cwd": "components/villani-flight-recorder",
+      "command": "npm run typecheck; npm run build; npm run format:check",
+      "status": "PASS",
+      "result": "typecheck, build, and format check passed",
+      "note": "The three commands were executed separately; semicolons here are report notation only."
+    },
+    {
+      "id": "ui_tests_build",
+      "cwd": "components/villani-ui",
+      "command": "npm test; npm run build",
+      "status": "PASS",
+      "result": "4 tests passed; build passed",
+      "note": "The two commands were executed separately."
+    },
+    {
+      "id": "console_asset_parity",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe scripts\\sync-console-assets.py --check",
+      "status": "PASS",
+      "result": "3 files verified"
+    },
+    {
+      "id": "m8_ruff",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe -m ruff check release-verification\\run_cli_agent_gate.py release-verification\\run_cli_agent_smoke.py components\\villani-ops\\villani_ops\\closed_loop\\cli_runtime\\failure_presentation.py components\\villani-ops\\villani_ops\\closed_loop\\invocation_evidence.py components\\villani-ops\\villani_ops\\closed_loop\\product_run.py components\\villani-ops\\villani_ops\\tests\\test_cli_agent_mode_m8.py",
+      "status": "PASS",
+      "result": "all checks passed"
+    },
+    {
+      "id": "m8_scoped_mypy",
+      "cwd": "components/villani-ops",
+      "command": "& ..\\..\\.venv\\Scripts\\python.exe -m mypy --ignore-missing-imports --follow-imports=skip villani_ops\\closed_loop\\cli_runtime\\failure_presentation.py villani_ops\\closed_loop\\invocation_evidence.py villani_ops\\closed_loop\\product_run.py",
+      "status": "PASS",
+      "result": "no issues in 3 source files"
+    },
+    {
+      "id": "release_script_compile",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe -m py_compile release-verification\\run_release_gate.py release-verification\\run_cli_agent_gate.py release-verification\\run_cli_agent_smoke.py",
+      "status": "PASS",
+      "result": "all three scripts compiled"
+    },
+    {
+      "id": "cli_agent_mode_release_phase",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe release-verification\\run_cli_agent_gate.py --source-root . --artifacts release-verification\\cli-agent-mode-m8-evidence --test-python .venv\\Scripts\\python.exe --installed-python .venv\\Scripts\\python.exe",
+      "status": "PARTIAL",
+      "result": "all 30 scenarios passed; 138 tests, 0 failures, 0 errors, 0 skipped; required deterministic evidence complete; optional real smoke NOT_RUN",
+      "duration_seconds": 130.3,
+      "evidence": "release-verification/cli-agent-mode-m8-evidence/cli-agent-mode-release-report.json"
+    },
+    {
+      "id": "real_provider_detection",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe release-verification\\run_cli_agent_smoke.py --detect-only --artifacts .m8b\\smoke-detect-r2",
+      "status": "PASS",
+      "result": "no model call; Codex absent; Claude 2.1.138 auth ready but required capability/Doctor readiness incomplete"
+    },
+    {
+      "id": "git_diff_check",
+      "cwd": ".",
+      "command": "git diff --check",
+      "status": "PASS",
+      "result": "exit 0; line-ending notices only"
+    },
+    {
+      "id": "transient_test_cleanup",
+      "cwd": ".",
+      "command": "Move-Item -LiteralPath 'C:\\Users\\Simon\\OneDrive\\Documents\\Python Scripts\\villani\\.m8b' -Destination 'C:\\tmp\\villani-m8-test-temp-20260722'",
+      "status": "PASS",
+      "result": "source absent; recoverable destination present; governed release evidence retained"
+    },
+    {
+      "id": "in_app_browser_inventory",
+      "cwd": "in-app browser runtime",
+      "command": "agent.browsers.list()",
+      "status": "ENVIRONMENT_LIMITATION",
+      "result": "[]"
+    },
+    {
+      "id": "playwright",
+      "cwd": "components/villani-web",
+      "command": "npm run e2e",
+      "status": "NOT_RUN",
+      "result": "mandatory browser channel unavailable; no standalone browser fallback was substituted"
+    },
+    {
+      "id": "packaged_release_gate",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe release-verification\\run_release_gate.py --mode release",
+      "status": "NOT_RUN",
+      "result": "blocked because this gate includes mandatory standalone Playwright while the required in-app browser inventory was empty"
+    },
+    {
+      "id": "real_cli_smoke",
+      "cwd": ".",
+      "command": "& .venv\\Scripts\\python.exe release-verification\\run_cli_agent_smoke.py --consent",
+      "status": "NOT_RUN",
+      "result": "no explicit consent; no external model call"
+    }
+  ],
+  "diagnostic_failures": [
+    {
+      "classification": "environment limitation",
+      "summary": "The first gate inherited an inaccessible Windows pytest temp root.",
+      "resolution": "Every phase now receives a short governed basetemp and explicit TEMP/TMP/TMPDIR."
+    },
+    {
+      "classification": "introduced by CLI agent mode",
+      "summary": "Initial gate cleanup could not delete read-only Git object files.",
+      "resolution": "Cleanup validates its exact governed root, clears read-only bits on failure, retries, records latency, and fails closed on any remaining error."
+    },
+    {
+      "classification": "introduced by CLI agent mode",
+      "summary": "A long durable evidence path caused one fake role process spawn failure on Windows.",
+      "resolution": "Ephemeral phase paths are now short hashed governed roots independent of durable evidence location; the official evidence-path rerun passed."
+    },
+    {
+      "classification": "unrelated pre-existing",
+      "summary": "An unscoped mypy invocation traversed the legacy Ops graph and reported 283 errors in 54 files.",
+      "resolution": "The intended changed-file check with --follow-imports=skip passed; no unrelated annotation rewrite was made."
+    }
+  ]
+}

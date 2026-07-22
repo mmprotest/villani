@@ -95,6 +95,7 @@ PHASE_TIMEOUTS: dict[str, int] = {
     "python_package_build": 1_200,
     "packed_node_install": 600,
     "wheel_install": 600,
+    "cli_agent_mode": 1_800,
     "connected_runtime_preparation": 900,
     "installed_user_onboarding": 1_800,
     "connected_scenarios": 2_400,
@@ -1381,6 +1382,7 @@ def evidence_skeleton(mode: str) -> dict[str, Any]:
         "candidate-diversity-summary.json",
         "classification-adjustment-summary.json",
         "installed-user-onboarding-summary.json",
+        "cli-agent-mode-summary.json",
     ):
         write_json(LATEST / name, incomplete)
     for directory in (
@@ -1649,6 +1651,7 @@ def _markdown(report: dict[str, Any]) -> str:
         f"Flight Recorder reconciliation: {report.get('flight_recorder_reconciliation_status')}  \n"
         f"Browser: {report.get('browser_result')}  \n"
         f"Installed-user onboarding: {report.get('installed_user_onboarding_status')}  \n"
+        f"CLI Agent Mode: {report.get('cli_agent_mode_status', 'not_executed')}  \n"
         f"Security: {report.get('security_scan_status')}\n\n"
         + (f"Failure: {report['failure']}\n\n" if report.get("failure") else "")
         + str(report.get("certification_note", ""))
@@ -1854,6 +1857,7 @@ def validate_final_evidence(mode: str, reporter: GateReporter) -> None:
         "candidate-diversity-summary.json",
         "classification-adjustment-summary.json",
         "installed-user-onboarding-summary.json",
+        "cli-agent-mode-summary.json",
     )
     for name in required:
         document = _summary(name)
@@ -2055,6 +2059,69 @@ def main(argv: list[str] | None = None) -> int:
             reporter.start("wheel_install", logs=[LATEST / "logs/wheel-install.log"])
             installed_python = install_wheels(work, packages, source_root, release_env)
             reporter.finish("wheel_install")
+
+            cli_agent_artifacts = LATEST / "cli-agent-mode"
+            cli_agent_command = [
+                str(Path(sys.executable).resolve()),
+                str(source_root / "release-verification" / "run_cli_agent_gate.py"),
+                "--source-root",
+                str(source_root),
+                "--artifacts",
+                str(cli_agent_artifacts),
+                "--test-python",
+                str(Path(sys.executable).resolve()),
+                "--installed-python",
+                str(installed_python),
+            ]
+            if (
+                os.environ.get("VILLANI_CLI_AGENT_SMOKE_CONSENT")
+                == "I_ACCEPT_EXTERNAL_USAGE"
+            ):
+                cli_agent_command.append("--real-smoke")
+            reporter.start(
+                "cli_agent_mode",
+                logs=[LATEST / "logs/cli-agent-mode.log"],
+            )
+            run(
+                cli_agent_command,
+                cwd=source_root,
+                log=LATEST / "logs/cli-agent-mode.log",
+                env=release_env,
+                timeout=PHASE_TIMEOUTS["cli_agent_mode"],
+            )
+            cli_agent_report = json.loads(
+                (cli_agent_artifacts / "cli-agent-mode-release-report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            _require(
+                cli_agent_report.get("status") == "passed"
+                and cli_agent_report.get("certification_status")
+                in {"PASS", "PARTIAL"}
+                and cli_agent_report.get("required_deterministic_evidence_complete")
+                is True,
+                "CLI Agent Mode deterministic release certification failed",
+            )
+            write_json(
+                LATEST / "cli-agent-mode-summary.json",
+                {
+                    "status": "passed",
+                    "certification_status": cli_agent_report[
+                        "certification_status"
+                    ],
+                    "required_deterministic_evidence_complete": True,
+                    "real_provider_smoke_status": cli_agent_report.get(
+                        "real_provider_smoke_status", "NOT_RUN"
+                    ),
+                    "report": "cli-agent-mode/cli-agent-mode-release-report.json",
+                    "matrix": "cli-agent-mode/cli-agent-mode-conformance-matrix.json",
+                    "evidence_index": "cli-agent-mode/release-evidence-index.json",
+                },
+            )
+            report["cli_agent_mode_status"] = cli_agent_report[
+                "certification_status"
+            ]
+            reporter.finish("cli_agent_mode")
 
             reporter.start(
                 "connected_runtime_preparation",

@@ -57,9 +57,13 @@ class ProductEvidenceCounts(StrictProtocolModel):
     @model_validator(mode="after")
     def validate_counts(self) -> "ProductEvidenceCounts":
         values = (self.passed, self.failed, self.not_run, self.unavailable)
-        if self.accounting_status == "complete" and any(value is None for value in values):
+        if self.accounting_status == "complete" and any(
+            value is None for value in values
+        ):
             raise ValueError("complete check accounting requires every count")
-        if self.accounting_status == "unknown" and any(value is not None for value in values):
+        if self.accounting_status == "unknown" and any(
+            value is not None for value in values
+        ):
             raise ValueError("unknown check accounting requires null counts")
         return self
 
@@ -72,9 +76,13 @@ class ProductRequirementCounts(StrictProtocolModel):
     @model_validator(mode="after")
     def validate_counts(self) -> "ProductRequirementCounts":
         values = (self.proved, self.not_proved)
-        if self.accounting_status == "complete" and any(value is None for value in values):
+        if self.accounting_status == "complete" and any(
+            value is None for value in values
+        ):
             raise ValueError("complete requirement accounting requires every count")
-        if self.accounting_status == "unknown" and any(value is not None for value in values):
+        if self.accounting_status == "unknown" and any(
+            value is not None for value in values
+        ):
             raise ValueError("unknown requirement accounting requires null counts")
         return self
 
@@ -88,7 +96,10 @@ class ProductCost(StrictProtocolModel):
     def validate_cost(self) -> "ProductCost":
         if self.accounting_status == "complete" and self.value is None:
             raise ValueError("complete cost accounting requires a value")
-        if self.accounting_status in {"unknown", "not_applicable"} and self.value is not None:
+        if (
+            self.accounting_status in {"unknown", "not_applicable"}
+            and self.value is not None
+        ):
             raise ValueError("unknown or not-applicable cost must remain null")
         if self.value is None and self.currency is not None:
             raise ValueError("unknown cost cannot claim a currency")
@@ -105,7 +116,10 @@ class ProductDuration(StrictProtocolModel):
     def validate_duration(self) -> "ProductDuration":
         if self.accounting_status == "complete" and self.value_ms is None:
             raise ValueError("complete duration accounting requires a value")
-        if self.accounting_status in {"unknown", "not_applicable"} and self.value_ms is not None:
+        if (
+            self.accounting_status in {"unknown", "not_applicable"}
+            and self.value_ms is not None
+        ):
             raise ValueError("unknown or not-applicable duration must remain null")
         return self
 
@@ -114,6 +128,31 @@ class ProductAgentSystem(StrictProtocolModel):
     name: str
     backend: str | None = None
     model: str | None = None
+
+
+class ProductRoleInfrastructureFailure(StrictProtocolModel):
+    stage: Literal["classification", "coding", "verification", "selection"]
+    role: Literal["classification", "coding", "verification", "selection"]
+    agent_system_id: str = Field(min_length=1)
+    safe_error_summary: str = Field(min_length=1)
+    target_repository_modified: bool
+    partial_patch_preserved: bool
+    automatic_fallback_performed: bool
+    exact_repair_action: str = Field(min_length=1)
+    evidence_path: str = Field(min_length=1)
+
+
+class ProductRoleExecution(StrictProtocolModel):
+    role: Literal["classification", "coding", "verification", "selection"]
+    label: Literal["Understand task", "Write code", "Verify result", "Choose candidate"]
+    agent_system_id: str = Field(min_length=1)
+    system_name: str = Field(min_length=1)
+    driver: str = Field(min_length=1)
+    model: str | None = None
+    invocation_count: int = Field(ge=0)
+    status: Literal["recorded", "succeeded", "infrastructure_failure", "not_invoked"]
+    evidence_artifact: str = Field(min_length=1)
+    infrastructure_failure: ProductRoleInfrastructureFailure | None = None
 
 
 class ProductEscalationSummary(StrictProtocolModel):
@@ -173,9 +212,13 @@ class ProductProofPackage(StrictProtocolModel):
     @model_validator(mode="after")
     def validate_status(self) -> "ProductProofPackage":
         if self.status == "ready_to_apply" and self.unresolved_decision is not None:
-            raise ValueError("ready proof packages cannot retain an unresolved decision")
+            raise ValueError(
+                "ready proof packages cannot retain an unresolved decision"
+            )
         if self.status == "needs_review" and not self.unresolved_decision:
-            raise ValueError("needs-review proof packages require an unresolved decision")
+            raise ValueError(
+                "needs-review proof packages require an unresolved decision"
+            )
         return self
 
 
@@ -195,6 +238,7 @@ class ProductRun(StrictProtocolModel):
     cost: ProductCost
     duration: ProductDuration
     agent_system: ProductAgentSystem
+    role_executions: list[ProductRoleExecution] = Field(default_factory=list)
     escalation_summary: ProductEscalationSummary
     available_actions: list[ProductAction]
     evidence_links: list[ProductEvidenceLink]
@@ -219,7 +263,9 @@ class ProductRun(StrictProtocolModel):
             and self.proof_package.status == "ready_to_apply"
             and self.final_verdict != "Ready to apply"
         ):
-            raise ValueError("a ready proof package requires the Ready to apply verdict")
+            raise ValueError(
+                "a ready proof package requires the Ready to apply verdict"
+            )
         return self
 
 
@@ -261,6 +307,114 @@ def _read(path: Path) -> dict[str, Any]:
 
 def _mapping(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _role_execution_rows(run_directory: Path) -> list[ProductRoleExecution]:
+    planned_index = _read(
+        run_directory / "agent-systems" / "invocations" / "index.json"
+    )
+    planned_roles = _mapping(planned_index.get("roles"))
+    actual_index = _read(
+        run_directory / "agent-systems" / "role-invocations" / "index.json"
+    )
+    actual_items = actual_index.get("invocations")
+    actual = actual_items if isinstance(actual_items, list) else []
+    labels = {
+        "classification": "Understand task",
+        "coding": "Write code",
+        "verification": "Verify result",
+        "selection": "Choose candidate",
+    }
+    rows: list[ProductRoleExecution] = []
+    for role in ("classification", "coding", "verification", "selection"):
+        planned_reference = _mapping(planned_roles.get(role))
+        planned_path = str(planned_reference.get("path") or "")
+        planned = _read(run_directory / planned_path) if planned_path else {}
+        role_actual = [
+            _mapping(item)
+            for item in actual
+            if isinstance(item, Mapping) and item.get("role") == role
+        ]
+        if not planned and not role_actual:
+            continue
+        driver = str(
+            (role_actual[-1].get("driver") if role_actual else None)
+            or planned.get("driver")
+            or planned.get("system_kind")
+            or "internal"
+        )
+        display = {
+            "codex": "Codex CLI",
+            "claude_code": "Claude Code",
+            "api": "API",
+            "internal_runner": "Villani",
+        }.get(driver, driver.replace("_", " ").title())
+        failed = any(
+            item.get("infrastructure_state") != "succeeded" for item in role_actual
+        )
+        status = (
+            "infrastructure_failure"
+            if failed
+            else "succeeded"
+            if role_actual
+            else "not_invoked"
+            if driver in {"codex", "claude_code"}
+            else "recorded"
+        )
+        latest = role_actual[-1] if role_actual else {}
+        failure_document: dict[str, Any] = {}
+        artifact_links = latest.get("artifact_links")
+        if isinstance(artifact_links, list):
+            failure_reference = next(
+                (
+                    str(item)
+                    for item in artifact_links
+                    if str(item).endswith("/infrastructure-failure.json")
+                ),
+                "",
+            )
+            if failure_reference:
+                failure_document = _read(run_directory / failure_reference)
+        rows.append(
+            ProductRoleExecution(
+                role=role,  # type: ignore[arg-type]
+                label=labels[role],
+                agent_system_id=str(
+                    latest.get("agent_system_id")
+                    or planned.get("agent_system_id")
+                    or planned_reference.get("agent_system_id")
+                    or "unavailable"
+                ),
+                system_name=display,
+                driver=driver,
+                model=(
+                    str(latest.get("resolved_model") or latest.get("configured_model"))
+                    if latest.get("resolved_model") or latest.get("configured_model")
+                    else str(planned.get("model"))
+                    if planned.get("model")
+                    else None
+                ),
+                invocation_count=len(role_actual),
+                status=status,  # type: ignore[arg-type]
+                evidence_artifact=(
+                    "agent-systems/role-invocations/index.json"
+                    if role_actual
+                    else planned_path or "agent-systems/role-bindings.json"
+                ),
+                infrastructure_failure=(
+                    ProductRoleInfrastructureFailure.model_validate(
+                        {
+                            key: value
+                            for key, value in failure_document.items()
+                            if key != "schema_version"
+                        }
+                    )
+                    if failed and failure_document
+                    else None
+                ),
+            )
+        )
+    return rows
 
 
 def _public_text(value: object, fallback: str) -> str:
@@ -319,7 +473,10 @@ def project_product_stage(
     payload = _mapping(event.get("payload"))
     projected_state = str(payload.get("to_state") or "")
     stage = _STATE_STAGE.get(projected_state)
-    if projected_state == "POLICY_SELECTED" and current_stage in {"Working", "Checking"}:
+    if projected_state == "POLICY_SELECTED" and current_stage in {
+        "Working",
+        "Checking",
+    }:
         stage = "Working"
     if stage is None and event.get("event_type") == "run_created":
         stage = "Understanding"
@@ -336,7 +493,9 @@ def _stage_projection(
     for event in events:
         payload = _mapping(event.get("payload"))
         projected_state = str(payload.get("to_state") or "")
-        has_stage = projected_state in _STATE_STAGE or event.get("event_type") == "run_created"
+        has_stage = (
+            projected_state in _STATE_STAGE or event.get("event_type") == "run_created"
+        )
         if not has_stage:
             if current is not None and str(event.get("event_type") or "") in {
                 "retry_selected",
@@ -421,8 +580,7 @@ def _selected_truth(
             isinstance(row, Mapping)
             and row.get("outcome") in {"passed", "not_applicable"}
             and (
-                row.get("outcome") == "not_applicable"
-                or bool(row.get("evidence_ids"))
+                row.get("outcome") == "not_applicable" or bool(row.get("evidence_ids"))
             )
             for row in requirement_rows
         )
@@ -489,9 +647,7 @@ _DELIVERY_FAILURES = {
 }
 
 
-def _product_failure_experience(
-    failure_code: str, reason: str
-) -> dict[str, Any]:
+def _product_failure_experience(failure_code: str, reason: str) -> dict[str, Any]:
     # Import lazily because schema validation imports this contract while the
     # event writer (which presentation redaction uses) is still initializing.
     from .presentation import failure_experience, infer_failure_code
@@ -527,8 +683,14 @@ def _verdict(
         return "Ready to apply", "Verification proved the selected change acceptable."
     if state_name == "COMPLETED":
         if proved:
-            return "Ready to apply", "Verification proved the selected change acceptable."
-        return "Needs review", "The run completed without sufficient proof for delivery."
+            return (
+                "Ready to apply",
+                "Verification proved the selected change acceptable.",
+            )
+        return (
+            "Needs review",
+            "The run completed without sufficient proof for delivery.",
+        )
     if state_name == "EXHAUSTED":
         return (
             "Could not prove",
@@ -697,15 +859,11 @@ def build_product_run(run_directory: str | Path) -> ProductRun:
         if state_name in {"FAILED", "CANCELLED"}
         else reason
     )
-    verdict, verdict_reason = _verdict(
-        state_name, proved, failure_code, public_reason
-    )
+    verdict, verdict_reason = _verdict(state_name, proved, failure_code, public_reason)
     stage, sentence, stage_transitions = _stage_projection(events, state_name)
     if verdict is not None:
         sentence = verdict_reason or _DEFAULT_SENTENCE["Ready"]
-    changed_files = _changed_files(
-        run_directory, attempt_id, materialization, delivery
-    )
+    changed_files = _changed_files(run_directory, attempt_id, materialization, delivery)
     checks_passed, checks_failed, checks_not_run, checks_unavailable, checks_status = (
         _combined_checks(summary)
     )
@@ -757,7 +915,16 @@ def build_product_run(run_directory: str | Path) -> ProductRun:
             "events.jsonl",
             "selection.json",
             f"verification/{attempt_id}.json" if attempt_id else None,
-            "run-summary.json" if (run_directory / "run-summary.json").is_file() else None,
+            "run-summary.json"
+            if (run_directory / "run-summary.json").is_file()
+            else None,
+            (
+                "agent-systems/role-invocations/index.json"
+                if (
+                    run_directory / "agent-systems" / "role-invocations" / "index.json"
+                ).is_file()
+                else None
+            ),
         )
         if name and (run_directory / name).is_file()
     ]
@@ -889,6 +1056,7 @@ def build_product_run(run_directory: str | Path) -> ProductRun:
                 str(agent_attempt.get("model")) if agent_attempt.get("model") else None
             ),
         ),
+        role_executions=_role_execution_rows(run_directory),
         escalation_summary=ProductEscalationSummary(
             attempts=attempts,
             retries=retries,

@@ -25,6 +25,11 @@ from villani_ops.cli.unified import DEFAULT_CONFIG
 from villani_ops.closed_loop.agent_systems.configuration import (
     migrate_agent_system_configuration,
 )
+from villani_ops.closed_loop.agent_systems.role_models import (
+    AgentRole,
+    CliAgentSystemConfig,
+)
+from villani_ops.closed_loop.agent_systems.role_registry import RoleSystemRegistry
 from villani_ops.core.backend import Backend
 from villani_ops.executables import resolve_installed_executable
 from villani_ops.providers import ProviderConfigurationError, validate_closed_loop_backend
@@ -540,8 +545,7 @@ def build_configuration(
             "capability_score": 0,
             "roles": ["coding"],
             "max_parallel": 1,
-            "command_name": coding_command
-            or ("codex" if coding_system == "codex" else "claude"),
+            "command_name": coding_command or ("codex" if coding_system == "codex" else "claude"),
             "metadata": {
                 "capability_status": "unrated",
                 "setup_coding_system": coding_system,
@@ -592,6 +596,132 @@ def build_configuration(
     return configuration
 
 
+def build_cli_configuration(
+    *,
+    repository: Path | None,
+    codex_model: str | None = None,
+    claude_model: str | None = None,
+    codex_executable: str = "codex",
+    claude_executable: str = "claude",
+    role_assignments: Mapping[str, str] | None = None,
+    profile_id: str = "cli",
+) -> dict[str, Any]:
+    """Build a no-YAML CLI execution profile from explicit model strings."""
+
+    models = {
+        "codex-cli": ("codex", codex_executable, (codex_model or "").strip()),
+        "claude-code-cli": (
+            "claude_code",
+            claude_executable,
+            (claude_model or "").strip(),
+        ),
+    }
+    available = {key: value for key, value in models.items() if value[2]}
+    if not available:
+        raise SetupError(
+            "CLI mode requires --codex-model or --claude-model; Villani does not guess model names"
+        )
+    if role_assignments is None:
+        if len(available) == 1:
+            only = next(iter(available))
+            assignments = {role.value: only for role in AgentRole}
+        else:
+            assignments = {
+                AgentRole.CLASSIFICATION.value: "codex-cli",
+                AgentRole.CODING.value: "codex-cli",
+                AgentRole.VERIFICATION.value: "claude-code-cli",
+                AgentRole.SELECTION.value: "claude-code-cli",
+            }
+    else:
+        assignments = {str(key): str(value) for key, value in role_assignments.items()}
+    expected_roles = {role.value for role in AgentRole}
+    if set(assignments) != expected_roles:
+        missing = ", ".join(sorted(expected_roles - set(assignments))) or "none"
+        unknown = ", ".join(sorted(set(assignments) - expected_roles)) or "none"
+        raise SetupError(
+            f"custom role assignment must be complete; missing={missing}; unknown={unknown}"
+        )
+    unknown_systems = sorted(set(assignments.values()) - set(available))
+    if unknown_systems:
+        raise SetupError(
+            "role assignment references an unconfigured system: " + ", ".join(unknown_systems)
+        )
+
+    systems: dict[str, Any] = {}
+    for system_id, (driver, executable, selected_model) in available.items():
+        roles = sorted(role for role, bound in assignments.items() if bound == system_id)
+        if not roles:
+            continue
+        role_policies = {
+            role: {
+                "instruction_policy": (
+                    "native_project" if role == AgentRole.CODING.value else "villani_controlled"
+                ),
+                "permission_profile": (
+                    "workspace_write" if role == AgentRole.CODING.value else "read_only"
+                ),
+                "environment_policy": "minimal",
+            }
+            for role in roles
+        }
+        systems[system_id] = {
+            "kind": "cli_agent",
+            "id": system_id,
+            "enabled": True,
+            "driver": driver,
+            "executable": executable,
+            "model": selected_model,
+            "roles": roles,
+            "timeout_seconds": 180,
+            "max_parallel": 1,
+            "instruction_policy": (
+                "native_project" if AgentRole.CODING.value in roles else "villani_controlled"
+            ),
+            "permission_profile": (
+                "workspace_write" if AgentRole.CODING.value in roles else "read_only"
+            ),
+            "environment_policy": "minimal",
+            "role_policies": role_policies,
+            "provider_options": {},
+        }
+
+    configuration = copy.deepcopy(DEFAULT_CONFIG)
+    configuration["config_version"] = SUPPORTED_CONFIG_VERSION
+    configuration["backends"] = {}
+    configuration["model_management"]["bootstrap_default"] = None
+    configuration["policy"].update(
+        {"easy_min_capability": 0, "medium_min_capability": 0, "hard_min_capability": 0}
+    )
+    configuration["capabilities"]["allow_bootstrap_threshold_bypass"] = True
+    configuration["agent_systems"] = {
+        "schema_version": "villani.agent_system_configuration.v1",
+        "systems": systems,
+    }
+    configuration["execution_profiles"] = {
+        profile_id: {
+            "schema_version": "villani.role_bindings.v1",
+            "profile_id": profile_id,
+            "profile_type": "cli" if profile_id == "cli" else "custom",
+            "bindings": assignments,
+        }
+    }
+    configuration["active_execution_profile"] = profile_id
+    configuration["setup"] = {
+        "schema_version": "villani.setup.v1",
+        "configured_at": utc_now(),
+        "primary_backend": None,
+        "capability_status": "unrated",
+        "bootstrap_policy": True,
+        "repository": str(repository) if repository else None,
+        "session_sources": [],
+        "coding_system": assignments[AgentRole.CODING.value],
+        "execution_mode": "cli" if profile_id == "cli" else "custom",
+    }
+    migrated, _migration = migrate_agent_system_configuration(configuration)
+    validate_configuration(migrated)
+    return migrated
+
+
 def load_configuration(path: Path) -> dict[str, Any]:
     try:
         value = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -612,8 +742,8 @@ def validate_configuration(configuration: Mapping[str, Any]) -> dict[str, Backen
             f"{SUPPORTED_CONFIG_VERSION}"
         )
     raw_backends = configuration.get("backends")
-    if not isinstance(raw_backends, Mapping) or not raw_backends:
-        raise SetupError("no coding backend is configured")
+    if not isinstance(raw_backends, Mapping):
+        raise SetupError("backends must be a mapping")
     setup = configuration.get("setup")
     setup_generated = (
         isinstance(setup, Mapping) and setup.get("schema_version") == "villani.setup.v1"
@@ -630,10 +760,30 @@ def validate_configuration(configuration: Mapping[str, Any]) -> dict[str, Backen
         if setup_generated and backend._usable_direct_credential(backend.api_key):
             raise SetupError("configuration must reference credentials by environment variable")
         parsed[str(name)] = backend
-    if not any(item.enabled and "coding" in item.roles for item in parsed.values()):
-        raise SetupError("no enabled coding backend is configured")
-    if not any(item.enabled and "classification" in item.roles for item in parsed.values()):
-        raise SetupError("no enabled classification backend is configured")
+    try:
+        effective, _migration = migrate_agent_system_configuration(configuration)
+        registry = RoleSystemRegistry(effective, parsed)
+        bindings = registry.resolve_profile()
+        for role in AgentRole:
+            system = registry.inspect_configured(bindings.system_id_for(role))
+            if isinstance(system, CliAgentSystemConfig):
+                # Structural validation is complete here. Setup and run preflight
+                # perform the bounded, role-specific CLI doctor without silently
+                # treating an unprobed CLI as an API fallback.
+                continue
+            inspection = registry.inspect_system(bindings.system_id_for(role))
+            if not inspection.runnable:
+                raise SetupError(f"{role.value} agent system is unavailable: {inspection.reason}")
+    except SetupError:
+        raise
+    except (TypeError, ValueError, ValidationError) as error:
+        if not parsed:
+            raise SetupError(f"no runnable execution profile is configured: {error}") from error
+        if not any(item.enabled and "coding" in item.roles for item in parsed.values()):
+            raise SetupError("no enabled coding backend is configured") from error
+        if not any(item.enabled and "classification" in item.roles for item in parsed.values()):
+            raise SetupError("no enabled classification backend is configured") from error
+        raise SetupError(f"execution profile is invalid: {error}") from error
     return parsed
 
 

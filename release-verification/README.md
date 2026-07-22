@@ -44,3 +44,25 @@ migration proof, verifier/diversity/classification/redaction evidence, canonical
 browser results, logs, and screenshots. Any missing scenario, zero synchronized runs, unexpected
 dead letter, mismatch, broken asset, browser error, missing screenshot, or required scanner failure
 leaves the verdict as `RELEASE GATE FAILED`.
+
+## CLI Agent Mode phase
+
+The packaged gate includes a required `cli_agent_mode` phase after clean wheel installation. It
+runs `run_cli_agent_gate.py` against the isolated source and installed artifacts, covering API
+regression, the 30-scenario fake Codex/Claude suite, mixed profiles, repeated cancellation/cleanup,
+blindness, selector eligibility, secret scanning, and CLI/UI projection. Its report, conformance
+matrix, exact commands, bounds, and digest index are stored under
+`artifacts/latest/cli-agent-mode/`. Missing deterministic evidence is `FAIL`.
+
+Optional real calls remain separately consented:
+
+```console
+python release-verification/run_cli_agent_smoke.py --detect-only
+python release-verification/run_cli_agent_smoke.py --consent
+```
+
+Skipped or unavailable real providers make CLI certification `PARTIAL`; they never turn missing
+deterministic evidence into a pass. The smoke command uses disposable repositories, does not inspect
+credentials or subscription quota, and states that external calls may consume provider usage.
+Detection-only mode runs bounded executable/version/auth/capability probes and never makes a model
+call.

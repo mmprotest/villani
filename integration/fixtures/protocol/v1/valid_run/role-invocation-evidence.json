@@ -1,0 +1,35 @@
+{
+  "schema_version": "villani.role_invocation_evidence.v1",
+  "invocation_id": "rinv_0000000000000000000000000000000000000000000000000000000000000000",
+  "role": "verification",
+  "agent_system_id": "fixture-cli-verifier",
+  "driver": "claude_code",
+  "executable_path_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "safe_display_path": "<home>/bin/claude",
+  "cli_version": "2.1.138",
+  "configured_model": "fixture-verifier-model",
+  "resolved_model": null,
+  "instruction_policy": "villani_controlled",
+  "permission_policy": "read_only",
+  "started_at": "2026-07-10T00:00:10Z",
+  "completed_at": "2026-07-10T00:00:11Z",
+  "duration_ms": 1000,
+  "exit_code": 0,
+  "infrastructure_state": "succeeded",
+  "usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "accounting_status": "unknown"
+  },
+  "cost": {
+    "value": null,
+    "currency": null,
+    "accounting_status": "unknown",
+    "source": null
+  },
+  "artifact_links": [
+    "verification/fixture/agent/invocation.json",
+    "verification/fixture/agent/normalized-events.jsonl"
+  ],
+  "restricted_process_artifact": "verification/fixture/agent/process-result.json"
+}

@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
@@ -318,15 +318,50 @@ class RoleSystemRegistry:
         return bindings
 
     def profile_status(self, profile_id: str) -> ExecutionProfileInspection:
+        raw = self.raw_profiles.get(profile_id)
+        declared_type = (
+            str(raw.get("profile_type"))
+            if isinstance(raw, Mapping) and raw.get("profile_type")
+            else None
+        )
+        active = (
+            str(self.configuration.get("active_execution_profile") or "api")
+            == profile_id
+        )
         try:
             bindings = self.resolve_profile(profile_id)
         except RoleBindingConfigurationError as error:
+            invalid_profile_type = cast(
+                Literal["api", "cli", "hybrid", "custom"],
+                declared_type
+                if declared_type in {"api", "cli", "hybrid", "custom"}
+                else "api"
+                if profile_id == "api"
+                else "custom",
+            )
             return ExecutionProfileInspection(
                 profile_id=profile_id,
+                profile_type=invalid_profile_type,
+                active=active,
                 status="invalid",
                 runnable=False,
                 reasons=[str(error)],
             )
+        systems = [
+            self.inspect_configured(bindings.system_id_for(role)) for role in AgentRole
+        ]
+        if declared_type in {"api", "cli", "hybrid", "custom"}:
+            profile_type: Literal["api", "cli", "hybrid", "custom"] = cast(
+                Literal["api", "cli", "hybrid", "custom"], declared_type
+            )
+        elif profile_id == "api":
+            profile_type = "api"
+        elif all(isinstance(system, CliAgentSystemConfig) for system in systems):
+            profile_type = "cli"
+        elif any(isinstance(system, CliAgentSystemConfig) for system in systems):
+            profile_type = "hybrid"
+        else:
+            profile_type = "custom"
         reasons: list[str] = []
         for role in AgentRole:
             system_id = bindings.system_id_for(role)
@@ -335,6 +370,8 @@ class RoleSystemRegistry:
                 reasons.append(f"{role.value}: {inspection.reason}")
         return ExecutionProfileInspection(
             profile_id=profile_id,
+            profile_type=profile_type,
+            active=active,
             status="ready" if not reasons else "unavailable",
             runnable=not reasons,
             bindings=bindings,
