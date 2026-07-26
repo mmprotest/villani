@@ -5055,3 +5055,73 @@ Remaining limitations:
 No subscription quota management, usage-reset tracking, billing control, automatic account
 switching, new provider, new role, team feature, routing optimization, benchmark-specific behavior,
 or later product expansion was started.
+
+#### 2026-07-26: Codex CLI compatibility fix
+
+Status: complete. Villani now behaviorally validates unattended Codex execution, prefers a strict
+`approval_policy="never"` config override, falls back to a validated global approval flag, keeps
+global options before `exec`, and supports one CLI system advertising any valid role subset. Every
+role invocation remains a fresh bounded process with its own prompt, schema, workspace, artifacts,
+and invocation ID. Coding remains workspace-write; classification, verification, and selection use
+scoped read-only permission profiles. Verifier blindness and fail-closed acceptance are unchanged.
+
+Changed files:
+- `components/villani-ops/villani_ops/cli/unified.py`
+- `components/villani-ops/villani_ops/closed_loop/agent_systems/{management,registry}.py`
+- `components/villani-ops/villani_ops/closed_loop/claude_code_cli/{attempt,driver}.py`
+- `components/villani-ops/villani_ops/closed_loop/cli_classification/adapter.py`
+- `components/villani-ops/villani_ops/closed_loop/cli_selection/adapter.py`
+- `components/villani-ops/villani_ops/closed_loop/cli_verification/adapter.py`
+- `components/villani-ops/villani_ops/closed_loop/codex_cli/{attempt,driver,models}.py`
+- Root and packaged v1 agent-system diagnostic, coder, classifier, verifier, and selector schemas.
+- Codex/role/verifier fake CLI fixtures and four affected Villani Ops test modules, including the
+  new exact-0.144.6 compatibility fixture and 25-test compatibility suite.
+- `docs/completion/codex-cli-compatibility-fix.md`
+- `PLANS.md` progress section only.
+
+Architectural decisions:
+- Approval eligibility is the semantic `unattended_safe_execution` capability. A bounded no-model
+  strict-config parse is preferred; a separately bounded global-flag placement probe is the
+  fallback. Version output is evidence and never decides approval support.
+- Legacy `noninteractive_approval` probe evidence is preserved and normalized on read without
+  rewriting the v1 record. Doctor, `safe_editing`, role support, selectability, and repair actions
+  consume the same normalized capability.
+- Windows npm `.cmd` launchers use the existing explicit `cmd.exe /d /c call` argv prefix without
+  `shell=True`; direct Unix-style executables remain direct. No bypass, yolo, or full-auto flag was
+  added.
+- Multi-role validation uses role membership and a role-scoped system view. The configured system
+  ID may be shared across bindings, but permission policy and runtime identity remain per role.
+- Strict Codex output schemas now use explicit types beside const/enum constraints and avoid the
+  unsupported `uniqueItems` subset while retaining closed required objects and root/package parity.
+
+Verification:
+- Exact compatibility suite: 25 passed in 7.03 seconds.
+- Final affected-surface matrix: 215 passed, 5 opt-in tests deselected in 120.54 seconds.
+- `python -m pytest components/villani-ops -q`: 1,568 passed, 4 skipped, 122 deselected in
+  418.49 seconds.
+- `python -m pytest tests/closed_loop -q`: 11 passed with one existing Starlette/httpx deprecation
+  warning in 43.37 seconds.
+- Changed-file Ruff format and lint: 19 files passed. Scoped mypy: 11 production files passed.
+  UTF-8 component compileall, Python 3.11 changed-file compileall, `pip check`, static
+  special-case/role-set/bypass scans, and `git diff --check` passed.
+- Official clean local installation completed in 75.6 seconds. Real Codex doctors reported READY
+  for `codex-luna-medium` coding and `codex-sol-max` classification/verification/selection with
+  ChatGPT authentication, `config_override`, no model use, and no action required.
+- Real Codex coding produced JSONL, structured final output, and a nonempty patch under
+  workspace-write. The independent real verifier used a different PID, invocation/session identity,
+  schema, prompt, artifact directory, and scoped read-only workspace; it parsed structured output,
+  could not mutate the candidate, exited cleanly, and remained fail-closed because the smoke had no
+  authoritative validation command. Evidence is under
+  `C:\VillaniCodexCompatibilitySmoke\real-smoke-pass`.
+
+Remaining limitations, assumptions, and risks:
+- The real authenticated path was proved on Windows. POSIX launcher behavior and the global-flag
+  fallback remain deterministically covered rather than selected in the local real smoke.
+- The broad pre-existing Villani Ops tree still has 74 Ruff-format differences and 679 mypy errors
+  outside this pass; every changed file/module passes its scoped gate.
+- No affected test or quality gate remains failing. The experiment bundle and
+  `C:\VillaniCodexCalibrationSmoke` were not modified.
+
+Next permitted milestone:
+- This compatibility fix is complete. The 35-task experiment and every later milestone were not
+  started; only a new user task may start subsequent work.

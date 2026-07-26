@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from villani_ops.agentic.git_artifacts import is_patch_excluded
 from villani_ops.closed_loop.adapters.git_isolation import GitIsolationAdapter
+from villani_ops.closed_loop.agent_systems.role_models import AgentRole
 from villani_ops.closed_loop.cli_runtime import (
     CliCancellationHandle,
     CliCancellationOrigin,
@@ -370,6 +371,10 @@ class CodexCliAttemptAdapter:
         probe: CodexProbeResult | None = None,
         isolation: GitIsolationAdapter | None = None,
     ) -> None:
+        if AgentRole.CODING not in driver.system.roles:
+            raise ValueError(
+                "CodexCliAttemptAdapter requires a system advertising coding"
+            )
         self.driver = driver
         self.probe = probe or driver.probe()
         self.isolation = isolation or GitIsolationAdapter()

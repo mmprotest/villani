@@ -278,11 +278,12 @@ def test_detection_none_one_or_both_cli_systems(
 @pytest.mark.parametrize(
     ("state", "status", "action"),
     [
-        ("auth_missing", DoctorStatus.ACTION_REQUIRED, "codex login"),
+        ("auth_missing", DoctorStatus.ACTION_REQUIRED, "Run codex login."),
         (
             "unsupported",
             DoctorStatus.UNSUPPORTED,
-            "npm install -g @openai/codex@latest",
+            "Install a Codex CLI version that supports "
+            'approval_policy="never" or the global --ask-for-approval flag.',
         ),
     ],
 )

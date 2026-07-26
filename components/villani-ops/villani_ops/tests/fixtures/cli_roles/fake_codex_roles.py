@@ -6,8 +6,18 @@ import time
 from pathlib import Path
 
 
-HELP = """Codex exec
+GLOBAL_HELP = """Codex CLI
+Usage: codex [OPTIONS] <COMMAND>
+  -c, --config <key=value>
+  --strict-config
+  --ask-for-approval <untrusted|on-request|never>
+"""
+
+
+EXEC_HELP = """Codex exec
 Usage: codex exec [OPTIONS] [PROMPT]
+  -c, --config <key=value>
+  --strict-config
   --ephemeral
   --json
   --model <MODEL>
@@ -15,11 +25,9 @@ Usage: codex exec [OPTIONS] [PROMPT]
   --cd <DIR>
   --output-schema <FILE>
   --output-last-message <FILE>
-  --ask-for-approval <untrusted|on-request|never>
-  --config <key=value>
-  --strict-config
   --ignore-user-config
   --ignore-rules
+  --skip-git-repo-check
   -  Read prompt from stdin
 """
 
@@ -40,12 +48,24 @@ def classifier_result(workspace: Path, scenario: str) -> object:
     difficulty = scenario if scenario in {"easy", "medium", "hard"} else "medium"
     value: dict[str, object] = {
         "difficulty": difficulty,
-        "risk": "low" if difficulty == "easy" else "high" if difficulty == "hard" else "medium",
+        "risk": "low"
+        if difficulty == "easy"
+        else "high"
+        if difficulty == "hard"
+        else "medium",
         "category": "implementation",
         "required_capabilities": ["repository_editing", "test_execution"],
-        "uncertainty": "low" if difficulty == "easy" else "high" if difficulty == "hard" else "medium",
+        "uncertainty": "low"
+        if difficulty == "easy"
+        else "high"
+        if difficulty == "hard"
+        else "medium",
         "confidence": 0.9 if difficulty == "easy" else 0.6,
-        "estimated_attempts_needed": 1 if difficulty == "easy" else 3 if difficulty == "hard" else 2,
+        "estimated_attempts_needed": 1
+        if difficulty == "easy"
+        else 3
+        if difficulty == "hard"
+        else 2,
         "needs_tests": True,
         "likely_files": inventory[:1],
         "reasoning_summary": f"The fixture classified this pre-execution task as {difficulty}.",
@@ -98,6 +118,7 @@ def selector_result(workspace: Path, scenario: str) -> object:
 
 
 def run_role(arguments: list[str], scenario: str) -> int:
+    exec_index = arguments.index("exec")
     prompt = sys.stdin.read()
     workspace = Path(option(arguments, "--cd")).resolve()
     if Path.cwd().resolve() != workspace:
@@ -109,17 +130,31 @@ def run_role(arguments: list[str], scenario: str) -> int:
         "--strict-config",
         "--ignore-user-config",
         "--ignore-rules",
+        "--skip-git-repo-check",
     }
     if not required.issubset(arguments) or "--sandbox" in arguments:
         print("permission denied: safe role flags missing", file=sys.stderr)
         return 12
-    if option(arguments, "--ask-for-approval") != "never":
+    approval_overrides = {
+        arguments[index + 1]
+        for index, value in enumerate(arguments)
+        if value in {"-c", "--config"} and index + 1 < len(arguments)
+    }
+    approval_by_config = 'approval_policy="never"' in approval_overrides
+    approval_by_flag = (
+        "--ask-for-approval" in arguments[:exec_index]
+        and option(arguments, "--ask-for-approval") == "never"
+    )
+    if not (approval_by_config or approval_by_flag):
         print("permission denied: approvals enabled", file=sys.stderr)
+        return 13
+    if "--ask-for-approval" in arguments[exec_index + 1 :]:
+        print("permission denied: global approval flag after exec", file=sys.stderr)
         return 13
     overrides = {
         arguments[index + 1]
         for index, value in enumerate(arguments)
-        if value == "--config" and index + 1 < len(arguments)
+        if value in {"-c", "--config"} and index + 1 < len(arguments)
     }
     expected = {
         'default_permissions="villani_verifier_read_only"',
@@ -128,6 +163,8 @@ def run_role(arguments: list[str], scenario: str) -> int:
         'web_search="disabled"',
         "allow_login_shell=false",
     }
+    if approval_by_config:
+        expected.add('approval_policy="never"')
     if overrides != expected:
         print("permission denied: scoped read-only profile missing", file=sys.stderr)
         return 14
@@ -141,12 +178,20 @@ def run_role(arguments: list[str], scenario: str) -> int:
         print("role process crashed", file=sys.stderr)
         return 7
 
-    role = "classification" if (workspace / "input" / "repository-metadata.json").is_file() else "selection"
-    expected_prompt = "cli_classifier_prompt" if role == "classification" else "cli_selector_prompt"
+    role = (
+        "classification"
+        if (workspace / "input" / "repository-metadata.json").is_file()
+        else "selection"
+    )
+    expected_prompt = (
+        "cli_classifier_prompt" if role == "classification" else "cli_selector_prompt"
+    )
     if expected_prompt not in prompt:
         print("controlled role prompt missing", file=sys.stderr)
         return 15
-    emit({"type": "thread.started", "thread_id": f"fake-codex-{role}-{Path.cwd().name}"})
+    emit(
+        {"type": "thread.started", "thread_id": f"fake-codex-{role}-{Path.cwd().name}"}
+    )
     emit({"type": "turn.started"})
     output = Path(option(arguments, "--output-last-message"))
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -188,8 +233,14 @@ def main() -> int:
     if arguments == ["--version"]:
         print("codex-cli 9.9.9-role-fixture")
         return 0
-    if arguments == ["exec", "--help"]:
-        print("Codex exec\n  --model <MODEL>" if unsupported else HELP)
+    if arguments == ["--help"]:
+        print(GLOBAL_HELP)
+        return 0
+    if "exec" in arguments and arguments[arguments.index("exec") :] == [
+        "exec",
+        "--help",
+    ]:
+        print("Codex exec\n  --model <MODEL>" if unsupported else EXEC_HELP)
         return 0
     if arguments == ["login", "status"]:
         if auth_missing:
@@ -197,7 +248,7 @@ def main() -> int:
             return 1
         print("Logged in using ChatGPT")
         return 0
-    if arguments and arguments[0] == "exec":
+    if "exec" in arguments:
         return run_role(arguments, scenario)
     return 64
 

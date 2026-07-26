@@ -380,12 +380,18 @@ def test_driver_constructs_shell_free_safe_noninteractive_invocation(
     assert invocation.stdin_bytes == prompt.bytes
     assert command[0] == str(Path(sys.executable).resolve())
     assert command[1] == str(FAKE_CODEX)
-    assert command[2:5] == ("exec", "--ephemeral", "--json")
+    exec_index = command.index("exec")
+    assert command[exec_index : exec_index + 3] == (
+        "exec",
+        "--ephemeral",
+        "--json",
+    )
     assert command[-1] == "-"
     assert command[command.index("--model") + 1] == "gpt-fixture-codex"
     assert command[command.index("--sandbox") + 1] == "workspace-write"
     assert command[command.index("--cd") + 1] == str(worktree.resolve())
     assert command[command.index("--ask-for-approval") + 1] == "never"
+    assert command.index("--ask-for-approval") < exec_index
     forbidden = {
         "--yolo",
         "--dangerously-bypass-approvals-and-sandbox",
@@ -913,9 +919,7 @@ def test_real_codex_coding_smoke_is_explicitly_opt_in(tmp_path: Path) -> None:
         )
     model = os.environ.get("VILLANI_REAL_CODEX_MODEL")
     if not model:
-        pytest.skip(
-            "set VILLANI_REAL_CODEX_MODEL to an installed Codex model string"
-        )
+        pytest.skip("set VILLANI_REAL_CODEX_MODEL to an installed Codex model string")
     system = _system(
         executable=executable,
         timeout_seconds=120,

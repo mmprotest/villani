@@ -20,6 +20,7 @@
     "driver": { "enum": ["codex", "claude_code"] },
     "configured": { "type": "boolean" },
     "status": { "$ref": "#/$defs/status" },
+    "selectable": { "type": "boolean" },
     "configured_executable": { "type": "string", "minLength": 1 },
     "resolved_path": { "$ref": "#/$defs/nullable_string" },
     "safe_display_path": { "$ref": "#/$defs/nullable_string" },
@@ -32,6 +33,13 @@
     "exact_version": { "$ref": "#/$defs/nullable_string" },
     "authentication_ready": { "type": "boolean" },
     "authentication_status": { "enum": ["ready", "not_ready", "unknown"] },
+    "unattended_safe_execution": { "type": "boolean" },
+    "approval_strategy": {
+      "anyOf": [
+        { "enum": ["config_override", "global_flag"] },
+        { "type": "null" }
+      ]
+    },
     "supported_roles": { "$ref": "#/$defs/roles" },
     "configured_roles": { "$ref": "#/$defs/roles" },
     "configured_model": { "$ref": "#/$defs/nullable_string" },

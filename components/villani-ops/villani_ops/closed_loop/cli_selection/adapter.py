@@ -210,8 +210,8 @@ class CliSelectorAdapter:
     """Invoke a CLI only for unresolved ties among acceptance-eligible candidates."""
 
     def __init__(self, driver: CliDriver, *, probe: CliProbe) -> None:
-        if driver.system.roles != {AgentRole.SELECTION}:
-            raise ValueError("CLI selector requires a selection-only system")
+        if AgentRole.SELECTION not in driver.system.roles:
+            raise ValueError("CLI selector requires a system advertising selection")
         self.driver = driver
         self.probe = probe
 

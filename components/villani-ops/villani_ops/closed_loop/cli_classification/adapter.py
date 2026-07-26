@@ -223,8 +223,10 @@ class CliClassifierAdapter:
     """Normalize isolated CLI classification into the canonical Classification."""
 
     def __init__(self, driver: CliDriver, *, probe: CliProbe) -> None:
-        if driver.system.roles != {AgentRole.CLASSIFICATION}:
-            raise ValueError("CLI classifier requires a classification-only system")
+        if AgentRole.CLASSIFICATION not in driver.system.roles:
+            raise ValueError(
+                "CLI classifier requires a system advertising classification"
+            )
         self.driver = driver
         self.probe = probe
 

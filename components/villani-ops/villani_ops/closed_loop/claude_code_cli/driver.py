@@ -410,41 +410,37 @@ class ClaudeCodeCliDriver:
                 ClaudeFailure.AMBIENT_STARTUP_FAILURE,
                 "`claude doctor` reported an unhealthy installation or configuration; resolve its diagnostics before running Villani.",
             )
-        if self.system.roles not in tuple({role} for role in AgentRole):
-            fail(
-                ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
-                "Claude Code CLI systems must declare exactly one supported role.",
-            )
-        if self.system.roles == {
-            AgentRole.CODING
-        } and self.system.permission_profile not in {
-            "workspace_write",
-            "workspace-write",
-        }:
-            fail(
-                ClaudeFailure.PERMISSION_DENIED,
-                "Claude coding requires permission_profile='workspace_write'; broader or read-only profiles are unsupported.",
-            )
-        if self.system.roles and AgentRole.CODING not in self.system.roles:
+        for role in sorted(self.system.roles, key=lambda item: item.value):
+            policy = self.system.policy_for_role(role)
+            if role == AgentRole.CODING:
+                if policy.permission_profile not in {
+                    "workspace_write",
+                    "workspace-write",
+                }:
+                    fail(
+                        ClaudeFailure.PERMISSION_DENIED,
+                        "Claude coding requires permission_profile='workspace_write'; broader or read-only profiles are unsupported.",
+                    )
+                continue
             if not capabilities.get("read_only_permission_mode", False):
                 fail(
                     ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
-                    "Claude Code read-only roles require the plan permission mode.",
+                    f"Claude Code {role.value} requires the plan permission mode.",
                 )
-            if self.system.permission_profile not in {"read_only", "read-only"}:
+            if policy.permission_profile not in {"read_only", "read-only"}:
                 fail(
                     ClaudeFailure.PERMISSION_DENIED,
-                    "Claude Code read-only roles require permission_profile='read_only'.",
+                    f"Claude Code {role.value} requires permission_profile='read_only'.",
                 )
-            if self.system.instruction_policy != "villani_controlled":
+            if policy.instruction_policy != "villani_controlled":
                 fail(
                     ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
-                    "Claude Code read-only roles require instruction_policy='villani_controlled'.",
+                    f"Claude Code {role.value} requires instruction_policy='villani_controlled'.",
                 )
-            if self.system.environment_policy != "minimal":
+            if policy.environment_policy != "minimal":
                 fail(
                     ClaudeFailure.UNSUPPORTED_REQUIRED_CAPABILITY,
-                    "Claude Code read-only roles require environment_policy='minimal' so sessions and ambient identity cannot cross role boundaries.",
+                    f"Claude Code {role.value} requires environment_policy='minimal' so sessions and ambient identity cannot cross role boundaries.",
                 )
 
         return ClaudeProbeResult(
@@ -476,6 +472,13 @@ class ClaudeCodeCliDriver:
             )
         return value
 
+    def _driver_for_role(self, role: AgentRole) -> "ClaudeCodeCliDriver":
+        return ClaudeCodeCliDriver(
+            self.system.for_role(role),
+            supervisor=self.supervisor,
+            launcher_arguments=self.launcher_arguments,
+        )
+
     def build_invocation(
         self,
         *,
@@ -492,6 +495,25 @@ class ClaudeCodeCliDriver:
         controlled_settings_path: Path | None = None,
         controlled_mcp_path: Path | None = None,
     ) -> CliInvocation:
+        if AgentRole.CODING not in self.system.roles:
+            raise ClaudeCodeDriverUnavailable(
+                "Claude Code coding invocation requires a system advertising coding"
+            )
+        if len(self.system.roles) > 1:
+            return self._driver_for_role(AgentRole.CODING).build_invocation(
+                probe=probe,
+                worktree=worktree,
+                agent_directory=agent_directory,
+                prompt_bytes=prompt_bytes,
+                prompt_reference=prompt_reference,
+                prompt_sha256=prompt_sha256,
+                output_schema_path=output_schema_path,
+                run_id=run_id,
+                attempt_id=attempt_id,
+                baseline_sha256=baseline_sha256,
+                controlled_settings_path=controlled_settings_path,
+                controlled_mcp_path=controlled_mcp_path,
+            )
         if not probe.ready or probe.resolved_executable is None:
             detail = "; ".join(probe.messages) or "Claude Code doctor did not pass"
             raise ClaudeCodeDriverUnavailable(detail)
@@ -638,9 +660,24 @@ class ClaudeCodeCliDriver:
     ) -> CliInvocation:
         """Build one no-session process for a read-only Villani role."""
 
-        if role == AgentRole.CODING or self.system.roles != {role}:
+        if role == AgentRole.CODING or role not in self.system.roles:
             raise ClaudeCodeDriverUnavailable(
-                f"Claude Code {role.value} invocation requires a {role.value}-only system"
+                f"Claude Code {role.value} invocation requires a system "
+                f"advertising {role.value}"
+            )
+        if len(self.system.roles) > 1:
+            return self._driver_for_role(role)._build_read_only_role_invocation(
+                role=role,
+                probe=probe,
+                workspace=workspace,
+                artifact_directory=artifact_directory,
+                prompt_bytes=prompt_bytes,
+                prompt_reference=prompt_reference,
+                prompt_sha256=prompt_sha256,
+                output_schema_path=output_schema_path,
+                role_invocation_id=role_invocation_id,
+                controlled_settings_path=controlled_settings_path,
+                controlled_mcp_path=controlled_mcp_path,
             )
         if not probe.ready or probe.resolved_executable is None:
             detail = "; ".join(probe.messages) or "Claude Code doctor did not pass"

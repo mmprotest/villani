@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -27,6 +28,7 @@ from villani_ops.closed_loop.cli_runtime import (
     CliProcessSupervisor,
     minimal_cli_environment_values,
 )
+from villani_ops.subprocess_utils import resolve_command_prefix
 
 from .models import (
     CodexFailure,
@@ -39,6 +41,8 @@ _T = TypeVar("_T")
 
 _SCOPED_PERMISSION_PROFILE_MINIMUM_VERSION = (0, 138, 0)
 _VERIFIER_PERMISSION_PROFILE = "villani_verifier_read_only"
+_ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
+_PROBE_EVIDENCE_TEXT_LIMIT = 2048
 
 
 def _semantic_version(value: str | None) -> tuple[int, int, int] | None:
@@ -48,6 +52,47 @@ def _semantic_version(value: str | None) -> tuple[int, int, int] | None:
     if match is None:
         return None
     return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def _normalized_help(*values: str) -> str:
+    """Normalize platform line endings and terminal colour before parsing."""
+
+    combined = "\n".join(values)
+    return _ANSI_ESCAPE.sub("", combined).replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _probe_succeeded(result: CliProcessResult) -> bool:
+    return result.infrastructure_state == "succeeded" and result.exit_code == 0
+
+
+def _bounded_probe_text(value: str) -> str:
+    return value[:_PROBE_EVIDENCE_TEXT_LIMIT]
+
+
+def _approval_probe_evidence(
+    *,
+    arguments: tuple[str, ...],
+    result: CliProcessResult,
+    stdout: str,
+    stderr: str,
+) -> dict[str, Any]:
+    """Return bounded, already-supervisor-redacted no-model probe evidence."""
+
+    return {
+        "argv": list(arguments),
+        "exit_code": result.exit_code,
+        "infrastructure_state": result.infrastructure_state,
+        "timed_out": any(
+            failure.code == RuntimeFailure.TIMEOUT for failure in result.failures
+        ),
+        "stdout_captured": bool(stdout),
+        "stderr_captured": bool(stderr),
+        "stdout_sha256": f"sha256:{hashlib.sha256(stdout.encode('utf-8')).hexdigest()}",
+        "stderr_sha256": f"sha256:{hashlib.sha256(stderr.encode('utf-8')).hexdigest()}",
+        "stdout_excerpt": _bounded_probe_text(stdout),
+        "stderr_excerpt": _bounded_probe_text(stderr),
+        "used_model": False,
+    }
 
 
 def _verifier_permission_overrides() -> tuple[str, ...]:
@@ -67,7 +112,6 @@ def _verifier_permission_overrides() -> tuple[str, ...]:
             '{":minimal"="read",":workspace_roots"={"."="read"}}'
         ),
         f"permissions.{_VERIFIER_PERMISSION_PROFILE}.network.enabled=false",
-        'web_search="disabled"',
         "allow_login_shell=false",
     )
 
@@ -179,6 +223,20 @@ class CodexCliDriver:
             redaction_keys=_environment_redaction_keys(),
         ).resolve()
 
+    def _probe_timeout_seconds(self) -> float:
+        value = self.system.provider_options.get("probe_timeout_seconds", 8.0)
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or value <= 0
+            or value > 30
+        ):
+            raise CodexDriverUnavailable(
+                "provider_options.probe_timeout_seconds must be greater than "
+                "zero and no more than 30 seconds"
+            )
+        return float(value)
+
     async def _probe_command(
         self,
         executable: Path,
@@ -188,15 +246,19 @@ class CodexCliDriver:
     ) -> tuple[CliProcessResult, str, str]:
         artifact = directory / name
         environment = self._environment()
+        launch_executable, launch_arguments = self._normalized_launcher(
+            executable,
+            (*self.launcher_arguments, *arguments),
+        )
         invocation = CliInvocation(
-            executable=executable,
-            arguments=(*self.launcher_arguments, *arguments),
+            executable=launch_executable,
+            arguments=launch_arguments,
             cwd=directory,
             stdin_bytes=None,
             environment=environment.values,
             environment_redaction_keys=environment.redaction_keys,
             environment_metadata=environment.metadata,
-            timeout_seconds=8.0,
+            timeout_seconds=self._probe_timeout_seconds(),
             graceful_shutdown_seconds=1.0,
             stdout_path=artifact / "stdout.log",
             stderr_path=artifact / "stderr.log",
@@ -217,6 +279,19 @@ class CodexCliDriver:
             _read_text(invocation.stdout_path),
             _read_text(invocation.stderr_path),
         )
+
+    @staticmethod
+    def _normalized_launcher(
+        executable: Path, arguments: Sequence[str]
+    ) -> tuple[Path, tuple[str, ...]]:
+        """Use Villani's argv-only launcher support for Windows batch shims."""
+
+        prefix = resolve_command_prefix(str(executable))
+        if not prefix:
+            raise CodexDriverUnavailable(
+                f"Codex executable {str(executable)!r} is not runnable"
+            )
+        return Path(prefix[0]), (*prefix[1:], *arguments)
 
     async def probe_async(self) -> CodexProbeResult:
         checked_at = _utc_now()
@@ -250,46 +325,122 @@ class CodexCliDriver:
             prefix="villani-codex-probe-"
         ) as raw_directory:
             directory = Path(raw_directory).resolve()
-            version_result, version_stdout, version_stderr = await self._probe_command(
-                resolved, ("--version",), directory, "version"
+            config_approval_arguments = (
+                "-c",
+                'approval_policy="never"',
+                "--strict-config",
+                "exec",
+                "--help",
             )
-            help_result, help_stdout, help_stderr = await self._probe_command(
-                resolved, ("exec", "--help"), directory, "exec-help"
+            global_approval_arguments = (
+                "--ask-for-approval",
+                "never",
+                "exec",
+                "--help",
             )
-            login_result, login_stdout, login_stderr = await self._probe_command(
-                resolved, ("login", "status"), directory, "login-status"
+            (
+                (version_result, version_stdout, version_stderr),
+                (global_help_result, global_help_stdout, global_help_stderr),
+                (exec_help_result, exec_help_stdout, exec_help_stderr),
+                (login_result, login_stdout, login_stderr),
+                (
+                    config_approval_result,
+                    config_approval_stdout,
+                    config_approval_stderr,
+                ),
+                (
+                    global_approval_result,
+                    global_approval_stdout,
+                    global_approval_stderr,
+                ),
+            ) = await asyncio.gather(
+                self._probe_command(resolved, ("--version",), directory, "version"),
+                self._probe_command(resolved, ("--help",), directory, "global-help"),
+                self._probe_command(
+                    resolved, ("exec", "--help"), directory, "exec-help"
+                ),
+                self._probe_command(
+                    resolved, ("login", "status"), directory, "login-status"
+                ),
+                self._probe_command(
+                    resolved,
+                    config_approval_arguments,
+                    directory,
+                    "approval-config-override",
+                ),
+                self._probe_command(
+                    resolved,
+                    global_approval_arguments,
+                    directory,
+                    "approval-global-flag",
+                ),
             )
 
         exact_version = (version_stdout or version_stderr).strip() or None
         parsed_version = _semantic_version(exact_version)
-        if version_result.infrastructure_state != "succeeded" or not exact_version:
+        if not _probe_succeeded(version_result) or not exact_version:
             fail(
                 CodexFailure.UNSUPPORTED_VERSION,
                 "`codex --version` did not complete successfully with exact version output.",
             )
-        help_text = f"{help_stdout}\n{help_stderr}".casefold()
+        global_help_text = _normalized_help(
+            global_help_stdout, global_help_stderr
+        ).casefold()
+        exec_help_text = _normalized_help(exec_help_stdout, exec_help_stderr).casefold()
+        config_approval_validated = _probe_succeeded(config_approval_result)
+        global_approval_advertised = (
+            _probe_succeeded(global_help_result)
+            and "--ask-for-approval" in global_help_text
+            and "never" in global_help_text
+        )
+        global_approval_validated = global_approval_advertised and _probe_succeeded(
+            global_approval_result
+        )
+        approval_strategy = (
+            "config_override"
+            if config_approval_validated
+            else "global_flag"
+            if global_approval_validated
+            else None
+        )
+        unattended_safe_execution = approval_strategy is not None
+        config_override_advertised = (
+            "--config" in global_help_text or "--config" in exec_help_text
+        )
+        strict_config_advertised = (
+            "--strict-config" in global_help_text or "--strict-config" in exec_help_text
+        )
         capabilities = {
-            "exec": help_result.infrastructure_state == "succeeded",
-            "jsonl_output": "--json" in help_text,
-            "model_selection": "--model" in help_text or "-m," in help_text,
-            "workspace_selection": "--cd" in help_text or "-c," in help_text,
-            "sandbox_selection": "--sandbox" in help_text
-            and "workspace-write" in help_text,
-            "read_only_sandbox": "--sandbox" in help_text and "read-only" in help_text,
-            "schema_output": "--output-schema" in help_text,
-            "last_message_output": "--output-last-message" in help_text,
-            "ephemeral": "--ephemeral" in help_text,
-            "noninteractive_approval": "--ask-for-approval" in help_text
-            and "never" in help_text,
-            "ignore_user_config": "--ignore-user-config" in help_text,
-            "ignore_project_rules": "--ignore-rules" in help_text,
-            "strict_config": "--strict-config" in help_text,
-            "config_override": "--config" in help_text or "-c," in help_text,
+            "exec": _probe_succeeded(exec_help_result),
+            "jsonl_output": "--json" in exec_help_text,
+            "model_selection": "--model" in exec_help_text,
+            "workspace_selection": "--cd" in exec_help_text,
+            "sandbox_selection": "--sandbox" in exec_help_text
+            and "workspace-write" in exec_help_text,
+            "read_only_sandbox": "--sandbox" in exec_help_text
+            and "read-only" in exec_help_text,
+            "schema_output": "--output-schema" in exec_help_text,
+            "last_message_output": "--output-last-message" in exec_help_text,
+            "ephemeral": "--ephemeral" in exec_help_text,
+            "unattended_safe_execution": unattended_safe_execution,
+            # Kept for old run-bundle and UI readers. Fresh eligibility uses
+            # unattended_safe_execution plus the selected validated strategy.
+            "noninteractive_approval": unattended_safe_execution,
+            "approval_policy_never_config_override": config_approval_validated,
+            "global_approval_flag_advertised": global_approval_advertised,
+            "global_approval_flag_validated": global_approval_validated,
+            "ignore_user_config": "--ignore-user-config" in exec_help_text,
+            "ignore_project_rules": "--ignore-rules" in exec_help_text,
+            "skip_git_repo_check": "--skip-git-repo-check" in exec_help_text,
+            "strict_config": (strict_config_advertised or config_approval_validated),
+            "config_override": (
+                config_override_advertised or config_approval_validated
+            ),
             "scoped_permission_profiles": (
                 parsed_version is not None
                 and parsed_version >= _SCOPED_PERMISSION_PROFILE_MINIMUM_VERSION
-                and ("--config" in help_text or "-c," in help_text)
-                and "--strict-config" in help_text
+                and (config_override_advertised or config_approval_validated)
+                and (strict_config_advertised or config_approval_validated)
             ),
         }
         required = {
@@ -301,10 +452,30 @@ class CodexCliDriver:
             "schema_output",
             "last_message_output",
             "ephemeral",
-            "noninteractive_approval",
+            "unattended_safe_execution",
         }
-        if self.system.instruction_policy == "villani_controlled":
+        if any(role != AgentRole.CODING for role in self.system.roles):
+            required.update({"read_only_sandbox", "skip_git_repo_check"})
+        if any(
+            self.system.policy_for_role(role).instruction_policy == "villani_controlled"
+            for role in self.system.roles
+        ):
             required.update({"ignore_user_config", "ignore_project_rules"})
+        configured_effort = self.system.provider_options.get("reasoning_effort")
+        if configured_effort is not None and (
+            not isinstance(configured_effort, str) or not configured_effort.strip()
+        ):
+            fail(
+                CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
+                "provider_options.reasoning_effort must be a non-empty string.",
+            )
+        if configured_effort is not None and not (
+            capabilities["config_override"] and capabilities["strict_config"]
+        ):
+            fail(
+                CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
+                "Configured Codex reasoning effort requires validated --config and --strict-config support.",
+            )
         missing = sorted(name for name in required if not capabilities.get(name, False))
         if missing:
             fail(
@@ -323,9 +494,7 @@ class CodexCliDriver:
                 "no active login",
             )
         )
-        authentication_ready = (
-            login_result.infrastructure_state == "succeeded" and not negative_auth
-        )
+        authentication_ready = _probe_succeeded(login_result) and not negative_auth
         if "chatgpt" in login_text:
             authentication_method = "chatgpt"
         elif "api key" in login_text or "api_key" in login_text:
@@ -342,41 +511,37 @@ class CodexCliDriver:
                 "`codex login status` did not report an active login; authenticate with Codex CLI before running Villani.",
             )
 
-        if self.system.roles not in tuple({role} for role in AgentRole):
-            fail(
-                CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
-                "Codex CLI systems must declare exactly one supported role.",
-            )
-        if self.system.roles == {
-            AgentRole.CODING
-        } and self.system.permission_profile not in {
-            "workspace_write",
-            "workspace-write",
-        }:
-            fail(
-                CodexFailure.PERMISSION_SANDBOX_FAILURE,
-                "Codex coding requires permission_profile='workspace_write'; broader or read-only profiles are unsupported.",
-            )
-        if self.system.roles and AgentRole.CODING not in self.system.roles:
+        for role in sorted(self.system.roles, key=lambda item: item.value):
+            policy = self.system.policy_for_role(role)
+            if role == AgentRole.CODING:
+                if policy.permission_profile not in {
+                    "workspace_write",
+                    "workspace-write",
+                }:
+                    fail(
+                        CodexFailure.PERMISSION_SANDBOX_FAILURE,
+                        "Codex coding requires permission_profile='workspace_write'; broader or read-only profiles are unsupported.",
+                    )
+                continue
             if not capabilities.get("scoped_permission_profiles", False):
                 fail(
                     CodexFailure.UNSUPPORTED_VERSION,
-                    "Codex read-only roles require scoped permission profiles (Codex 0.138.0 or later with --config and --strict-config) so reads are confined to the role workspace.",
+                    f"Codex {role.value} requires scoped permission profiles (Codex 0.138.0 or later with --config and --strict-config) so reads are confined to the role workspace.",
                 )
-            if self.system.permission_profile not in {"read_only", "read-only"}:
+            if policy.permission_profile not in {"read_only", "read-only"}:
                 fail(
                     CodexFailure.PERMISSION_SANDBOX_FAILURE,
-                    "Codex read-only roles require permission_profile='read_only'.",
+                    f"Codex {role.value} requires permission_profile='read_only'.",
                 )
-            if self.system.instruction_policy != "villani_controlled":
+            if policy.instruction_policy != "villani_controlled":
                 fail(
                     CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
-                    "Codex read-only roles require instruction_policy='villani_controlled'.",
+                    f"Codex {role.value} requires instruction_policy='villani_controlled'.",
                 )
-            if self.system.environment_policy != "minimal":
+            if policy.environment_policy != "minimal":
                 fail(
                     CodexFailure.UNSUPPORTED_REQUIRED_FLAG,
-                    "Codex read-only roles require environment_policy='minimal' so sessions and ambient identity cannot cross role boundaries.",
+                    f"Codex {role.value} requires environment_policy='minimal' so sessions and ambient identity cannot cross role boundaries.",
                 )
 
         return CodexProbeResult(
@@ -388,6 +553,26 @@ class CodexCliDriver:
             authentication_ready=authentication_ready,
             authentication_method=authentication_method,  # type: ignore[arg-type]
             capabilities=capabilities,
+            approval_strategy=approval_strategy,  # type: ignore[arg-type]
+            approval_policy="never" if approval_strategy is not None else None,
+            approval_probe_used_model=False,
+            approval_probe_evidence={
+                "selected_strategy": approval_strategy,
+                "approval_policy": ("never" if approval_strategy is not None else None),
+                "probe_used_model": False,
+                "config_override": _approval_probe_evidence(
+                    arguments=config_approval_arguments,
+                    result=config_approval_result,
+                    stdout=config_approval_stdout,
+                    stderr=config_approval_stderr,
+                ),
+                "global_flag": _approval_probe_evidence(
+                    arguments=global_approval_arguments,
+                    result=global_approval_result,
+                    stdout=global_approval_stdout,
+                    stderr=global_approval_stderr,
+                ),
+            },
             ready=not failures,
             failures=failures,
             messages=messages,
@@ -405,6 +590,82 @@ class CodexCliDriver:
             )
         return value
 
+    def _driver_for_role(self, role: AgentRole) -> "CodexCliDriver":
+        return CodexCliDriver(
+            self.system.for_role(role),
+            supervisor=self.supervisor,
+            launcher_arguments=self.launcher_arguments,
+        )
+
+    def _reasoning_effort(self) -> str | None:
+        value = self.system.provider_options.get("reasoning_effort")
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise CodexDriverUnavailable(
+                "provider_options.reasoning_effort must be a non-empty string"
+            )
+        return value.strip()
+
+    @staticmethod
+    def _approval_arguments(probe: CodexProbeResult) -> list[str]:
+        if not probe.capabilities.get("unattended_safe_execution", False):
+            raise CodexDriverUnavailable(
+                "Codex doctor did not validate unattended safe execution"
+            )
+        if probe.approval_policy != "never":
+            raise CodexDriverUnavailable(
+                "Codex doctor did not validate approval policy 'never'"
+            )
+        if probe.approval_strategy == "config_override":
+            return ["-c", 'approval_policy="never"']
+        if probe.approval_strategy == "global_flag":
+            return ["--ask-for-approval", "never"]
+        raise CodexDriverUnavailable(
+            "Codex doctor did not select a supported approval strategy"
+        )
+
+    def _global_arguments(
+        self,
+        *,
+        probe: CodexProbeResult,
+        include_scoped_read_only_profile: bool,
+    ) -> list[str]:
+        """Build options that must precede the ``exec`` subcommand."""
+
+        arguments = [*self.launcher_arguments, *self._approval_arguments(probe)]
+        config_supported = bool(
+            probe.capabilities.get("config_override", False)
+            and probe.capabilities.get("strict_config", False)
+        )
+        effort = self._reasoning_effort()
+        config_overrides: list[str] = []
+        if config_supported:
+            if effort is not None:
+                config_overrides.append(
+                    f"model_reasoning_effort={json.dumps(effort, ensure_ascii=False)}"
+                )
+            config_overrides.append('web_search="disabled"')
+            if include_scoped_read_only_profile:
+                config_overrides.extend(_verifier_permission_overrides())
+        elif effort is not None:
+            raise CodexDriverUnavailable(
+                "configured reasoning effort requires validated Codex config overrides"
+            )
+        elif include_scoped_read_only_profile:
+            raise CodexDriverUnavailable(
+                "Codex read-only roles require validated strict config overrides"
+            )
+        for override in config_overrides:
+            arguments.extend(("-c", override))
+        if config_overrides or probe.approval_strategy == "config_override":
+            if not probe.capabilities.get("strict_config", False):
+                raise CodexDriverUnavailable(
+                    "Codex config overrides require validated --strict-config support"
+                )
+            arguments.append("--strict-config")
+        return arguments
+
     def build_invocation(
         self,
         *,
@@ -420,11 +681,31 @@ class CodexCliDriver:
         attempt_id: str,
         baseline_sha256: str | None,
     ) -> CliInvocation:
+        if AgentRole.CODING not in self.system.roles:
+            raise CodexDriverUnavailable(
+                "Codex coding invocation requires a system advertising coding"
+            )
+        if len(self.system.roles) > 1:
+            return self._driver_for_role(AgentRole.CODING).build_invocation(
+                probe=probe,
+                worktree=worktree,
+                agent_directory=agent_directory,
+                prompt_bytes=prompt_bytes,
+                prompt_reference=prompt_reference,
+                prompt_sha256=prompt_sha256,
+                output_schema_path=output_schema_path,
+                final_output_path=final_output_path,
+                run_id=run_id,
+                attempt_id=attempt_id,
+                baseline_sha256=baseline_sha256,
+            )
         if not probe.ready or probe.resolved_executable is None:
             detail = "; ".join(probe.messages) or "Codex doctor did not pass"
             raise CodexDriverUnavailable(detail)
         arguments: list[str] = [
-            *self.launcher_arguments,
+            *self._global_arguments(
+                probe=probe, include_scoped_read_only_profile=False
+            ),
             "exec",
             "--ephemeral",
             "--json",
@@ -438,8 +719,6 @@ class CodexCliDriver:
             str(Path(output_schema_path).resolve()),
             "--output-last-message",
             str(Path(final_output_path).resolve()),
-            "--ask-for-approval",
-            "never",
         ]
         if self.system.instruction_policy == "villani_controlled":
             arguments.extend(("--ignore-user-config", "--ignore-rules"))
@@ -466,9 +745,12 @@ class CodexCliDriver:
                 options, "maximum_tail_bytes", 16 * 1024
             ),
         )
+        launch_executable, launch_arguments = self._normalized_launcher(
+            Path(probe.resolved_executable), arguments
+        )
         return CliInvocation(
-            executable=Path(probe.resolved_executable),
-            arguments=tuple(arguments),
+            executable=launch_executable,
+            arguments=launch_arguments,
             cwd=Path(worktree).resolve(),
             stdin_bytes=prompt_bytes,
             environment=environment.values,
@@ -497,6 +779,11 @@ class CodexCliDriver:
                 "baseline_sha256": baseline_sha256,
                 "instruction_policy": self.system.instruction_policy,
                 "permission_policy": self.system.permission_profile,
+                "approval_strategy": probe.approval_strategy,
+                "approval_policy": probe.approval_policy,
+                "sandbox": "workspace-write",
+                "network_access": False,
+                "session_resume": False,
             },
             target_repository_writable=False,
             prompt_artifact_reference=prompt_reference,
@@ -523,9 +810,23 @@ class CodexCliDriver:
     ) -> CliInvocation:
         """Build one ephemeral process with reads confined to its role workspace."""
 
-        if role == AgentRole.CODING or self.system.roles != {role}:
+        if role == AgentRole.CODING or role not in self.system.roles:
             raise CodexDriverUnavailable(
-                f"Codex {role.value} invocation requires a {role.value}-only system"
+                f"Codex {role.value} invocation requires a system advertising "
+                f"{role.value}"
+            )
+        if len(self.system.roles) > 1:
+            return self._driver_for_role(role)._build_read_only_role_invocation(
+                role=role,
+                probe=probe,
+                workspace=workspace,
+                artifact_directory=artifact_directory,
+                prompt_bytes=prompt_bytes,
+                prompt_reference=prompt_reference,
+                prompt_sha256=prompt_sha256,
+                output_schema_path=output_schema_path,
+                final_output_path=final_output_path,
+                role_invocation_id=role_invocation_id,
             )
         if not probe.ready or probe.resolved_executable is None:
             detail = "; ".join(probe.messages) or "Codex doctor did not pass"
@@ -535,26 +836,22 @@ class CodexCliDriver:
                 f"Codex {role.value} requires environment_policy='minimal'"
             )
         arguments: list[str] = [
-            *self.launcher_arguments,
+            *self._global_arguments(probe=probe, include_scoped_read_only_profile=True),
             "exec",
             "--ephemeral",
             "--json",
             "--model",
             self.system.model,
+            "--skip-git-repo-check",
             "--cd",
             str(Path(workspace).resolve()),
             "--output-schema",
             str(Path(output_schema_path).resolve()),
             "--output-last-message",
             str(Path(final_output_path).resolve()),
-            "--ask-for-approval",
-            "never",
-            "--strict-config",
             "--ignore-user-config",
             "--ignore-rules",
         ]
-        for override in _verifier_permission_overrides():
-            arguments.extend(("--config", override))
         arguments.append("-")
         environment = self._environment()
         options = self.system.provider_options
@@ -578,9 +875,12 @@ class CodexCliDriver:
                 options, "maximum_tail_bytes", 16 * 1024
             ),
         )
+        launch_executable, launch_arguments = self._normalized_launcher(
+            Path(probe.resolved_executable), arguments
+        )
         return CliInvocation(
-            executable=Path(probe.resolved_executable),
-            arguments=tuple(arguments),
+            executable=launch_executable,
+            arguments=launch_arguments,
             cwd=Path(workspace).resolve(),
             stdin_bytes=prompt_bytes,
             environment=environment.values,
@@ -629,7 +929,12 @@ class CodexCliDriver:
                     str(Path(workspace).resolve()),
                 ],
                 "permission_policy": _VERIFIER_PERMISSION_PROFILE,
+                "approval_strategy": probe.approval_strategy,
+                "approval_policy": probe.approval_policy,
+                "sandbox": "read-only",
+                "sandbox_enforcement": "scoped_permission_profile",
                 "network_access": False,
+                "session_resume": False,
             },
             target_repository_writable=False,
             prompt_artifact_reference=prompt_reference,
@@ -747,6 +1052,9 @@ class CodexCliDriver:
             authentication_ready=probe.authentication_ready,
             authentication_method=probe.authentication_method,
             capabilities=probe.capabilities,
+            approval_strategy=probe.approval_strategy,
+            approval_policy=probe.approval_policy or "never",
+            approval_probe_used_model=probe.approval_probe_used_model,
             instruction_policy=self.system.instruction_policy,
             permission_profile=self.system.permission_profile,
             environment_policy=self.system.environment_policy,

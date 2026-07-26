@@ -76,6 +76,7 @@ class AgentSystemDiagnostic(StrictManagementModel):
     driver: Literal["codex", "claude_code"]
     configured: bool
     status: DoctorStatus
+    selectable: bool = False
     configured_executable: str = Field(min_length=1)
     resolved_path: str | None
     safe_display_path: str | None
@@ -85,6 +86,8 @@ class AgentSystemDiagnostic(StrictManagementModel):
     exact_version: str | None
     authentication_ready: bool
     authentication_status: Literal["ready", "not_ready", "unknown"]
+    unattended_safe_execution: bool = False
+    approval_strategy: Literal["config_override", "global_flag"] | None = None
     supported_roles: list[AgentRole]
     configured_roles: list[AgentRole]
     configured_model: str | None
@@ -182,27 +185,69 @@ def _auth_failure(driver: str) -> str:
 
 
 def _next_action(
-    *, driver: str, system_id: str, failures: set[str], ready: bool
+    *,
+    driver: str,
+    system_id: str,
+    failures: set[str],
+    ready: bool,
+    probes: Mapping[AgentRole, Any | None],
 ) -> str:
     executable = "codex" if driver == "codex" else "claude"
+    if ready:
+        return "No action required."
     if _missing_failure(driver) in failures:
         return (
-            "npm install -g @openai/codex"
+            "Install Codex CLI or configure the executable path."
             if driver == "codex"
-            else "npm install -g @anthropic-ai/claude-code"
+            else "Install Claude Code or configure the executable path."
         )
     if _auth_failure(driver) in failures:
-        return "codex login" if driver == "codex" else "claude auth login"
+        return "Run codex login." if driver == "codex" else "Run claude auth login."
+    available_probes = [probe for probe in probes.values() if probe is not None]
+    if driver == "codex" and available_probes:
+        capabilities = [dict(probe.capabilities) for probe in available_probes]
+        if not all(
+            item.get("unattended_safe_execution", False) for item in capabilities
+        ):
+            return (
+                "Install a Codex CLI version that supports "
+                'approval_policy="never" or the global '
+                "--ask-for-approval flag."
+            )
+        if not all(
+            item.get("jsonl_output", False)
+            and item.get("schema_output", False)
+            and item.get("last_message_output", False)
+            for item in capabilities
+        ):
+            return (
+                "Install a Codex CLI version with codex exec --json, "
+                "--output-schema, and --output-last-message."
+            )
+        read_only_roles = {role for role in probes if role != AgentRole.CODING}
+        if not all(item.get("sandbox_selection", False) for item in capabilities) or (
+            read_only_roles
+            and not all(item.get("read_only_sandbox", False) for item in capabilities)
+        ):
+            return (
+                "Install a Codex CLI version with explicit read-only and "
+                "workspace-write sandbox support."
+            )
+        if read_only_roles and not all(
+            item.get("scoped_permission_profiles", False) for item in capabilities
+        ):
+            return (
+                "Install a Codex CLI version with strict scoped permission "
+                "profiles for read-only roles."
+            )
     if failures.intersection(_unsupported_failures(driver)):
         return (
-            "npm install -g @openai/codex@latest"
+            f"Review the failing Codex capability check for {system_id}."
             if driver == "codex"
             else "npm install -g @anthropic-ai/claude-code@latest"
         )
     if driver == "claude_code" and "mcp_plugin_hook_startup_failure" in failures:
         return "claude doctor"
-    if ready:
-        return f"villani agents doctor {system_id}"
     return f"{executable} --version"
 
 
@@ -294,9 +339,36 @@ def _capability_checks(
             evidence={"credential_files_read": False, "secret_values_recorded": False},
         ),
     ]
+    if system.driver == "codex":
+        unattended = bool(
+            capabilities.get("unattended_safe_execution", False)
+            and probe.approval_strategy is not None
+            and probe.approval_policy == "never"
+            and not probe.approval_probe_used_model
+        )
+        checks.append(
+            RoleDoctorCheck(
+                check_id="unattended_safe_execution",
+                status="PASS" if unattended else "UNSUPPORTED",
+                message=(
+                    "A bounded no-model probe validated unattended execution "
+                    "with approval policy 'never'."
+                    if unattended
+                    else "No safe unattended approval strategy was validated."
+                ),
+                evidence={
+                    "unattended_safe_execution": unattended,
+                    "approval_strategy": probe.approval_strategy,
+                    "approval_policy": probe.approval_policy,
+                    "probe_used_model": probe.approval_probe_used_model,
+                },
+            )
+        )
+    else:
+        unattended = True
     if role == AgentRole.CODING:
         safe_edit = (
-            capabilities.get("sandbox_selection", False)
+            capabilities.get("sandbox_selection", False) and unattended
             if system.driver == "codex"
             else capabilities.get("permission_mode", False)
             and capabilities.get("allowed_tools", False)
@@ -312,6 +384,7 @@ def _capability_checks(
         read_only = (
             capabilities.get("read_only_sandbox", False)
             and capabilities.get("scoped_permission_profiles", False)
+            and unattended
             if system.driver == "codex"
             else capabilities.get("read_only_permission_mode", False)
             and capabilities.get("tools", False)
@@ -415,21 +488,30 @@ def _role_result(
             failure=error or "missing role probe result",
         )
     failures = _failure_values(probe)
+    checks = _capability_checks(system.for_role(role), role, probe)
     unsupported = bool(failures.intersection(_unsupported_failures(system.driver)))
     missing = _missing_failure(system.driver) in failures
-    if unsupported:
+    unsupported_check = any(check.status == "UNSUPPORTED" for check in checks)
+    failed_check = any(check.status == "FAIL" for check in checks)
+    if unsupported or unsupported_check:
         status = DoctorStatus.UNSUPPORTED
-    elif probe.ready:
+    elif probe.ready and not failed_check:
         status = DoctorStatus.READY
     else:
         status = DoctorStatus.ACTION_REQUIRED
-    supported = not unsupported and not missing
+    supported = bool(
+        probe.ready
+        and not unsupported
+        and not missing
+        and not unsupported_check
+        and not failed_check
+    )
     return RoleDoctorResult(
         role=role,
         label=ROLE_LABELS[role],
         status=status,
         supported=supported,
-        checks=_capability_checks(system.for_role(role), role, probe),
+        checks=checks,
         failure="; ".join(probe.messages) if probe.messages else None,
     )
 
@@ -459,6 +541,7 @@ def _diagnostic(
     representative = next(
         (probe for probe in probes.values() if probe is not None), None
     )
+    available_probes = [probe for probe in probes.values() if probe is not None]
     all_failures = {
         failure
         for probe in probes.values()
@@ -470,12 +553,26 @@ def _diagnostic(
         if representative is not None and representative.resolved_executable
         else None
     )
-    auth_values = [
-        bool(probe.authentication_ready)
-        for probe in probes.values()
-        if probe is not None
-    ]
+    auth_values = [bool(probe.authentication_ready) for probe in available_probes]
     auth_ready = bool(auth_values) and all(auth_values)
+    unattended_values = [
+        bool(probe.capabilities.get("unattended_safe_execution", False))
+        for probe in available_probes
+        if system.driver == "codex"
+    ]
+    unattended_safe_execution = (
+        bool(unattended_values) and all(unattended_values)
+        if system.driver == "codex"
+        else True
+    )
+    approval_strategies = {
+        str(probe.approval_strategy)
+        for probe in available_probes
+        if system.driver == "codex" and probe.approval_strategy is not None
+    }
+    approval_strategy = (
+        next(iter(approval_strategies)) if len(approval_strategies) == 1 else None
+    )
     exact_versions = sorted(
         {
             str(probe.exact_version_output)
@@ -496,6 +593,9 @@ def _diagnostic(
         driver=system.driver,
         configured=configured,
         status=status,
+        selectable=status == DoctorStatus.READY
+        and bool(results)
+        and all(item.supported for item in results),
         configured_executable=system.executable,
         resolved_path=resolved,
         safe_display_path=safe_display_path(resolved),
@@ -504,6 +604,11 @@ def _diagnostic(
         authentication_ready=auth_ready,
         authentication_status=(
             "ready" if auth_ready else "not_ready" if auth_values else "unknown"
+        ),
+        unattended_safe_execution=unattended_safe_execution,
+        approval_strategy=cast(
+            Literal["config_override", "global_flag"] | None,
+            approval_strategy,
         ),
         supported_roles=[item.role for item in results if item.supported],
         configured_roles=[role for role in AgentRole if role in system.roles],
@@ -531,6 +636,7 @@ def _diagnostic(
             system_id=system.id,
             failures=all_failures,
             ready=status == DoctorStatus.READY,
+            probes=probes,
         ),
         evidence_path=evidence_path,
         role_results=results,

@@ -1827,6 +1827,7 @@ def agents_add(
     instruction_policy: str | None = typer.Option(None, "--instruction-policy"),
     permission_profile: str | None = typer.Option(None, "--permission-profile"),
     environment_policy: str | None = typer.Option(None, "--environment-policy"),
+    reasoning_effort: str | None = typer.Option(None, "--reasoning-effort"),
 ) -> None:
     """Configure one CLI/model as an agent system for one or more roles."""
 
@@ -1843,6 +1844,8 @@ def agents_add(
         _usage_error(
             "--roles must contain classification, coding, verification, selection, or all"
         )
+    if reasoning_effort is not None and not reasoning_effort.strip():
+        _usage_error("--reasoning-effort must be a non-empty value")
     configured_roles = {AgentRole(item) for item in normalized_role_set}
     primary_role = (
         AgentRole.CODING
@@ -1899,7 +1902,11 @@ def agents_add(
                 )
                 for role in configured_roles
             },
-            provider_options={},
+            provider_options=(
+                {"reasoning_effort": reasoning_effort.strip()}
+                if reasoning_effort is not None
+                else {}
+            ),
         )
     except ValidationError as error:
         _usage_error(_validation_message(error))
@@ -2097,6 +2104,7 @@ def agents_list(
             + (
                 f"version={diagnostic.exact_version or 'unknown'}; "
                 f"model={diagnostic.configured_model}; next={diagnostic.exact_next_action}; "
+                f"approval_strategy={diagnostic.approval_strategy or 'not applicable'}; "
                 if diagnostic is not None
                 else ""
             )
@@ -2320,7 +2328,8 @@ def agents_doctor(
         for report in cli_document.systems if cli_document is not None else ():
             console.print(
                 f"{report.system_id}: {report.status.value}; "
-                f"roles={', '.join(ROLE_LABELS[role] for role in report.configured_roles)}"
+                f"roles={', '.join(ROLE_LABELS[role] for role in report.configured_roles)}; "
+                f"approval_strategy={report.approval_strategy or 'not applicable'}"
             )
             if report.what_failed:
                 console.print(f"  Failed: {report.what_failed}")

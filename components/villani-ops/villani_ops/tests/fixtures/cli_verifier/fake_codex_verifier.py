@@ -7,8 +7,18 @@ import time
 from pathlib import Path
 
 
-HELP = """Codex exec
+GLOBAL_HELP = """Codex CLI
+Usage: codex [OPTIONS] <COMMAND>
+  -c, --config <key=value>
+  --strict-config
+  --ask-for-approval <untrusted|on-request|never>
+"""
+
+
+EXEC_HELP = """Codex exec
 Usage: codex exec [OPTIONS] [PROMPT]
+  -c, --config <key=value>
+  --strict-config
   --ephemeral
   --json
   --model <MODEL>
@@ -16,11 +26,9 @@ Usage: codex exec [OPTIONS] [PROMPT]
   --cd <DIR>
   --output-schema <FILE>
   --output-last-message <FILE>
-  --ask-for-approval <untrusted|on-request|never>
-  --config <key=value>
-  --strict-config
   --ignore-user-config
   --ignore-rules
+  --skip-git-repo-check
   -  Read prompt from stdin
 """
 
@@ -106,6 +114,7 @@ def result_document(workspace: Path, scenario: str) -> object:
 
 
 def verify(arguments: list[str], fixture_scenario: str | None = None) -> int:
+    exec_index = arguments.index("exec")
     prompt = sys.stdin.read()
     workspace = Path(option(arguments, "--cd")).resolve()
     scenario = fixture_scenario or os.environ.get(
@@ -120,6 +129,7 @@ def verify(arguments: list[str], fixture_scenario: str | None = None) -> int:
         "--strict-config",
         "--ignore-user-config",
         "--ignore-rules",
+        "--skip-git-repo-check",
     }
     if not required.issubset(arguments) or "--sandbox" in arguments:
         print("permission denied: verifier policy flags missing", file=sys.stderr)
@@ -127,8 +137,13 @@ def verify(arguments: list[str], fixture_scenario: str | None = None) -> int:
     overrides = {
         arguments[index + 1]
         for index, value in enumerate(arguments)
-        if value == "--config" and index + 1 < len(arguments)
+        if value in {"-c", "--config"} and index + 1 < len(arguments)
     }
+    approval_by_config = 'approval_policy="never"' in overrides
+    approval_by_flag = (
+        "--ask-for-approval" in arguments[:exec_index]
+        and option(arguments, "--ask-for-approval") == "never"
+    )
     expected_overrides = {
         'default_permissions="villani_verifier_read_only"',
         'permissions.villani_verifier_read_only.filesystem={":minimal"="read",":workspace_roots"={"."="read"}}',
@@ -137,10 +152,16 @@ def verify(arguments: list[str], fixture_scenario: str | None = None) -> int:
         "allow_login_shell=false",
     }
     if overrides != expected_overrides:
+        if approval_by_config:
+            expected_overrides.add('approval_policy="never"')
+    if overrides != expected_overrides:
         print("permission denied: scoped read-only profile missing", file=sys.stderr)
         return 17
-    if option(arguments, "--ask-for-approval") != "never":
+    if not (approval_by_config or approval_by_flag):
         print("permission denied: interactive approval enabled", file=sys.stderr)
+        return 14
+    if "--ask-for-approval" in arguments[exec_index + 1 :]:
+        print("permission denied: global approval flag after exec", file=sys.stderr)
         return 14
     if "independent semantic verifier" not in prompt:
         print("controlled verifier prompt missing", file=sys.stderr)
@@ -226,14 +247,20 @@ def main() -> int:
     if arguments == ["--version"]:
         print("codex-cli 9.9.9-verifier-fixture")
         return 0
-    if arguments == ["exec", "--help"]:
+    if arguments == ["--help"]:
+        print(GLOBAL_HELP)
+        return 0
+    if "exec" in arguments and arguments[arguments.index("exec") :] == [
+        "exec",
+        "--help",
+    ]:
         if (
             fixture_unsupported
             or os.environ.get("VILLANI_FAKE_CODEX_VERIFIER_UNSUPPORTED") == "1"
         ):
             print("Codex exec\n  --model <MODEL>")
         else:
-            print(HELP)
+            print(EXEC_HELP)
         return 0
     if arguments == ["login", "status"]:
         if (
@@ -244,7 +271,7 @@ def main() -> int:
             return 1
         print("Logged in using ChatGPT")
         return 0
-    if arguments and arguments[0] == "exec":
+    if "exec" in arguments:
         return verify(arguments, fixture_scenario)
     return 64
 

@@ -8,8 +8,18 @@ import time
 from pathlib import Path
 
 
-HELP = """Codex exec
+GLOBAL_HELP = """Codex CLI
+Usage: codex [OPTIONS] <COMMAND>
+  -c, --config <key=value>
+  --strict-config
+  --ask-for-approval <untrusted|on-request|never>
+"""
+
+
+EXEC_HELP = """Codex exec
 Usage: codex exec [OPTIONS] [PROMPT]
+  -c, --config <key=value>
+  --strict-config
   --ephemeral
   --json
   --model <MODEL>
@@ -17,11 +27,9 @@ Usage: codex exec [OPTIONS] [PROMPT]
   --cd <DIR>
   --output-schema <FILE>
   --output-last-message <FILE>
-  --ask-for-approval <untrusted|on-request|never>
-  --config <key=value>
-  --strict-config
   --ignore-user-config
   --ignore-rules
+  --skip-git-repo-check
   -  Read prompt from stdin
 """
 
@@ -62,6 +70,23 @@ def write_final(arguments: list[str], value: object | None = None) -> None:
 
 
 def coding(arguments: list[str]) -> int:
+    exec_index = arguments.index("exec")
+    approval_overrides = {
+        arguments[index + 1]
+        for index, value in enumerate(arguments)
+        if value in {"-c", "--config"} and index + 1 < len(arguments)
+    }
+    approval_by_config = 'approval_policy="never"' in approval_overrides
+    approval_by_flag = (
+        "--ask-for-approval" in arguments[:exec_index]
+        and option(arguments, "--ask-for-approval") == "never"
+    )
+    if not (approval_by_config or approval_by_flag):
+        print("approval policy was not configured safely", file=sys.stderr)
+        return 10
+    if "--ask-for-approval" in arguments[exec_index + 1 :]:
+        print("global approval flag appeared after exec", file=sys.stderr)
+        return 11
     prompt = sys.stdin.read()
     worktree = Path(option(arguments, "--cd")).resolve()
     if Path.cwd().resolve() != worktree:
@@ -205,11 +230,17 @@ def main() -> int:
     if arguments == ["--version"]:
         print("codex-cli 9.9.9-fixture")
         return 0
-    if arguments == ["exec", "--help"]:
+    if arguments == ["--help"]:
+        print(GLOBAL_HELP)
+        return 0
+    if "exec" in arguments and arguments[arguments.index("exec") :] == [
+        "exec",
+        "--help",
+    ]:
         if os.environ.get("VILLANI_FAKE_CODEX_UNSUPPORTED") == "1":
             print("Codex exec\n  --model <MODEL>\n")
         else:
-            print(HELP)
+            print(EXEC_HELP)
         return 0
     if arguments == ["login", "status"]:
         if os.environ.get("VILLANI_FAKE_CODEX_AUTH") == "missing":
@@ -217,7 +248,7 @@ def main() -> int:
             return 1
         print("Logged in using ChatGPT")
         return 0
-    if arguments and arguments[0] == "exec":
+    if "exec" in arguments:
         return coding(arguments)
     print("unsupported fake Codex command", file=sys.stderr)
     return 64

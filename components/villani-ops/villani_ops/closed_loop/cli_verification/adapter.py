@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, TypeAlias
 
 from pydantic import ValidationError
 
@@ -66,8 +66,8 @@ from .workspace import (
 )
 
 
-CliDriver = CodexCliDriver | ClaudeCodeCliDriver
-CliProbe = CodexProbeResult | ClaudeProbeResult
+CliDriver: TypeAlias = CodexCliDriver | ClaudeCodeCliDriver
+CliProbe: TypeAlias = CodexProbeResult | ClaudeProbeResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,9 +485,9 @@ class CliVerifierAdapter:
     """Provider-specific process mechanics with one provider-neutral output contract."""
 
     def __init__(self, driver: CliDriver, *, probe: CliProbe) -> None:
-        if driver.system.roles != {AgentRole.VERIFICATION}:
+        if AgentRole.VERIFICATION not in driver.system.roles:
             raise ValueError(
-                "CliVerifierAdapter requires a verification-only CLI agent system"
+                "CliVerifierAdapter requires a CLI system advertising verification"
             )
         self.driver = driver
         self.probe = probe
@@ -541,12 +541,12 @@ class CliVerifierAdapter:
         normalized_path = workspace.output_directory / "normalized-result.json"
         independence_path = workspace.agent_directory / "independence.json"
         if not self.probe.ready:
-            failure = _probe_failure(self.probe)
-            reason = "; ".join(self.probe.messages) or failure.value
+            probe_failure = _probe_failure(self.probe)
+            reason = "; ".join(self.probe.messages) or probe_failure.value
             pipeline = _pipeline_projection(
                 None,
                 definitions=workspace.definitions,
-                failure=failure,
+                failure=probe_failure,
                 reason=reason,
             )
             write_json_atomic(
@@ -555,7 +555,7 @@ class CliVerifierAdapter:
                     "schema_version": CLI_VERIFIER_NORMALIZED_RESULT_SCHEMA_VERSION,
                     **pipeline,
                     "status": "infrastructure_failure",
-                    "failure_code": failure.value,
+                    "failure_code": probe_failure.value,
                     "binary_user_projection": {"decision": 0, "reason": reason},
                 },
             )
@@ -569,7 +569,7 @@ class CliVerifierAdapter:
                 },
             )
             evidence = _ExecutionEvidence(
-                failure=failure,
+                failure=probe_failure,
                 process_spawned=False,
                 workspace_relative=_relative(workspace.root, context),
                 input_manifest_relative=_relative(workspace.manifest_path, context),

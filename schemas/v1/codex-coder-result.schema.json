@@ -13,8 +13,14 @@
     "files_the_agent_believes_changed"
   ],
   "properties": {
-    "schema_version": { "const": "villani.codex_coder_result.v1" },
-    "status": { "enum": ["completed", "blocked"] },
+    "schema_version": {
+      "type": "string",
+      "const": "villani.codex_coder_result.v1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["completed", "blocked"]
+    },
     "summary": { "type": "string" },
     "tests_run": {
       "type": "array",

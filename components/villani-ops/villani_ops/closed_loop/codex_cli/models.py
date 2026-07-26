@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from collections.abc import Mapping
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 
 CODEX_CODER_RESULT_SCHEMA_VERSION = "villani.codex_coder_result.v1"
@@ -73,9 +74,51 @@ class CodexProbeResult(StrictCodexModel):
         "unknown",
     ]
     capabilities: dict[str, bool]
+    approval_strategy: Literal["config_override", "global_flag"] | None = None
+    approval_policy: Literal["never"] | None = None
+    approval_probe_used_model: bool = False
+    approval_probe_evidence: dict[str, JsonValue] = Field(default_factory=dict)
     ready: bool
     failures: list[CodexFailure] = Field(default_factory=list)
     messages: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_approval_capability(cls, value: Any) -> Any:
+        """Read v1 probe records while exposing their semantic equivalent.
+
+        Earlier Villani records used ``noninteractive_approval`` to mean that
+        the global ``--ask-for-approval never`` path had been accepted.  Keep
+        that field intact, but derive the semantic field and strategy in memory
+        so old evidence remains readable without rewriting it.
+        """
+
+        if not isinstance(value, Mapping):
+            return value
+        document = dict(value)
+        raw_capabilities = document.get("capabilities")
+        if not isinstance(raw_capabilities, Mapping):
+            return document
+        capabilities = {
+            str(name): bool(enabled) for name, enabled in raw_capabilities.items()
+        }
+        legacy = capabilities.get("noninteractive_approval")
+        semantic = capabilities.get("unattended_safe_execution")
+        if semantic is None and legacy is not None:
+            capabilities["unattended_safe_execution"] = legacy
+            semantic = legacy
+        if legacy is None and semantic is not None:
+            capabilities["noninteractive_approval"] = semantic
+        document["capabilities"] = capabilities
+        if semantic and document.get("approval_strategy") is None:
+            document["approval_strategy"] = (
+                "config_override"
+                if capabilities.get("approval_policy_never_config_override", False)
+                else "global_flag"
+            )
+        if semantic and document.get("approval_policy") is None:
+            document["approval_policy"] = "never"
+        return document
 
     @model_validator(mode="after")
     def validate_readiness(self) -> "CodexProbeResult":
@@ -87,6 +130,16 @@ class CodexProbeResult(StrictCodexModel):
             raise ValueError(
                 "a ready Codex probe requires executable and authentication"
             )
+        if self.ready and not self.capabilities.get("unattended_safe_execution", False):
+            raise ValueError("a ready Codex probe requires unattended safe execution")
+        if self.ready and (
+            self.approval_strategy is None or self.approval_policy != "never"
+        ):
+            raise ValueError(
+                "a ready Codex probe requires a validated never-approval strategy"
+            )
+        if self.approval_probe_used_model:
+            raise ValueError("Codex doctor approval probes must not invoke a model")
         return self
 
 
@@ -109,6 +162,9 @@ class CodexProviderIdentity(StrictCodexModel):
         "unknown",
     ]
     capabilities: dict[str, bool]
+    approval_strategy: Literal["config_override", "global_flag"] | None = None
+    approval_policy: Literal["never"] = "never"
+    approval_probe_used_model: bool = False
     instruction_policy: Literal["native_project", "villani_controlled"]
     permission_profile: str = Field(min_length=1)
     environment_policy: str = Field(min_length=1)

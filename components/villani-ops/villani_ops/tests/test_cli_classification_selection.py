@@ -300,12 +300,7 @@ def test_classifier_doctor_failure_prevents_role_process_start(
     result = CliClassifierAdapter(driver, probe=probe).classify(
         "Update target.py.", _classification_context(tmp_path, repository)
     )
-    effective_failure = (
-        "unsupported_version"
-        if driver_name == "codex" and probe_option == "unsupported"
-        else expected_failure
-    )
-    assert result.metadata["cli_classifier_failure"] == effective_failure
+    assert result.metadata["cli_classifier_failure"] == expected_failure
     assert result.metadata["cli_classifier_process_spawned"] is False
 
 
@@ -620,12 +615,7 @@ def test_selector_doctor_failure_prevents_role_process_start(
     assert probe.ready is False
     _repository_value, context, candidates = _selection_case(tmp_path)
     selection = CliSelectorAdapter(driver, probe=probe).select(candidates, context)
-    effective_failure = (
-        "unsupported_version"
-        if driver_name == "codex" and probe_option == "unsupported"
-        else expected_failure
-    )
-    assert selection.metadata["cli_selector_failure"] == effective_failure
+    assert selection.metadata["cli_selector_failure"] == expected_failure
     assert selection.metadata["cli_selector_invoked"] is False
 
 

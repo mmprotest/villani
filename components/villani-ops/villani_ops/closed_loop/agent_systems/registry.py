@@ -374,7 +374,7 @@ class AgentSystemRegistry:
                 "schema_output",
                 "last_message_output",
                 "ephemeral",
-                "noninteractive_approval",
+                "unattended_safe_execution",
             ]
             if primary_role != AgentRole.CODING:
                 codex_required_capabilities.extend(
@@ -415,6 +415,34 @@ class AgentSystemRegistry:
                     evidence={
                         "exact_version_output": probe.exact_version_output,
                         "capabilities": probe.capabilities,
+                        "approval_strategy": probe.approval_strategy,
+                        "approval_policy": probe.approval_policy,
+                        "probe_used_model": probe.approval_probe_used_model,
+                    },
+                ),
+                DoctorCheck(
+                    name="unattended_safe_execution",
+                    status=(
+                        "pass"
+                        if probe.capabilities.get("unattended_safe_execution", False)
+                        and probe.approval_strategy is not None
+                        and probe.approval_policy == "never"
+                        else "fail"
+                    ),
+                    message=(
+                        "Codex can run unattended with an explicit sandbox "
+                        f"and {probe.approval_strategy} approval strategy."
+                        if probe.capabilities.get("unattended_safe_execution", False)
+                        and probe.approval_strategy is not None
+                        else "No safe unattended Codex approval strategy was validated."
+                    ),
+                    evidence={
+                        "unattended_safe_execution": probe.capabilities.get(
+                            "unattended_safe_execution", False
+                        ),
+                        "approval_strategy": probe.approval_strategy,
+                        "approval_policy": probe.approval_policy,
+                        "probe_used_model": probe.approval_probe_used_model,
                     },
                 ),
                 DoctorCheck(
